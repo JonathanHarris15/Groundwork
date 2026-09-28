@@ -1,0 +1,28 @@
+{
+  "name": "groundwork",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A learning agent that plans from first principles, calibrates what you know with quizzes, and remembers it in a git-synced Obsidian vault.",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/obsidian-plugin",
+    "packages/cli"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/obsidian-plugin && npm run build -w packages/cli",
+    "dev:plugin": "npm run dev -w packages/obsidian-plugin",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "groundwork": "node packages/cli/dist/groundwork.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

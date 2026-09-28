@@ -1,0 +1,16 @@
+{
+  "name": "@groundwork/obsidian-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs"
+  },
+  "dependencies": {
+    "@groundwork/core": "*"
+  },
+  "devDependencies": {
+    "obsidian": "^1.13.1"
+  }
+}

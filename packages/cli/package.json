@@ -1,0 +1,17 @@
+{
+  "name": "@groundwork/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "groundwork": "dist/groundwork.js"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@groundwork/core": "*",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "commander": "^15.0.0"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+packages/obsidian-plugin/main.js
+*.log
+.DS_Store
+/demo-vault/
