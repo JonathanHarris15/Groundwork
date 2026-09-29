@@ -1,7 +1,5 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-const REGION_PREFIX = "%% groundwork:";
-
 export interface ParsedNote {
 	frontmatter: Record<string, unknown>;
 	body: string;
@@ -57,49 +55,85 @@ export function unwikilink(value: string): string {
 	return (m ? m[1] : value).trim();
 }
 
-/**
- * Replace (or append) a region delimited by Obsidian comments (hidden in reading and live preview). Everything outside
- * the markers is left untouched, so users and the agent can freely edit the
- * rest of a note while generated sections stay current.
- */
-export function upsertRegion(body: string, name: string, content: string): string {
-	const start = `%% groundwork:${name} %%`;
-	const end = `%% /groundwork:${name} %%`;
-	const block = `${start}\n${content.trim()}\n${end}`;
-	const s = body.indexOf(start);
-	const e = body.indexOf(end);
-	if (s !== -1 && e !== -1 && e > s) {
-		return body.slice(0, s) + block + body.slice(e + end.length);
+/** Indices of lines that are `## ` headings, ignoring anything inside fenced code or $$ math blocks. */
+function h2Lines(lines: string[]): Set<number> {
+	const out = new Set<number>();
+	let fence: string | null = null;
+	for (let i = 0; i < lines.length; i++) {
+		const t = lines[i].trim();
+		if (fence) {
+			if (t.startsWith(fence)) fence = null;
+			continue;
+		}
+		const m = /^(```+|~~~+|\$\$)/.exec(t);
+		if (m) {
+			if (!(m[1] === "$$" && t.length > 2 && t.endsWith("$$"))) fence = m[1];
+			continue;
+		}
+		if (/^##\s/.test(lines[i])) out.add(i);
 	}
-	return `${body.trimEnd()}\n\n${block}\n`;
+	return out;
+}
+
+function findSection(lines: string[], heading: string): { start: number; end: number } | null {
+	const heads = h2Lines(lines);
+	const want = `## ${heading}`.toLowerCase();
+	const start = [...heads].find((i) => lines[i].trim().toLowerCase() === want);
+	if (start === undefined) return null;
+	let end = start + 1;
+	while (end < lines.length && !heads.has(end)) end++;
+	return { start, end };
 }
 
 /** Returns the markdown under `## heading` (until the next `## `), or undefined. */
 export function getSection(body: string, heading: string): string | undefined {
 	const lines = body.split("\n");
-	const idx = lines.findIndex((l) => l.trim().toLowerCase() === `## ${heading}`.toLowerCase());
-	if (idx === -1) return undefined;
-	const out: string[] = [];
-	for (let i = idx + 1; i < lines.length; i++) {
-		if (/^##\s/.test(lines[i]) || lines[i].startsWith(REGION_PREFIX)) break;
-		out.push(lines[i]);
-	}
-	return out.join("\n").trim();
+	const s = findSection(lines, heading);
+	return s ? lines.slice(s.start + 1, s.end).join("\n").trim() : undefined;
 }
 
-/** Sets the content under `## heading`, creating the section before any generated region if missing. */
-export function setSection(body: string, heading: string, content: string): string {
+/**
+ * Sets the content under `## heading`. A missing section is inserted before the
+ * first existing section named in `before` (so generated sections stay last),
+ * otherwise appended. Content must not contain its own `## ` headings; run
+ * embedded markdown through `demoteHeadings` first.
+ */
+export function setSection(body: string, heading: string, content: string, before: string[] = []): string {
 	const lines = body.split("\n");
-	const idx = lines.findIndex((l) => l.trim().toLowerCase() === `## ${heading}`.toLowerCase());
 	const block = [`## ${heading}`, "", content.trim(), ""];
-	if (idx === -1) {
-		const regionIdx = lines.findIndex((l) => l.startsWith(REGION_PREFIX));
-		if (regionIdx === -1) return `${body.trimEnd()}\n\n${block.join("\n")}`;
-		lines.splice(regionIdx, 0, ...block);
+	const s = findSection(lines, heading);
+	if (s) {
+		lines.splice(s.start, s.end - s.start, ...block);
 		return lines.join("\n");
 	}
-	let end = idx + 1;
-	while (end < lines.length && !/^##\s/.test(lines[end]) && !lines[end].startsWith(REGION_PREFIX)) end++;
-	lines.splice(idx, end - idx, ...block);
-	return lines.join("\n");
+	for (const b of before) {
+		const at = findSection(lines, b);
+		if (at) {
+			lines.splice(at.start, 0, ...block);
+			return lines.join("\n");
+		}
+	}
+	return `${body.trimEnd()}\n\n${block.join("\n")}`;
+}
+
+/** Push headings down so embedded markdown (transcripts, summaries) can't break section boundaries. */
+export function demoteHeadings(md: string, by = 2): string {
+	const lines = md.split("\n");
+	let fence: string | null = null;
+	return lines
+		.map((line) => {
+			const t = line.trim();
+			if (fence) {
+				if (t.startsWith(fence)) fence = null;
+				return line;
+			}
+			const m = /^(```+|~~~+|\$\$)/.exec(t);
+			if (m) {
+				if (!(m[1] === "$$" && t.length > 2 && t.endsWith("$$"))) fence = m[1];
+				return line;
+			}
+			const h = /^(#{1,6})(\s.*)$/.exec(line);
+			return h ? `${"#".repeat(Math.min(6, h[1].length + by))}${h[2]}` : line;
+		})
+		.join("\n");
 }

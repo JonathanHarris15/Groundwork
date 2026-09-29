@@ -1,6 +1,7 @@
 import { analyzeGoal, findCycle, goalMermaid, type GoalAnalysis, type GraphNode } from "./graph";
 import { ensureDir, type VaultIO } from "./io";
 import {
+	demoteHeadings,
 	getSection,
 	parseNote,
 	safeFileName,
@@ -8,7 +9,6 @@ import {
 	setSection,
 	slugify,
 	unwikilink,
-	upsertRegion,
 	wikilink,
 } from "./markdown";
 import { computeStats, describeEdge, emptyStats, isDue, type ConceptStats, type Evidence } from "./model";
@@ -299,7 +299,7 @@ export class KnowledgeStore {
 		const stats = computeStats(evidence, this.now());
 		const { frontmatter, body } = parseNote(await this.io.read(concept.path));
 		Object.assign(frontmatter, statsFrontmatter(stats));
-		const newBody = evidence.length ? upsertRegion(body, "history", historyTable(evidence)) : body;
+		const newBody = evidence.length ? setSection(body, "Quiz history", historyTable(evidence)) : body;
 		await this.io.write(concept.path, serializeNote(frontmatter, newBody));
 		this.invalidate();
 		this.changed(concept.path, this.evidencePath(concept.id));
@@ -377,9 +377,10 @@ export class KnowledgeStore {
 		const path = existing?.path ?? (await this.uniquePath(PATHS.goals, safeFileName(input.title)));
 		const prior = existing ? parseNote(await this.io.read(path)) : { frontmatter: {}, body: `# ${input.title}\n` };
 		let body = prior.body;
-		body = setSection(body, "Objective", input.objective);
-		if (input.why) body = setSection(body, "Why", input.why);
-		if (input.approach) body = setSection(body, "Approach", input.approach);
+		const beforeMap = ["Dependency map"];
+		body = setSection(body, "Objective", demoteHeadings(input.objective), beforeMap);
+		if (input.why) body = setSection(body, "Why", demoteHeadings(input.why), beforeMap);
+		if (input.approach) body = setSection(body, "Approach", demoteHeadings(input.approach), beforeMap);
 		const fm = {
 			...prior.frontmatter,
 			title: input.title,
@@ -434,8 +435,6 @@ export class KnowledgeStore {
 		const total = report.nodes.length;
 		frontmatter.progress = `${analysis.solidCount}/${total} solid`;
 		const lines = [
-			"## Dependency map",
-			"",
 			"```mermaid",
 			mermaid,
 			"```",
@@ -443,7 +442,7 @@ export class KnowledgeStore {
 			"> [!info] Legend",
 			"> Arrows point from a prerequisite to what it unlocks. Green = solid, amber = shaky, orange = learning, purple = rusty (review due), grey = not assessed yet. The hexagon is the goal.",
 			"",
-			`## Progress — ${analysis.solidCount}/${total} solid`,
+			`### Progress — ${analysis.solidCount}/${total} solid`,
 			"",
 			"| Concept | Status | Now | Edge |",
 			"| --- | --- | --- | --- |",
@@ -457,7 +456,7 @@ export class KnowledgeStore {
 				? `**Ready to learn next:** ${analysis.frontier.map((n) => `[[${n.title}]]`).join(", ")}`
 				: "**Ready to learn next:** nothing — every node is solid.",
 		];
-		await this.io.write(goal.path, serializeNote(frontmatter, upsertRegion(body, "map", lines.join("\n"))));
+		await this.io.write(goal.path, serializeNote(frontmatter, setSection(body, "Dependency map", lines.join("\n"))));
 		this.changed(goal.path);
 		return report;
 	}
@@ -586,11 +585,14 @@ function statsFrontmatter(stats: ConceptStats) {
 
 function applySections(body: string, input: ConceptInput): string {
 	let out = body;
-	if (input.summary) out = setSection(out, "Summary", input.summary);
-	if (input.unconditionalTruths) out = setSection(out, "Unconditional truths", input.unconditionalTruths);
-	if (input.connections) out = setSection(out, "How it connects", input.connections);
-	if (input.misconceptions) out = setSection(out, "Misconceptions to watch", input.misconceptions);
-	if (input.notes) out = setSection(out, "Notes", input.notes);
+	const set = (heading: string, content?: string) => {
+		if (content) out = setSection(out, heading, demoteHeadings(content), ["Quiz history"]);
+	};
+	set("Summary", input.summary);
+	set("Unconditional truths", input.unconditionalTruths);
+	set("How it connects", input.connections);
+	set("Misconceptions to watch", input.misconceptions);
+	set("Notes", input.notes);
 	return out;
 }
 
@@ -604,7 +606,7 @@ function historyTable(evidence: Evidence[]): string {
 			const miss = e.misconception ? ` — *${e.misconception.replace(/\|/g, "\\|")}*` : "";
 			return `| ${e.ts.slice(0, 10)} | ${icon[e.outcome]} | d${e.difficulty} ${e.kind} | ${q}${miss} |`;
 		});
-	return ["## Quiz history", "", "| Date | | Level | Question |", "| --- | --- | --- | --- |", ...rows].join("\n");
+	return ["| Date | | Level | Question |", "| --- | --- | --- | --- |", ...rows].join("\n");
 }
 
 async function listMarkdown(io: VaultIO, dir: string): Promise<string[]> {

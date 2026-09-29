@@ -1,4 +1,4 @@
-import { upsertRegion } from "./markdown";
+import { demoteHeadings, setSection } from "./markdown";
 import { describeEdge, predictCorrect, type ConceptStats, type EvidenceKind, type Outcome } from "./model";
 import { gradeQuiz, prepareQuiz, type PreparedQuiz, type QuizGrade, type QuizInput, type QuizResponse } from "./quiz";
 import { conceptSummary, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
@@ -452,9 +452,7 @@ export const TOOLS: ToolDef[] = [
 		async run(input: { title?: string; summary: string; concepts?: string[]; next?: string }, { store, session }) {
 			const links = (input.concepts ?? []).map((c) => `[[${c}]]`).join(", ");
 			const block = [
-				"## Summary",
-				"",
-				input.summary.trim(),
+				demoteHeadings(input.summary.trim()),
 				links ? `\n**Concepts:** ${links}` : "",
 				input.next ? `\n**Next time:** ${input.next.trim()}` : "",
 			].join("\n");
@@ -464,7 +462,7 @@ export const TOOLS: ToolDef[] = [
 				if (session) session.notePath = path;
 			}
 			const existing = (await store.io.exists(path)) ? await store.io.read(path) : `# ${input.title ?? "Session"}\n`;
-			await store.writeFile(path, upsertRegion(existing, "summary", block));
+			await store.writeFile(path, setSection(existing, "Summary", block, ["Transcript"]));
 			return { text: `Saved summary to ${path}.`, summary: "Saved session summary" };
 		},
 	},

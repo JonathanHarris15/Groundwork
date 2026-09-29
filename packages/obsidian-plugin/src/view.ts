@@ -2,12 +2,13 @@ import { Component, ItemView, Keymap, MarkdownRenderer, Menu, Notice, setIcon, t
 import {
 	AgentSession,
 	buildSystemPrompt,
+	demoteHeadings,
 	letter,
 	parseNote,
 	PATHS,
 	serializeNote,
+	setSection,
 	TOOLS,
-	upsertRegion,
 	type AgentEvent,
 	type AskInput,
 	type AskResponse,
@@ -596,7 +597,7 @@ export class ChatView extends ItemView implements ToolUI {
 			const { frontmatter, body } = parseNote(existing);
 			const fm = { ...frontmatter, type: "session", date: this.record.created.slice(0, 10), chat: this.record.id, tags: ["groundwork/session"] };
 			const base = body.trim() ? body : `# ${this.record.title}\n`;
-			await store.writeFile(path, serializeNote(fm, upsertRegion(base, "transcript", transcript(this.record.items))));
+			await store.writeFile(path, serializeNote(fm, setSection(base, "Transcript", transcript(this.record.items))));
 		}
 		this.renderHeader();
 	}
@@ -644,7 +645,7 @@ function iconFor(name: string): string {
 }
 
 function transcript(items: DisplayItem[]): string {
-	const out: string[] = ["## Transcript", ""];
+	const out: string[] = [];
 	const quote = (s: string) => s.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
 	for (const item of items) {
 		switch (item.kind) {
@@ -652,7 +653,7 @@ function transcript(items: DisplayItem[]): string {
 				out.push(`> [!quote] You\n${quote(item.text)}`, "");
 				break;
 			case "assistant":
-				out.push(item.text, "");
+				out.push(demoteHeadings(item.text), "");
 				break;
 			case "quiz": {
 				const { quiz, grade, response, after } = item;
