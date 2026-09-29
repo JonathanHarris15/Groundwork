@@ -11,13 +11,14 @@ import type { SessionInfo, ToolDef, ToolResult, ToolUI } from "../tools";
 import type { AgentEvent, TutorSession } from "../agent/types";
 import { errorMessage } from "../agent/loop";
 import { guiPathDirs, withGuiPath } from "./env";
+import { pdfLayout } from "./pdf-parts";
 
 export type { AccountInfo, ModelInfo };
 
 const MCP_NAME = "groundwork";
 const MCP_PREFIX = `mcp__${MCP_NAME}__`;
 const WEB_TOOLS = ["WebSearch", "WebFetch"];
-/** Claude Code's Read handles long PDFs page by page, which MCP tool results can't carry. Limited to the vault (cwd). */
+/** Claude Code's Read opens PDFs (split into parts by pdfLayout), which MCP tool results can't carry. Limited to the vault (cwd). */
 const READ_TOOL = "Read";
 const READ_RULE = "Read(./**)";
 const MAX_HISTORY_CHARS = 40_000;
@@ -188,7 +189,9 @@ export class ClaudeCodeSession implements TutorSession {
 			}
 			this.start();
 		}
-		const content = userContent(prompt, files, (f) => (f.tooLarge ? [{ type: "text", text: this.readPointer(f) }] : fileBlocks(f)));
+		const pointers = new Map<VaultFile, string>();
+		for (const f of files ?? []) if (f.tooLarge) pointers.set(f, await this.readPointer(f));
+		const content = userContent(prompt, files, (f) => (pointers.has(f) ? [{ type: "text", text: pointers.get(f)! }] : fileBlocks(f)));
 		this.input!.push({ type: "user", message: { role: "user", content: content as SDKUserMessage["message"]["content"] }, parent_tool_use_id: null });
 
 		const streamed = new Set<string>();
@@ -306,12 +309,10 @@ export class ClaudeCodeSession implements TutorSession {
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}
-			const pointed: string[] = [];
-			const content = mcpContent(result.text, result.files, (f): McpContent[] | undefined => {
-				if (f.kind !== "pdf" && !(f.kind === "image" && f.tooLarge)) return undefined;
-				pointed.push(basename(f.path));
-				return [{ type: "text", text: this.readPointer(f) }];
-			});
+			const pointers = new Map<VaultFile, string>();
+			for (const f of result.files ?? []) if (f.kind === "pdf" || (f.kind === "image" && f.tooLarge)) pointers.set(f, await this.readPointer(f));
+			const pointed = [...pointers.keys()].map((f) => basename(f.path));
+			const content = mcpContent(result.text, result.files, (f): McpContent[] | undefined => (pointers.has(f) ? [{ type: "text", text: pointers.get(f)! }] : undefined));
 			const summary = pointed.length && pointed.length === result.files?.length ? `Found ${pointed.join(", ")}` : result.summary;
 			emit?.({ type: "tool_end", id, name, summary, isError: !!result.isError, text: result.text });
 			return { content, isError: !!result.isError };
@@ -319,11 +320,23 @@ export class ClaudeCodeSession implements TutorSession {
 		return server;
 	}
 
-	private readPointer(f: VaultFile): string {
-		const abs = path.join(this.opts.cwd, ...f.path.split("/"));
-		const what = f.kind === "pdf" ? "PDF" : f.kind === "image" ? "image" : "file";
-		const pages = f.kind === "pdf" ? ' For a long PDF, pass pages (e.g. "1-10") and read it in parts.' : "";
-		return `${f.path} is a ${what}. Open it with the ${READ_TOOL} tool: file_path "${abs}".${pages}`;
+	private async readPointer(f: VaultFile): Promise<string> {
+		const abs = (rel: string) => path.join(this.opts.cwd, ...rel.split("/"));
+		if (f.kind !== "pdf") return `${f.path} is ${f.kind === "image" ? "an image" : "a file"}. Open it with the ${READ_TOOL} tool: file_path "${abs(f.path)}".`;
+		const layout = await pdfLayout(this.opts.cwd, f.path).catch(() => null);
+		if (!layout) return `${f.path} is a PDF. Open it with the ${READ_TOOL} tool: file_path "${abs(f.path)}". If it is too long to read whole, pass pages (e.g. "1-10") and read it in parts.`;
+		const whole = `Read each file whole: don't pass pages (page ranges need poppler, which may not be installed).`;
+		if (layout.parts.length === 1 && layout.parts[0].path === f.path) {
+			return `${f.path} is a PDF (${plural(layout.pages, "page")}). Open it with the ${READ_TOOL} tool: file_path "${abs(f.path)}". ${whole}`;
+		}
+		const lines = layout.parts.map((p) => {
+			const pages = p.first === p.last ? `page ${p.first}` : `pages ${p.first}-${p.last}`;
+			return p.bytes ? `- ${pages}: too large to open (${(p.bytes / 1024 / 1024).toFixed(1)} MB); ask the learner for a screenshot or the text` : `- ${pages}: file_path "${abs(p.path)}"`;
+		});
+		return [
+			`${f.path} is a PDF of ${plural(layout.pages, "page")}, too long to open in one go, so it has been split into parts. Open them with the ${READ_TOOL} tool. ${whole} Start with the first part to learn how it is organized, then read the parts you need.`,
+			...lines,
+		].join("\n");
 	}
 
 	private interrupt(): void {
@@ -368,6 +381,10 @@ export function friendlyError(text: string, code?: string): string {
 		return "Couldn't start Claude Code. Install it (https://claude.com/claude-code) or set its path in Settings → Groundwork.";
 	}
 	return text;
+}
+
+function plural(n: number, word: string): string {
+	return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
 function capitalize(s: string): string {
