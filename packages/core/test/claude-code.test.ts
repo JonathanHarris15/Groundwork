@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
+import { PDFDocument } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AgentEvent } from "../src/agent/types";
 import { loadVaultFile } from "../src/files";
@@ -11,6 +12,7 @@ import { checkClaudeCode, claudeCodeEnv, ClaudeCodeSession, findClaudeExecutable
 import { KnowledgeStore } from "../src/store";
 import { TOOLS, type ToolUI } from "../src/tools";
 import { startMockAnthropic, toolResults, type MockBlock, type MockRequest } from "./fixtures/mock-anthropic";
+import { makePdf } from "./fixtures/pdf";
 
 /** The Claude Code binary the SDK installs for this platform; tests drive it against a mock Messages API. */
 function bundledClaude(): string | null {
@@ -276,6 +278,35 @@ describe.skipIf(!exe)("ClaudeCodeSession against the real Claude Code binary", (
 
 		const ends = events.filter((e): e is Extract<AgentEvent, { type: "tool_end" }> => e.type === "tool_end");
 		expect(ends.map((e) => e.summary)).toContain("Opened Lecture 3.pdf");
+	}, 60_000);
+
+	it("splits a long PDF into parts that Read opens whole, without poppler", async () => {
+		const vaultDir = mkdtempSync(path.join(os.tmpdir(), "gw-claude-longpdf-"));
+		mkdirSync(path.join(vaultDir, "resources"));
+		writeFileSync(path.join(vaultDir, "resources", "Lecture 2 optimization.pdf"), await makePdf(23));
+		const store = new KnowledgeStore(new NodeVaultIO(vaultDir));
+		const api = await startMockAnthropic((req) => {
+			const results = toolResults(req);
+			if (results.length === 0) return [{ type: "tool_use", name: "mcp__groundwork__read_vault_file", input: { path: "Lecture 2 optimization.pdf" } }];
+			if (results.length === 1) {
+				const part = /pages 11-20: file_path "([^"]+)"/.exec(results[0])?.[1] ?? "missing";
+				return [{ type: "tool_use", name: "Read", input: { file_path: part } }];
+			}
+			return [{ type: "text", text: "Read the middle part." }];
+		});
+		const session = new ClaudeCodeSession({ executable: exe!, cwd: vaultDir, env: { ...env, ANTHROPIC_BASE_URL: api.url }, store, tools: TOOLS, system: "x", session: { id: "s6" } });
+		const events: AgentEvent[] = [];
+		await session.send("Read lecture 2", (e) => events.push(e));
+		session.close();
+		await api.close();
+
+		expect(events.filter((e) => e.type === "error")).toEqual([]);
+		const last = api.requests.at(-1)!.messages;
+		const results = last.flatMap((m: any) => (Array.isArray(m.content) ? m.content.filter((b: any) => b.type === "tool_result") : []));
+		expect(JSON.stringify(results[0].content)).toContain("PDF of 23 pages");
+		expect(results[1].is_error).toBeFalsy();
+		const doc = (results[1].content as any[]).find((b) => b.type === "document");
+		expect((await PDFDocument.load(Buffer.from(doc.source.data, "base64"))).getPageCount()).toBe(10);
 	}, 60_000);
 
 	it("reports a missing login in plain language", async () => {
