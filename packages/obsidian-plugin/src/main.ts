@@ -44,6 +44,11 @@ export default class GroundworkPlugin extends Plugin {
 			name: "Start a new tutoring session",
 			callback: async () => (await this.activateView())?.newSession(),
 		});
+		this.addCommand({
+			id: "practice-test",
+			name: "Take a practice test",
+			callback: async () => (await this.activateView())?.startPracticeTest(),
+		});
 		this.addCommand({ id: "sync-now", name: "Sync knowledge with GitHub now", callback: () => void this.syncNow("manual") });
 		this.addCommand({
 			id: "recompute",

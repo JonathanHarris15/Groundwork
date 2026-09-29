@@ -1,7 +1,23 @@
 import { basename, listVaultFiles, loadVaultFile, resolveVaultFile, RESOURCES_DIR, fileKind, type VaultFile } from "./files";
 import { demoteHeadings, setSection } from "./markdown";
-import { describeEdge, predictCorrect, type ConceptStats, type EvidenceKind, type Outcome } from "./model";
-import { gradeQuiz, prepareQuiz, type PreparedQuiz, type QuizGrade, type QuizInput, type QuizResponse } from "./quiz";
+import { awaitJudgment, describeQuizOutcome, recordQuizAnswer, takeAwaiting, type QuizOutcome } from "./grading";
+import { describeEdge, type EvidenceKind, type Outcome } from "./model";
+import {
+	applyTestJudgments,
+	describeTestForGrading,
+	describeTestReport,
+	finishTest,
+	MAX_TEST_QUESTIONS,
+	prepareTest,
+	startTestGrading,
+	testInProgress,
+	ungraded,
+	type PracticeTestInput,
+	type PreparedTest,
+	type TestReport,
+	type TestResponse,
+} from "./practice";
+import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
 import { conceptSummary, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
 
 export type JSONSchema = Record<string, unknown>;
@@ -19,19 +35,14 @@ export interface AskResponse {
 	text?: string;
 }
 
-export interface QuizOutcome {
-	quiz: PreparedQuiz;
-	response: QuizResponse;
-	grade: QuizGrade;
-	before: ConceptStats;
-	after: ConceptStats;
-	conceptTitle: string;
-}
-
 /** Interactive surface. The Obsidian plugin renders cards; MCP uses elicitation or a two-step fallback. */
 export interface ToolUI {
 	quiz(quiz: PreparedQuiz): Promise<QuizResponse | null>;
+	/** Called once an answer is graded and recorded (for free response, after the tutor's grade_answer). */
 	quizRecorded?(outcome: QuizOutcome): void;
+	/** Show a whole practice test and resolve when the learner submits it. */
+	test?(test: PreparedTest): Promise<TestResponse | null>;
+	testGraded?(report: TestReport): void;
 	ask(input: AskInput): Promise<AskResponse | null>;
 	/** Side questions the learner asked since the tutor last looked; appended to interactive results. */
 	marginNotes?(): string | undefined;
@@ -81,82 +92,87 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 const evidenceKinds = ["probe", "check", "review", "explain"];
 
+const questionProperties: Record<string, JSONSchema> = {
+	concept: str("Title of the concept this question measures (create it with upsert_concept or set_goal first)."),
+	question: str("Exactly one question. Markdown and LaTeX allowed."),
+	details: str("Optional context shown under the question."),
+	format: {
+		type: "string",
+		enum: ["choice", "free"],
+		description:
+			'"choice" (default): multiple choice, graded instantly. "free": the learner types an answer (markdown + LaTeX, with live preview) and YOU grade it against referenceAnswer with grade_answer. Use free when the skill is producing something: a computation, an expression, a derivation step, a definition in their words.',
+	},
+	options: {
+		type: "array",
+		minItems: 2,
+		description: "Choice only: the real, gradable options (2+). Never include an 'I don't know' option — it is added automatically.",
+		items: {
+			type: "object",
+			properties: {
+				label: str("The option as shown. A bare claim with no justification. Markdown/LaTeX allowed."),
+				value: str("Short stable id used in correctAnswer, e.g. 'a' or 'chain-rule'."),
+				misconception: str("Distractors only: the specific wrong belief that would lead someone to pick this."),
+			},
+			required: ["label", "value"],
+		},
+	},
+	correctAnswer: {
+		description: "Choice only: option value (single-select) or array of values (multi-select, exact-set grading).",
+		anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+	},
+	referenceAnswer: str("Free only (required): the model answer, with LaTeX. Shown to the learner after grading."),
+	rubric: str("Free only: what full credit requires and what earns partial credit."),
+	explanation: str("Revealed after answering: why the correct answer is correct (and why tempting distractors are wrong)."),
+	difficulty: {
+		type: "integer",
+		minimum: 1,
+		maximum: 5,
+		description: "1 recognize · 2 recall/restate · 3 apply (standard) · 4 combine/multi-step · 5 transfer/novel.",
+	},
+	multiSelect: { type: "boolean", description: "Choice only: true when more than one option is correct." },
+	shuffle: { type: "boolean", description: "Choice only. Default true. False only when option order carries meaning." },
+};
+
 export const quizInputSchema: JSONSchema = {
 	type: "object",
 	properties: {
-		concept: str("Title of the concept this question measures (create it with upsert_concept or set_goal first)."),
-		question: str("Exactly one question. Markdown and LaTeX allowed."),
-		details: str("Optional context shown under the question."),
-		options: {
-			type: "array",
-			minItems: 2,
-			description: "The real, gradable options (2+). Never include an 'I don't know' option — it is added automatically.",
-			items: {
-				type: "object",
-				properties: {
-					label: str("The option as shown. A bare claim with no justification. Markdown/LaTeX allowed."),
-					value: str("Short stable id used in correctAnswer, e.g. 'a' or 'chain-rule'."),
-					misconception: str("Distractors only: the specific wrong belief that would lead someone to pick this."),
-				},
-				required: ["label", "value"],
-			},
-		},
-		correctAnswer: {
-			description: "Option value (single-select) or array of values (multi-select, exact-set grading).",
-			anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
-		},
-		explanation: str("Revealed after answering: why the correct answer is correct (and why tempting distractors are wrong)."),
-		difficulty: {
-			type: "integer",
-			minimum: 1,
-			maximum: 5,
-			description: "1 recognize · 2 recall/restate · 3 apply (standard) · 4 combine/multi-step · 5 transfer/novel.",
-		},
+		...questionProperties,
 		kind: { type: "string", enum: evidenceKinds.slice(0, 3), description: "probe = mapping the edge, check = confirming a node just taught, review = spaced retrieval." },
-		multiSelect: { type: "boolean", description: "True when more than one option is correct." },
-		shuffle: { type: "boolean", description: "Default true. False only when option order carries meaning." },
 	},
-	required: ["concept", "question", "options", "correctAnswer", "explanation", "difficulty", "kind"],
+	required: ["concept", "question", "explanation", "difficulty", "kind"],
 };
 
-export function describeQuizOutcome(o: QuizOutcome): string {
-	const { grade, quiz, response, before, after } = o;
-	const lines: string[] = [];
-	if (grade.outcome === "dont_know") {
-		lines.push(`The learner chose "I don't know" — an honest gap, not a guess. Teach into it.`);
-	} else {
-		lines.push(`The learner answered ${grade.correct ? "CORRECTLY" : "INCORRECTLY"}.`);
-		lines.push(`Selected: ${grade.selectedLabels.join(" | ")}`);
-	}
-	lines.push(`Correct: ${grade.correctLabels.join(" | ")}`);
-	if (grade.misconception) lines.push(`Diagnosed misconception (from the distractor chosen): ${grade.misconception}`);
-	if (response.note) lines.push(`Learner's note: ${response.note}`);
-	lines.push(
-		`Recorded in vault → ${o.conceptTitle}: ${before.attempts ? pct(before.current) : "unassessed"} → ${pct(after.current)} (status ${after.status}; ${describeEdge(after)}; d${quiz.difficulty} ${quiz.kind}).`,
-	);
-	lines.push(`Predicted chance on next d${Math.min(5, quiz.difficulty + 1)}: ${pct(predictCorrect(after, quiz.difficulty + 1))}.`);
-	return lines.join("\n");
+export const practiceTestInputSchema: JSONSchema = {
+	type: "object",
+	properties: {
+		title: str("e.g. 'Midterm 1 practice — derivatives'."),
+		goal: str("Goal this test measures, if any."),
+		examPlan: str("Exam plan it mirrors, if any."),
+		instructions: str("Shown at the top: scope, rules (e.g. no calculator), how it maps to the real exam."),
+		timeLimitMinutes: { type: "integer", minimum: 1, description: "Optional. Shown as a countdown; the test is not cut off." },
+		questions: {
+			type: "array",
+			minItems: 1,
+			maxItems: MAX_TEST_QUESTIONS,
+			description: "In exam order. Mix choice and free response as the real exam would.",
+			items: { type: "object", properties: questionProperties, required: ["concept", "question", "explanation", "difficulty"] },
+		},
+	},
+	required: ["title", "questions"],
+};
+
+const judgmentProperties: Record<string, JSONSchema> = {
+	outcome: { type: "string", enum: ["correct", "partial", "incorrect"] },
+	feedback: str("Shown to the learner: what is right, then the exact step that went wrong. LaTeX allowed."),
+	misconception: str("If a wrong belief shows: that belief, stated specifically."),
+};
+
+function iconFor(outcome: Outcome): string {
+	return outcome === "correct" ? "✓" : outcome === "partial" ? "◐" : outcome === "dont_know" ? "?" : "✗";
 }
 
-/** Grade, record, and describe a quiz answer. Shared by the Obsidian card flow and MCP. */
-export async function recordQuizAnswer(store: KnowledgeStore, quiz: PreparedQuiz, response: QuizResponse, session?: SessionInfo): Promise<QuizOutcome> {
-	const grade = gradeQuiz(quiz, response);
-	const { concept, before, after } = await store.recordEvidence(quiz.concept, {
-		outcome: grade.outcome,
-		difficulty: quiz.difficulty,
-		kind: quiz.kind,
-		question: stripMd(quiz.question),
-		chosen: grade.selectedLabels.join(" | ") || undefined,
-		correctAnswer: grade.correctLabels.join(" | "),
-		misconception: grade.misconception,
-		note: response.note,
-		session: session?.id,
-	});
-	return { quiz, response, grade, before, after, conceptTitle: concept.title };
-}
-
-function stripMd(s: string): string {
-	return s.replace(/\s+/g, " ").trim().slice(0, 300);
+function outcomeSummary(o: QuizOutcome): string {
+	return `${iconFor(o.grade.outcome)} ${o.conceptTitle}: ${o.before.attempts ? pct(o.before.current) : "—"} → ${pct(o.after.current)}`;
 }
 
 export const TOOLS: ToolDef[] = [
@@ -352,7 +368,7 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask ONE graded multiple-choice question and wait for the learner's answer. It is graded instantly, shown with the explanation, and recorded as calibrated evidence on the concept. Use for probing the edge (kind probe), confirming a node (check), and spaced review (review). 'I don't know' and a free-text note are always offered automatically.",
+			"Ask ONE graded question and wait for the learner's answer; it is recorded as calibrated evidence on the concept. Multiple choice (format choice) is graded instantly and shown with the explanation. Free response (format free) lets the learner type an answer with LaTeX; you then grade it with grade_answer. Use for probing the edge (kind probe), confirming a node (check), and spaced review (review). 'I don't know' (with a familiarity slider from 'never seen this' to 'almost have it') and a note are always offered automatically. The result includes a 'Next move' from the diagnosis ladder: follow it.",
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
@@ -363,14 +379,96 @@ export const TOOLS: ToolDef[] = [
 			const quiz = prepareQuiz({ ...input, concept: concept.title });
 			const response = await ui.quiz(quiz);
 			if (!response) return { text: withMarginNotes("The learner dismissed the quiz without answering. Nothing was recorded.", ui), summary: "Quiz dismissed" };
+			if (needsJudgment(quiz, response)) {
+				return { text: withMarginNotes(awaitJudgment(quiz, response), ui), summary: `Answer submitted on ${concept.title} — grading` };
+			}
 			const outcome = await recordQuizAnswer(store, quiz, response, session);
 			ui.quizRecorded?.(outcome);
-			const icon = outcome.grade.outcome === "correct" ? "✓" : outcome.grade.outcome === "dont_know" ? "?" : "✗";
-			return {
-				text: withMarginNotes(describeQuizOutcome(outcome), ui),
-				summary: `${icon} ${concept.title}: ${outcome.before.attempts ? pct(outcome.before.current) : "—"} → ${pct(outcome.after.current)}`,
-				data: outcome,
-			};
+			return { text: withMarginNotes(describeQuizOutcome(outcome), ui), summary: outcomeSummary(outcome), data: outcome };
+		},
+	},
+	{
+		name: "grade_answer",
+		description:
+			"Grade a free-response answer the learner submitted to quiz (format free). Your grade, feedback, and the reference answer are shown on their card and recorded as evidence. Call right after the quiz result, before anything else.",
+		inputSchema: {
+			type: "object",
+			properties: { quiz_id: str("The quiz_id from the quiz result."), ...judgmentProperties },
+			required: ["quiz_id", "outcome", "feedback"],
+		},
+		async run(input: FreeResponseJudgment & { quiz_id: string }, { store, ui, session }) {
+			const pending = takeAwaiting(input.quiz_id);
+			if (!pending) return { text: `No free-response answer is waiting with quiz_id ${input.quiz_id}. It may already be graded.`, isError: true };
+			const outcome = await recordQuizAnswer(store, pending.quiz, pending.response, session, input);
+			ui?.quizRecorded?.(outcome);
+			const text = describeQuizOutcome(outcome);
+			return { text: ui ? withMarginNotes(text, ui) : text, summary: outcomeSummary(outcome), data: outcome };
+		},
+	},
+	{
+		name: "practice_test",
+		interactive: true,
+		description:
+			"Give the learner a full practice test (exam prep): many questions at once, multiple choice and free response mixed, with no feedback until they submit. Multiple choice is graded on submit; you grade free responses with grade_practice_test. Every answer is recorded as evidence, and an evaluation (score, per-concept breakdown, misconceptions) is saved to tests/ and shown to the learner. Build it from the exam plan or goal: cover every topic, at the required levels, in the real exam's proportions.",
+		inputSchema: practiceTestInputSchema,
+		async run(input: PracticeTestInput, { store, ui, session }) {
+			if (!ui?.test) return { text: "practice_test needs an interactive surface; quiz them one question at a time instead.", isError: true };
+			const unknown: string[] = [];
+			const questions: QuizInput[] = [];
+			for (const q of input.questions ?? []) {
+				const c = await store.resolve(q.concept);
+				if (!c) unknown.push(q.concept);
+				else questions.push({ ...q, concept: c.title });
+			}
+			if (unknown.length) {
+				return { text: `Unknown concepts: ${[...new Set(unknown)].join(", ")}. Create them with upsert_concept (or set_goal) first, then give the test.`, isError: true };
+			}
+			const test = prepareTest({ ...input, questions });
+			const response = await ui.test(test);
+			if (!response) return { text: withMarginNotes("The learner closed the practice test without submitting. Nothing was recorded.", ui), summary: "Practice test dismissed" };
+			const state = await startTestGrading(store, test, response, session);
+			if (ungraded(state).length) {
+				return { text: withMarginNotes(describeTestForGrading(state), ui), summary: `Practice test submitted — grading ${ungraded(state).length} written answer${ungraded(state).length === 1 ? "" : "s"}` };
+			}
+			const report = await finishTest(store, state);
+			ui.testGraded?.(report);
+			return { text: withMarginNotes(describeTestReport(report), ui), summary: `Practice test: ${pct(report.percent)}`, data: report };
+		},
+	},
+	{
+		name: "grade_practice_test",
+		description: "Grade the free-response answers of a submitted practice test. Pass one grade per question listed in the practice_test result. When all are graded, the evaluation is saved and shown to the learner.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				test_id: str("The test_id from the practice_test result."),
+				grades: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: { question: { type: "integer", description: "Question number (1-based)." }, ...judgmentProperties },
+						required: ["question", "outcome", "feedback"],
+					},
+				},
+			},
+			required: ["test_id", "grades"],
+		},
+		async run(input: { test_id: string; grades: Array<FreeResponseJudgment & { question: number }> }, { store, ui }) {
+			const state = testInProgress(input.test_id);
+			if (!state) return { text: `No practice test awaiting grades with test_id ${input.test_id}. It may already be evaluated.`, isError: true };
+			const problems = await applyTestJudgments(store, state, input.grades ?? []);
+			const left = ungraded(state);
+			if (left.length) {
+				const nums = left.map((q) => state.test.questions.indexOf(q) + 1);
+				return {
+					text: [...problems, `Still ungraded: question${nums.length === 1 ? "" : "s"} ${nums.join(", ")}. Call grade_practice_test again for ${nums.length === 1 ? "it" : "them"}.`].join("\n"),
+					summary: `Graded — ${left.length} left`,
+				};
+			}
+			const report = await finishTest(store, state);
+			ui?.testGraded?.(report);
+			const text = [...problems, describeTestReport(report)].join("\n");
+			return { text: ui ? withMarginNotes(text, ui) : text, summary: `Practice test: ${pct(report.percent)}`, data: report };
 		},
 	},
 	{
@@ -402,12 +500,12 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "record_evidence",
 		description:
-			"Record a graded observation you judged yourself — e.g. the learner's free-form explanation or worked problem. Use quiz for multiple choice (it records automatically).",
+			"Record a graded observation you judged yourself from conversation, e.g. an explanation they typed in chat. Prefer quiz (choice or free response) for anything you ask on purpose: it records automatically and feeds the diagnosis ladder.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				concept: str("Concept title."),
-				outcome: { type: "string", enum: ["correct", "incorrect", "dont_know"] },
+				outcome: { type: "string", enum: ["correct", "partial", "incorrect", "dont_know"] },
 				difficulty: { type: "integer", minimum: 1, maximum: 5 },
 				kind: { type: "string", enum: evidenceKinds },
 				what: str("What was asked / what they did."),

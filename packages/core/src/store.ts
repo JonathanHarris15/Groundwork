@@ -27,6 +27,7 @@ export const PATHS = {
 	concepts: "concepts",
 	goals: "goals",
 	exams: "exams",
+	tests: "tests",
 	sessions: "sessions",
 	learner: "learner.md",
 	data: ".groundwork",
@@ -508,6 +509,23 @@ export class KnowledgeStore {
 		return out;
 	}
 
+	/** Saved practice-test evaluations, newest first. */
+	async practiceTests(): Promise<Array<{ title: string; path: string; date?: string; score?: string; weakest?: string[] }>> {
+		if (!(await this.io.exists(PATHS.tests))) return [];
+		const out = [];
+		for (const path of await listMarkdown(this.io, PATHS.tests)) {
+			const { frontmatter: fm } = parseNote(await this.io.read(path));
+			out.push({
+				title: typeof fm.title === "string" ? fm.title : path.split("/").pop()!.replace(/\.md$/, ""),
+				path,
+				date: typeof fm.date === "string" ? fm.date : undefined,
+				score: typeof fm.score === "string" ? fm.score : undefined,
+				weakest: asStringList(fm.weakest).map(unwikilink),
+			});
+		}
+		return out.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || b.path.localeCompare(a.path));
+	}
+
 	async goalReport(ref: string): Promise<GoalReport> {
 		const goal = await this.resolveGoal(ref);
 		if (!goal) throw new Error(`Unknown goal "${ref}".`);
@@ -651,6 +669,7 @@ export class KnowledgeStore {
 				.filter((c) => c.stats.openMisconceptions.length)
 				.map((c) => ({ concept: c.title, misconceptions: c.stats.openMisconceptions })),
 			examPlans: await this.examPlans(),
+			practiceTests: (await this.practiceTests()).slice(0, 5),
 		};
 	}
 
@@ -707,7 +726,7 @@ function applySections(body: string, input: ConceptInput): string {
 }
 
 function historyTable(evidence: Evidence[]): string {
-	const icon = { correct: "✅", incorrect: "❌", dont_know: "❔" } as const;
+	const icon = { correct: "✅", partial: "🟡", incorrect: "❌", dont_know: "❔" } as const;
 	const rows = [...evidence]
 		.sort((a, b) => b.ts.localeCompare(a.ts))
 		.slice(0, 15)

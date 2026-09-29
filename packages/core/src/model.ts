@@ -20,8 +20,11 @@
  * and what to review.
  */
 
-export type Outcome = "correct" | "incorrect" | "dont_know";
-export type EvidenceKind = "probe" | "check" | "review" | "explain";
+export type Outcome = "correct" | "partial" | "incorrect" | "dont_know";
+export type EvidenceKind = "probe" | "check" | "review" | "explain" | "test";
+
+/** "I don't know" is a spectrum: 0 = never seen this … 3 = very familiar, almost have it. */
+export const MAX_FAMILIARITY = 3;
 
 export interface Evidence {
 	ts: string;
@@ -35,6 +38,10 @@ export interface Evidence {
 	correctAnswer?: string;
 	/** What the chosen distractor reveals about the learner's model. */
 	misconception?: string;
+	/** For "dont_know": how familiar the question felt, 0 (never seen) … MAX_FAMILIARITY (almost have it). */
+	familiarity?: number;
+	/** Free-response questions: what the learner wrote. */
+	response?: string;
 	note?: string;
 	session?: string;
 	device?: string;
@@ -106,23 +113,26 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 		const d = clamp(Math.round(ev.difficulty || 3), 1, 5);
 		const b = difficultyLocation(d);
 		const p = sigmoid(ability - b);
-		const y = ev.outcome === "correct" ? 1 : 0;
+		const y = outcomeScore(ev);
+		const isCorrect = ev.outcome === "correct";
 		// "I don't know" is honest signal, so it moves the estimate like a miss —
-		// but unlike a wrong guess it never flags a misconception.
+		// but unlike a wrong guess it never flags a misconception. A familiar
+		// "almost have it" is a weaker miss than "never seen this".
 		const k = 1.8 / (1 + 0.3 * attempts);
 		ability = clamp(ability + Math.max(0.25, k) * (y - p), -4, 4);
 
 		const gapDays = last === undefined ? 0 : (t - last) / DAY_MS;
 		if (attempts === 0) {
-			halfLife = y ? 1.5 + 0.5 * d : 0.5;
-		} else if (y) {
+			halfLife = isCorrect ? 1.5 + 0.5 * d : 0.5 + y;
+		} else if (isCorrect) {
 			const spacing = clamp(gapDays / halfLife, 0.05, 2);
 			halfLife = clamp(halfLife * (1 + 1.4 * spacing * (0.6 + 0.1 * d)), 0.5, 365);
 		} else {
-			halfLife = clamp(halfLife * 0.45, 0.5, 365);
+			// A partial answer or a tip-of-the-tongue blank means a trace survived, so memory shrinks less.
+			halfLife = clamp(halfLife * (0.45 + 0.6 * y), 0.5, 365);
 		}
 
-		if (y) {
+		if (isCorrect) {
 			correct++;
 			if (floor === undefined || d > floor) {
 				floor = d;
@@ -132,7 +142,7 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 			for (const [m, md] of misconceptions) if (d >= md) misconceptions.delete(m);
 		} else {
 			if (ceiling === undefined || d < ceiling) ceiling = d;
-			if (ev.outcome === "incorrect" && ev.misconception) misconceptions.set(ev.misconception, d);
+			if ((ev.outcome === "incorrect" || ev.outcome === "partial") && ev.misconception) misconceptions.set(ev.misconception, d);
 		}
 		attempts++;
 		last = t;
@@ -166,6 +176,20 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 		ceiling,
 		openMisconceptions: [...misconceptions.keys()],
 	};
+}
+
+/** Credit an answer earns in the ability update: 1 correct, ½ partial, a little for a familiar blank, 0 otherwise. */
+export function outcomeScore(ev: Pick<Evidence, "outcome" | "familiarity">): number {
+	switch (ev.outcome) {
+		case "correct":
+			return 1;
+		case "partial":
+			return 0.5;
+		case "dont_know":
+			return 0.1 * clamp(Math.round(ev.familiarity ?? 0), 0, MAX_FAMILIARITY);
+		default:
+			return 0;
+	}
 }
 
 /** Probability the learner answers a question of difficulty d correctly right now. */
