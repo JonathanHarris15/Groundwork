@@ -372,6 +372,7 @@ export function examPrepInstruction(plan: ExamBlueprint): string {
 		table || "(no topics extracted — read the files with read_vault_file, then call ingest_exam_materials)",
 		plan.notes.join("\n"),
 		"Do this next: call get_learner_overview, refine the graph if needed, save it with set_goal (include requiredLevel on each node), then start teaching from the frontier. Check quizzes should hit each node's required level, not just recognition.",
+		"The learner has not necessarily read these files. Define every symbol and term from them the first time you use it, and restate any problem you take from them in full.",
 		"</exam_plan>",
 	]
 		.filter(Boolean)

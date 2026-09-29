@@ -3,7 +3,8 @@ import { AgentSession } from "../src/agent/loop";
 import { DemoProvider } from "../src/agent/demo";
 import type { AgentEvent } from "../src/agent/types";
 import { MemoryVaultIO } from "../src/io";
-import { buildSystemPrompt } from "../src/prompt";
+import type { TestReport } from "../src/practice";
+import { buildSystemPrompt, practiceTestRequest } from "../src/prompt";
 import { KnowledgeStore } from "../src/store";
 import { TOOLS, type ToolUI } from "../src/tools";
 
@@ -39,6 +40,20 @@ describe("AgentSession with the demo tutor", () => {
 		expect(answered).toEqual(["Slope of a line", "Secant line"]);
 		expect((await store.resolve("Secant line"))!.stats.attempts).toBe(1);
 		expect(io.files.get("sessions/demo.md")).toContain("## Summary");
+		expect(events.filter((e) => e.type === "error")).toEqual([]);
+
+		let graded: TestReport | undefined;
+		ui.test = async (t) => ({
+			answers: {
+				[t.questions[0].id]: { dontKnow: false, selected: ["two"] },
+				[t.questions[1].id]: { dontKnow: false, selected: [], text: "$2x$" },
+				[t.questions[2].id]: { dontKnow: false, selected: [], text: "$\\frac{f(a+h)-f(a)}{h}$" },
+			},
+		});
+		ui.testGraded = (r) => (graded = r);
+		await agent.send(practiceTestRequest(), (e) => events.push(e));
+		expect(graded?.results.map((r) => r.outcome)).toEqual(["correct", "correct", "partial"]);
+		expect([...io.files.keys()].some((p) => p.startsWith("tests/"))).toBe(true);
 		expect(events.filter((e) => e.type === "error")).toEqual([]);
 
 		for (const m of agent.messages) {

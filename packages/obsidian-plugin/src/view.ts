@@ -10,11 +10,13 @@ import {
 	buildSystemPrompt,
 	demoteHeadings,
 	examPrepInstruction,
+	familiarityLabel,
 	fileKind,
 	letter,
 	loadVaultFile,
 	normalizeTutorMarkdown,
 	parseNote,
+	practiceTestRequest,
 	shouldAutoIngest,
 	PATHS,
 	RESOURCES_DIR,
@@ -29,17 +31,20 @@ import {
 	type ChatMessage,
 	type ConceptStats,
 	type PreparedQuiz,
+	type PreparedTest,
 	type QuizGrade,
 	type QuizOutcome,
 	type QuizResponse,
 	type SessionInfo,
+	type TestReport,
+	type TestResponse,
 	type ToolUI,
 	type TutorSession,
 } from "@groundwork/core";
 import { ClaudeCodeSession } from "@groundwork/core/claude-code";
 import { AsideCard, findQuoteRange } from "./aside";
 import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source";
-import { AskCard, QuizCard } from "./cards";
+import { AskCard, QuizCard, TestCard } from "./cards";
 import { enhanceGraphs } from "./graph-pane";
 import type GroundworkPlugin from "./main";
 
@@ -50,6 +55,7 @@ type DisplayItem =
 	| { kind: "assistant"; text: string }
 	| { kind: "tool"; name: string; summary: string; isError?: boolean }
 	| { kind: "quiz"; quiz: PreparedQuiz; response: QuizResponse; grade: QuizGrade; before?: ConceptStats; after?: ConceptStats }
+	| { kind: "test"; test: PreparedTest; response: TestResponse; report?: TestReport }
 	| { kind: "ask"; input: AskInput; answer: AskResponse }
 	| { kind: "error"; text: string };
 
@@ -88,6 +94,8 @@ const TOOL_VERBS: Record<string, string> = {
 	read_vault_file: "Opening a file",
 	ingest_exam_materials: "Breaking the files into exam topics",
 	get_exam_plan: "Reading the exam plan",
+	grade_answer: "Grading your answer",
+	grade_practice_test: "Grading your practice test",
 	Read: "Opening a file",
 	WebSearch: "Searching the web",
 	WebFetch: "Reading a web page",
@@ -105,6 +113,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private abort: AbortController | null = null;
 	private pending = new Set<(v: null) => void>();
 	private liveQuizCards = new Map<string, QuizCard>();
+	private liveTestCards = new Map<string, TestCard>();
 
 	private uiTitleEl!: HTMLElement;
 	private uiBadgeEl!: HTMLElement;
@@ -120,6 +129,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private toolChips = new Map<string, HTMLElement>();
 
 	private waitingQuiz: PreparedQuiz | null = null;
+	private waitingTest: PreparedTest | null = null;
 	private asideCards = new Map<string, AsideCard>();
 	private asideAgents = new Map<string, TutorSession>();
 	private asideRanges = new Map<string, Range>();
@@ -236,6 +246,14 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiInputEl?.focus();
 	}
 
+	startPracticeTest(): void {
+		if (this.agent?.busy) {
+			new Notice("Groundwork: wait for the tutor to finish, then ask for a practice test.");
+			return;
+		}
+		void this.submit(practiceTestRequest());
+	}
+
 	private openChat(record: ChatRecord): void {
 		this.record = record;
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
@@ -299,7 +317,17 @@ export class ChatView extends ItemView implements ToolUI {
 	private async submit(prefill?: string): Promise<void> {
 		const text = (prefill ?? this.uiInputEl.value).trim();
 		const pending = prefill === undefined ? this.pendingFiles : [];
-		if ((!text && !pending.length) || this.agent?.busy) return;
+		if (!text && !pending.length) return;
+		if (this.agent?.busy) {
+			if (this.pending.size) {
+				new Notice("Groundwork: answer or close the card above first. Your message is kept.");
+				const open = this.uiMessagesEl.querySelectorAll(".gw-test:not(.is-done), .gw-quiz:not(.is-done):not(.gw-test-question), .gw-ask:not(.is-done)");
+				open[open.length - 1]?.scrollIntoView({ block: "center", behavior: "smooth" });
+			} else {
+				new Notice("Groundwork: the tutor is still replying. Press stop to interrupt.");
+			}
+			return;
+		}
 		const agent = this.ensureAgent();
 		if (!agent) {
 			new Notice(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
@@ -410,7 +438,7 @@ export class ChatView extends ItemView implements ToolUI {
 			}
 			case "tool_start": {
 				this.finishSegment();
-				if (e.name === "quiz" || e.name === "ask_user") break;
+				if (e.name === "quiz" || e.name === "ask_user" || e.name === "practice_test") break;
 				const chip = this.uiMessagesEl.createDiv({ cls: "gw-tool is-running" });
 				setIcon(chip.createSpan({ cls: "gw-tool-icon" }), "loader");
 				chip.createSpan({ text: TOOL_VERBS[e.name] ?? e.name });
@@ -503,10 +531,43 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	quizRecorded(o: QuizOutcome): void {
-		this.liveQuizCards.get(o.quiz.id)?.showRecorded(o.before, o.after);
+		const card = this.liveQuizCards.get(o.quiz.id);
+		if (o.quiz.format === "free") card?.showAnswer({ response: o.response, grade: o.grade, before: o.before, after: o.after });
+		else card?.showRecorded(o.before, o.after);
 		this.liveQuizCards.delete(o.quiz.id);
 		this.record.items.push({ kind: "quiz", quiz: o.quiz, response: o.response, grade: o.grade, before: o.before, after: o.after });
 		this.plugin.onKnowledgeChanged();
+	}
+
+	test(test: PreparedTest): Promise<TestResponse | null> {
+		this.finishSegment();
+		return new Promise((resolve) => {
+			const settle = (v: TestResponse | null) => {
+				this.pending.delete(settle as (v: null) => void);
+				if (this.waitingTest === test) this.waitingTest = null;
+				if (v) this.record.items.push({ kind: "test", test, response: v });
+				resolve(v);
+			};
+			this.pending.add(settle as (v: null) => void);
+			this.waitingTest = test;
+			const card = new TestCard(this.turn(`test:${test.id}`), test, (el, md) => this.renderMd(el, md), (r) => settle(r), (p) => this.openVaultNote(p));
+			this.liveTestCards.set(test.id, card);
+			this.keepThinkingLast();
+			this.scrollToBottom(true);
+			card.focus();
+		});
+	}
+
+	testGraded(report: TestReport): void {
+		this.liveTestCards.get(report.testId)?.showReport(report);
+		this.liveTestCards.delete(report.testId);
+		const item = this.record.items.find((i): i is Extract<DisplayItem, { kind: "test" }> => i.kind === "test" && i.test.id === report.testId);
+		if (item) item.report = report;
+		this.plugin.onKnowledgeChanged();
+	}
+
+	private openVaultNote(path: string): void {
+		void this.app.workspace.openLinkText(path, "", true);
 	}
 
 	ask(input: AskInput): Promise<AskResponse | null> {
@@ -587,6 +648,12 @@ export class ChatView extends ItemView implements ToolUI {
 				card.showAnswer({ response: item.response, grade: item.grade, before: item.before, after: item.after });
 				break;
 			}
+			case "test": {
+				const card = new TestCard(this.turn(`test:${item.test.id}`), item.test, (el, md) => this.renderMd(el, md), undefined, (p) => this.openVaultNote(p));
+				if (item.report) card.showReport(item.report);
+				else card.showSubmitted(item.response);
+				break;
+			}
 			case "ask":
 				new AskCard(this.uiMessagesEl, item.input, (el, md) => this.renderMd(el, md), undefined, item.answer);
 				break;
@@ -658,6 +725,9 @@ export class ChatView extends ItemView implements ToolUI {
 				void this.submit("Let's do my due reviews."),
 			);
 		}
+		suggest("clipboard-check", "Take a practice test", "A mock exam with no feedback until you submit, then an evaluation to learn from.", () =>
+			void this.submit(practiceTestRequest(overview?.activeGoals[0]?.title)),
+		);
 		suggest("sparkles", "Start a new goal", "Tell the tutor what you want to be able to do.", () => {
 			this.uiInputEl.value = "I want to understand ";
 			this.uiInputEl.focus();
@@ -1081,7 +1151,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 		const others = (this.record.asides ?? []).filter((t) => t !== thread);
 		const prompt = fresh
-			? asideOpening({ lesson: transcript(this.record.items, others), quote: thread.quote, pendingQuiz: this.waitingQuiz ?? undefined, earlier }, text)
+			? asideOpening({ lesson: transcript(this.record.items, others), quote: thread.quote, pendingQuiz: this.waitingQuiz ?? testAsQuiz(this.waitingTest), earlier }, text)
 			: text;
 		let error: string | undefined;
 		try {
@@ -1257,6 +1327,9 @@ function iconFor(name: string): string {
 			return "git-fork";
 		case "save_session_summary":
 			return "notebook-pen";
+		case "grade_answer":
+		case "grade_practice_test":
+			return "clipboard-check";
 		case "update_learner_profile":
 			return "user";
 		case "WebSearch":
@@ -1265,6 +1338,16 @@ function iconFor(name: string): string {
 		default:
 			return "check";
 	}
+}
+
+/** An open practice test, shaped like a waiting quiz so margin answers don't give answers away. */
+function testAsQuiz(test: PreparedTest | null): Pick<PreparedQuiz, "question" | "options" | "concept"> | undefined {
+	if (!test) return undefined;
+	return {
+		concept: `practice test "${test.title}"`,
+		question: test.questions.map((q, i) => `${i + 1}. ${q.question}`).join("\n"),
+		options: test.questions.flatMap((q) => q.options),
+	};
 }
 
 function iconForFile(path: string): string {
@@ -1320,9 +1403,33 @@ function highlightApi(): { registry: Map<string, unknown>; Highlight: new (...ra
 	return registry && Highlight ? { registry, Highlight } : null;
 }
 
+const VERDICT = { correct: "✅ Correct", partial: "🟡 Partly right", incorrect: "❌ Incorrect", dont_know: "❔ I don't know" } as const;
+
+const quote = (s: string) => s.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
+
+/** One question, the learner's answer, and (once graded) the feedback, as blockquote lines. */
+function quizLines(quiz: PreparedQuiz, response: QuizResponse, grade?: QuizGrade): string[] {
+	const lines = [...(quiz.purpose ? [`> *Why: ${quiz.purpose.replace(/\n/g, " ")}*`, ">"] : []), quote(quiz.question), ">"];
+	if (quiz.format === "free") {
+		lines.push(response.dontKnow ? "> **Answer:** —" : `> **Answer:**`, ...(response.dontKnow ? [] : [quote(response.text ?? "")]));
+		if (grade?.feedback) lines.push(">", `> **Feedback:** ${grade.feedback.replace(/\n/g, " ")}`);
+		if (quiz.reference) lines.push(">", "> **Model answer:**", quote(quiz.reference));
+	} else {
+		lines.push(
+			...quiz.options.map((o, i) => {
+				const mark = grade && quiz.correct.includes(o.value) ? " ✓" : response.selected.includes(o.value) ? (grade ? " ✗" : " ←") : "";
+				return `> ${letter(i)}. ${o.label}${mark}`;
+			}),
+		);
+	}
+	if (response.dontKnow) lines.push(">", `> *I don't know — ${familiarityLabel(response.familiarity).toLowerCase()}*`);
+	if (response.note) lines.push(">", `> *Note:* ${response.note}`);
+	if (grade && quiz.explanation) lines.push(">", quote(quiz.explanation));
+	return lines;
+}
+
 function transcript(items: DisplayItem[], asides: AsideThread[] = []): string {
 	const out: string[] = [];
-	const quote = (s: string) => s.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
 	const margin = (anchor: string) => {
 		for (const t of asides) {
 			if (t.anchor !== anchor || !t.messages.length) continue;
@@ -1333,7 +1440,7 @@ function transcript(items: DisplayItem[], asides: AsideThread[] = []): string {
 	};
 	items.forEach((item, i) => {
 		render(item);
-		margin(item.kind === "quiz" ? `quiz:${item.quiz.id}` : `item:${i}`);
+		margin(item.kind === "quiz" ? `quiz:${item.quiz.id}` : item.kind === "test" ? `test:${item.test.id}` : `item:${i}`);
 	});
 	return out.join("\n");
 
@@ -1349,19 +1456,22 @@ function transcript(items: DisplayItem[], asides: AsideThread[] = []): string {
 				break;
 			case "quiz": {
 				const { quiz, grade, response, after } = item;
-				const verdict = grade.outcome === "correct" ? "✅ Correct" : grade.outcome === "dont_know" ? "❔ I don't know" : "❌ Incorrect";
-				const lines = [
-					`> [!question]- ${verdict} · ${quiz.kind} quiz on [[${quiz.concept}]] (level ${quiz.difficulty})`,
-					quote(quiz.question),
-					">",
-					...quiz.options.map((o, i) => {
-						const mark = quiz.correct.includes(o.value) ? " ✓" : response.selected.includes(o.value) ? " ✗" : "";
-						return `> ${letter(i)}. ${o.label}${mark}`;
-					}),
-				];
-				if (response.note) lines.push(">", `> *Note:* ${response.note}`);
-				if (quiz.explanation) lines.push(">", quote(quiz.explanation));
+				const lines = [`> [!question]- ${VERDICT[grade.outcome]} · ${quiz.kind} quiz on [[${quiz.concept}]] (level ${quiz.difficulty})`, ...quizLines(quiz, response, grade)];
 				if (after) lines.push(">", `> Now **${Math.round(after.current * 100)}%** (${after.status})`);
+				out.push(lines.join("\n"), "");
+				break;
+			}
+			case "test": {
+				const { test, response, report } = item;
+				const head = report
+					? `> [!example]- 📝 Practice test: ${test.title} · ${Math.round(report.percent * 100)}% (${report.earned}/${report.possible})${report.notePath ? ` · [[${report.notePath.replace(/\.md$/, "")}|evaluation]]` : ""}`
+					: `> [!example]- 📝 Practice test: ${test.title} · submitted, grading`;
+				const lines = [head, ...(test.objective ? [`> **What this measures:** ${test.objective.replace(/\n/g, " ")}`] : [])];
+				test.questions.forEach((q, i) => {
+					const r = report?.results[i];
+					const answer = r?.response ?? response.answers[q.id] ?? { dontKnow: true, selected: [], note: "Left blank" };
+					lines.push(">", `> **Q${i + 1}${r ? ` ${VERDICT[r.outcome]}` : ""}** · [[${q.concept}]] (level ${q.difficulty})`, ...quizLines(q, answer, r?.grade));
+				});
 				out.push(lines.join("\n"), "");
 				break;
 			}
