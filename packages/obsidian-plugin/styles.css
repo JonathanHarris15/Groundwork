@@ -80,6 +80,8 @@
 .gw-msg {
 	line-height: var(--line-height-normal);
 	overflow-wrap: anywhere;
+	min-width: 0;
+	max-width: 100%;
 }
 .gw-user {
 	align-self: flex-end;
@@ -92,6 +94,7 @@
 }
 .gw-assistant {
 	font-size: var(--font-text-size);
+	overflow-x: hidden;
 }
 .gw-assistant > :first-child {
 	margin-top: 0;
@@ -101,6 +104,83 @@
 }
 .gw-assistant .math-block {
 	overflow-x: auto;
+}
+
+/* Mermaid maps stay inside a pane so a wide DAG cannot stretch the chat. */
+.gw-graph {
+	margin: 10px 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--gw-radius);
+	background: var(--background-primary-alt);
+	overflow: hidden;
+	max-width: 100%;
+}
+.gw-graph-bar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	user-select: none;
+}
+.gw-graph-title {
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-muted);
+}
+.gw-graph-pct {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+.gw-graph-tools {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 0;
+}
+.gw-graph-btn {
+	width: 26px;
+	height: 26px;
+	padding: 0;
+}
+.gw-graph-view {
+	position: relative;
+	height: 320px;
+	overflow: hidden;
+	cursor: grab;
+	touch-action: none;
+	overscroll-behavior: contain;
+	background: var(--background-primary);
+}
+.gw-graph.is-tall .gw-graph-view {
+	height: min(70vh, 640px);
+}
+.gw-graph-view.is-dragging {
+	cursor: grabbing;
+}
+.gw-graph-stage {
+	position: absolute;
+	top: 0;
+	left: 0;
+	transform-origin: 0 0;
+	will-change: transform;
+}
+.gw-graph .mermaid,
+.gw-graph .block-language-mermaid,
+.gw-graph pre.language-mermaid {
+	margin: 0 !important;
+	background: transparent !important;
+	overflow: visible;
+}
+.gw-graph svg {
+	max-width: none !important;
+	width: auto !important;
+	height: auto !important;
+	display: block;
 }
 .gw-tight {
 	margin: 0 !important;

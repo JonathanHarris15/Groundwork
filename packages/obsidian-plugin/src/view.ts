@@ -32,6 +32,7 @@ import {
 } from "@groundwork/core";
 import { ClaudeCodeSession } from "@groundwork/core/claude-code";
 import { AskCard, QuizCard } from "./cards";
+import { enhanceGraphs } from "./graph-pane";
 import type GroundworkPlugin from "./main";
 
 export const VIEW_TYPE = "groundwork-chat";
@@ -427,6 +428,7 @@ export class ChatView extends ItemView implements ToolUI {
 		seg.comp = comp;
 		seg.el.empty();
 		while (next.firstChild) seg.el.appendChild(next.firstChild);
+		enhanceGraphs(seg.el);
 		this.keepThinkingLast();
 		this.scrollToBottom();
 	}
@@ -490,6 +492,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private async renderMd(el: HTMLElement, markdown: string): Promise<void> {
 		await MarkdownRenderer.render(this.app, normalizeTutorMarkdown(markdown), el, this.record?.notePath ?? "", this);
+		enhanceGraphs(el);
 		// Rendered options sit inside buttons; a lone paragraph adds unwanted margins.
 		const only = el.children.length === 1 ? el.firstElementChild : null;
 		if (only?.tagName === "P") only.addClass("gw-tight");
