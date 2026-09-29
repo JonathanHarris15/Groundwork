@@ -38,10 +38,11 @@ export class DemoProvider implements Provider {
 		const last = messages[messages.length - 1];
 		const results = Array.isArray(last?.content) ? last.content.filter((b) => b.type === "tool_result") : [];
 		const lastToolNames = results.map((r) => toolNameFor(messages, (r as any).tool_use_id));
-		const userTurns = messages.filter((m) => m.role === "user" && typeof m.content === "string").length;
+		const userTurns = messages.filter(isLearnerTurn).length;
+		const learnerSpoke = !!last && isLearnerTurn(last);
 		const resultText = results.map((r) => String((r as any).content)).join("\n");
 
-		if (typeof last?.content === "string" && userTurns === 1) {
+		if (learnerSpoke && userTurns === 1) {
 			return [
 				{ type: "text", text: "Let me check what your vault already knows before we start.\n" },
 				this.tool("get_learner_overview", {}),
@@ -107,7 +108,7 @@ export class DemoProvider implements Provider {
 			];
 		}
 
-		if (typeof last?.content === "string" && userTurns === 2) {
+		if (learnerSpoke && userTurns === 2) {
 			return [
 				{
 					type: "text",
@@ -187,6 +188,10 @@ export class DemoProvider implements Provider {
 			},
 		];
 	}
+}
+
+function isLearnerTurn(m: ChatMessage): boolean {
+	return m.role === "user" && (typeof m.content === "string" || !m.content.some((b) => b.type === "tool_result"));
 }
 
 function toolNameFor(messages: ChatMessage[], toolUseId: string): string | undefined {

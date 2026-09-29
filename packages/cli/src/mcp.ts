@@ -6,6 +6,7 @@ import {
 	describeQuizOutcome,
 	KnowledgeStore,
 	letter,
+	mcpContent,
 	parseChatAnswer,
 	prepareQuiz,
 	quizInputSchema,
@@ -165,7 +166,7 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 			methodDelivered = true;
 			text = `${buildSystemPrompt("chat")}\n\n---\n\n# Learner state\n${text}`;
 		}
-		return { content: [{ type: "text", text }], isError: result.isError };
+		return { content: mcpContent(text, result.files), isError: result.isError };
 	});
 
 	server.setRequestHandler(ListPromptsRequestSchema, async () => ({

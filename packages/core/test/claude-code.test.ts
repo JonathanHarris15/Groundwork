@@ -1,10 +1,12 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AgentEvent } from "../src/agent/types";
+import { loadVaultFile } from "../src/files";
 import { MemoryVaultIO } from "../src/io";
+import { NodeVaultIO } from "../src/node/fs-io";
 import { checkClaudeCode, claudeCodeEnv, ClaudeCodeSession, findClaudeExecutable, friendlyError } from "../src/node/claude-code";
 import { KnowledgeStore } from "../src/store";
 import { TOOLS, type ToolUI } from "../src/tools";
@@ -158,7 +160,7 @@ describe.skipIf(!exe)("ClaudeCodeSession against the real Claude Code binary", (
 
 		const toolNames = mock.requests.at(-1)!.tools.map((t) => t.name);
 		expect(toolNames).toContain("mcp__groundwork__quiz");
-		expect(toolNames.some((n) => !n.startsWith("mcp__groundwork__"))).toBe(false);
+		expect(toolNames.filter((n) => !n.startsWith("mcp__groundwork__"))).toEqual(["Read"]);
 		expect(JSON.stringify(mock.requests.at(-1)!.system)).toContain("You are the Groundwork tutor.");
 
 		expect(ids).toHaveLength(1);
@@ -231,6 +233,49 @@ describe.skipIf(!exe)("ClaudeCodeSession against the real Claude Code binary", (
 		expect(lastUserText(mock.requests.at(-1)!)).toContain("Slope is rise over run.");
 		expect(session.sessionId).not.toBe("3f0c3a8e-1111-4222-8333-944455556666");
 		session.close();
+	}, 60_000);
+
+	it("sends attached files and opens vault PDFs with Read, but nothing outside the vault", async () => {
+		const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+		const PDF = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF");
+		const vaultDir = mkdtempSync(path.join(os.tmpdir(), "gw-claude-files-"));
+		mkdirSync(path.join(vaultDir, "resources"));
+		writeFileSync(path.join(vaultDir, "resources", "diagram.png"), PNG);
+		writeFileSync(path.join(vaultDir, "resources", "Lecture 3.pdf"), PDF);
+		const store = new KnowledgeStore(new NodeVaultIO(vaultDir));
+		const files = await startMockAnthropic((req) => {
+			const results = toolResults(req);
+			if (results.length === 0) return [{ type: "tool_use", name: "mcp__groundwork__read_vault_file", input: { path: "Lecture 3.pdf" } }];
+			if (results.length === 1) {
+				const file = /file_path "([^"]+)"/.exec(results[0])?.[1] ?? "missing";
+				return [
+					{ type: "tool_use", name: "Read", input: { file_path: file } },
+					{ type: "tool_use", name: "Read", input: { file_path: "/etc/hostname" } },
+				];
+			}
+			return [{ type: "text", text: "It's a lecture." }];
+		});
+		const session = new ClaudeCodeSession({ executable: exe!, cwd: vaultDir, env: { ...env, ANTHROPIC_BASE_URL: files.url }, store, tools: TOOLS, system: "x", session: { id: "s5" } });
+		const attached = await Promise.all(["resources/diagram.png", "resources/Lecture 3.pdf"].map((p) => loadVaultFile(store.io, p)));
+		const events: AgentEvent[] = [];
+		await session.send("What's in these?", (e) => events.push(e), undefined, attached);
+		session.close();
+		await files.close();
+
+		expect(events.filter((e) => e.type === "error")).toEqual([]);
+		const first = files.requests.find((r) => r.messages.length)!.messages[0].content as any[];
+		expect(first.map((b) => b.type).slice(0, 5)).toEqual(["text", "image", "text", "document", "text"]);
+		expect(first[4].text).toContain("What's in these?");
+
+		const last = files.requests.at(-1)!.messages;
+		const results = last.flatMap((m: any) => (Array.isArray(m.content) ? m.content.filter((b: any) => b.type === "tool_result") : []));
+		expect(JSON.stringify(results[0].content)).toContain("Open it with the Read tool");
+		const blocks = results.flatMap((r: any) => (Array.isArray(r.content) ? r.content : []));
+		expect(blocks.some((b: any) => b.type === "document" && b.source.data === PDF.toString("base64"))).toBe(true);
+		expect(results.some((r: any) => r.is_error && /denied/.test(JSON.stringify(r.content)))).toBe(true);
+
+		const ends = events.filter((e): e is Extract<AgentEvent, { type: "tool_end" }> => e.type === "tool_end");
+		expect(ends.map((e) => e.summary)).toContain("Opened Lecture 3.pdf");
 	}, 60_000);
 
 	it("reports a missing login in plain language", async () => {

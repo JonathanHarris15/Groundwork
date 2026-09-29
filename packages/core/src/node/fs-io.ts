@@ -16,6 +16,10 @@ export class NodeVaultIO implements VaultIO {
 	async read(p: string): Promise<string> {
 		return fs.readFile(this.abs(p), "utf8");
 	}
+	async readBinary(p: string): Promise<ArrayBuffer> {
+		const b = await fs.readFile(this.abs(p));
+		return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
+	}
 	async write(p: string, data: string): Promise<void> {
 		await fs.mkdir(path.dirname(this.abs(p)), { recursive: true });
 		await fs.writeFile(this.abs(p), data, "utf8");

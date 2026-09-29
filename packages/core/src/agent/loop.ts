@@ -1,3 +1,4 @@
+import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolDef, ToolUI } from "../tools";
 import type { AgentEvent, ChatMessage, ContentBlock, Provider, TutorSession } from "./types";
@@ -29,10 +30,10 @@ export class AgentSession implements TutorSession {
 		return this.running;
 	}
 
-	async send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
+	async send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, files?: VaultFile[]): Promise<void> {
 		if (this.running) throw new Error("The tutor is still responding.");
 		this.running = true;
-		this.messages.push({ role: "user", content: text });
+		this.messages.push({ role: "user", content: userContent(text, files) });
 		try {
 			await this.run(onEvent, signal);
 		} catch (err) {
@@ -77,6 +78,7 @@ export class AgentSession implements TutorSession {
 				let text: string;
 				let isError = false;
 				let summary: string | undefined;
+				let files: VaultFile[] | undefined;
 				try {
 					if (!tool) throw new Error(`Unknown tool ${use.name}`);
 					const r = await tool.run(use.input ?? {}, {
@@ -88,12 +90,14 @@ export class AgentSession implements TutorSession {
 					text = r.text;
 					isError = !!r.isError;
 					summary = r.summary;
+					files = r.files;
 				} catch (err) {
 					text = `Error: ${errorMessage(err)}`;
 					isError = true;
 				}
 				onEvent({ type: "tool_end", id: use.id, name: use.name, summary, isError, text });
-				results.push({ type: "tool_result", tool_use_id: use.id, content: text, ...(isError ? { is_error: true } : {}) });
+				const content = files?.length ? [{ type: "text", text }, ...files.flatMap(fileBlocks)] : text;
+				results.push({ type: "tool_result", tool_use_id: use.id, content, ...(isError ? { is_error: true } : {}) });
 			}
 			this.messages.push({ role: "user", content: results });
 		}

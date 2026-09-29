@@ -1,4 +1,5 @@
 export * from "./io";
+export * from "./files";
 export * from "./markdown";
 export * from "./model";
 export * from "./graph";

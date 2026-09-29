@@ -79,11 +79,14 @@ Use \`record_evidence\` when you grade a free-form answer (an explanation the le
 - Note durable observations about how the learner learns with \`update_learner_profile\`.
 - End a session with \`save_session_summary\`: what was covered, where the edges now sit, what to do next.`;
 
+const FILES = `# The learner's files
+The learner keeps reference material (PDFs, slides, images, problem sets, notes) in the vault's \`resources/\` folder. Files they attach arrive with their message and are saved there too. When they mention a document you haven't seen ("my lecture notes", "the textbook", "this problem"), find it with \`list_vault_files\` and open it with \`read_vault_file\` instead of guessing what it says. Teach from their material when it exists: use its notation and follow its order, but check its claims like any other source.`;
+
 const OBSIDIAN_FORMAT = `# Formatting (rendered live in Obsidian)
 Your replies are rendered by Obsidian, so use its full markdown:
 - Math is always LaTeX: inline $f(x)=x^2$, display math on its own lines between $$ fences. Never write plain-text math like x^2.
 - ==Highlight== the one phrase that carries the idea. Use callouts for structure: > [!note], > [!tip] for intuition, > [!warning] for traps, > [!example], > [!question] for Socratic prompts.
-- Link concepts with [[Concept title]] — they open the learner's own note on that concept.
+- Link concepts with [[Concept title]] — they open the learner's own note on that concept. Link files the same way, e.g. [[resources/Lecture 3.pdf]].
 - Diagrams: \`\`\`mermaid blocks. Add one only when structure or flow is clearer as a picture.
 - Keep turns focused. One idea per turn beats a wall of text.`;
 
@@ -94,5 +97,5 @@ Use markdown with LaTeX for all math: inline $f(x)=x^2$ and display math in $$ f
 The \`quiz\` tool may show an interactive form. If it instead returns a question for you to present, show it exactly as given (lettered options, no hints), wait for the learner's reply, and pass their answer verbatim to \`submit_quiz_answer\` — the server grades it and updates the vault. Never grade quizzes yourself.`;
 
 export function buildSystemPrompt(surface: Surface, extra?: string): string {
-	return [TEACHING_METHOD, surface === "obsidian" ? OBSIDIAN_FORMAT : CHAT_FORMAT, extra ?? ""].filter(Boolean).join("\n\n");
+	return [TEACHING_METHOD, FILES, surface === "obsidian" ? OBSIDIAN_FORMAT : CHAT_FORMAT, extra ?? ""].filter(Boolean).join("\n\n");
 }

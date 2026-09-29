@@ -5,6 +5,7 @@
  */
 export interface VaultIO {
 	read(path: string): Promise<string>;
+	readBinary(path: string): Promise<ArrayBuffer>;
 	write(path: string, data: string): Promise<void>;
 	append(path: string, data: string): Promise<void>;
 	exists(path: string): Promise<boolean>;
@@ -16,11 +17,20 @@ export interface VaultIO {
 /** In-memory implementation used by tests and the demo provider. */
 export class MemoryVaultIO implements VaultIO {
 	readonly files = new Map<string, string>();
+	readonly binaries = new Map<string, Uint8Array>();
 
 	async read(path: string): Promise<string> {
-		const v = this.files.get(path);
+		const v = this.files.get(path) ?? (this.binaries.has(path) ? new TextDecoder().decode(this.binaries.get(path)) : undefined);
 		if (v === undefined) throw new Error(`ENOENT: ${path}`);
 		return v;
+	}
+	async readBinary(path: string): Promise<ArrayBuffer> {
+		const b = this.binaries.get(path) ?? (this.files.has(path) ? new TextEncoder().encode(this.files.get(path)) : undefined);
+		if (!b) throw new Error(`ENOENT: ${path}`);
+		return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
+	}
+	writeBinary(path: string, data: Uint8Array): void {
+		this.binaries.set(path, data);
 	}
 	async write(path: string, data: string): Promise<void> {
 		this.files.set(path, data);
@@ -29,9 +39,9 @@ export class MemoryVaultIO implements VaultIO {
 		this.files.set(path, (this.files.get(path) ?? "") + data);
 	}
 	async exists(path: string): Promise<boolean> {
-		if (this.files.has(path)) return true;
+		if (this.files.has(path) || this.binaries.has(path)) return true;
 		const prefix = path.endsWith("/") ? path : `${path}/`;
-		for (const k of this.files.keys()) if (k.startsWith(prefix)) return true;
+		for (const k of this.paths()) if (k.startsWith(prefix)) return true;
 		return false;
 	}
 	async mkdir(): Promise<void> {}
@@ -39,7 +49,7 @@ export class MemoryVaultIO implements VaultIO {
 		const prefix = path === "" || path === "/" ? "" : path.endsWith("/") ? path : `${path}/`;
 		const files: string[] = [];
 		const folders = new Set<string>();
-		for (const k of this.files.keys()) {
+		for (const k of this.paths()) {
 			if (!k.startsWith(prefix)) continue;
 			const rest = k.slice(prefix.length);
 			const slash = rest.indexOf("/");
@@ -47,6 +57,9 @@ export class MemoryVaultIO implements VaultIO {
 			else folders.add(prefix + rest.slice(0, slash));
 		}
 		return { files, folders: [...folders] };
+	}
+	private paths(): string[] {
+		return [...this.files.keys(), ...this.binaries.keys()];
 	}
 }
 

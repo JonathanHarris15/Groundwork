@@ -1,3 +1,4 @@
+import { basename, listVaultFiles, loadVaultFile, resolveVaultFile, RESOURCES_DIR, fileKind, type VaultFile } from "./files";
 import { demoteHeadings, setSection } from "./markdown";
 import { describeEdge, predictCorrect, type ConceptStats, type EvidenceKind, type Outcome } from "./model";
 import { gradeQuiz, prepareQuiz, type PreparedQuiz, type QuizGrade, type QuizInput, type QuizResponse } from "./quiz";
@@ -53,6 +54,8 @@ export interface ToolResult {
 	/** One-line human summary for activity chips in the UI. */
 	summary?: string;
 	data?: unknown;
+	/** Files to show the model alongside `text` (images, PDFs, text files). */
+	files?: VaultFile[];
 }
 
 export interface ToolDef<I = any> {
@@ -405,6 +408,36 @@ export const TOOLS: ToolDef[] = [
 				text: `Recorded. ${concept.title}: ${before.attempts ? pct(before.current) : "unassessed"} → ${pct(after.current)} (${after.status}; ${describeEdge(after)}).`,
 				summary: `Recorded ${input.outcome.replace("_", " ")} on “${concept.title}”`,
 			};
+		},
+	},
+	{
+		name: "list_vault_files",
+		description: `List the learner's files: PDFs, slides, images, problem sets, and notes they keep in ${RESOURCES_DIR}/ (the default folder) or elsewhere in the vault. Use it when they mention a document you haven't seen.`,
+		inputSchema: { type: "object", properties: { folder: str(`Vault folder to list, recursively. Default "${RESOURCES_DIR}"; "" lists the whole vault.`) } },
+		async run({ folder }: { folder?: string }, { store }) {
+			const dir = (folder ?? RESOURCES_DIR).replace(/^\/+|\/+$/g, "");
+			const files = await listVaultFiles(store.io, dir);
+			if (!files.length) {
+				return {
+					text: `No files in ${dir || "the vault"}/ yet. The learner can attach files in the chat or put them in ${RESOURCES_DIR}/.`,
+					summary: `No files in ${dir || "the vault"}`,
+				};
+			}
+			return {
+				text: files.map((f) => `- ${f} (${fileKind(f).kind})`).join("\n"),
+				summary: `Listed ${files.length} file${files.length === 1 ? "" : "s"} in ${dir || "the vault"}`,
+			};
+		},
+	},
+	{
+		name: "read_vault_file",
+		description: "Open one of the learner's files: a PDF, image, text or markdown file. Pass a vault path, or just a file name to look it up in resources/ and then the whole vault.",
+		inputSchema: { type: "object", properties: { path: str(`e.g. "${RESOURCES_DIR}/Lecture 3.pdf" or "Lecture 3.pdf".`) }, required: ["path"] },
+		async run({ path }: { path: string }, { store }) {
+			const found = await resolveVaultFile(store.io, path);
+			if (!found) return { text: `No file matching "${path}" in the vault. Use list_vault_files to see what's there.`, isError: true };
+			const file = await loadVaultFile(store.io, found);
+			return { text: `Contents of ${found}:`, files: [file], summary: `Opened ${basename(found)}` };
 		},
 	},
 	{

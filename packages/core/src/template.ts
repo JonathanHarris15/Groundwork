@@ -1,3 +1,4 @@
+import { RESOURCES_DIR } from "./files";
 import { DEFAULT_LEARNER_PROFILE, PATHS } from "./store";
 
 export const PLUGIN_ID = "groundwork";
@@ -13,6 +14,7 @@ This is a **Groundwork** knowledge vault: a calibrated, persistent memory of wha
 | \`concepts/\` | One note per concept. \`prerequisites\` link to the concepts it depends on, so Obsidian's graph view shows the dependency graph. Status and strength are recalculated from quiz evidence. |
 | \`goals/\` | Learning objectives, each with a dependency map colored by how well I know every node. |
 | \`sessions/\` | Transcripts and summaries of tutoring sessions. |
+| \`resources/\` | PDFs, slides, images, and notes I learn from. Files I attach in the tutor chat are saved here, and the tutor can open anything in it. |
 | \`learner.md\` | My background and how I learn best. The tutor reads it every session. |
 | \`.groundwork/evidence/\` | Append-only quiz evidence (source of truth for all stats). |
 
@@ -24,6 +26,7 @@ Open the **Groundwork** panel from the ribbon (graduation cap) to talk to the tu
 	[`${PATHS.sessions}/.gitkeep`]: "",
 	[`${PATHS.evidence}/.gitkeep`]: "",
 	[`${PATHS.chats}/.gitkeep`]: "",
+	[`${RESOURCES_DIR}/.gitkeep`]: "",
 	".gitattributes": `# Evidence logs are append-only: merge both machines' lines instead of conflicting.
 .groundwork/evidence/*.jsonl merge=union
 `,
@@ -33,7 +36,7 @@ Open the **Groundwork** panel from the ribbon (graduation cap) to talk to the tu
 .trash/
 .DS_Store
 `,
-	".obsidian/app.json": JSON.stringify({ alwaysUpdateLinks: true, showFrontmatter: false }, null, 2),
+	".obsidian/app.json": JSON.stringify({ alwaysUpdateLinks: true, showFrontmatter: false, attachmentFolderPath: RESOURCES_DIR }, null, 2),
 	".obsidian/community-plugins.json": JSON.stringify([PLUGIN_ID], null, 2),
 	".obsidian/graph.json": JSON.stringify(
 		{

@@ -8,6 +8,9 @@ export class ObsidianVaultIO implements VaultIO {
 	read(path: string) {
 		return this.adapter.read(path);
 	}
+	readBinary(path: string) {
+		return this.adapter.readBinary(path);
+	}
 	async write(path: string, data: string) {
 		await this.ensureParent(path);
 		await this.adapter.write(path, data);

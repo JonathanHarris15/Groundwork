@@ -1,7 +1,9 @@
+import type { VaultFile } from "../files";
+
 export type ContentBlock =
 	| { type: "text"; text: string }
 	| { type: "tool_use"; id: string; name: string; input: any }
-	| { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }
+	| { type: "tool_result"; tool_use_id: string; content: string | ContentBlock[]; is_error?: boolean }
 	// Server-side tool blocks (web search), thinking, etc. are passed through untouched.
 	| { type: string; [key: string]: any };
 
@@ -38,7 +40,8 @@ export interface Provider {
 /** A running tutor conversation, whichever backend drives it. */
 export interface TutorSession {
 	readonly busy: boolean;
-	send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void>;
+	/** `files` are what the learner attached to this message. */
+	send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, files?: VaultFile[]): Promise<void>;
 	close?(): void;
 }
 

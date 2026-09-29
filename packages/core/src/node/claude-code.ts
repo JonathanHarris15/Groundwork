@@ -5,6 +5,7 @@ import { query, type AccountInfo, type ModelInfo, type Options, type Query, type
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { basename, fileBlocks, mcpContent, userContent, type McpContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolDef, ToolResult, ToolUI } from "../tools";
 import type { AgentEvent, TutorSession } from "../agent/types";
@@ -16,6 +17,9 @@ export type { AccountInfo, ModelInfo };
 const MCP_NAME = "groundwork";
 const MCP_PREFIX = `mcp__${MCP_NAME}__`;
 const WEB_TOOLS = ["WebSearch", "WebFetch"];
+/** Claude Code's Read handles long PDFs page by page, which MCP tool results can't carry. Limited to the vault (cwd). */
+const READ_TOOL = "Read";
+const READ_RULE = "Read(./**)";
 const MAX_HISTORY_CHARS = 40_000;
 
 export interface ClaudeCodeConfig {
@@ -142,7 +146,7 @@ export class ClaudeCodeSession implements TutorSession {
 		return this.running;
 	}
 
-	async send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
+	async send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, files?: VaultFile[]): Promise<void> {
 		if (this.running) throw new Error("The tutor is still responding.");
 		this.running = true;
 		this.emit = onEvent;
@@ -151,13 +155,13 @@ export class ClaudeCodeSession implements TutorSession {
 		signal?.addEventListener("abort", onAbort, { once: true });
 		try {
 			try {
-				await this.turn(text, onEvent, signal);
+				await this.turn(text, files, onEvent, signal);
 			} catch (err) {
 				if (!this.sessionId || !/No conversation found/i.test(errorMessage(err))) throw err;
 				// The chat was started on another computer (Claude Code keeps sessions locally): start over with the transcript.
 				this.teardown();
 				this.sessionId = undefined;
-				await this.turn(text, onEvent, signal);
+				await this.turn(text, files, onEvent, signal);
 			}
 		} catch (err) {
 			this.teardown();
@@ -175,7 +179,7 @@ export class ClaudeCodeSession implements TutorSession {
 		this.teardown();
 	}
 
-	private async turn(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
+	private async turn(text: string, files: VaultFile[] | undefined, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
 		if (signal?.aborted) return;
 		let prompt = text;
 		if (!this.q) {
@@ -184,10 +188,11 @@ export class ClaudeCodeSession implements TutorSession {
 			}
 			this.start();
 		}
-		this.input!.push({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null });
+		const content = userContent(prompt, files, (f) => (f.tooLarge ? [{ type: "text", text: this.readPointer(f) }] : fileBlocks(f)));
+		this.input!.push({ type: "user", message: { role: "user", content: content as SDKUserMessage["message"]["content"] }, parent_tool_use_id: null });
 
 		const streamed = new Set<string>();
-		const external = new Map<string, string>();
+		const external = new Map<string, { name: string; input: any }>();
 		let reported = false;
 		const iter = this.q!;
 		while (true) {
@@ -211,7 +216,7 @@ export class ClaudeCodeSession implements TutorSession {
 	}
 
 	/** Returns true when it reported an error to the UI. */
-	private handle(msg: SDKMessage, onEvent: (e: AgentEvent) => void, streamed: Set<string>, external: Map<string, string>): boolean {
+	private handle(msg: SDKMessage, onEvent: (e: AgentEvent) => void, streamed: Set<string>, external: Map<string, { name: string; input: any }>): boolean {
 		if ("parent_tool_use_id" in msg && msg.parent_tool_use_id) return false;
 		switch (msg.type) {
 			case "system":
@@ -236,7 +241,7 @@ export class ClaudeCodeSession implements TutorSession {
 				for (const block of msg.message.content) {
 					if (block.type === "text" && !wasStreamed) onEvent({ type: "text_delta", text: block.text });
 					if (block.type === "tool_use" && !block.name.startsWith(MCP_PREFIX)) {
-						external.set(block.id, block.name);
+						external.set(block.id, { name: block.name, input: block.input });
 						onEvent({ type: "tool_start", id: block.id, name: block.name, input: block.input });
 					}
 				}
@@ -247,11 +252,11 @@ export class ClaudeCodeSession implements TutorSession {
 				if (!Array.isArray(content)) return false;
 				for (const block of content) {
 					if (block.type !== "tool_result" || !external.has(block.tool_use_id)) continue;
-					const name = external.get(block.tool_use_id)!;
+					const { name, input } = external.get(block.tool_use_id)!;
 					external.delete(block.tool_use_id);
 					const isError = !!block.is_error;
 					const text = typeof block.content === "string" ? block.content : (block.content ?? []).map((c) => ("text" in c ? c.text : "")).join("");
-					onEvent({ type: "tool_end", id: block.tool_use_id, name, isError, text, summary: externalSummary(name) });
+					onEvent({ type: "tool_end", id: block.tool_use_id, name, isError, text, summary: externalSummary(name, input) });
 				}
 				return false;
 			}
@@ -270,8 +275,8 @@ export class ClaudeCodeSession implements TutorSession {
 				...baseOptions(this.opts),
 				systemPrompt: this.opts.system,
 				model: this.opts.model || undefined,
-				tools: web,
-				allowedTools: [...toolNames, ...web],
+				tools: [READ_TOOL, ...web],
+				allowedTools: [...toolNames, READ_RULE, ...web],
 				permissionMode: "dontAsk",
 				includePartialMessages: true,
 				resume: this.sessionId,
@@ -302,9 +307,19 @@ export class ClaudeCodeSession implements TutorSession {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}
 			emit?.({ type: "tool_end", id, name, summary: result.summary, isError: !!result.isError, text: result.text });
-			return { content: [{ type: "text", text: result.text }], isError: !!result.isError };
+			const content = mcpContent(result.text, result.files, (f): McpContent[] | undefined =>
+				f.kind === "pdf" || (f.kind === "image" && f.tooLarge) ? [{ type: "text", text: this.readPointer(f) }] : undefined,
+			);
+			return { content, isError: !!result.isError };
 		});
 		return server;
+	}
+
+	private readPointer(f: VaultFile): string {
+		const abs = path.join(this.opts.cwd, ...f.path.split("/"));
+		const what = f.kind === "pdf" ? "PDF" : f.kind === "image" ? "image" : "file";
+		const pages = f.kind === "pdf" ? ' For a long PDF, pass pages (e.g. "1-10") and read it in parts.' : "";
+		return `${f.path} is a ${what}. Open it with the ${READ_TOOL} tool: file_path "${abs}".${pages}`;
 	}
 
 	private interrupt(): void {
@@ -330,9 +345,10 @@ export class ClaudeCodeSession implements TutorSession {
 	}
 }
 
-function externalSummary(name: string): string {
+function externalSummary(name: string, input: any): string {
 	if (name === "WebSearch") return "Searched the web";
 	if (name === "WebFetch") return "Read a web page";
+	if (name === READ_TOOL && typeof input?.file_path === "string") return `Opened ${basename(input.file_path.replace(/\\/g, "/"))}`;
 	return name;
 }
 

@@ -1,14 +1,19 @@
-import { Component, ItemView, Keymap, MarkdownRenderer, Menu, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
+import { Component, FuzzySuggestModal, ItemView, Keymap, MarkdownRenderer, Menu, Notice, setIcon, TFile, type App, type WorkspaceLeaf } from "obsidian";
 import {
 	AgentSession,
+	basename,
 	buildSystemPrompt,
 	demoteHeadings,
+	fileKind,
 	letter,
+	loadVaultFile,
 	parseNote,
 	PATHS,
+	RESOURCES_DIR,
 	serializeNote,
 	setSection,
 	TOOLS,
+	withoutFileData,
 	type AgentEvent,
 	type AskInput,
 	type AskResponse,
@@ -29,7 +34,7 @@ import type GroundworkPlugin from "./main";
 export const VIEW_TYPE = "groundwork-chat";
 
 type DisplayItem =
-	| { kind: "user"; text: string }
+	| { kind: "user"; text: string; attachments?: string[] }
 	| { kind: "assistant"; text: string }
 	| { kind: "tool"; name: string; summary: string; isError?: boolean }
 	| { kind: "quiz"; quiz: PreparedQuiz; response: QuizResponse; grade: QuizGrade; before?: ConceptStats; after?: ConceptStats }
@@ -62,9 +67,17 @@ const TOOL_VERBS: Record<string, string> = {
 	get_due_reviews: "Checking due reviews",
 	update_learner_profile: "Updating your learner profile",
 	save_session_summary: "Saving the session summary",
+	list_vault_files: "Looking through your files",
+	read_vault_file: "Opening a file",
+	Read: "Opening a file",
 	WebSearch: "Searching the web",
 	WebFetch: "Reading a web page",
 };
+
+/** Git hosts reject very large files, and the vault is a git repo. */
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+type PendingFile = { name: string; file?: File; path?: string };
 
 export class ChatView extends ItemView implements ToolUI {
 	private record!: ChatRecord;
@@ -80,6 +93,9 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiMessagesEl!: HTMLElement;
 	private uiInputEl!: HTMLTextAreaElement;
 	private uiSendBtn!: HTMLButtonElement;
+	private uiPendingEl!: HTMLElement;
+	private uiFileInput!: HTMLInputElement;
+	private pendingFiles: PendingFile[] = [];
 
 	private segment: { el: HTMLElement; text: string; comp: Component | null; timer: number | null; version: number } | null = null;
 	private toolChips = new Map<string, HTMLElement>();
@@ -126,11 +142,20 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 
 		const composer = root.createDiv({ cls: "gw-composer" });
-		this.uiInputEl = composer.createEl("textarea", {
-			cls: "gw-input",
-			attr: { rows: "1", placeholder: "What do you want to understand?", title: "Enter to send · Shift+Enter for a new line" },
+		this.uiPendingEl = composer.createDiv({ cls: "gw-pending" });
+		const row = composer.createDiv({ cls: "gw-composer-row" });
+		const attach = this.iconButton(row, "paperclip", "Attach files", (e) => this.showAttachMenu(e));
+		attach.addClass("gw-attach");
+		this.uiFileInput = row.createEl("input", { type: "file", attr: { multiple: "", hidden: "" } });
+		this.registerDomEvent(this.uiFileInput, "change", () => {
+			this.addFiles([...(this.uiFileInput.files ?? [])]);
+			this.uiFileInput.value = "";
 		});
-		this.uiSendBtn = composer.createEl("button", { cls: "gw-send mod-cta", attr: { "aria-label": "Send" } });
+		this.uiInputEl = row.createEl("textarea", {
+			cls: "gw-input",
+			attr: { rows: "1", placeholder: "What do you want to understand?", title: "Enter to send · Shift+Enter for a new line · paste or drop files to attach" },
+		});
+		this.uiSendBtn = row.createEl("button", { cls: "gw-send mod-cta", attr: { "aria-label": "Send" } });
 		setIcon(this.uiSendBtn, "arrow-up");
 		this.registerDomEvent(this.uiInputEl, "keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -139,6 +164,14 @@ export class ChatView extends ItemView implements ToolUI {
 			}
 		});
 		this.registerDomEvent(this.uiInputEl, "input", () => this.autoGrow());
+		this.registerDomEvent(this.uiInputEl, "paste", (e) => {
+			const files = [...(e.clipboardData?.files ?? [])];
+			if (!files.length) return;
+			e.preventDefault();
+			this.addFiles(files);
+		});
+		this.registerFileDrop(root);
+		this.trackStatusBar();
 		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
 		const last = await this.latestChat();
@@ -232,27 +265,40 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private async submit(prefill?: string): Promise<void> {
 		const text = (prefill ?? this.uiInputEl.value).trim();
-		if (!text || this.agent?.busy) return;
+		const pending = prefill === undefined ? this.pendingFiles : [];
+		if ((!text && !pending.length) || this.agent?.busy) return;
 		const agent = this.ensureAgent();
 		if (!agent) {
 			new Notice(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
 			this.plugin.openSettings();
 			return;
 		}
+		let attachments: string[];
+		try {
+			attachments = [...new Set([...(await this.saveAttachments(pending)), ...this.linkedFiles(text)])];
+		} catch (err) {
+			new Notice(`Couldn't save the attachment: ${err instanceof Error ? err.message : String(err)}`);
+			return;
+		}
+		if (prefill === undefined) {
+			this.pendingFiles = [];
+			this.renderPending();
+		}
 		this.uiInputEl.value = "";
 		this.autoGrow();
 		if (!this.record.items.length) {
 			this.uiMessagesEl.empty();
-			this.record.title = text.replace(/\s+/g, " ").slice(0, 60);
+			this.record.title = (text || `About ${attachments.map(basename).join(", ")}`).replace(/\s+/g, " ").slice(0, 60);
 			this.session.title = this.record.title;
 			this.session.notePath = await this.plugin.store.sessionNotePath(this.record.title.split(" ").slice(0, 8).join(" "));
 			this.record.notePath = this.session.notePath;
 		}
-		this.pushItem({ kind: "user", text });
+		this.pushItem({ kind: "user", text, ...(attachments.length ? { attachments } : {}) });
 		this.setBusy(true);
 		this.abort = new AbortController();
 		try {
-			await agent.send(text, (e) => this.onEvent(e), this.abort.signal);
+			const files = await Promise.all(attachments.map((p) => loadVaultFile(this.plugin.store.io, p)));
+			await agent.send(text, (e) => this.onEvent(e), this.abort.signal, files);
 		} finally {
 			this.finishSegment();
 			this.abort = null;
@@ -460,8 +506,8 @@ export class ChatView extends ItemView implements ToolUI {
 	private renderItem(item: DisplayItem): void {
 		switch (item.kind) {
 			case "user": {
-				const el = this.uiMessagesEl.createDiv({ cls: "gw-msg gw-user" });
-				el.setText(item.text);
+				if (item.attachments?.length) this.renderFiles(this.uiMessagesEl.createDiv({ cls: "gw-user-files" }), item.attachments);
+				if (item.text) this.uiMessagesEl.createDiv({ cls: "gw-msg gw-user", text: item.text });
 				break;
 			}
 			case "assistant": {
@@ -586,6 +632,175 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiSyncBtn.setAttr("aria-label", `Sync with GitHub — ${s.text}`);
 	}
 
+	// ── attachments ─────────────────────────────────────────────────────
+
+	private showAttachMenu(evt: MouseEvent): void {
+		const menu = new Menu();
+		menu.addItem((i) => i.setTitle("Upload from this computer…").setIcon("upload").onClick(() => this.uiFileInput.click()));
+		menu.addItem((i) =>
+			i
+				.setTitle("Choose from the vault…")
+				.setIcon("folder-open")
+				.onClick(() => new VaultFileModal(this.app, (f) => this.addVaultFile(f.path)).open()),
+		);
+		menu.showAtMouseEvent(evt);
+	}
+
+	private addFiles(files: File[]): void {
+		for (const file of files) {
+			if (file.size > MAX_UPLOAD_BYTES) {
+				new Notice(`${file.name} is over ${MAX_UPLOAD_BYTES / 1024 / 1024} MB, too large to keep in the vault's git repo.`);
+				continue;
+			}
+			const name = /^image\.\w+$/.test(file.name) ? `Pasted image ${timestamp()}.${file.name.split(".").pop()}` : file.name;
+			this.pendingFiles.push({ name, file });
+		}
+		this.renderPending();
+		this.uiInputEl.focus();
+	}
+
+	private addVaultFile(path: string): void {
+		if (!this.pendingFiles.some((p) => p.path === path)) this.pendingFiles.push({ name: basename(path), path });
+		this.renderPending();
+		this.uiInputEl.focus();
+	}
+
+	private renderPending(): void {
+		const el = this.uiPendingEl;
+		el.empty();
+		el.toggleClass("is-empty", !this.pendingFiles.length);
+		for (const p of this.pendingFiles) {
+			const chip = el.createDiv({ cls: "gw-file-chip" });
+			setIcon(chip.createSpan({ cls: "gw-file-icon" }), iconForFile(p.name));
+			chip.createSpan({ cls: "gw-file-name", text: p.name, attr: { title: p.path ?? `Will be saved to ${RESOURCES_DIR}/` } });
+			const x = chip.createEl("button", { cls: "clickable-icon gw-file-remove", attr: { "aria-label": `Remove ${p.name}` } });
+			setIcon(x, "x");
+			x.addEventListener("click", () => {
+				this.pendingFiles = this.pendingFiles.filter((q) => q !== p);
+				this.renderPending();
+			});
+		}
+	}
+
+	/** Uploads go to resources/ so they sync with the vault and the tutor can reopen them later. */
+	private async saveAttachments(pending: PendingFile[]): Promise<string[]> {
+		const out: string[] = [];
+		for (const p of pending) {
+			if (p.path) {
+				out.push(p.path);
+				continue;
+			}
+			if (!this.app.vault.getAbstractFileByPath(RESOURCES_DIR)) await this.app.vault.createFolder(RESOURCES_DIR);
+			const path = this.availablePath(`${RESOURCES_DIR}/${safeName(p.name)}`);
+			await this.app.vault.createBinary(path, await p.file!.arrayBuffer());
+			out.push(path);
+		}
+		return out;
+	}
+
+	private availablePath(path: string): string {
+		const dot = path.lastIndexOf(".");
+		const [stem, ext] = dot > path.lastIndexOf("/") ? [path.slice(0, dot), path.slice(dot)] : [path, ""];
+		let candidate = path;
+		for (let n = 1; this.app.vault.getAbstractFileByPath(candidate); n++) candidate = `${stem} ${n}${ext}`;
+		return candidate;
+	}
+
+	/** Files the learner linked in their message, like [[Lecture 3.pdf]] or ![[diagram.png]], are attached too. */
+	private linkedFiles(text: string): string[] {
+		const out: string[] = [];
+		for (const m of text.matchAll(/!?\[\[([^\]|#^]+)[^\]]*\]\]/g)) {
+			const file = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), this.record.notePath ?? "");
+			if (file && file.extension !== "md" && fileKind(file.path).kind !== "other") out.push(file.path);
+		}
+		return out;
+	}
+
+	private renderFiles(el: HTMLElement, paths: string[]): void {
+		for (const path of paths) {
+			const file = this.app.vault.getAbstractFileByPath(path);
+			const open = () => {
+				if (file instanceof TFile) void this.app.workspace.getLeaf("tab").openFile(file);
+				else new Notice(`${path} is no longer in the vault.`);
+			};
+			if (file instanceof TFile && fileKind(path).kind === "image") {
+				const img = el.createEl("img", { cls: "gw-file-thumb", attr: { src: this.app.vault.getResourcePath(file), alt: file.name, title: path } });
+				img.addEventListener("click", open);
+				continue;
+			}
+			const chip = el.createDiv({ cls: `gw-file-chip is-link ${file ? "" : "is-missing"}`, attr: { title: path } });
+			setIcon(chip.createSpan({ cls: "gw-file-icon" }), iconForFile(path));
+			chip.createSpan({ cls: "gw-file-name", text: basename(path) });
+			chip.addEventListener("click", open);
+		}
+	}
+
+	private registerFileDrop(root: HTMLElement): void {
+		const draggedVaultFiles = (): TFile[] => {
+			const d = (this.app as any).dragManager?.draggable;
+			if (d?.type === "file" && d.file instanceof TFile) return [d.file];
+			if (d?.type === "files" && Array.isArray(d.files)) return d.files.filter((f: unknown): f is TFile => f instanceof TFile);
+			return [];
+		};
+		const accepts = (e: DragEvent) => !!e.dataTransfer?.types.includes("Files") || draggedVaultFiles().length > 0;
+		let depth = 0;
+		this.registerDomEvent(root, "dragenter", (e) => {
+			if (!accepts(e)) return;
+			depth++;
+			root.addClass("is-dragover");
+		});
+		this.registerDomEvent(root, "dragleave", () => {
+			if (depth && --depth === 0) root.removeClass("is-dragover");
+		});
+		this.registerDomEvent(root, "dragover", (e) => {
+			if (!accepts(e)) return;
+			e.preventDefault();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+		});
+		this.registerDomEvent(root, "drop", (e) => {
+			depth = 0;
+			root.removeClass("is-dragover");
+			const vaultFiles = draggedVaultFiles();
+			const files = [...(e.dataTransfer?.files ?? [])];
+			if (!vaultFiles.length && !files.length) return;
+			e.preventDefault();
+			e.stopPropagation();
+			for (const f of vaultFiles) this.addVaultFile(f.path);
+			if (!vaultFiles.length) this.addFiles(files);
+		});
+	}
+
+	/** Obsidian's status bar floats over the bottom-right of the workspace; keep the composer clear of it. */
+	private trackStatusBar(): void {
+		let frame = 0;
+		const update = () => {
+			frame = 0;
+			const bar = this.contentEl.doc.querySelector<HTMLElement>(".status-bar");
+			let inset = 0;
+			if (bar && getComputedStyle(bar).display !== "none") {
+				const a = this.contentEl.getBoundingClientRect();
+				const b = bar.getBoundingClientRect();
+				if (b.width && b.left < a.right && b.right > a.left && b.top < a.bottom && b.bottom > a.top) inset = Math.ceil(a.bottom - b.top);
+			}
+			this.contentEl.style.setProperty("--gw-bottom-inset", `${inset}px`);
+		};
+		const schedule = () => {
+			if (!frame) frame = window.requestAnimationFrame(update);
+		};
+		const observer = new ResizeObserver(schedule);
+		observer.observe(this.contentEl);
+		const bar = this.contentEl.doc.querySelector(".status-bar");
+		if (bar) observer.observe(bar);
+		this.register(() => {
+			observer.disconnect();
+			if (frame) window.cancelAnimationFrame(frame);
+		});
+		this.registerEvent(this.app.workspace.on("layout-change", schedule));
+		this.registerEvent(this.app.workspace.on("resize", schedule));
+		this.registerEvent(this.app.workspace.on("css-change", schedule));
+		schedule();
+	}
+
 	// ── menus ───────────────────────────────────────────────────────────
 
 	private async showHistory(evt: MouseEvent): Promise<void> {
@@ -633,7 +848,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private async persist(): Promise<void> {
 		this.record.updated = new Date().toISOString();
 		const store = this.plugin.store;
-		await store.writeFile(`${PATHS.chats}/${this.record.id}.json`, JSON.stringify(this.record));
+		await store.writeFile(`${PATHS.chats}/${this.record.id}.json`, JSON.stringify({ ...this.record, messages: withoutFileData(this.record.messages) }));
 		if (this.record.notePath) {
 			const path = this.record.notePath;
 			const existing = (await store.io.exists(path)) ? await store.io.read(path) : "";
@@ -690,14 +905,62 @@ function iconFor(name: string): string {
 	}
 }
 
+function iconForFile(path: string): string {
+	switch (fileKind(path).kind) {
+		case "image":
+			return "image";
+		case "pdf":
+			return "file-text";
+		case "text":
+			return "file-code";
+		default:
+			return "file";
+	}
+}
+
+function safeName(name: string): string {
+	return name.replace(/[\\/:*?"<>|#^[\]]/g, "-").replace(/\s+/g, " ").trim() || `Attachment ${timestamp()}`;
+}
+
+function timestamp(): string {
+	const d = new Date();
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+class VaultFileModal extends FuzzySuggestModal<TFile> {
+	constructor(
+		app: App,
+		private readonly onPick: (file: TFile) => void,
+	) {
+		super(app);
+		this.setPlaceholder("Attach a file from the vault");
+	}
+	getItems(): TFile[] {
+		const inResources = (f: TFile) => (f.path.startsWith(`${RESOURCES_DIR}/`) ? 0 : 1);
+		return this.app.vault
+			.getFiles()
+			.filter((f) => f.extension !== "md" && fileKind(f.path).kind !== "other")
+			.sort((a, b) => inResources(a) - inResources(b) || b.stat.mtime - a.stat.mtime);
+	}
+	getItemText(file: TFile): string {
+		return file.path;
+	}
+	onChooseItem(file: TFile): void {
+		this.onPick(file);
+	}
+}
+
 function transcript(items: DisplayItem[]): string {
 	const out: string[] = [];
 	const quote = (s: string) => s.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
 	for (const item of items) {
 		switch (item.kind) {
-			case "user":
-				out.push(`> [!quote] You\n${quote(item.text)}`, "");
+			case "user": {
+				const files = (item.attachments ?? []).map((p) => (fileKind(p).kind === "image" ? `![[${p}]]` : `[[${p}]]`));
+				out.push(`> [!quote] You\n${quote([...files, item.text].filter(Boolean).join("\n\n"))}`, "");
 				break;
+			}
 			case "assistant":
 				out.push(demoteHeadings(item.text), "");
 				break;
