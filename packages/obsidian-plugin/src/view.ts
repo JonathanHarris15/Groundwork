@@ -38,6 +38,7 @@ import {
 } from "@groundwork/core";
 import { ClaudeCodeSession } from "@groundwork/core/claude-code";
 import { AsideCard, findQuoteRange } from "./aside";
+import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source";
 import { AskCard, QuizCard } from "./cards";
 import { enhanceGraphs } from "./graph-pane";
 import type GroundworkPlugin from "./main";
@@ -125,6 +126,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private highlightFrame = 0;
 	private uiAskBtn!: HTMLElement;
 	private selection: { anchor: string; quote: string } | null = null;
+	private pickedMath: HTMLElement[] = [];
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -446,7 +448,9 @@ export class ChatView extends ItemView implements ToolUI {
 		const next = createDiv();
 		const comp = new Component();
 		this.addChild(comp);
-		await MarkdownRenderer.render(this.app, normalizeTutorMarkdown(seg.text), next, this.record.notePath ?? "", comp);
+		const md = normalizeTutorMarkdown(seg.text);
+		await MarkdownRenderer.render(this.app, md, next, this.record.notePath ?? "", comp);
+		tagMath(next, md);
 		// A newer render started while this one was in flight; drop the stale output.
 		if (version !== seg.version) {
 			this.removeChild(comp);
@@ -523,7 +527,9 @@ export class ChatView extends ItemView implements ToolUI {
 	// ── rendering ───────────────────────────────────────────────────────
 
 	private async renderMd(el: HTMLElement, markdown: string): Promise<void> {
-		await MarkdownRenderer.render(this.app, normalizeTutorMarkdown(markdown), el, this.record?.notePath ?? "", this);
+		const md = normalizeTutorMarkdown(markdown);
+		await MarkdownRenderer.render(this.app, md, el, this.record?.notePath ?? "", this);
+		tagMath(el, md);
 		enhanceGraphs(el);
 		this.scheduleHighlights();
 		// Rendered options sit inside buttons; a lone paragraph adds unwanted margins.
@@ -944,6 +950,18 @@ export class ChatView extends ItemView implements ToolUI {
 			settle = window.setTimeout(() => this.onSelectionEnd(), 200);
 		});
 		this.registerDomEvent(this.uiMessagesEl, "scroll", () => this.hideAskButton());
+		// MathJax glyphs can't be text-selected, so a click on a formula selects the whole thing.
+		this.registerDomEvent(this.uiMessagesEl, "click", (e) => {
+			const math = mathOf(e.target as Node);
+			if (!math || (e.target as Element).closest("button, a, .gw-asides")) return;
+			const sel = this.contentEl.win.getSelection();
+			if (!sel || (!sel.isCollapsed && !sel.getRangeAt(0).intersectsNode(math))) return;
+			const range = this.contentEl.doc.createRange();
+			range.selectNode(math);
+			sel.removeAllRanges();
+			sel.addRange(range);
+			this.onSelectionEnd();
+		});
 
 		const ro = new ResizeObserver(() => this.updateMarginMode());
 		ro.observe(this.uiMessagesEl);
@@ -967,9 +985,11 @@ export class ChatView extends ItemView implements ToolUI {
 		const body = (turn.querySelector(":scope > .gw-msg, :scope > .gw-card") as HTMLElement | null) ?? turn;
 		if (turn !== endTurn || end?.closest(".gw-asides")) range.setEnd(body, body.childNodes.length);
 		if (turn !== startTurn) range.setStart(body, 0);
-		const quote = range.toString().trim();
+		expandToMath(range);
+		const quote = rangeText(range).trim();
 		if (quote.length < 2) return this.hideAskButton();
 		this.selection = { anchor: turn.dataset.anchor!, quote: quote.slice(0, 1200) };
+		this.markPicked(mathIn(turn, range));
 
 		const r = range.getBoundingClientRect();
 		const box = this.contentEl.getBoundingClientRect();
@@ -985,6 +1005,14 @@ export class ChatView extends ItemView implements ToolUI {
 	private hideAskButton(): void {
 		this.uiAskBtn?.hide();
 		this.selection = null;
+		this.markPicked([]);
+	}
+
+	/** Selection color doesn't paint MathJax glyphs, so selected formulas get a class instead. */
+	private markPicked(els: HTMLElement[]): void {
+		for (const el of this.pickedMath) el.removeClass("is-picked");
+		for (const el of els) el.addClass("is-picked");
+		this.pickedMath = els;
 	}
 
 	private openAside(anchor: string, quote: string): void {
@@ -1146,6 +1174,7 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 		const api = highlightApi();
 		api?.registry.set("gw-aside", new api.Highlight(...this.asideRanges.values()));
+		this.markMath("is-quoted", [...this.asideRanges.values()]);
 		this.layoutAsides();
 	}
 
@@ -1154,12 +1183,23 @@ export class ChatView extends ItemView implements ToolUI {
 		const api = highlightApi();
 		const r = id ? this.asideRanges.get(id) : undefined;
 		api?.registry.set("gw-aside-active", new api.Highlight(...(r ? [r] : [])));
+		this.markMath("is-quoted-active", r ? [r] : []);
 	}
 
 	private clearHighlights(): void {
 		const api = highlightApi();
 		api?.registry.delete("gw-aside");
 		api?.registry.delete("gw-aside-active");
+		this.markMath("is-quoted", []);
+		this.markMath("is-quoted-active", []);
+	}
+
+	private markMath(cls: string, ranges: Range[]): void {
+		this.uiMessagesEl?.querySelectorAll(`.math.${cls}`).forEach((el) => el.removeClass(cls));
+		for (const r of ranges) {
+			const root = r.commonAncestorContainer instanceof HTMLElement ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+			if (root) for (const el of mathIn(root, r)) el.addClass(cls);
+		}
 	}
 
 	// ── persistence ─────────────────────────────────────────────────────
