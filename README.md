@@ -18,7 +18,7 @@ Inspired by [amosblomqvist/learn](https://github.com/amosblomqvist/learn): the t
 ```mermaid
 graph LR
   subgraph Surfaces
-    P[Obsidian plugin<br/>chat panel + quiz cards]
+    P[Obsidian plugin<br/>chat panel + quiz cards<br/>model: your Claude subscription via Claude Code]
     M[MCP server<br/>Claude Desktop / Code / Cursor]
   end
   C[core<br/>teaching method · tools · mastery model · goal DAGs]
@@ -60,7 +60,7 @@ Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency 
 
 ## Setup
 
-Requires Node 20+, git, and [Obsidian](https://obsidian.md) (desktop).
+Requires Node 20+, git, [Obsidian](https://obsidian.md) (desktop), and [Claude Code](https://claude.com/claude-code) signed in with your Claude subscription (see [Connect a model](#connect-a-model-your-claude-subscription-default)). `npm install` also downloads Claude Code's binary for the tests (~240 MB). The plugin uses the Claude Code you install yourself, not that copy.
 
 ```bash
 git clone <this repo> groundwork && cd groundwork
@@ -94,11 +94,26 @@ It pulls the latest knowledge, updates the plugin inside the vault, registers th
 
 The **first time** you open the vault on a machine, Obsidian asks you to *Trust author and enable plugins*, and (in Obsidian 1.13+) to *Allow* mermaid diagrams. Both are one click.
 
-### Connect a model
+### Connect a model: your Claude subscription (default)
 
-In Obsidian: **Settings → Groundwork → Anthropic API key**. The key is stored in this device's local storage, **not** in the vault, so it is never pushed to GitHub. Use **Load models** to pick a model. Optionally turn on web search so the tutor can verify facts.
+The tutor runs through [Claude Code](https://claude.com/claude-code), so it uses your Claude Pro/Max plan and needs no API key. Once per computer:
 
-No key yet? Choose **Try the demo** in the panel: a scripted lesson on the derivative that exercises everything (recall, plan with a map, LaTeX, quizzes that update the vault, session summary) without calling any API.
+```bash
+curl -fsSL https://claude.ai/install.sh | bash     # Windows (PowerShell): irm https://claude.ai/install.ps1 | iex
+claude                                             # first run asks you to log in; or type /login
+```
+
+Then in Obsidian: **Settings → Groundwork → Check connection** should say *Signed in as …* and list the models your plan can use. Groundwork finds `claude` on your PATH and in the usual install folders (`~/.local/bin`, `~/.claude/local`, Homebrew). If it doesn't, paste the output of `which claude` into **Claude Code executable**.
+
+How it works: the plugin starts Claude Code with the Agent SDK, replaces Claude Code's system prompt with the tutor's, turns off all of Claude Code's own tools (no file edits or shell), and hands it Groundwork's tools as an in-process MCP server, so quiz cards still appear in the panel. `ANTHROPIC_API_KEY` is removed from Claude Code's environment so it always uses your subscription login. Claude Code keeps chat sessions on the machine that ran them. When you continue a chat on another computer, the tutor gets the transcript instead.
+
+This is meant for your own use with your own login. Don't ship it to other people as a product that signs in with claude.ai accounts.
+
+**Alternatives** (Settings → Groundwork → Provider):
+- **Anthropic API key**: the key is stored in this device's local storage, **not** in the vault, so it is never pushed to GitHub.
+- **Demo**: a scripted lesson on the derivative that exercises everything (recall, plan with a map, LaTeX, quizzes that update the vault, session summary) without calling any model.
+
+Web search (optional) lets the tutor verify facts: Claude Code's WebSearch/WebFetch tools on the subscription, or Anthropic's web search tool with an API key.
 
 ### Use it from Claude Desktop, Claude Code, or Cursor
 
@@ -132,7 +147,8 @@ packages/cli              `groundwork` CLI and MCP server (bundles the plugin)
 ## Development
 
 ```bash
-npm test                 # vitest: model, store, quiz grading, agent loop, two-machine git merge, MCP end-to-end
+npm test                 # vitest: model, store, quiz grading, agent loop, two-machine git merge, MCP end-to-end,
+                         # and the Claude Code session driving the real binary against a mock Messages API
 npm run typecheck
 npm run build            # plugin → packages/obsidian-plugin/dist, CLI → packages/cli/dist
 npm run dev:plugin       # rebuild the plugin on change; then `groundwork install-plugin` and reload Obsidian
@@ -142,7 +158,6 @@ Sync details: evidence logs use git's `union` merge driver (`.gitattributes`), s
 
 ## Not built yet
 
-- **Claude subscription instead of an API key** — a provider that runs through the Claude Agent SDK / Claude Code login.
 - **claude.ai on the web / phone** — needs a hosted remote MCP server that talks to the GitHub repo through the API instead of a local clone.
 - **Obsidian mobile** — the plugin is desktop-only because sync shells out to git.
 - **Generated visuals** — the reference system's SVG/mermaid maker subagents. For now the tutor writes mermaid inline and goal maps are generated.
