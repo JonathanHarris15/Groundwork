@@ -117,6 +117,12 @@ This is meant for your own use with your own login. Don't ship it to other peopl
 
 Web search (optional) lets the tutor verify facts: Claude Code's WebSearch/WebFetch tools on the subscription, or Anthropic's web search tool with an API key.
 
+### Files: attach them, or keep them in `resources/`
+
+Attach files to a message with the paperclip (**Upload from this computer** or **Choose from the vault**). You can also paste an image into the message box, drag files onto the panel (from your desktop or Obsidian's file explorer), or link a vault file in your message, like `[[Lecture 3.pdf]]`. Uploads are saved to the vault's `resources/` folder, so they sync to your other computers and stay linked from the session note.
+
+The tutor reads images (PNG, JPEG, GIF, WebP), PDFs, and text files (markdown, code, CSV, LaTeX, …). It can also look in `resources/` on its own (`list_vault_files`, `read_vault_file`): drop your lecture notes or textbook there and say "use my lecture 3 notes". With the Claude subscription, long PDFs are read with Claude Code's `Read` tool, which can go page by page. That tool is limited to the vault folder. Limits: 50 MB per upload (the vault is a git repo), and images must be under 5 MB and PDFs under 20 MB to be sent inline. Saved chats don't store file contents, only the paths.
+
 ### Use it from Claude Desktop, Claude Code, or Cursor
 
 ```bash

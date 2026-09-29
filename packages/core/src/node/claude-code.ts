@@ -306,10 +306,14 @@ export class ClaudeCodeSession implements TutorSession {
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}
-			emit?.({ type: "tool_end", id, name, summary: result.summary, isError: !!result.isError, text: result.text });
-			const content = mcpContent(result.text, result.files, (f): McpContent[] | undefined =>
-				f.kind === "pdf" || (f.kind === "image" && f.tooLarge) ? [{ type: "text", text: this.readPointer(f) }] : undefined,
-			);
+			const pointed: string[] = [];
+			const content = mcpContent(result.text, result.files, (f): McpContent[] | undefined => {
+				if (f.kind !== "pdf" && !(f.kind === "image" && f.tooLarge)) return undefined;
+				pointed.push(basename(f.path));
+				return [{ type: "text", text: this.readPointer(f) }];
+			});
+			const summary = pointed.length && pointed.length === result.files?.length ? `Found ${pointed.join(", ")}` : result.summary;
+			emit?.({ type: "tool_end", id, name, summary, isError: !!result.isError, text: result.text });
 			return { content, isError: !!result.isError };
 		});
 		return server;

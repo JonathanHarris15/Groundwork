@@ -470,6 +470,7 @@
 	display: flex;
 	gap: 10px;
 	align-items: flex-start;
+	justify-content: flex-start;
 	text-align: left;
 	height: auto;
 	padding: 10px 12px;
@@ -643,6 +644,7 @@
 	display: flex;
 	flex-wrap: wrap;
 	justify-content: flex-end;
+	align-items: center;
 	gap: 6px;
 	max-width: 85%;
 	margin-bottom: -6px;
