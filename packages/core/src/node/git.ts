@@ -131,7 +131,7 @@ export class GitSync {
 			}
 			report.pushed = true;
 		}
-		report.message = report.pushed || report.pulled ? "Synced with GitHub." : "Up to date.";
+		report.message = report.pushed || report.pulled ? `Synced with ${remote.includes("github.com") ? "GitHub" : "origin"}.` : "Up to date.";
 		return report;
 	}
 }

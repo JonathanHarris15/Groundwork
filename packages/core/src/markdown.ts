@@ -1,5 +1,7 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+const REGION_PREFIX = "%% groundwork:";
+
 export interface ParsedNote {
 	frontmatter: Record<string, unknown>;
 	body: string;
@@ -56,13 +58,13 @@ export function unwikilink(value: string): string {
 }
 
 /**
- * Replace (or append) a region delimited by HTML comments. Everything outside
+ * Replace (or append) a region delimited by Obsidian comments (hidden in reading and live preview). Everything outside
  * the markers is left untouched, so users and the agent can freely edit the
  * rest of a note while generated sections stay current.
  */
 export function upsertRegion(body: string, name: string, content: string): string {
-	const start = `<!-- groundwork:${name} -->`;
-	const end = `<!-- /groundwork:${name} -->`;
+	const start = `%% groundwork:${name} %%`;
+	const end = `%% /groundwork:${name} %%`;
 	const block = `${start}\n${content.trim()}\n${end}`;
 	const s = body.indexOf(start);
 	const e = body.indexOf(end);
@@ -79,7 +81,7 @@ export function getSection(body: string, heading: string): string | undefined {
 	if (idx === -1) return undefined;
 	const out: string[] = [];
 	for (let i = idx + 1; i < lines.length; i++) {
-		if (/^##\s/.test(lines[i]) || lines[i].startsWith("<!-- groundwork:")) break;
+		if (/^##\s/.test(lines[i]) || lines[i].startsWith(REGION_PREFIX)) break;
 		out.push(lines[i]);
 	}
 	return out.join("\n").trim();
@@ -91,13 +93,13 @@ export function setSection(body: string, heading: string, content: string): stri
 	const idx = lines.findIndex((l) => l.trim().toLowerCase() === `## ${heading}`.toLowerCase());
 	const block = [`## ${heading}`, "", content.trim(), ""];
 	if (idx === -1) {
-		const regionIdx = lines.findIndex((l) => l.startsWith("<!-- groundwork:"));
+		const regionIdx = lines.findIndex((l) => l.startsWith(REGION_PREFIX));
 		if (regionIdx === -1) return `${body.trimEnd()}\n\n${block.join("\n")}`;
 		lines.splice(regionIdx, 0, ...block);
 		return lines.join("\n");
 	}
 	let end = idx + 1;
-	while (end < lines.length && !/^##\s/.test(lines[end]) && !lines[end].startsWith("<!-- groundwork:")) end++;
+	while (end < lines.length && !/^##\s/.test(lines[end]) && !lines[end].startsWith(REGION_PREFIX)) end++;
 	lines.splice(idx, end - idx, ...block);
 	return lines.join("\n");
 }

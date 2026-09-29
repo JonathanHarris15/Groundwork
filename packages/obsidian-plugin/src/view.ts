@@ -65,12 +65,12 @@ export class ChatView extends ItemView implements ToolUI {
 	private pending = new Set<(v: null) => void>();
 	private liveQuizCards = new Map<string, QuizCard>();
 
-	private titleEl!: HTMLElement;
-	private badgeEl!: HTMLElement;
-	private syncBtn!: HTMLElement;
-	private messagesEl!: HTMLElement;
-	private inputEl!: HTMLTextAreaElement;
-	private sendBtn!: HTMLButtonElement;
+	private uiTitleEl!: HTMLElement;
+	private uiBadgeEl!: HTMLElement;
+	private uiSyncBtn!: HTMLElement;
+	private uiMessagesEl!: HTMLElement;
+	private uiInputEl!: HTMLTextAreaElement;
+	private uiSendBtn!: HTMLButtonElement;
 
 	private segment: { el: HTMLElement; text: string; comp: Component | null; timer: number | null; version: number } | null = null;
 	private toolChips = new Map<string, HTMLElement>();
@@ -99,16 +99,16 @@ export class ChatView extends ItemView implements ToolUI {
 
 		const header = root.createDiv({ cls: "gw-header" });
 		const titles = header.createDiv({ cls: "gw-titles" });
-		this.titleEl = titles.createDiv({ cls: "gw-title" });
-		this.badgeEl = titles.createDiv({ cls: "gw-subtitle" });
+		this.uiTitleEl = titles.createDiv({ cls: "gw-title" });
+		this.uiBadgeEl = titles.createDiv({ cls: "gw-subtitle" });
 		const actions = header.createDiv({ cls: "gw-actions" });
 		this.iconButton(actions, "square-pen", "New session", () => this.newSession());
 		this.iconButton(actions, "history", "Past sessions", (e) => this.showHistory(e));
 		this.iconButton(actions, "target", "Goals", (e) => this.showGoals(e));
-		this.syncBtn = this.iconButton(actions, "refresh-cw", "Sync with GitHub", () => this.plugin.syncNow("manual"));
+		this.uiSyncBtn = this.iconButton(actions, "refresh-cw", "Sync with GitHub", () => this.plugin.syncNow("manual"));
 
-		this.messagesEl = root.createDiv({ cls: "gw-messages" });
-		this.registerDomEvent(this.messagesEl, "click", (evt) => {
+		this.uiMessagesEl = root.createDiv({ cls: "gw-messages" });
+		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
 			const a = (evt.target as HTMLElement).closest("a.internal-link") as HTMLAnchorElement | null;
 			if (!a) return;
 			evt.preventDefault();
@@ -117,20 +117,20 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 
 		const composer = root.createDiv({ cls: "gw-composer" });
-		this.inputEl = composer.createEl("textarea", {
+		this.uiInputEl = composer.createEl("textarea", {
 			cls: "gw-input",
-			attr: { rows: "1", placeholder: "What do you want to understand?  (Enter to send, Shift+Enter for a new line)" },
+			attr: { rows: "1", placeholder: "What do you want to understand?", title: "Enter to send · Shift+Enter for a new line" },
 		});
-		this.sendBtn = composer.createEl("button", { cls: "gw-send mod-cta", attr: { "aria-label": "Send" } });
-		setIcon(this.sendBtn, "arrow-up");
-		this.registerDomEvent(this.inputEl, "keydown", (e) => {
+		this.uiSendBtn = composer.createEl("button", { cls: "gw-send mod-cta", attr: { "aria-label": "Send" } });
+		setIcon(this.uiSendBtn, "arrow-up");
+		this.registerDomEvent(this.uiInputEl, "keydown", (e) => {
 			if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
 				void this.submit();
 			}
 		});
-		this.registerDomEvent(this.inputEl, "input", () => this.autoGrow());
-		this.registerDomEvent(this.sendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
+		this.registerDomEvent(this.uiInputEl, "input", () => this.autoGrow());
+		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
 		const last = await this.latestChat();
 		if (last) this.openChat(last);
@@ -158,7 +158,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.session = { id: this.record.id };
 		this.agent = null;
 		this.renderAll();
-		this.inputEl?.focus();
+		this.uiInputEl?.focus();
 	}
 
 	private openChat(record: ChatRecord): void {
@@ -192,7 +192,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async submit(prefill?: string): Promise<void> {
-		const text = (prefill ?? this.inputEl.value).trim();
+		const text = (prefill ?? this.uiInputEl.value).trim();
 		if (!text || this.agent?.busy) return;
 		const agent = this.ensureAgent();
 		if (!agent) {
@@ -200,10 +200,10 @@ export class ChatView extends ItemView implements ToolUI {
 			this.plugin.openSettings();
 			return;
 		}
-		this.inputEl.value = "";
+		this.uiInputEl.value = "";
 		this.autoGrow();
 		if (!this.record.items.length) {
-			this.messagesEl.empty();
+			this.uiMessagesEl.empty();
 			this.record.title = text.replace(/\s+/g, " ").slice(0, 60);
 			this.session.title = this.record.title;
 			this.session.notePath = await this.plugin.store.sessionNotePath(this.record.title.split(" ").slice(0, 8).join(" "));
@@ -231,26 +231,26 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private setBusy(busy: boolean): void {
 		this.contentEl.toggleClass("is-busy", busy);
-		this.sendBtn.empty();
-		setIcon(this.sendBtn, busy ? "square" : "arrow-up");
-		this.sendBtn.setAttr("aria-label", busy ? "Stop" : "Send");
+		this.uiSendBtn.empty();
+		setIcon(this.uiSendBtn, busy ? "square" : "arrow-up");
+		this.uiSendBtn.setAttr("aria-label", busy ? "Stop" : "Send");
 		if (busy) this.showThinking();
 		else this.hideThinking();
 	}
 
-	private thinkingEl: HTMLElement | null = null;
+	private uiThinkingEl: HTMLElement | null = null;
 	private showThinking(): void {
 		this.hideThinking();
-		this.thinkingEl = this.messagesEl.createDiv({ cls: "gw-thinking" });
-		for (let i = 0; i < 3; i++) this.thinkingEl.createSpan({ cls: "gw-dot" });
+		this.uiThinkingEl = this.uiMessagesEl.createDiv({ cls: "gw-thinking" });
+		for (let i = 0; i < 3; i++) this.uiThinkingEl.createSpan({ cls: "gw-dot" });
 		this.scrollToBottom(true);
 	}
 	private hideThinking(): void {
-		this.thinkingEl?.remove();
-		this.thinkingEl = null;
+		this.uiThinkingEl?.remove();
+		this.uiThinkingEl = null;
 	}
 	private keepThinkingLast(): void {
-		if (this.thinkingEl) this.messagesEl.appendChild(this.thinkingEl);
+		if (this.uiThinkingEl) this.uiMessagesEl.appendChild(this.uiThinkingEl);
 	}
 
 	// ── agent events ────────────────────────────────────────────────────
@@ -259,7 +259,7 @@ export class ChatView extends ItemView implements ToolUI {
 		switch (e.type) {
 			case "text_delta": {
 				if (!this.segment) {
-					const el = this.messagesEl.createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
+					const el = this.uiMessagesEl.createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
 					this.segment = { el, text: "", comp: null, timer: null, version: 0 };
 				}
 				this.segment.text += e.text;
@@ -275,7 +275,7 @@ export class ChatView extends ItemView implements ToolUI {
 			case "tool_start": {
 				this.finishSegment();
 				if (e.name === "quiz" || e.name === "ask_user") break;
-				const chip = this.messagesEl.createDiv({ cls: "gw-tool is-running" });
+				const chip = this.uiMessagesEl.createDiv({ cls: "gw-tool is-running" });
 				setIcon(chip.createSpan({ cls: "gw-tool-icon" }), "loader");
 				chip.createSpan({ text: TOOL_VERBS[e.name] ?? e.name });
 				this.toolChips.set(e.id, chip);
@@ -351,7 +351,7 @@ export class ChatView extends ItemView implements ToolUI {
 				resolve(v);
 			};
 			this.pending.add(settle as (v: null) => void);
-			const card = new QuizCard(this.messagesEl, quiz, (el, md) => this.renderMd(el, md), (r) => settle(r));
+			const card = new QuizCard(this.uiMessagesEl, quiz, (el, md) => this.renderMd(el, md), (r) => settle(r));
 			this.liveQuizCards.set(quiz.id, card);
 			this.keepThinkingLast();
 			this.scrollToBottom(true);
@@ -375,7 +375,7 @@ export class ChatView extends ItemView implements ToolUI {
 				resolve(v);
 			};
 			this.pending.add(settle as (v: null) => void);
-			new AskCard(this.messagesEl, input, (el, md) => this.renderMd(el, md), (r) => settle(r));
+			new AskCard(this.uiMessagesEl, input, (el, md) => this.renderMd(el, md), (r) => settle(r));
 			this.keepThinkingLast();
 			this.scrollToBottom(true);
 		});
@@ -391,19 +391,19 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private renderHeader(): void {
-		this.titleEl.setText(this.record.items.length ? this.record.title : "Groundwork");
-		this.badgeEl.empty();
+		this.uiTitleEl.setText(this.record.items.length ? this.record.title : "Groundwork");
+		this.uiBadgeEl.empty();
 		const p = this.plugin.providerLabel();
-		this.badgeEl.createSpan({ cls: `gw-badge ${p.demo ? "is-demo" : ""}`, text: p.label });
+		this.uiBadgeEl.createSpan({ cls: `gw-badge ${p.demo ? "is-demo" : ""}`, text: p.label });
 		if (this.record.notePath) {
-			const link = this.badgeEl.createEl("a", { cls: "gw-note-link", text: "session note" });
+			const link = this.uiBadgeEl.createEl("a", { cls: "gw-note-link", text: "session note" });
 			link.addEventListener("click", () => void this.app.workspace.openLinkText(this.record.notePath!, "", true));
 		}
 	}
 
 	private renderAll(): void {
 		this.renderHeader();
-		this.messagesEl.empty();
+		this.uiMessagesEl.empty();
 		this.toolChips.clear();
 		if (!this.record.items.length) {
 			void this.renderEmpty();
@@ -416,31 +416,31 @@ export class ChatView extends ItemView implements ToolUI {
 	private renderItem(item: DisplayItem): void {
 		switch (item.kind) {
 			case "user": {
-				const el = this.messagesEl.createDiv({ cls: "gw-msg gw-user" });
+				const el = this.uiMessagesEl.createDiv({ cls: "gw-msg gw-user" });
 				el.setText(item.text);
 				break;
 			}
 			case "assistant": {
-				const el = this.messagesEl.createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
+				const el = this.uiMessagesEl.createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
 				void this.renderMd(el, item.text);
 				break;
 			}
 			case "tool": {
-				const chip = this.messagesEl.createDiv({ cls: `gw-tool ${item.isError ? "is-error" : ""}` });
+				const chip = this.uiMessagesEl.createDiv({ cls: `gw-tool ${item.isError ? "is-error" : ""}` });
 				setIcon(chip.createSpan({ cls: "gw-tool-icon" }), item.isError ? "alert-triangle" : iconFor(item.name));
 				chip.createSpan({ text: item.summary });
 				break;
 			}
 			case "quiz": {
-				const card = new QuizCard(this.messagesEl, item.quiz, (el, md) => this.renderMd(el, md));
+				const card = new QuizCard(this.uiMessagesEl, item.quiz, (el, md) => this.renderMd(el, md));
 				card.showAnswer({ response: item.response, grade: item.grade, before: item.before, after: item.after });
 				break;
 			}
 			case "ask":
-				new AskCard(this.messagesEl, item.input, (el, md) => this.renderMd(el, md), undefined, item.answer);
+				new AskCard(this.uiMessagesEl, item.input, (el, md) => this.renderMd(el, md), undefined, item.answer);
 				break;
 			case "error": {
-				const el = this.messagesEl.createDiv({ cls: "gw-error" });
+				const el = this.uiMessagesEl.createDiv({ cls: "gw-error" });
 				setIcon(el.createSpan({ cls: "gw-tool-icon" }), "alert-triangle");
 				el.createSpan({ text: item.text });
 				break;
@@ -457,7 +457,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async renderEmpty(): Promise<void> {
-		const el = this.messagesEl.createDiv({ cls: "gw-empty" });
+		const el = this.uiMessagesEl.createDiv({ cls: "gw-empty" });
 		const hero = el.createDiv({ cls: "gw-hero" });
 		setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
 		hero.createEl("h2", { text: "What do you want to understand?" });
@@ -508,8 +508,8 @@ export class ChatView extends ItemView implements ToolUI {
 			);
 		}
 		suggest("sparkles", "Start a new goal", "Tell the tutor what you want to be able to do.", () => {
-			this.inputEl.value = "I want to understand ";
-			this.inputEl.focus();
+			this.uiInputEl.value = "I want to understand ";
+			this.uiInputEl.focus();
 			this.autoGrow();
 		});
 
@@ -524,22 +524,22 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private autoGrow(): void {
-		this.inputEl.style.height = "auto";
-		this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 220)}px`;
+		this.uiInputEl.style.height = "auto";
+		this.uiInputEl.style.height = `${Math.min(this.uiInputEl.scrollHeight, 220)}px`;
 	}
 
 	private scrollToBottom(force = false): void {
-		const el = this.messagesEl;
+		const el = this.uiMessagesEl;
 		const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
 		if (force || nearBottom) el.scrollTop = el.scrollHeight;
 	}
 
 	refreshSyncIndicator(): void {
-		if (!this.syncBtn) return;
+		if (!this.uiSyncBtn) return;
 		const s = this.plugin.syncStatus;
-		this.syncBtn.toggleClass("is-syncing", s.state === "syncing");
-		this.syncBtn.toggleClass("is-warning", s.state === "error" || s.state === "offline");
-		this.syncBtn.setAttr("aria-label", `Sync with GitHub — ${s.text}`);
+		this.uiSyncBtn.toggleClass("is-syncing", s.state === "syncing");
+		this.uiSyncBtn.toggleClass("is-warning", s.state === "error" || s.state === "offline");
+		this.uiSyncBtn.setAttr("aria-label", `Sync with GitHub — ${s.text}`);
 	}
 
 	// ── menus ───────────────────────────────────────────────────────────

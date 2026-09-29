@@ -11,6 +11,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "useDefineForClassFields": false,
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
