@@ -65,7 +65,7 @@ def main() -> None:
     gw.title("Done")
     gw.info("Day to day: `groundwork open`. To update Groundwork again: `python update_groundwork.py`.")
     if vault and not args.open:
-        gw.info("Obsidian was left closed. Pass --open if you want it launched.")
+        gw.info("If Obsidian is open, quit it fully and reopen it: it keeps running the old plugin until restarted.")
 
 
 if __name__ == "__main__":
