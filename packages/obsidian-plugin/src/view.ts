@@ -20,7 +20,9 @@ import {
 	type QuizResponse,
 	type SessionInfo,
 	type ToolUI,
+	type TutorSession,
 } from "@groundwork/core";
+import { ClaudeCodeSession } from "@groundwork/core/claude-code";
 import { AskCard, QuizCard } from "./cards";
 import type GroundworkPlugin from "./main";
 
@@ -40,7 +42,11 @@ interface ChatRecord {
 	created: string;
 	updated: string;
 	notePath?: string;
+	/** API-provider history, and how many display items it covers. */
 	messages: ChatMessage[];
+	messagesAt?: number;
+	/** Claude Code keeps sessions on the machine that ran them, so resume only there and only if nothing happened since. */
+	claude?: { device: string; sessionId: string; at: number };
 	items: DisplayItem[];
 }
 
@@ -56,12 +62,14 @@ const TOOL_VERBS: Record<string, string> = {
 	get_due_reviews: "Checking due reviews",
 	update_learner_profile: "Updating your learner profile",
 	save_session_summary: "Saving the session summary",
+	WebSearch: "Searching the web",
+	WebFetch: "Reading a web page",
 };
 
 export class ChatView extends ItemView implements ToolUI {
 	private record!: ChatRecord;
 	private session!: SessionInfo;
-	private agent: AgentSession | null = null;
+	private agent: TutorSession | null = null;
 	private abort: AbortController | null = null;
 	private pending = new Set<(v: null) => void>();
 	private liveQuizCards = new Map<string, QuizCard>();
@@ -141,6 +149,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	async onClose(): Promise<void> {
 		this.stop();
+		this.dropAgent();
 	}
 
 	private iconButton(parent: HTMLElement, icon: string, label: string, onClick: (e: MouseEvent) => void): HTMLElement {
@@ -157,7 +166,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const now = new Date().toISOString();
 		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
 		this.session = { id: this.record.id };
-		this.agent = null;
+		this.dropAgent();
 		this.renderAll();
 		this.uiInputEl?.focus();
 	}
@@ -165,30 +174,59 @@ export class ChatView extends ItemView implements ToolUI {
 	private openChat(record: ChatRecord): void {
 		this.record = record;
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
-		this.agent = null;
+		this.dropAgent();
 		this.renderAll();
 	}
 
 	resetAgent(): void {
-		this.agent = null;
+		this.dropAgent();
 		this.renderHeader();
 		if (!this.record.items.length) this.renderAll();
 	}
 
-	private ensureAgent(): AgentSession | null {
+	private dropAgent(): void {
+		this.agent?.close?.();
+		this.agent = null;
+	}
+
+	private ensureAgent(): TutorSession | null {
 		if (this.agent) return this.agent;
+		const today = new Date().toISOString().slice(0, 10);
+		const system = buildSystemPrompt("obsidian", `# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`);
+		const record = this.record;
+		const history = record.items.length ? transcript(record.items) : undefined;
+
+		if (this.plugin.settings.provider === "claude-code") {
+			const cfg = this.plugin.claudeCodeConfig();
+			if (!cfg) return null;
+			const device = this.plugin.deviceName();
+			const c = record.claude;
+			const resumable = c && c.device === device && c.at === record.items.length;
+			this.agent = new ClaudeCodeSession({
+				...cfg,
+				store: this.plugin.store,
+				tools: TOOLS,
+				system,
+				ui: this,
+				session: this.session,
+				resume: resumable ? c.sessionId : undefined,
+				history,
+			});
+			return this.agent;
+		}
+
 		const provider = this.plugin.makeProvider();
 		if (!provider) return null;
-		const today = new Date().toISOString().slice(0, 10);
-		this.agent = new AgentSession({
-			provider,
-			store: this.plugin.store,
-			tools: TOOLS,
-			system: buildSystemPrompt("obsidian", `# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`),
-			ui: this,
-			session: this.session,
-			messages: this.record.messages,
-		});
+		const current = record.messages.length > 0 && (record.messagesAt === undefined || record.messagesAt === record.items.length);
+		const messages: ChatMessage[] = current
+			? record.messages
+			: history
+				? [
+						{ role: "user", content: `Here is our conversation so far, from an earlier session:\n\n<previous_conversation>\n${history.slice(-40_000)}\n</previous_conversation>` },
+						{ role: "assistant", content: "Got it. I'll continue from there." },
+					]
+				: [];
+		this.agent = new AgentSession({ provider, store: this.plugin.store, tools: TOOLS, system, ui: this, session: this.session, messages });
 		return this.agent;
 	}
 
@@ -197,7 +235,7 @@ export class ChatView extends ItemView implements ToolUI {
 		if (!text || this.agent?.busy) return;
 		const agent = this.ensureAgent();
 		if (!agent) {
-			new Notice("Add an Anthropic API key in Settings → Groundwork, or switch the provider to Demo.");
+			new Notice(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
 			this.plugin.openSettings();
 			return;
 		}
@@ -218,7 +256,12 @@ export class ChatView extends ItemView implements ToolUI {
 		} finally {
 			this.finishSegment();
 			this.abort = null;
-			this.record.messages = agent.messages;
+			if (agent instanceof AgentSession) {
+				this.record.messages = agent.messages;
+				this.record.messagesAt = this.record.items.length;
+			} else if (agent instanceof ClaudeCodeSession && agent.sessionId) {
+				this.record.claude = { device: this.plugin.deviceName(), sessionId: agent.sessionId, at: this.record.items.length };
+			}
 			this.setBusy(false);
 			await this.persist();
 		}
@@ -467,12 +510,12 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 
 		const provider = this.plugin.providerLabel();
-		if (provider.missingKey) {
+		if (provider.setup) {
 			const warn = el.createDiv({ cls: "gw-setup" });
-			warn.createEl("strong", { text: "Connect a model to start." });
-			warn.createEl("p", { text: "Add your Anthropic API key (kept on this device only), or try the scripted demo first." });
+			warn.createEl("strong", { text: provider.setup.title });
+			void MarkdownRenderer.render(this.app, provider.setup.detail, warn.createDiv({ cls: "gw-setup-detail" }), "", this);
 			const row = warn.createDiv({ cls: "gw-row" });
-			row.createEl("button", { cls: "mod-cta", text: "Add API key" }).addEventListener("click", () => this.plugin.openSettings());
+			row.createEl("button", { cls: "mod-cta", text: provider.setup.action }).addEventListener("click", () => this.plugin.openSettings());
 			row.createEl("button", { text: "Try the demo" }).addEventListener("click", async () => {
 				await this.plugin.useDemo();
 				this.renderAll();
@@ -639,6 +682,9 @@ function iconFor(name: string): string {
 			return "notebook-pen";
 		case "update_learner_profile":
 			return "user";
+		case "WebSearch":
+		case "WebFetch":
+			return "globe";
 		default:
 			return "check";
 	}

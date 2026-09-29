@@ -1,6 +1,7 @@
 import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
 import { AnthropicProvider, DemoProvider, KnowledgeStore, type Provider } from "@groundwork/core";
 import { GitSync } from "@groundwork/core/node";
+import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { DEFAULT_SETTINGS, GroundworkSettingTab, loadApiKey, type GroundworkSettings } from "./settings";
@@ -77,6 +78,10 @@ export default class GroundworkPlugin extends Plugin {
 
 	// ── provider ───────────────────────────────────────────────────────
 
+	/** Filled by “Check connection”; the models this Claude plan can use. */
+	claudeModels: ModelInfo[] = [];
+
+	/** For the API-key and demo providers; the Claude subscription runs through {@link claudeCodeConfig}. */
 	makeProvider(): Provider | null {
 		if (this.settings.provider === "demo") return new DemoProvider();
 		const apiKey = loadApiKey(this.app) || process.env.ANTHROPIC_API_KEY || "";
@@ -89,10 +94,50 @@ export default class GroundworkPlugin extends Plugin {
 		});
 	}
 
-	providerLabel(): { label: string; demo: boolean; missingKey: boolean } {
-		if (this.settings.provider === "demo") return { label: "Demo tutor (scripted)", demo: true, missingKey: false };
+	claudeExecutable(): string | null {
+		return findClaudeExecutable(this.settings.claudePath);
+	}
+
+	claudeCodeConfig(): ClaudeCodeConfig | null {
+		const executable = this.claudeExecutable();
+		const adapter = this.app.vault.adapter;
+		if (!executable || !(adapter instanceof FileSystemAdapter)) return null;
+		return { executable, cwd: adapter.getBasePath(), model: this.settings.claudeModel, webSearch: this.settings.webSearch };
+	}
+
+	async checkClaudeCode(): Promise<ClaudeCodeStatus> {
+		const cfg = this.claudeCodeConfig();
+		if (!cfg) return { ok: false, message: this.settings.claudePath ? `No file at ${this.settings.claudePath}.` : "Claude Code wasn't found. Install it, then run `claude` in a terminal and type /login." };
+		return checkClaudeCode(cfg);
+	}
+
+	providerLabel(): { label: string; demo: boolean; setup: { title: string; detail: string; action: string } | null } {
+		const { provider } = this.settings;
+		if (provider === "demo") return { label: "Demo tutor (scripted)", demo: true, setup: null };
+		if (provider === "claude-code") {
+			const model = this.claudeModels.find((m) => m.value === this.settings.claudeModel)?.displayName ?? this.settings.claudeModel;
+			if (this.claudeCodeConfig()) return { label: `Claude subscription${model ? ` · ${model}` : ""}`, demo: false, setup: null };
+			return {
+				label: "Claude Code not found",
+				demo: false,
+				setup: {
+					title: "Connect your Claude subscription to start.",
+					detail: "Groundwork runs the tutor through Claude Code, so it uses your Pro or Max plan instead of an API key. Install Claude Code, run `claude` once in a terminal and type /login, then check the connection in settings.",
+					action: "Open settings",
+				},
+			};
+		}
 		const hasKey = !!(loadApiKey(this.app) || process.env.ANTHROPIC_API_KEY);
-		return { label: hasKey ? this.settings.model : "No API key", demo: false, missingKey: !hasKey };
+		if (hasKey) return { label: this.settings.model, demo: false, setup: null };
+		return {
+			label: "No API key",
+			demo: false,
+			setup: {
+				title: "Connect a model to start.",
+				detail: "Add your Anthropic API key (kept on this device only), or switch the provider to your Claude subscription.",
+				action: "Add API key",
+			},
+		};
 	}
 
 	async useDemo(): Promise<void> {

@@ -35,6 +35,13 @@ export interface Provider {
 	complete(req: ProviderRequest): Promise<ProviderResponse>;
 }
 
+/** A running tutor conversation, whichever backend drives it. */
+export interface TutorSession {
+	readonly busy: boolean;
+	send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void>;
+	close?(): void;
+}
+
 export type AgentEvent =
 	| { type: "text_delta"; text: string }
 	| { type: "tool_start"; id: string; name: string; input: any }

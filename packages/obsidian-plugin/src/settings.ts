@@ -2,8 +2,14 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { listAnthropicModels } from "@groundwork/core";
 import type GroundworkPlugin from "./main";
 
+export type ProviderId = "claude-code" | "anthropic" | "demo";
+
 export interface GroundworkSettings {
-	provider: "anthropic" | "demo";
+	provider: ProviderId;
+	/** Path to Claude Code's `claude` executable; empty means auto-detect. */
+	claudePath: string;
+	/** Claude Code model alias or id; empty means Claude Code's default. */
+	claudeModel: string;
 	model: string;
 	maxTokens: number;
 	webSearch: boolean;
@@ -14,7 +20,9 @@ export interface GroundworkSettings {
 }
 
 export const DEFAULT_SETTINGS: GroundworkSettings = {
-	provider: "anthropic",
+	provider: "claude-code",
+	claudePath: "",
+	claudeModel: "",
 	model: "claude-sonnet-4-5",
 	maxTokens: 8192,
 	webSearch: false,
@@ -55,83 +63,37 @@ export class GroundworkSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Provider")
-			.setDesc("Anthropic runs the real tutor. Demo plays a scripted lesson so you can try the interface without a key.")
+			.setDesc("Claude subscription runs the tutor through Claude Code with your Pro/Max plan, no API key needed. Anthropic API bills an API key. Demo plays a scripted lesson.")
 			.addDropdown((d) =>
 				d
-					.addOption("anthropic", "Anthropic (Claude)")
-					.addOption("demo", "Demo (no API key)")
+					.addOption("claude-code", "Claude subscription (Claude Code)")
+					.addOption("anthropic", "Anthropic API key")
+					.addOption("demo", "Demo (scripted)")
 					.setValue(s.provider)
 					.onChange(async (v) => {
-						s.provider = v as GroundworkSettings["provider"];
+						s.provider = v as ProviderId;
 						await save();
 						this.display();
 					}),
 			);
 
-		if (s.provider === "anthropic") {
-			new Setting(containerEl)
-				.setName("Anthropic API key")
-				.setDesc("Stored only on this device (not in the vault), so it is never committed to GitHub.")
-				.addText((t) => {
-					t.inputEl.type = "password";
-					t.setPlaceholder("sk-ant-…")
-						.setValue(loadApiKey(this.app))
-						.onChange((v) => {
-							saveApiKey(this.app, v.trim());
-							this.plugin.resetAgent();
-						});
-				});
+		if (s.provider === "claude-code") this.claudeCodeSettings(containerEl, save);
+		if (s.provider === "anthropic") this.anthropicSettings(containerEl, save);
 
-			const modelSetting = new Setting(containerEl)
-				.setName("Model")
-				.setDesc("Any Anthropic model id. Use “Load models” to pick from what your key can access.")
-				.addText((t) =>
-					t.setValue(s.model).onChange(async (v) => {
-						s.model = v.trim();
-						await save();
-					}),
-				);
-			modelSetting.addButton((b) =>
-				b.setButtonText("Load models").onClick(async () => {
-					const key = loadApiKey(this.app);
-					if (!key) return new Notice("Add your API key first.");
-					try {
-						const models = await listAnthropicModels(key);
-						modelSetting.controlEl.empty();
-						modelSetting.addDropdown((d) => {
-							for (const m of models) d.addOption(m.id, `${m.name} (${m.id})`);
-							if (!models.some((m) => m.id === s.model) && models[0]) s.model = models[0].id;
-							d.setValue(s.model).onChange(async (v) => {
-								s.model = v;
-								await save();
-							});
-						});
-						await save();
-					} catch (e) {
-						new Notice(`Could not list models: ${(e as Error).message}`);
-					}
-				}),
-			);
-
+		if (s.provider !== "demo") {
 			new Setting(containerEl)
 				.setName("Web search for fact-checking")
-				.setDesc("Lets the tutor verify facts with Anthropic's web search tool. Your organization must have it enabled.")
+				.setDesc(
+					s.provider === "claude-code"
+						? "Lets the tutor use Claude Code's web search and fetch tools to verify facts."
+						: "Lets the tutor verify facts with Anthropic's web search tool. Your organization must have it enabled.",
+				)
 				.addToggle((t) =>
 					t.setValue(s.webSearch).onChange(async (v) => {
 						s.webSearch = v;
 						await save();
 					}),
 				);
-
-			new Setting(containerEl).setName("Max output tokens").addText((t) =>
-				t.setValue(String(s.maxTokens)).onChange(async (v) => {
-					const n = Number(v);
-					if (Number.isFinite(n) && n >= 1024) {
-						s.maxTokens = Math.round(n);
-						await save();
-					}
-				}),
-			);
 		}
 
 		new Setting(containerEl).setName("Sync").setHeading();
@@ -178,5 +140,133 @@ export class GroundworkSettingTab extends PluginSettingTab {
 					await save();
 				}),
 			);
+	}
+
+	private claudeCodeSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
+		const s = this.plugin.settings;
+		const detected = this.plugin.claudeExecutable();
+
+		const status = new Setting(containerEl).setName("Connection");
+		const statusText = status.descEl.createDiv({ cls: "gw-setting-status" });
+		const showStatus = (ok: boolean | null, text: string) => {
+			statusText.setText(text);
+			statusText.toggleClass("is-ok", ok === true);
+			statusText.toggleClass("is-error", ok === false);
+		};
+		showStatus(
+			detected ? null : false,
+			detected ? "Uses the Claude account Claude Code is signed in with on this computer." : "Claude Code wasn't found. Install it, then run `claude` in a terminal and type /login.",
+		);
+		status.addButton((b) =>
+			b
+				.setButtonText("Check connection")
+				.setCta()
+				.onClick(async () => {
+					b.setDisabled(true).setButtonText("Checking…");
+					const r = await this.plugin.checkClaudeCode();
+					b.setDisabled(false).setButtonText("Check connection");
+					showStatus(r.ok, r.message);
+					if (r.models?.length) this.plugin.claudeModels = r.models;
+					renderModels();
+				}),
+		);
+
+		new Setting(containerEl)
+			.setName("Claude Code executable")
+			.setDesc(detected && !s.claudePath ? `Found at ${detected}. Leave empty to auto-detect.` : "Leave empty to auto-detect `claude` on your PATH and the usual install locations.")
+			.addText((t) =>
+				t
+					.setPlaceholder(detected ?? "claude")
+					.setValue(s.claudePath)
+					.onChange(async (v) => {
+						s.claudePath = v.trim();
+						await save();
+					}),
+			);
+
+		const model = new Setting(containerEl).setName("Model");
+		const renderModels = () => {
+			model.controlEl.empty();
+			const models = this.plugin.claudeModels;
+			model.setDesc(models.length ? "Models your Claude plan can use." : "Claude Code's default, or an alias like sonnet or opus. Check the connection to list your plan's models.");
+			if (models.length) {
+				model.addDropdown((d) => {
+					for (const m of models) d.addOption(m.value === "default" ? "" : m.value, m.displayName || m.value);
+					if (s.claudeModel && !models.some((m) => m.value === s.claudeModel)) d.addOption(s.claudeModel, s.claudeModel);
+					d.setValue(s.claudeModel).onChange(async (v) => {
+						s.claudeModel = v;
+						await save();
+					});
+				});
+			} else {
+				model.addText((t) =>
+					t
+						.setPlaceholder("default")
+						.setValue(s.claudeModel)
+						.onChange(async (v) => {
+							s.claudeModel = v.trim();
+							await save();
+						}),
+				);
+			}
+		};
+		renderModels();
+	}
+
+	private anthropicSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
+		const s = this.plugin.settings;
+		new Setting(containerEl)
+			.setName("Anthropic API key")
+			.setDesc("Stored only on this device (not in the vault), so it is never committed to GitHub.")
+			.addText((t) => {
+				t.inputEl.type = "password";
+				t.setPlaceholder("sk-ant-…")
+					.setValue(loadApiKey(this.app))
+					.onChange((v) => {
+						saveApiKey(this.app, v.trim());
+						this.plugin.resetAgent();
+					});
+			});
+
+		const modelSetting = new Setting(containerEl)
+			.setName("Model")
+			.setDesc("Any Anthropic model id. Use “Load models” to pick from what your key can access.")
+			.addText((t) =>
+				t.setValue(s.model).onChange(async (v) => {
+					s.model = v.trim();
+					await save();
+				}),
+			);
+		modelSetting.addButton((b) =>
+			b.setButtonText("Load models").onClick(async () => {
+				const key = loadApiKey(this.app);
+				if (!key) return new Notice("Add your API key first.");
+				try {
+					const models = await listAnthropicModels(key);
+					modelSetting.controlEl.empty();
+					modelSetting.addDropdown((d) => {
+						for (const m of models) d.addOption(m.id, `${m.name} (${m.id})`);
+						if (!models.some((m) => m.id === s.model) && models[0]) s.model = models[0].id;
+						d.setValue(s.model).onChange(async (v) => {
+							s.model = v;
+							await save();
+						});
+					});
+					await save();
+				} catch (e) {
+					new Notice(`Could not list models: ${(e as Error).message}`);
+				}
+			}),
+		);
+
+		new Setting(containerEl).setName("Max output tokens").addText((t) =>
+			t.setValue(String(s.maxTokens)).onChange(async (v) => {
+				const n = Number(v);
+				if (Number.isFinite(n) && n >= 1024) {
+					s.maxTokens = Math.round(n);
+					await save();
+				}
+			}),
+		);
 	}
 }

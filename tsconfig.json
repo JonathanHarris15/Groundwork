@@ -16,7 +16,8 @@
     "baseUrl": ".",
     "paths": {
       "@groundwork/core": ["packages/core/src/index.ts"],
-      "@groundwork/core/node": ["packages/core/src/node/index.ts"]
+      "@groundwork/core/node": ["packages/core/src/node/index.ts"],
+      "@groundwork/core/claude-code": ["packages/core/src/node/claude-code.ts"]
     }
   },
   "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts"]

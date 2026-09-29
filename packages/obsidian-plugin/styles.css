@@ -556,3 +556,13 @@
 		transform: scale(1);
 	}
 }
+
+.gw-setting-status {
+	margin-top: 4px;
+}
+.gw-setting-status.is-ok {
+	color: var(--text-success);
+}
+.gw-setting-status.is-error {
+	color: var(--text-error);
+}

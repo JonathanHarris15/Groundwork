@@ -1,6 +1,6 @@
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolDef, ToolUI } from "../tools";
-import type { AgentEvent, ChatMessage, ContentBlock, Provider } from "./types";
+import type { AgentEvent, ChatMessage, ContentBlock, Provider, TutorSession } from "./types";
 
 export interface AgentOptions {
 	provider: Provider;
@@ -13,7 +13,7 @@ export interface AgentOptions {
 	maxSteps?: number;
 }
 
-export class AgentSession {
+export class AgentSession implements TutorSession {
 	readonly messages: ChatMessage[];
 	private running = false;
 

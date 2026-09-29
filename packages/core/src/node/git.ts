@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import * as os from "node:os";
-import * as path from "node:path";
+import { withGuiPath } from "./env";
 
 export interface GitResult {
 	ok: boolean;
@@ -20,15 +20,8 @@ export interface SyncReport {
 	incoming: boolean;
 }
 
-/** GUI apps on macOS don't inherit the shell PATH; add the usual git locations. */
 function gitEnv(): NodeJS.ProcessEnv {
-	const extra = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", path.join(os.homedir(), ".local/bin")];
-	const sep = process.platform === "win32" ? ";" : ":";
-	return {
-		...process.env,
-		PATH: [process.env.PATH ?? "", ...extra].filter(Boolean).join(sep),
-		GIT_TERMINAL_PROMPT: "0",
-	};
+	return { ...withGuiPath(), GIT_TERMINAL_PROMPT: "0" };
 }
 
 export function git(cwd: string, args: string[], gitPath = "git", timeoutMs = 60_000): Promise<GitResult> {
