@@ -64,7 +64,8 @@ describe("groundwork mcp", () => {
 		expect(overview).toContain("Unconditional truths first");
 
 		await client.callTool({ name: "upsert_concept", arguments: { title: "Slope of a line" } });
-		const q = text(await client.callTool({ name: "quiz", arguments: quizArgs }));
+		const q = text(await client.callTool({ name: "quiz", arguments: { ...quizArgs, purpose: "Checking slope before we build on it." } }));
+		expect(q).toContain("*Why: Checking slope before we build on it.*");
 		expect(q).toContain("**A.** $3$");
 		expect(q).toContain("**C.** I don't know");
 		const id = /quiz_id "([^"]+)"/.exec(q)![1];

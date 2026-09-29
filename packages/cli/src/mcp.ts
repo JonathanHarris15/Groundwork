@@ -370,7 +370,7 @@ function parseReply(quiz: PreparedQuiz, answer: string, familiarity?: number, no
 }
 
 function questionLines(quiz: PreparedQuiz, heading: string): string[] {
-	const lines = [heading, "", quiz.question, quiz.details ? `\n*${quiz.details}*` : "", ""];
+	const lines = [heading, quiz.purpose ? `*Why: ${quiz.purpose}*` : "", "", quiz.question, quiz.details ? `\n*${quiz.details}*` : "", ""];
 	if (quiz.format === "free") lines.push("*Write your answer (use $...$ for math), or say \"I don't know\".*");
 	else lines.push(...quiz.options.map((o, i) => `**${letter(i)}.** ${o.label}`), `**${letter(quiz.options.length)}.** I don't know`);
 	return lines;
@@ -395,6 +395,7 @@ function presentTest(test: PreparedTest): string {
 		"---",
 		`## ${test.title}`,
 		`*${test.questions.length} questions${test.timeLimitMinutes ? ` · ${test.timeLimitMinutes} minutes` : ""}*`,
+		test.objective ? `\n**What this measures:** ${test.objective}` : "",
 		test.instructions ? `\n${test.instructions}` : "",
 	];
 	test.questions.forEach((q, i) => lines.push("", ...questionLines(q, `**${i + 1}.** *(${q.concept} · level ${q.difficulty}/5${q.format === "free" ? " · written" : ""})*`)));
@@ -432,7 +433,7 @@ const noteOf = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : u
 
 async function elicitQuiz(server: Server, quiz: PreparedQuiz) {
 	const res = await server.elicitInput({
-		message: `Quiz · ${quiz.concept} · level ${quiz.difficulty}/5\n\n${latexToPlain(quiz.question)}${quiz.details ? `\n\n${latexToPlain(quiz.details)}` : ""}`,
+		message: `Quiz · ${quiz.concept} · level ${quiz.difficulty}/5${quiz.purpose ? `\nWhy: ${latexToPlain(quiz.purpose)}` : ""}\n\n${latexToPlain(quiz.question)}${quiz.details ? `\n\n${latexToPlain(quiz.details)}` : ""}`,
 		requestedSchema: {
 			type: "object",
 			properties: {
@@ -455,7 +456,7 @@ async function elicitTest(server: Server, test: PreparedTest) {
 	});
 	const started = Date.now();
 	const res = await server.elicitInput({
-		message: `${test.title} · ${test.questions.length} questions${test.timeLimitMinutes ? ` · ${test.timeLimitMinutes} min` : ""}${test.instructions ? `\n\n${latexToPlain(test.instructions)}` : ""}`,
+		message: `${test.title} · ${test.questions.length} questions${test.timeLimitMinutes ? ` · ${test.timeLimitMinutes} min` : ""}${test.objective ? `\n\n${latexToPlain(test.objective)}` : ""}${test.instructions ? `\n\n${latexToPlain(test.instructions)}` : ""}`,
 		requestedSchema: { type: "object", properties },
 	});
 	if (res.action !== "accept" || !res.content) return { action: res.action, content: null };

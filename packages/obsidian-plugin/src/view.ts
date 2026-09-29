@@ -1399,7 +1399,7 @@ const quote = (s: string) => s.split("\n").map((l) => (l ? `> ${l}` : ">")).join
 
 /** One question, the learner's answer, and (once graded) the feedback, as blockquote lines. */
 function quizLines(quiz: PreparedQuiz, response: QuizResponse, grade?: QuizGrade): string[] {
-	const lines = [quote(quiz.question), ">"];
+	const lines = [...(quiz.purpose ? [`> *Why: ${quiz.purpose.replace(/\n/g, " ")}*`, ">"] : []), quote(quiz.question), ">"];
 	if (quiz.format === "free") {
 		lines.push(response.dontKnow ? "> **Answer:** —" : `> **Answer:**`, ...(response.dontKnow ? [] : [quote(response.text ?? "")]));
 		if (grade?.feedback) lines.push(">", `> **Feedback:** ${grade.feedback.replace(/\n/g, " ")}`);
@@ -1456,7 +1456,7 @@ function transcript(items: DisplayItem[], asides: AsideThread[] = []): string {
 				const head = report
 					? `> [!example]- 📝 Practice test: ${test.title} · ${Math.round(report.percent * 100)}% (${report.earned}/${report.possible})${report.notePath ? ` · [[${report.notePath.replace(/\.md$/, "")}|evaluation]]` : ""}`
 					: `> [!example]- 📝 Practice test: ${test.title} · submitted, grading`;
-				const lines = [head];
+				const lines = [head, ...(test.objective ? [`> **What this measures:** ${test.objective.replace(/\n/g, " ")}`] : [])];
 				test.questions.forEach((q, i) => {
 					const r = report?.results[i];
 					const answer = r?.response ?? response.answers[q.id] ?? { dontKnow: true, selected: [], note: "Left blank" };

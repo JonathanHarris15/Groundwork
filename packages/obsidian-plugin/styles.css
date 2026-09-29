@@ -649,6 +649,33 @@
 	margin-bottom: 0;
 }
 
+.gw-purpose {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	padding: 6px 10px;
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--interactive-accent) 7%, var(--background-primary));
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+.gw-purpose-icon svg {
+	width: 14px;
+	height: 14px;
+	margin-top: 3px;
+	color: var(--interactive-accent);
+}
+.gw-purpose-text {
+	flex: 1;
+	min-width: 0;
+}
+.gw-purpose-text > :first-child {
+	margin-top: 0;
+}
+.gw-purpose-text > :last-child {
+	margin-bottom: 0;
+}
+
 /* "I don't know" familiarity slider */
 .gw-familiarity {
 	display: none;

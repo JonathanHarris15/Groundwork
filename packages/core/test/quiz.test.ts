@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildSystemPrompt } from "../src/prompt";
+import { quizInputSchema } from "../src/tools";
 import { familiarityLabel, gradeQuiz, needsJudgment, parseChatAnswer, parseFamiliarity, prepareQuiz } from "../src/quiz";
 
 const base = {
@@ -90,6 +92,20 @@ describe("free response", () => {
 
 	it("still requires options for multiple choice", () => {
 		expect(() => prepareQuiz({ ...base, options: [] })).toThrow(/format "free"/);
+	});
+});
+
+describe("orientation", () => {
+	it("keeps the purpose shown above the question", () => {
+		expect(prepareQuiz({ ...base, purpose: "  Checking slope, which the derivative is built on. " }).purpose).toBe("Checking slope, which the derivative is built on.");
+	});
+
+	it("tells the tutor the learner has not read its files", () => {
+		const prompt = buildSystemPrompt("obsidian");
+		expect(prompt).toContain("The learner sees only this conversation");
+		expect(prompt).toContain("Define every symbol and term the first time you use it");
+		expect(prompt).toContain("Always show where this is going");
+		expect(quizInputSchema.required).toContain("purpose");
 	});
 });
 

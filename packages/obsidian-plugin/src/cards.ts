@@ -79,6 +79,11 @@ export class QuizCard {
 		if (free) head.createSpan({ cls: "gw-pill gw-pill-muted", text: "written answer" });
 		else if (quiz.multiSelect) head.createSpan({ cls: "gw-pill gw-pill-muted", text: "select all that apply" });
 
+		if (quiz.purpose) {
+			const why = this.el.createDiv({ cls: "gw-purpose" });
+			setIcon(why.createSpan({ cls: "gw-purpose-icon" }), "compass");
+			void this.renderMd(why.createDiv({ cls: "gw-purpose-text" }), quiz.purpose);
+		}
 		void this.renderMd(this.el.createDiv({ cls: "gw-quiz-question" }), quiz.question);
 		if (quiz.details) void this.renderMd(this.el.createDiv({ cls: "gw-quiz-details" }), quiz.details);
 
@@ -398,6 +403,11 @@ export class TestCard {
 		head.createSpan({ cls: "gw-pill gw-pill-muted", text: `${test.questions.length} question${test.questions.length === 1 ? "" : "s"}` });
 		if (test.timeLimitMinutes) head.createSpan({ cls: "gw-pill gw-pill-muted", text: `${test.timeLimitMinutes} min` });
 		this.el.createEl("h3", { cls: "gw-test-title", text: test.title });
+		if (test.objective) {
+			const why = this.el.createDiv({ cls: "gw-purpose" });
+			setIcon(why.createSpan({ cls: "gw-purpose-icon" }), "compass");
+			void this.renderMd(why.createDiv({ cls: "gw-purpose-text" }), test.objective);
+		}
 		if (test.instructions) void this.renderMd(this.el.createDiv({ cls: "gw-quiz-details" }), test.instructions);
 
 		const bar = this.el.createDiv({ cls: "gw-test-bar" });

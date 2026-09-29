@@ -94,8 +94,10 @@ const evidenceKinds = ["probe", "check", "review", "explain"];
 
 const questionProperties: Record<string, JSONSchema> = {
 	concept: str("Title of the concept this question measures (create it with upsert_concept or set_goal first)."),
-	question: str("Exactly one question. Markdown and LaTeX allowed."),
-	details: str("Optional context shown under the question."),
+	question: str(
+		"Exactly one question, fully self-contained: the learner sees only this card, not your files. State every given, and define every symbol and term the first time it appears (e.g. 'where $\\mu$ is the coefficient of friction'). Never write 'as in the lecture' or rely on notation from a document. Markdown and LaTeX allowed.",
+	),
+	details: str("Setup shown under the question: the scenario, the givens, and what each symbol means."),
 	format: {
 		type: "string",
 		enum: ["choice", "free"],
@@ -137,9 +139,12 @@ export const quizInputSchema: JSONSchema = {
 	type: "object",
 	properties: {
 		...questionProperties,
+		purpose: str(
+			"Shown above the question, one plain sentence to the learner: what this checks and why it matters for where you are headed, e.g. 'Checking you can find a slope from two points — the derivative is built from exactly this.'",
+		),
 		kind: { type: "string", enum: evidenceKinds.slice(0, 3), description: "probe = mapping the edge, check = confirming a node just taught, review = spaced retrieval." },
 	},
-	required: ["concept", "question", "explanation", "difficulty", "kind"],
+	required: ["concept", "question", "purpose", "explanation", "difficulty", "kind"],
 };
 
 export const practiceTestInputSchema: JSONSchema = {
@@ -148,7 +153,8 @@ export const practiceTestInputSchema: JSONSchema = {
 		title: str("e.g. 'Midterm 1 practice — derivatives'."),
 		goal: str("Goal this test measures, if any."),
 		examPlan: str("Exam plan it mirrors, if any."),
-		instructions: str("Shown at the top: scope, rules (e.g. no calculator), how it maps to the real exam."),
+		objective: str("Shown at the top, in plain terms: what skills this test measures and why that matters for their goal or exam."),
+		instructions: str("Shown at the top: scope, rules (e.g. no calculator), how it maps to the real exam. Define any notation the whole test shares here."),
 		timeLimitMinutes: { type: "integer", minimum: 1, description: "Optional. Shown as a countdown; the test is not cut off." },
 		questions: {
 			type: "array",
@@ -158,7 +164,7 @@ export const practiceTestInputSchema: JSONSchema = {
 			items: { type: "object", properties: questionProperties, required: ["concept", "question", "explanation", "difficulty"] },
 		},
 	},
-	required: ["title", "questions"],
+	required: ["title", "objective", "questions"],
 };
 
 const judgmentProperties: Record<string, JSONSchema> = {

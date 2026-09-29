@@ -14,6 +14,8 @@ export interface QuizInput {
 	concept: string;
 	question: string;
 	details?: string;
+	/** Shown above the question: what this checks and how it moves them toward their goal. */
+	purpose?: string;
 	/** "choice" (default) is graded instantly; "free" is a typed answer (LaTeX allowed) the tutor grades. */
 	format?: QuizFormat;
 	options?: QuizOptionInput[];
@@ -40,6 +42,7 @@ export interface PreparedQuiz {
 	concept: string;
 	question: string;
 	details?: string;
+	purpose?: string;
 	format: QuizFormat;
 	options: QuizOption[];
 	correct: string[];
@@ -112,6 +115,7 @@ export function prepareQuiz(input: QuizInput, random: () => number = Math.random
 		concept: input.concept,
 		question: normalizeTutorMarkdown(String(input.question ?? "").trim()),
 		details: input.details?.trim() ? normalizeTutorMarkdown(input.details.trim()) : undefined,
+		purpose: input.purpose?.trim() ? normalizeTutorMarkdown(input.purpose.trim()) : undefined,
 		explanation: normalizeTutorMarkdown(input.explanation?.trim() ?? ""),
 		difficulty: Math.min(5, Math.max(1, Math.round(input.difficulty || 3))),
 		kind: input.kind ?? "check",

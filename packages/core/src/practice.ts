@@ -19,6 +19,8 @@ export interface PracticeTestInput {
 	goal?: string;
 	/** Exam plan this test mirrors, if any. */
 	examPlan?: string;
+	/** What the test measures and why it matters for their goal, in plain terms. */
+	objective?: string;
 	instructions?: string;
 	timeLimitMinutes?: number;
 	questions: QuizInput[];
@@ -29,6 +31,7 @@ export interface PreparedTest {
 	title: string;
 	goal?: string;
 	examPlan?: string;
+	objective?: string;
 	instructions?: string;
 	timeLimitMinutes?: number;
 	questions: PreparedQuiz[];
@@ -98,6 +101,7 @@ export function prepareTest(input: PracticeTestInput, random: () => number = Mat
 		title,
 		goal: input.goal?.trim() || undefined,
 		examPlan: input.examPlan?.trim() || undefined,
+		objective: input.objective?.trim() || undefined,
 		instructions: input.instructions?.trim() || undefined,
 		timeLimitMinutes: Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes) : undefined,
 		questions,
@@ -318,6 +322,7 @@ async function writeTestNote(store: KnowledgeStore, test: PreparedTest, report: 
 	const body: string[] = [
 		`# ${test.title}`,
 		"",
+		...(test.objective ? [`**What this measured:** ${test.objective}`, ""] : []),
 		`**Score:** ${fmtPoints(report.earned)}/${report.possible} (${pct(report.percent)})${report.elapsedSeconds !== undefined ? ` · **Time:** ${fmtTime(report.elapsedSeconds)}${test.timeLimitMinutes ? ` of ${test.timeLimitMinutes}:00` : ""}` : ""}`,
 		"",
 		"## By concept",

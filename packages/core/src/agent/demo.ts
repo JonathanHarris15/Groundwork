@@ -41,6 +41,8 @@ export class DemoProvider implements Provider {
 			this.tool("upsert_concept", { title: "Derivative", domain: "calculus", prerequisites: ["Slope of a line"] }),
 			this.tool("practice_test", {
 				title: "Derivative basics (demo)",
+				objective:
+					"Whether you can do the three things the derivative rests on: find a slope, apply the power rule, and write the limit definition. Together they show whether you're ready for derivative problems on an exam.",
 				instructions: "Answer every question, then press **Submit test**. Use $...$ for math in written answers.",
 				timeLimitMinutes: 10,
 				questions: [
@@ -58,7 +60,7 @@ export class DemoProvider implements Provider {
 					},
 					{
 						concept: "Derivative",
-						question: "Using the power rule, find $\\frac{d}{dx}\\left(x^2\\right)$.",
+						question: "Using the power rule, find $\\frac{d}{dx}\\left(x^2\\right)$, the derivative of $x^2$ with respect to $x$.",
 						format: "free",
 						referenceAnswer: "$2x$",
 						rubric: "Full credit: $2x$. Partial: an $x$ term with the wrong coefficient.",
@@ -67,7 +69,7 @@ export class DemoProvider implements Provider {
 					},
 					{
 						concept: "Derivative",
-						question: "Write the limit that defines $f'(a)$.",
+						question: "For a function $f$ and a point $x = a$, write the limit that defines $f'(a)$, the derivative of $f$ at $a$. Use $h$ for the step between the two points.",
 						format: "free",
 						referenceAnswer: "$$f'(a) = \\lim_{h \\to 0} \\frac{f(a+h) - f(a)}{h}$$",
 						rubric: "Full credit: the difference quotient with $h \\to 0$. Partial: the quotient without the limit.",
@@ -191,6 +193,7 @@ export class DemoProvider implements Provider {
 				},
 				this.tool("quiz", {
 					concept: "Slope of a line",
+					purpose: "Checking where your slope skills are. The derivative is built on slope, so this tells me where to start.",
 					question: "A line passes through $(1, 2)$ and $(3, 8)$. What is its slope?",
 					options: [
 						{ label: "$3$", value: "three" },
@@ -217,7 +220,8 @@ export class DemoProvider implements Provider {
 				},
 				this.tool("quiz", {
 					concept: "Secant line",
-					question: "On $y = x^2$, what is the slope of the secant line through $x = 1$ and $x = 1 + h$?",
+					purpose: "Checking you can turn a curve into a line problem. The next step, the limit, shrinks exactly this.",
+					question: "On the curve $y = x^2$, take the two points at $x = 1$ and $x = 1 + h$, where $h$ is the horizontal distance between them. What is the slope of the straight line (the secant line) through those two points?",
 					options: [
 						{ label: "$2 + h$", value: "2h" },
 						{ label: "$2$", value: "2", misconception: "Jumps to the tangent slope before taking any limit" },
