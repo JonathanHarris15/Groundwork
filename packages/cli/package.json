@@ -1,15 +1,18 @@
 {
   "name": "@groundwork/cli",
   "version": "0.1.0",
-  "private": true,
+  "description": "Groundwork CLI: set up and open your knowledge vault, and serve it to chat apps over MCP.",
   "type": "module",
   "bin": {
     "groundwork": "dist/groundwork.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "node build.mjs"
   },
-  "dependencies": {
+  "devDependencies": {
     "@groundwork/core": "*",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "commander": "^15.0.0"

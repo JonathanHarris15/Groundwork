@@ -1,0 +1,9 @@
+{
+  "id": "groundwork",
+  "name": "Groundwork",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "A tutor that plans goals from first principles, calibrates what you know with quizzes, and keeps that memory in this vault — synced to GitHub.",
+  "author": "Groundwork",
+  "isDesktopOnly": true
+}
