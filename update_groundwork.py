@@ -24,6 +24,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import setup_groundwork as gw  # noqa: E402
 
 
+def ensure_default_branch() -> None:
+    """`git pull` only updates the checked-out branch, so a clone left on a feature branch never sees main."""
+    git = ["git", "-C", str(gw.REPO)]
+    branch = gw.output([*git, "branch", "--show-current"])
+    default = (gw.output([*git, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]) or "origin/main").split("/", 1)[-1]
+    if not branch or branch == default:
+        return
+    gw.warn(f"This checkout is on branch '{branch}', not '{default}', so updates to {default} won't arrive.")
+    if gw.output([*git, "status", "--porcelain"]):
+        gw.info(f"It has uncommitted changes, so it stays put. To switch yourself: git -C \"{gw.REPO}\" switch {default}")
+        return
+    if gw.confirm(f"Switch to {default} now?"):
+        gw.run([*git, "switch", default])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Update Groundwork (git pull + rebuild). Does not create or reconnect a vault.",
@@ -42,7 +57,12 @@ def main() -> None:
     if not gw.which("git"):
         gw.fail("git is required. Install it, or run setup_groundwork.py once.")
     gw.ok("git")
+    if not args.no_pull:
+        ensure_default_branch()
     gw.update_repo(skip=args.no_pull)
+    commit = gw.output(["git", "-C", str(gw.REPO), "log", "-1", "--format=%h %s"])
+    if commit:
+        gw.info(f"Building {commit}")
 
     gw.title("Node")
     gw.ensure_node()
@@ -65,7 +85,8 @@ def main() -> None:
     gw.title("Done")
     gw.info("Day to day: `groundwork open`. To update Groundwork again: `python update_groundwork.py`.")
     if vault and not args.open:
-        gw.info("If Obsidian is open, quit it fully and reopen it: it keeps running the old plugin until restarted.")
+        gw.info("If Obsidian is open, click \"Reload Groundwork\" when it offers, or quit it fully and reopen it.")
+        gw.info("Settings → Groundwork → About shows the build Obsidian is running.")
 
 
 if __name__ == "__main__":
