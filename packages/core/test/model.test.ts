@@ -64,6 +64,29 @@ describe("computeStats", () => {
 		expect(s.mastery).toBeLessThan(0.5);
 	});
 
+	it("treats 'almost have it' as a softer miss than 'never seen this'", () => {
+		const base = [ev(0, "correct", 2), ev(1, "correct", 3)];
+		const never = computeStats([...base, ev(2, "dont_know", 4, { familiarity: 0 })], new Date(day(2)));
+		const almost = computeStats([...base, ev(2, "dont_know", 4, { familiarity: 3 })], new Date(day(2)));
+		expect(almost.ability).toBeGreaterThan(never.ability);
+		expect(almost.halfLifeDays).toBeGreaterThan(never.halfLifeDays);
+		expect(almost.ceiling).toBe(4);
+		expect(almost.openMisconceptions).toEqual([]);
+	});
+
+	it("gives partial credit between a miss and a correct answer without raising the floor", () => {
+		const at = new Date(day(0));
+		const wrong = computeStats([ev(0, "incorrect", 3)], at);
+		const partial = computeStats([ev(0, "partial", 3, { misconception: "drops the constant" })], at);
+		const right = computeStats([ev(0, "correct", 3)], at);
+		expect(partial.ability).toBeGreaterThan(wrong.ability);
+		expect(partial.ability).toBeLessThan(right.ability);
+		expect(partial.floor).toBeUndefined();
+		expect(partial.ceiling).toBe(3);
+		expect(partial.correct).toBe(0);
+		expect(partial.openMisconceptions).toEqual(["drops the constant"]);
+	});
+
 	it("is order-independent (event sourcing)", () => {
 		const a = [ev(0, "correct"), ev(1, "incorrect"), ev(2, "correct")];
 		const now = new Date(day(3));

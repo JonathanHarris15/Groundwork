@@ -34,6 +34,67 @@ export class DemoProvider implements Provider {
 		return { type: "tool_use", id: `demo_${++this.counter}_${name}`, name, input };
 	}
 
+	private practiceTest(): ContentBlock[] {
+		return [
+			{ type: "text", text: "Here's a short practice test. No feedback until you submit; free-response answers take LaTeX.\n" },
+			this.tool("upsert_concept", { title: "Slope of a line", domain: "calculus" }),
+			this.tool("upsert_concept", { title: "Derivative", domain: "calculus", prerequisites: ["Slope of a line"] }),
+			this.tool("practice_test", {
+				title: "Derivative basics (demo)",
+				instructions: "Answer every question, then press **Submit test**. Use $...$ for math in written answers.",
+				timeLimitMinutes: 10,
+				questions: [
+					{
+						concept: "Slope of a line",
+						question: "A line passes through $(0, 1)$ and $(2, 5)$. What is its slope?",
+						options: [
+							{ label: "$2$", value: "two" },
+							{ label: "$\\frac{1}{2}$", value: "half", misconception: "Divides run by rise" },
+							{ label: "$4$", value: "four", misconception: "Uses the rise alone" },
+						],
+						correctAnswer: "two",
+						explanation: "$\\frac{5-1}{2-0} = 2$.",
+						difficulty: 2,
+					},
+					{
+						concept: "Derivative",
+						question: "Using the power rule, find $\\frac{d}{dx}\\left(x^2\\right)$.",
+						format: "free",
+						referenceAnswer: "$2x$",
+						rubric: "Full credit: $2x$. Partial: an $x$ term with the wrong coefficient.",
+						explanation: "Bring the exponent down and lower it by one: $2x^{1}$.",
+						difficulty: 2,
+					},
+					{
+						concept: "Derivative",
+						question: "Write the limit that defines $f'(a)$.",
+						format: "free",
+						referenceAnswer: "$$f'(a) = \\lim_{h \\to 0} \\frac{f(a+h) - f(a)}{h}$$",
+						rubric: "Full credit: the difference quotient with $h \\to 0$. Partial: the quotient without the limit.",
+						explanation: "The derivative is the limit of secant slopes as the two points merge.",
+						difficulty: 3,
+					},
+				],
+			}),
+		];
+	}
+
+	/** The demo "grades" by looking for the key expression, so the flow is visible without a model. */
+	private gradeTest(testId: string, resultText: string): ContentBlock[] {
+		const answers = [...resultText.matchAll(/### Question (\d+)[\s\S]*?They wrote:\n([\s\S]*?)\nReference answer:/g)];
+		const grades = answers.map(([, n, text]) => {
+			const t = text.replace(/\s+/g, "");
+			const ok = n === "2" ? /2x/.test(t) : /lim/.test(t) && /h/.test(t);
+			const partial = n === "3" && !ok && /f\(a\+h\)/.test(t);
+			return {
+				question: Number(n),
+				outcome: ok ? "correct" : partial ? "partial" : "incorrect",
+				feedback: ok ? "That's it." : partial ? "Right quotient, but it needs $\\lim_{h \\to 0}$ in front." : "Compare with the model answer below.",
+			};
+		});
+		return [this.tool("grade_practice_test", { test_id: testId, grades })];
+	}
+
 	private nextStep(messages: ChatMessage[]): ContentBlock[] {
 		const last = messages[messages.length - 1];
 		const results = Array.isArray(last?.content) ? last.content.filter((b) => b.type === "tool_result") : [];
@@ -41,6 +102,20 @@ export class DemoProvider implements Provider {
 		const userTurns = messages.filter(isLearnerTurn).length;
 		const learnerSpoke = !!last && isLearnerTurn(last);
 		const resultText = results.map((r) => String((r as any).content)).join("\n");
+
+		if (learnerSpoke && /practice test/i.test(learnerText(last))) return this.practiceTest();
+		if (lastToolNames.includes("practice_test") || lastToolNames.includes("grade_practice_test")) {
+			const testId = /test_id "([^"]+)"/.exec(resultText)?.[1];
+			if (testId) return this.gradeTest(testId, resultText);
+			return [
+				{
+					type: "text",
+					text: /Practice test evaluated/.test(resultText)
+						? "Your evaluation is in the test card and saved under `tests/`. With a real tutor, this is where it would debrief and then start from the smallest piece you missed, stepping down until you get one right and teaching up from there."
+						: "No problem, the test is closed and nothing was recorded.",
+				},
+			];
+		}
 
 		if (learnerSpoke && userTurns === 1) {
 			return [
@@ -188,6 +263,11 @@ export class DemoProvider implements Provider {
 			},
 		];
 	}
+}
+
+function learnerText(m: ChatMessage): string {
+	if (typeof m.content === "string") return m.content;
+	return m.content.map((b) => (b.type === "text" ? b.text : "")).join(" ");
 }
 
 function isLearnerTurn(m: ChatMessage): boolean {

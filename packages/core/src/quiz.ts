@@ -99,9 +99,9 @@ export function familiarityLabel(n: number | undefined): string {
 export function parseFamiliarity(text: string): number | undefined {
 	const t = text.toLowerCase();
 	if (/almost|tip of (my|the) tongue|very familiar|so close|nearly/.test(t)) return 3;
-	if (/rings? a bell|familiar|vaguely|sort of|kind of|not sure/.test(t)) return 2;
-	if (/seen (it|this)|heard of|can'?t (place|remember|recall)|forgot/.test(t)) return 1;
 	if (/never (seen|heard)|no idea|new to me|clueless|no clue/.test(t)) return 0;
+	if (/rings? a bell|familiar|vaguely|sort of|kind of/.test(t)) return 2;
+	if (/seen (it|this)|heard of|can'?t (place|remember|recall)|forgot/.test(t)) return 1;
 	return undefined;
 }
 
