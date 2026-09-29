@@ -32,7 +32,7 @@ const FENCE_LINE = /^(```+|~~~+)/;
 
 export function normalizeTutorMarkdown(md: string): string {
 	if (!md) return md;
-	const parts = splitFences(md);
+	const parts = splitFences(unescapeOverEscaped(md));
 	return parts.map((p) => (p.fence ? p.text : normalizeFlow(p.text))).join("");
 }
 
@@ -62,6 +62,30 @@ function normalizeFlow(text: string): string {
 	});
 	s = wrapLatexPhrases(s);
 	return s;
+}
+
+const N_MACRO =
+	/^(nabla|ne|neq|neg|ni|nu|not|notin|newline|newcommand|nolimits|normalsize|nleq|ngeq|nless|ngtr|nmid|nparallel|nexists|nsubseteq|nsupseteq|nsim|ncong|nearrow|nwarrow|nRightarrow|nLeftarrow|nrightarrow|nleftarrow)$/;
+const OVER_ESCAPED_NEWLINE = /\\n(?=\\n|[A-Z0-9\s.,;:!?)]|$)/;
+const DOUBLED_MACRO = /\\\\([a-zA-Z]{2,})/g;
+
+/**
+ * Tool arguments sometimes arrive escaped one level too deep: `\n` as two
+ * characters and `\\top` for `\top`. MathJax reads `\\` as a line break, so
+ * `\\times` renders as "times" and `^\\top` is a parse error.
+ */
+function unescapeOverEscaped(s: string): string {
+	const doubled = [...s.matchAll(DOUBLED_MACRO)].some((m) => isTexMacroName(m[1]) || LATEX_NAMED.has(m[1]));
+	if (!doubled && !OVER_ESCAPED_NEWLINE.test(s)) return s;
+	let out = s.replace(/\\\\+([a-zA-Z]{2,})/g, (all, name: string) =>
+		isTexMacroName(name) || LATEX_NAMED.has(name) || name.startsWith("math") ? `\\${name}` : all,
+	);
+	out = out.replace(/\\{1,2}n([a-zA-Z]*)/g, (all, rest: string) => {
+		if (N_MACRO.test(`n${rest}`)) return all.startsWith("\\\\") ? `\\n${rest}` : all;
+		return `\n${rest}`;
+	});
+	out = out.replace(/\\"/g, '"');
+	return out;
 }
 
 function unwrapHighlight(inner: string): string {
@@ -116,7 +140,11 @@ function replaceInlineMath(s: string, rewrite: (inner: string) => string): strin
 }
 
 function looksLikeProse(s: string): boolean {
-	const words = s.match(/[A-Za-z]{3,}/g) ?? [];
+	const bare = s
+		.replace(/\\(begin|end)\{[^}]*\}/g, " ")
+		.replace(/\\(text|mathrm|operatorname)\{[^}]*\}/g, " ")
+		.replace(/\\[a-zA-Z]+/g, " ");
+	const words = bare.match(/[A-Za-z]{3,}/g) ?? [];
 	const english = words.filter((w) => !LATEX_NAMED.has(w) && !isTexMacroName(w));
 	return english.length >= 3;
 }

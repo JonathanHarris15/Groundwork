@@ -44,6 +44,24 @@ describe("normalizeTutorMarkdown", () => {
 		expect(out).toContain("after $\\alpha$");
 	});
 
+	it("undoes one extra level of escaping from tool arguments", () => {
+		const src =
+			"Multiply out:\\n\\n$$Mx = (uv^\\\\top)x = u(v^\\\\top x)$$\\n\\nNow $v^\\\\top x$ is $(1\\\\times 3)(3\\\\times 1)$ and $v$ lives in $\\\\mathbf{R}^3$. So\\n\\n$\\\\nabla f \\\\neq 0$";
+		const out = normalizeTutorMarkdown(src);
+		expect(out).not.toMatch(/\\\\|\\n(?!abla|eq)/);
+		expect(out).toContain("$$\nMx = (uv^\\top)x = u(v^\\top x)\n$$");
+		expect(out).toContain("$(1\\times 3)(3\\times 1)$");
+		expect(out).toContain("$\\mathbf{R}^3$");
+		expect(out).toContain("\n\nNow");
+		expect(out).toContain("$\\nabla f \\neq 0$");
+	});
+
+	it("keeps real TeX line breaks and \\n-macros when nothing is over-escaped", () => {
+		const src = "$$\\begin{aligned} a &= 1 \\\\ b &= 2 \\end{aligned}$$ and $\\nabla f \\neq 0$";
+		expect(normalizeTutorMarkdown(src)).toContain("a &= 1 \\\\ b &= 2");
+		expect(normalizeTutorMarkdown(src)).toContain("$\\nabla f \\neq 0$");
+	});
+
 	it("is idempotent", () => {
 		const once = normalizeTutorMarkdown(GRADIENT_EXPLANATION);
 		expect(normalizeTutorMarkdown(once)).toBe(once);
