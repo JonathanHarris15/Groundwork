@@ -44,7 +44,7 @@ describe("groundwork mcp", () => {
 		const client = await connect(vault);
 
 		const names = (await client.listTools()).tools.map((t) => t.name);
-		expect(names).toEqual(expect.arrayContaining(["get_learner_overview", "set_goal", "quiz", "submit_quiz_answer", "sync_vault"]));
+		expect(names).toEqual(expect.arrayContaining(["get_learner_overview", "set_goal", "quiz", "submit_quiz_answer", "sync_vault", "ingest_exam_materials"]));
 		expect(names).not.toContain("ask_user");
 
 		const overview = text(await client.callTool({ name: "get_learner_overview", arguments: {} }));
@@ -64,7 +64,7 @@ describe("groundwork mcp", () => {
 		expect(evidence).toContain('"outcome":"incorrect"');
 
 		const prompts = await client.listPrompts();
-		expect(prompts.prompts.map((p) => p.name)).toContain("teach");
+		expect(prompts.prompts.map((p) => p.name)).toEqual(expect.arrayContaining(["teach", "review", "exam"]));
 	}, 30_000);
 
 	it("uses an elicitation form when the client supports it", async () => {
