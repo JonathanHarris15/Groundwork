@@ -64,7 +64,9 @@ Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency 
 
 ## Setup
 
-**Quick setup:** clone this repo and run `python setup.py` (same as `python setup_groundwork.py`; on Windows, `py setup.py`; get Python with `winget install Python.Python.3.12` if you don't have it). It installs git, Node, Obsidian, Claude Code, and optionally the GitHub CLI; signs you in; builds and links `groundwork`; creates or clones your vault; and opens Obsidian. If Groundwork is already installed, the same command `git pull`s this repo and rebuilds. Flags: `--new NAME` or `--clone URL` to skip the vault question, `--vault DIR`, `--no-open`, `--no-pull`, `-y`. The manual steps are below.
+**Quick setup:** clone this repo and run `python setup.py` (same as `python setup_groundwork.py`; on Windows, `py setup.py`; get Python with `winget install Python.Python.3.12` if you don't have it). It installs git, Node, Obsidian, Claude Code, and optionally the GitHub CLI; signs you in; builds and links `groundwork`; creates or clones your vault; and opens Obsidian. Flags: `--new NAME` or `--clone URL` to skip the vault question, `--vault DIR`, `--no-open`, `--no-pull`, `-y`.
+
+**Update later** with `python update.py` (or `python update_groundwork.py`). That pulls this repo, rebuilds, and refreshes the plugin in the vault you already configured. It does not ask you to create or clone a vault. The manual steps are below.
 
 Requires Node 20+, git, [Obsidian](https://obsidian.md) (desktop), and [Claude Code](https://claude.com/claude-code) signed in with your Claude subscription (see [Connect a model](#connect-a-model-your-claude-subscription-default)). `npm install` also downloads Claude Code's binary for the tests (~240 MB). The plugin uses the Claude Code you install yourself, not that copy.
 
