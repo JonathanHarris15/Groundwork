@@ -89,8 +89,9 @@ export interface ClaudeCodeStatus {
 /** Starts Claude Code just long enough to read its login and model list. Uses no subscription quota. */
 export async function checkClaudeCode(cfg: Pick<ClaudeCodeConfig, "executable" | "cwd" | "env">): Promise<ClaudeCodeStatus> {
 	const input = new Inbox<SDKUserMessage>();
-	const q = query({ prompt: input, options: { ...baseOptions(cfg), tools: [] } });
+	let q: Query | null = null;
 	try {
+		q = query({ prompt: input, options: { ...baseOptions(cfg), tools: [] } });
 		const init = await withTimeout(q.initializationResult(), 30_000, "Claude Code took too long to start.");
 		const account = init.account;
 		const loggedIn = !!account && account.tokenSource !== "none";
@@ -103,7 +104,7 @@ export async function checkClaudeCode(cfg: Pick<ClaudeCodeConfig, "executable" |
 		return { ok: false, message: friendlyError(errorMessage(e)) };
 	} finally {
 		input.end();
-		q.close();
+		q?.close();
 	}
 }
 

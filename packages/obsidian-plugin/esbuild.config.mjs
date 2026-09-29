@@ -18,6 +18,14 @@ const copyAssets = {
 	},
 };
 
+const eventsShim = path.join(here, "shims/events.cjs");
+const rendererSafeEvents = {
+	name: "renderer-safe-events",
+	setup(build) {
+		build.onResolve({ filter: /^(node:)?events$/ }, (args) => (args.importer === eventsShim ? { path: "events", external: true } : { path: eventsShim }));
+	},
+};
+
 const ctx = await esbuild.context({
 	entryPoints: [path.join(here, "src/main.ts")],
 	bundle: true,
@@ -35,7 +43,7 @@ const ctx = await esbuild.context({
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	minify: prod,
-	plugins: [copyAssets],
+	plugins: [rendererSafeEvents, copyAssets],
 });
 
 if (prod) {

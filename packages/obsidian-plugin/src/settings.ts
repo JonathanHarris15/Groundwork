@@ -163,11 +163,16 @@ export class GroundworkSettingTab extends PluginSettingTab {
 				.setCta()
 				.onClick(async () => {
 					b.setDisabled(true).setButtonText("Checking…");
-					const r = await this.plugin.checkClaudeCode();
-					b.setDisabled(false).setButtonText("Check connection");
-					showStatus(r.ok, r.message);
-					if (r.models?.length) this.plugin.claudeModels = r.models;
-					renderModels();
+					try {
+						const r = await this.plugin.checkClaudeCode();
+						showStatus(r.ok, r.message);
+						if (r.models?.length) this.plugin.claudeModels = r.models;
+						renderModels();
+					} catch (e) {
+						showStatus(false, `Check failed: ${(e as Error).message}`);
+					} finally {
+						b.setDisabled(false).setButtonText("Check connection");
+					}
 				}),
 		);
 
