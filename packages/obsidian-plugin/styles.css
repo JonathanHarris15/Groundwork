@@ -1,6 +1,7 @@
 /* Groundwork — uses Obsidian theme variables so it follows light/dark and custom themes. */
 
 .gw-root {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	height: 100%;
@@ -94,7 +95,182 @@
 }
 .gw-assistant {
 	font-size: var(--font-text-size);
-	overflow-x: hidden;
+}
+.gw-assistant table {
+	display: block;
+	overflow-x: auto;
+}
+
+/* ── margin threads ── */
+.gw-turn {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 0;
+}
+.gw-messages.has-margin {
+	--gw-margin: 320px;
+	padding-left: max(14px, calc((100% - var(--gw-column) - var(--gw-margin) - 24px) / 2));
+	padding-right: calc(max(14px, calc((100% - var(--gw-column) - var(--gw-margin) - 24px) / 2)) + var(--gw-margin) + 24px);
+}
+.gw-asides {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-left: 18px;
+	padding-left: 10px;
+	border-left: 2px solid color-mix(in srgb, var(--gw-shaky) 55%, transparent);
+}
+.gw-messages.has-margin .gw-asides {
+	position: absolute;
+	left: calc(100% + 24px);
+	top: 0;
+	width: var(--gw-margin);
+	margin: 0;
+	padding: 0;
+	border: none;
+	z-index: 2;
+}
+.gw-aside {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px;
+	border-radius: 10px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary-alt);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+	font-size: var(--font-ui-small);
+	transition: border-color 0.12s, box-shadow 0.12s;
+}
+.gw-aside.is-active,
+.gw-aside:focus-within {
+	border-color: color-mix(in srgb, var(--gw-shaky) 70%, transparent);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+.gw-aside-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+}
+.gw-aside-icon svg {
+	width: 14px;
+	height: 14px;
+	color: var(--gw-shaky);
+	margin-top: 2px;
+}
+.gw-aside-quote {
+	flex: 1;
+	min-width: 0;
+	color: var(--text-muted);
+	font-style: italic;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	border-left: 2px solid var(--gw-shaky);
+	padding-left: 6px;
+}
+.gw-aside-btn {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	flex: 0 0 auto;
+}
+.gw-aside-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-height: 420px;
+	overflow-y: auto;
+}
+.gw-aside-msg {
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+.gw-aside-msg.is-user {
+	align-self: flex-end;
+	max-width: 90%;
+	padding: 5px 9px;
+	border-radius: 10px 10px 3px 10px;
+	background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-primary));
+	white-space: pre-wrap;
+}
+.gw-aside-msg.is-assistant > :first-child {
+	margin-top: 0;
+}
+.gw-aside-msg.is-assistant > :last-child {
+	margin-bottom: 0;
+}
+.gw-aside-msg.is-error {
+	color: var(--text-error);
+}
+.gw-aside-msg .math-block {
+	overflow-x: auto;
+}
+.gw-aside-composer {
+	display: flex;
+	gap: 6px;
+	align-items: flex-end;
+}
+.gw-aside-input {
+	flex: 1;
+	resize: none;
+	min-height: 30px;
+	font-size: var(--font-ui-small);
+	border-radius: 8px;
+	padding: 5px 8px;
+}
+.gw-aside-send {
+	width: 28px;
+	height: 28px;
+	padding: 0;
+}
+.gw-aside.is-collapsed {
+	cursor: pointer;
+}
+.gw-aside.is-collapsed .gw-aside-list,
+.gw-aside.is-collapsed .gw-aside-composer {
+	display: none;
+}
+.gw-aside.is-collapsed::after {
+	content: attr(data-count);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	padding-left: 20px;
+}
+.gw-aside.is-collapsed .gw-aside-btn:first-of-type svg {
+	transform: rotate(180deg);
+}
+.gw-ask-btn {
+	position: absolute;
+	z-index: 20;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 30px;
+	padding: 0 10px;
+	border-radius: 999px;
+	font-size: var(--font-ui-smaller);
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22);
+	cursor: pointer;
+}
+.gw-ask-btn:hover {
+	border-color: var(--gw-shaky);
+}
+.gw-ask-btn-icon svg {
+	width: 14px;
+	height: 14px;
+	color: var(--gw-shaky);
+}
+::highlight(gw-aside) {
+	background-color: rgba(214, 158, 46, 0.26);
+}
+::highlight(gw-aside-active) {
+	background-color: rgba(214, 158, 46, 0.5);
 }
 .gw-assistant > :first-child {
 	margin-top: 0;

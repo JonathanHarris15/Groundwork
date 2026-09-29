@@ -1,7 +1,12 @@
 import { Component, FuzzySuggestModal, ItemView, Keymap, MarkdownRenderer, Menu, Notice, setIcon, TFile, type App, type WorkspaceLeaf } from "obsidian";
 import {
 	AgentSession,
+	ASIDE_PROMPT,
+	ASIDE_TOOL_NAMES,
+	asideOpening,
 	basename,
+	DemoAsideProvider,
+	marginNotes,
 	buildSystemPrompt,
 	demoteHeadings,
 	examPrepInstruction,
@@ -18,6 +23,7 @@ import {
 	TOOLS,
 	withoutFileData,
 	type AgentEvent,
+	type AsideThread,
 	type AskInput,
 	type AskResponse,
 	type ChatMessage,
@@ -31,6 +37,7 @@ import {
 	type TutorSession,
 } from "@groundwork/core";
 import { ClaudeCodeSession } from "@groundwork/core/claude-code";
+import { AsideCard, findQuoteRange } from "./aside";
 import { AskCard, QuizCard } from "./cards";
 import { enhanceGraphs } from "./graph-pane";
 import type GroundworkPlugin from "./main";
@@ -57,7 +64,12 @@ interface ChatRecord {
 	/** Claude Code keeps sessions on the machine that ran them, so resume only there and only if nothing happened since. */
 	claude?: { device: string; sessionId: string; at: number };
 	items: DisplayItem[];
+	/** Margin threads on highlighted passages. */
+	asides?: AsideThread[];
 }
+
+/** Below this width margin threads sit under their passage instead of beside it. */
+const MARGIN_MIN_WIDTH = 900;
 
 const TOOL_VERBS: Record<string, string> = {
 	get_learner_overview: "Reading your knowledge vault",
@@ -103,8 +115,16 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiFileInput!: HTMLInputElement;
 	private pendingFiles: PendingFile[] = [];
 
-	private segment: { el: HTMLElement; text: string; comp: Component | null; timer: number | null; version: number } | null = null;
+	private segment: { wrap: HTMLElement; el: HTMLElement; text: string; comp: Component | null; timer: number | null; version: number } | null = null;
 	private toolChips = new Map<string, HTMLElement>();
+
+	private waitingQuiz: PreparedQuiz | null = null;
+	private asideCards = new Map<string, AsideCard>();
+	private asideAgents = new Map<string, TutorSession>();
+	private asideRanges = new Map<string, Range>();
+	private highlightFrame = 0;
+	private uiAskBtn!: HTMLElement;
+	private selection: { anchor: string; quote: string } | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -180,6 +200,8 @@ export class ChatView extends ItemView implements ToolUI {
 		this.trackStatusBar();
 		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
+		this.setupMargin(root);
+
 		const last = await this.latestChat();
 		if (last) this.openChat(last);
 		else this.newSession();
@@ -189,6 +211,7 @@ export class ChatView extends ItemView implements ToolUI {
 	async onClose(): Promise<void> {
 		this.stop();
 		this.dropAgent();
+		this.dropAsides();
 	}
 
 	private iconButton(parent: HTMLElement, icon: string, label: string, onClick: (e: MouseEvent) => void): HTMLElement {
@@ -206,6 +229,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
 		this.session = { id: this.record.id };
 		this.dropAgent();
+		this.dropAsides();
 		this.renderAll();
 		this.uiInputEl?.focus();
 	}
@@ -214,6 +238,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.record = record;
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
 		this.dropAgent();
+		this.dropAsides();
 		this.renderAll();
 	}
 
@@ -233,7 +258,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const today = new Date().toISOString().slice(0, 10);
 		const system = buildSystemPrompt("obsidian", `# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`);
 		const record = this.record;
-		const history = record.items.length ? transcript(record.items) : undefined;
+		const history = record.items.length ? transcript(record.items, record.asides) : undefined;
 
 		if (this.plugin.settings.provider === "claude-code") {
 			const cfg = this.plugin.claudeCodeConfig();
@@ -314,6 +339,8 @@ export class ChatView extends ItemView implements ToolUI {
 				});
 				toSend = [examPrepInstruction(ingested.blueprint), text].filter(Boolean).join("\n\n");
 			}
+			const notes = this.marginNotes();
+			if (notes) toSend = [toSend, notes].filter(Boolean).join("\n\n");
 			await agent.send(toSend, (e) => this.onEvent(e), this.abort.signal, files);
 		} finally {
 			this.finishSegment();
@@ -365,8 +392,9 @@ export class ChatView extends ItemView implements ToolUI {
 		switch (e.type) {
 			case "text_delta": {
 				if (!this.segment) {
-					const el = this.uiMessagesEl.createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
-					this.segment = { el, text: "", comp: null, timer: null, version: 0 };
+					const wrap = this.turn();
+					const el = wrap.createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
+					this.segment = { wrap, el, text: "", comp: null, timer: null, version: 0 };
 				}
 				this.segment.text += e.text;
 				if (this.segment.timer === null) {
@@ -429,6 +457,7 @@ export class ChatView extends ItemView implements ToolUI {
 		seg.el.empty();
 		while (next.firstChild) seg.el.appendChild(next.firstChild);
 		enhanceGraphs(seg.el);
+		this.scheduleHighlights();
 		this.keepThinkingLast();
 		this.scrollToBottom();
 	}
@@ -441,10 +470,11 @@ export class ChatView extends ItemView implements ToolUI {
 		seg.timer = null;
 		const text = seg.text.trim();
 		if (!text) {
-			seg.el.remove();
+			seg.wrap.remove();
 			return;
 		}
 		this.record.items.push({ kind: "assistant", text });
+		seg.wrap.dataset.anchor = `item:${this.record.items.length - 1}`;
 		void this.renderSegment(seg);
 	}
 
@@ -455,10 +485,12 @@ export class ChatView extends ItemView implements ToolUI {
 		return new Promise((resolve) => {
 			const settle = (v: QuizResponse | null) => {
 				this.pending.delete(settle as (v: null) => void);
+				if (this.waitingQuiz === quiz) this.waitingQuiz = null;
 				resolve(v);
 			};
 			this.pending.add(settle as (v: null) => void);
-			const card = new QuizCard(this.uiMessagesEl, quiz, (el, md) => this.renderMd(el, md), (r) => settle(r));
+			this.waitingQuiz = quiz;
+			const card = new QuizCard(this.turn(`quiz:${quiz.id}`), quiz, (el, md) => this.renderMd(el, md), (r) => settle(r));
 			this.liveQuizCards.set(quiz.id, card);
 			this.keepThinkingLast();
 			this.scrollToBottom(true);
@@ -493,6 +525,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private async renderMd(el: HTMLElement, markdown: string): Promise<void> {
 		await MarkdownRenderer.render(this.app, normalizeTutorMarkdown(markdown), el, this.record?.notePath ?? "", this);
 		enhanceGraphs(el);
+		this.scheduleHighlights();
 		// Rendered options sit inside buttons; a lone paragraph adds unwanted margins.
 		const only = el.children.length === 1 ? el.firstElementChild : null;
 		if (only?.tagName === "P") only.addClass("gw-tight");
@@ -513,15 +546,19 @@ export class ChatView extends ItemView implements ToolUI {
 		this.renderHeader();
 		this.uiMessagesEl.empty();
 		this.toolChips.clear();
+		this.asideCards.clear();
+		this.asideRanges.clear();
+		this.updateMarginMode();
 		if (!this.record.items.length) {
 			void this.renderEmpty();
 			return;
 		}
-		for (const item of this.record.items) this.renderItem(item);
+		this.record.items.forEach((item, i) => this.renderItem(item, i));
+		for (const t of this.record.asides ?? []) this.mountAside(t);
 		this.scrollToBottom(true);
 	}
 
-	private renderItem(item: DisplayItem): void {
+	private renderItem(item: DisplayItem, index: number): void {
 		switch (item.kind) {
 			case "user": {
 				if (item.attachments?.length) this.renderFiles(this.uiMessagesEl.createDiv({ cls: "gw-user-files" }), item.attachments);
@@ -529,7 +566,7 @@ export class ChatView extends ItemView implements ToolUI {
 				break;
 			}
 			case "assistant": {
-				const el = this.uiMessagesEl.createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
+				const el = this.turn(`item:${index}`).createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
 				void this.renderMd(el, item.text);
 				break;
 			}
@@ -540,7 +577,7 @@ export class ChatView extends ItemView implements ToolUI {
 				break;
 			}
 			case "quiz": {
-				const card = new QuizCard(this.uiMessagesEl, item.quiz, (el, md) => this.renderMd(el, md));
+				const card = new QuizCard(this.turn(`quiz:${item.quiz.id}`), item.quiz, (el, md) => this.renderMd(el, md));
 				card.showAnswer({ response: item.response, grade: item.grade, before: item.before, after: item.after });
 				break;
 			}
@@ -558,7 +595,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private pushItem(item: DisplayItem): void {
 		this.record.items.push(item);
-		this.renderItem(item);
+		this.renderItem(item, this.record.items.length - 1);
 		this.renderHeader();
 		this.keepThinkingLast();
 		this.scrollToBottom(true);
@@ -861,19 +898,261 @@ export class ChatView extends ItemView implements ToolUI {
 		menu.showAtMouseEvent(evt);
 	}
 
+	// ── margin threads ──────────────────────────────────────────────────
+
+	/** A lesson element that margin threads can attach to. */
+	private turn(anchor?: string): HTMLElement {
+		const wrap = this.uiMessagesEl.createDiv({ cls: "gw-turn" });
+		if (anchor) wrap.dataset.anchor = anchor;
+		return wrap;
+	}
+
+	private setupMargin(root: HTMLElement): void {
+		this.uiAskBtn = root.createEl("button", { cls: "gw-ask-btn", attr: { type: "button", "aria-label": "Ask about the highlighted text in the margin" } });
+		setIcon(this.uiAskBtn.createSpan({ cls: "gw-ask-btn-icon" }), "message-square-plus");
+		this.uiAskBtn.createSpan({ text: "Ask about this" });
+		this.uiAskBtn.hide();
+		// Keep the text selection alive while clicking the button.
+		this.registerDomEvent(this.uiAskBtn, "mousedown", (e) => e.preventDefault());
+		this.registerDomEvent(this.uiAskBtn, "click", () => {
+			const sel = this.selection;
+			this.hideAskButton();
+			if (sel) this.openAside(sel.anchor, sel.quote);
+		});
+
+		this.registerDomEvent(this.uiMessagesEl, "mouseup", () => window.setTimeout(() => this.onSelectionEnd(), 0));
+		this.registerDomEvent(this.uiMessagesEl, "keyup", (e) => {
+			if (e.shiftKey) this.onSelectionEnd();
+		});
+		this.registerDomEvent(this.uiMessagesEl, "mousedown", (e) => {
+			if (e.target !== this.uiAskBtn) this.hideAskButton();
+		});
+		this.registerDomEvent(this.uiMessagesEl, "scroll", () => this.hideAskButton());
+
+		const ro = new ResizeObserver(() => this.updateMarginMode());
+		ro.observe(this.uiMessagesEl);
+		this.register(() => ro.disconnect());
+		this.register(() => this.clearHighlights());
+	}
+
+	private onSelectionEnd(): void {
+		const sel = this.contentEl.win.getSelection();
+		if (!sel || sel.isCollapsed || !sel.rangeCount) return this.hideAskButton();
+		const range = sel.getRangeAt(0);
+		const elOf = (n: Node) => (n instanceof Element ? n : n.parentElement);
+		const start = elOf(range.startContainer);
+		const end = elOf(range.endContainer);
+		const turn = start?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
+		if (!turn || turn !== end?.closest(".gw-turn") || start?.closest(".gw-asides, textarea, input")) return this.hideAskButton();
+		const quote = sel.toString().trim();
+		if (quote.length < 2) return this.hideAskButton();
+		this.selection = { anchor: turn.dataset.anchor!, quote: quote.slice(0, 1200) };
+
+		const r = range.getBoundingClientRect();
+		const box = this.contentEl.getBoundingClientRect();
+		this.uiAskBtn.show();
+		const w = this.uiAskBtn.offsetWidth || 130;
+		const left = Math.min(Math.max(8, r.left - box.left + r.width / 2 - w / 2), box.width - w - 8);
+		const below = r.bottom - box.top + 6;
+		const top = below + 36 > box.height ? r.top - box.top - 38 : below;
+		this.uiAskBtn.style.left = `${left}px`;
+		this.uiAskBtn.style.top = `${Math.max(4, top)}px`;
+	}
+
+	private hideAskButton(): void {
+		this.uiAskBtn?.hide();
+		this.selection = null;
+	}
+
+	private openAside(anchor: string, quote: string): void {
+		const thread: AsideThread = {
+			id: `m_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
+			anchor,
+			quote,
+			created: new Date().toISOString(),
+			messages: [],
+			shared: 0,
+		};
+		(this.record.asides ??= []).push(thread);
+		this.contentEl.win.getSelection()?.removeAllRanges();
+		const card = this.mountAside(thread);
+		card?.focus();
+		if (card && !this.uiMessagesEl.hasClass("has-margin")) card.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+	}
+
+	private mountAside(thread: AsideThread): AsideCard | null {
+		if (thread.resolved || this.asideCards.has(thread.id)) return null;
+		const wrap = this.uiMessagesEl.querySelector(`.gw-turn[data-anchor="${CSS.escape(thread.anchor)}"]`) as HTMLElement | null;
+		if (!wrap) return null;
+		const list = (wrap.querySelector(":scope > .gw-asides") as HTMLElement | null) ?? wrap.createDiv({ cls: "gw-asides" });
+		const card = new AsideCard(list, thread, (el, md) => this.renderMd(el, md), {
+			send: (text) => void this.askAside(thread, text),
+			resolve: () => this.resolveAside(thread),
+			hover: (on) => this.setActiveHighlight(on ? thread.id : null),
+		});
+		this.asideCards.set(thread.id, card);
+		this.updateMarginMode();
+		this.scheduleHighlights();
+		return card;
+	}
+
+	private resolveAside(thread: AsideThread): void {
+		const card = this.asideCards.get(thread.id);
+		const list = card?.el.parentElement;
+		card?.el.remove();
+		if (list && !list.childElementCount) list.remove();
+		this.asideCards.delete(thread.id);
+		this.asideAgents.get(thread.id)?.close?.();
+		this.asideAgents.delete(thread.id);
+		if (thread.messages.length) thread.resolved = true;
+		else this.record.asides = (this.record.asides ?? []).filter((t) => t !== thread);
+		this.updateMarginMode();
+		this.scheduleHighlights();
+		if (thread.messages.length) void this.persist();
+	}
+
+	private async askAside(thread: AsideThread, text: string): Promise<void> {
+		const card = this.asideCards.get(thread.id);
+		if (!card) return;
+		const earlier = thread.messages.slice();
+		thread.messages.push({ role: "user", text, at: new Date().toISOString() });
+		await card.renderMessage("user", text);
+		const reply = card.startReply();
+
+		let agent = this.asideAgents.get(thread.id);
+		const fresh = !agent;
+		agent ??= this.makeAsideAgent() ?? undefined;
+		if (!agent) {
+			reply.finish(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
+			return;
+		}
+		this.asideAgents.set(thread.id, agent);
+
+		const others = (this.record.asides ?? []).filter((t) => t !== thread);
+		const prompt = fresh
+			? asideOpening({ lesson: transcript(this.record.items, others), quote: thread.quote, pendingQuiz: this.waitingQuiz ?? undefined, earlier }, text)
+			: text;
+		let error: string | undefined;
+		try {
+			await agent.send(prompt, (e) => {
+				if (e.type === "text_delta") reply.append(e.text);
+				else if (e.type === "error") error = e.message;
+			});
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		}
+		const answer = reply.finish(error ? `Couldn't answer: ${error}` : undefined);
+		if (answer) thread.messages.push({ role: "assistant", text: answer, at: new Date().toISOString() });
+		await this.persist();
+	}
+
+	private makeAsideAgent(): TutorSession | null {
+		const tools = TOOLS.filter((t) => ASIDE_TOOL_NAMES.includes(t.name));
+		const session: SessionInfo = { id: `${this.record.id}-margin` };
+		const store = this.plugin.store;
+		const { provider } = this.plugin.settings;
+		if (provider === "claude-code") {
+			const cfg = this.plugin.claudeCodeConfig();
+			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system: ASIDE_PROMPT, session }) : null;
+		}
+		const p = provider === "demo" ? new DemoAsideProvider() : this.plugin.makeProvider();
+		return p ? new AgentSession({ provider: p, store, tools, system: ASIDE_PROMPT, session, maxSteps: 8 }) : null;
+	}
+
+	private dropAsides(): void {
+		for (const a of this.asideAgents.values()) a.close?.();
+		this.asideAgents.clear();
+		this.asideCards.clear();
+		this.asideRanges.clear();
+		this.clearHighlights();
+	}
+
+	/** ToolUI hook: margin questions the main tutor hasn't seen, marked as shared. */
+	marginNotes(): string | undefined {
+		const threads = this.record?.asides ?? [];
+		const notes = marginNotes(threads);
+		if (!notes) return undefined;
+		for (const t of threads) {
+			const n = notes.shared.get(t.id);
+			if (n !== undefined) t.shared = n;
+		}
+		return notes.text;
+	}
+
+	private updateMarginMode(): void {
+		const el = this.uiMessagesEl;
+		if (!el) return;
+		const wide = el.clientWidth >= MARGIN_MIN_WIDTH;
+		el.toggleClass("has-margin", wide && this.asideCards.size > 0);
+		this.layoutAsides();
+	}
+
+	/** In margin mode, start each thread stack level with its highlight. */
+	private layoutAsides(): void {
+		const margin = this.uiMessagesEl.hasClass("has-margin");
+		this.uiMessagesEl.querySelectorAll(".gw-asides").forEach((node) => {
+			const list = node as HTMLElement;
+			const wrap = list.parentElement!;
+			let top = Infinity;
+			if (margin) {
+				const base = wrap.getBoundingClientRect().top;
+				list.querySelectorAll(".gw-aside").forEach((c) => {
+					const r = this.asideRanges.get((c as HTMLElement).dataset.thread ?? "");
+					if (r) top = Math.min(top, r.getBoundingClientRect().top - base);
+				});
+			}
+			list.style.top = margin && Number.isFinite(top) ? `${Math.max(0, Math.round(top) - 6)}px` : "";
+		});
+	}
+
+	private scheduleHighlights(): void {
+		if (!this.asideCards.size && !this.asideRanges.size) return;
+		if (this.highlightFrame) return;
+		this.highlightFrame = window.requestAnimationFrame(() => {
+			this.highlightFrame = 0;
+			this.refreshHighlights();
+		});
+	}
+
+	private refreshHighlights(): void {
+		this.asideRanges.clear();
+		for (const [id, card] of this.asideCards) {
+			const msg = card.el.closest(".gw-turn")?.querySelector(":scope > .gw-msg, :scope > .gw-card") as HTMLElement | null;
+			const r = msg ? findQuoteRange(msg, card.thread.quote) : null;
+			if (r) this.asideRanges.set(id, r);
+		}
+		const api = highlightApi();
+		api?.registry.set("gw-aside", new api.Highlight(...this.asideRanges.values()));
+		this.layoutAsides();
+	}
+
+	private setActiveHighlight(id: string | null): void {
+		for (const [tid, card] of this.asideCards) card.setActive(tid === id);
+		const api = highlightApi();
+		const r = id ? this.asideRanges.get(id) : undefined;
+		api?.registry.set("gw-aside-active", new api.Highlight(...(r ? [r] : [])));
+	}
+
+	private clearHighlights(): void {
+		const api = highlightApi();
+		api?.registry.delete("gw-aside");
+		api?.registry.delete("gw-aside-active");
+	}
+
 	// ── persistence ─────────────────────────────────────────────────────
 
 	private async persist(): Promise<void> {
 		this.record.updated = new Date().toISOString();
 		const store = this.plugin.store;
-		await store.writeFile(`${PATHS.chats}/${this.record.id}.json`, JSON.stringify({ ...this.record, messages: withoutFileData(this.record.messages) }));
+		const asides = (this.record.asides ?? []).filter((t) => t.messages.length);
+		await store.writeFile(`${PATHS.chats}/${this.record.id}.json`, JSON.stringify({ ...this.record, asides, messages: withoutFileData(this.record.messages) }));
 		if (this.record.notePath) {
 			const path = this.record.notePath;
 			const existing = (await store.io.exists(path)) ? await store.io.read(path) : "";
 			const { frontmatter, body } = parseNote(existing);
 			const fm = { ...frontmatter, type: "session", date: this.record.created.slice(0, 10), chat: this.record.id, tags: ["groundwork/session"] };
 			const base = body.trim() ? body : `# ${this.record.title}\n`;
-			await store.writeFile(path, serializeNote(fm, setSection(base, "Transcript", transcript(this.record.items))));
+			await store.writeFile(path, serializeNote(fm, setSection(base, "Transcript", transcript(this.record.items, this.record.asides))));
 		}
 		this.renderHeader();
 	}
@@ -971,10 +1250,31 @@ class VaultFileModal extends FuzzySuggestModal<TFile> {
 	}
 }
 
-function transcript(items: DisplayItem[]): string {
+/** CSS Custom Highlight API: marks ranges without touching the rendered DOM. */
+function highlightApi(): { registry: Map<string, unknown>; Highlight: new (...ranges: Range[]) => unknown } | null {
+	const registry = (CSS as any).highlights;
+	const Highlight = (window as any).Highlight;
+	return registry && Highlight ? { registry, Highlight } : null;
+}
+
+function transcript(items: DisplayItem[], asides: AsideThread[] = []): string {
 	const out: string[] = [];
 	const quote = (s: string) => s.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
-	for (const item of items) {
+	const margin = (anchor: string) => {
+		for (const t of asides) {
+			if (t.anchor !== anchor || !t.messages.length) continue;
+			const lines = [`> [!comment]- Margin question on “${t.quote.replace(/\s+/g, " ").trim().slice(0, 160)}”`];
+			for (const m of t.messages) lines.push(">", m.role === "user" ? `> **You:** ${m.text.replace(/\n/g, " ")}` : quote(m.text));
+			out.push(lines.join("\n"), "");
+		}
+	};
+	items.forEach((item, i) => {
+		render(item);
+		margin(item.kind === "quiz" ? `quiz:${item.quiz.id}` : `item:${i}`);
+	});
+	return out.join("\n");
+
+	function render(item: DisplayItem): void {
 		switch (item.kind) {
 			case "user": {
 				const files = (item.attachments ?? []).map((p) => (fileKind(p).kind === "image" ? `![[${p}]]` : `[[${p}]]`));
@@ -1013,5 +1313,4 @@ function transcript(items: DisplayItem[]): string {
 				break;
 		}
 	}
-	return out.join("\n");
 }

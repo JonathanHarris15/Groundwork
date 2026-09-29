@@ -6,6 +6,8 @@
  * calibrated memory, so every session starts from what is already known.
  */
 
+import { MARGIN_GUIDANCE } from "./aside";
+
 export type Surface = "obsidian" | "chat";
 
 export const TEACHING_METHOD = `# How you teach
@@ -106,5 +108,6 @@ Use markdown with LaTeX for all math: inline $f(x)=x^2$ and display math in $$ f
 The \`quiz\` tool may show an interactive form. If it instead returns a question for you to present, show it exactly as given (lettered options, no hints), wait for the learner's reply, and pass their answer verbatim to \`submit_quiz_answer\` — the server grades it and updates the vault. Never grade quizzes yourself.`;
 
 export function buildSystemPrompt(surface: Surface, extra?: string): string {
-	return [TEACHING_METHOD, FILES, surface === "obsidian" ? OBSIDIAN_FORMAT : CHAT_FORMAT, extra ?? ""].filter(Boolean).join("\n\n");
+	const format = surface === "obsidian" ? `${OBSIDIAN_FORMAT}\n\n${MARGIN_GUIDANCE}` : CHAT_FORMAT;
+	return [TEACHING_METHOD, FILES, format, extra ?? ""].filter(Boolean).join("\n\n");
 }

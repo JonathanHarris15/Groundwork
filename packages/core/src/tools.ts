@@ -33,6 +33,13 @@ export interface ToolUI {
 	quiz(quiz: PreparedQuiz): Promise<QuizResponse | null>;
 	quizRecorded?(outcome: QuizOutcome): void;
 	ask(input: AskInput): Promise<AskResponse | null>;
+	/** Side questions the learner asked since the tutor last looked; appended to interactive results. */
+	marginNotes?(): string | undefined;
+}
+
+function withMarginNotes(text: string, ui: ToolUI): string {
+	const notes = ui.marginNotes?.();
+	return notes ? `${text}\n\n${notes}` : text;
 }
 
 export interface SessionInfo {
@@ -355,12 +362,12 @@ export const TOOLS: ToolDef[] = [
 			}
 			const quiz = prepareQuiz({ ...input, concept: concept.title });
 			const response = await ui.quiz(quiz);
-			if (!response) return { text: "The learner dismissed the quiz without answering. Nothing was recorded.", summary: "Quiz dismissed" };
+			if (!response) return { text: withMarginNotes("The learner dismissed the quiz without answering. Nothing was recorded.", ui), summary: "Quiz dismissed" };
 			const outcome = await recordQuizAnswer(store, quiz, response, session);
 			ui.quizRecorded?.(outcome);
 			const icon = outcome.grade.outcome === "correct" ? "✓" : outcome.grade.outcome === "dont_know" ? "?" : "✗";
 			return {
-				text: describeQuizOutcome(outcome),
+				text: withMarginNotes(describeQuizOutcome(outcome), ui),
 				summary: `${icon} ${concept.title}: ${outcome.before.attempts ? pct(outcome.before.current) : "—"} → ${pct(outcome.after.current)}`,
 				data: outcome,
 			};
@@ -385,11 +392,11 @@ export const TOOLS: ToolDef[] = [
 		async run(input: AskInput, { ui }) {
 			if (!ui) return { text: "ask_user needs an interactive surface; ask in chat instead.", isError: true };
 			const r = await ui.ask(input);
-			if (!r) return { text: "The learner dismissed the question.", summary: "Question dismissed" };
+			if (!r) return { text: withMarginNotes("The learner dismissed the question.", ui), summary: "Question dismissed" };
 			const parts = [];
 			if (r.selected.length) parts.push(`Selected: ${r.selected.join(" | ")}`);
 			if (r.text) parts.push(`Wrote: ${r.text}`);
-			return { text: parts.join("\n") || "(no answer)", summary: "Learner answered" };
+			return { text: withMarginNotes(parts.join("\n") || "(no answer)", ui), summary: "Learner answered" };
 		},
 	},
 	{
