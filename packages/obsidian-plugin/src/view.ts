@@ -317,7 +317,17 @@ export class ChatView extends ItemView implements ToolUI {
 	private async submit(prefill?: string): Promise<void> {
 		const text = (prefill ?? this.uiInputEl.value).trim();
 		const pending = prefill === undefined ? this.pendingFiles : [];
-		if ((!text && !pending.length) || this.agent?.busy) return;
+		if (!text && !pending.length) return;
+		if (this.agent?.busy) {
+			if (this.pending.size) {
+				new Notice("Groundwork: answer or close the card above first. Your message is kept.");
+				const open = this.uiMessagesEl.querySelectorAll(".gw-test:not(.is-done), .gw-quiz:not(.is-done):not(.gw-test-question), .gw-ask:not(.is-done)");
+				open[open.length - 1]?.scrollIntoView({ block: "center", behavior: "smooth" });
+			} else {
+				new Notice("Groundwork: the tutor is still replying. Press stop to interrupt.");
+			}
+			return;
+		}
 		const agent = this.ensureAgent();
 		if (!agent) {
 			new Notice(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
