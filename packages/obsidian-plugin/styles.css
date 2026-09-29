@@ -272,6 +272,25 @@
 ::highlight(gw-aside-active) {
 	background-color: rgba(214, 158, 46, 0.5);
 }
+.gw-turn .math[data-tex] {
+	border-radius: 3px;
+	transition: background-color 0.1s ease;
+}
+.gw-turn :is(.gw-msg, .gw-card) .math[data-tex]:not(button *) {
+	cursor: pointer;
+}
+.gw-turn :is(.gw-msg, .gw-card) .math[data-tex]:not(button *):hover {
+	background-color: var(--background-modifier-hover);
+}
+.gw-turn .math.is-quoted {
+	background-color: rgba(214, 158, 46, 0.26);
+}
+.gw-turn .math.is-picked {
+	background-color: var(--text-selection);
+}
+.gw-turn .math.is-quoted-active {
+	background-color: rgba(214, 158, 46, 0.5);
+}
 .gw-assistant > :first-child {
 	margin-top: 0;
 }

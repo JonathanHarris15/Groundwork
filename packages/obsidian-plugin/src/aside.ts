@@ -1,5 +1,6 @@
-import { setIcon } from "obsidian";
+import { finishRenderMath, renderMath, setIcon } from "obsidian";
 import type { AsideThread } from "@groundwork/core";
+import { mathQuote } from "./math-source";
 
 export type RenderInto = (el: HTMLElement, markdown: string) => Promise<void>;
 
@@ -30,7 +31,7 @@ export class AsideCard {
 
 		const head = this.el.createDiv({ cls: "gw-aside-head" });
 		setIcon(head.createSpan({ cls: "gw-aside-icon" }), "message-square-quote");
-		head.createDiv({ cls: "gw-aside-quote", text: thread.quote.replace(/\s+/g, " ").trim() });
+		renderQuote(head.createDiv({ cls: "gw-aside-quote" }), thread.quote.replace(/\s+/g, " ").trim());
 		const collapse = head.createEl("button", { cls: "clickable-icon gw-aside-btn", attr: { "aria-label": "Collapse", type: "button" } });
 		setIcon(collapse, "chevron-up");
 		collapse.addEventListener("click", (e) => {
@@ -161,23 +162,43 @@ export class AsideCard {
 	}
 }
 
+/** Plain text with its `$TeX$` spans typeset inline. */
+function renderQuote(el: HTMLElement, quote: string): void {
+	const parts = quote.split(/(\$\$[^$]+\$\$|\$[^$\s][^$]*\$)/);
+	if (parts.length === 1) return el.setText(quote);
+	parts.forEach((part, i) => {
+		if (i % 2) el.appendChild(renderMath(part.replace(/^\$+|\$+$/g, "").trim(), false));
+		else if (part) el.appendText(part);
+	});
+	void finishRenderMath();
+}
+
 /** Finds `quote` inside `root`'s text, ignoring whitespace differences, and returns it as a Range. */
 export function findQuoteRange(root: HTMLElement, quote: string): Range | null {
 	const needle = quote.replace(/\s+/g, "");
 	if (!needle) return null;
-	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-		acceptNode: (n) => ((n.parentElement?.closest(".gw-aside, .gw-asides, mjx-container, .math, svg") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)),
+	const skip = ".gw-aside, .gw-asides, mjx-container, .math, svg";
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+		acceptNode: (n) => {
+			if (n.parentElement?.closest(skip)) return NodeFilter.FILTER_REJECT;
+			if (n instanceof Text) return NodeFilter.FILTER_ACCEPT;
+			const el = n as HTMLElement;
+			if (el.matches(".math[data-tex]")) return NodeFilter.FILTER_ACCEPT;
+			return el.matches(skip) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+		},
 	});
-	const nodes: Text[] = [];
+	// A formula is one unit, matched by its TeX; offset -1 marks it.
+	const nodes: Node[] = [];
 	const offsets: number[] = [];
 	let hay = "";
-	for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
-		const s = n.data;
+	for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+		const math = n instanceof Text ? null : (n as HTMLElement);
+		const s = math ? mathQuote(math) : (n as Text).data;
 		for (let i = 0; i < s.length; i++) {
 			if (/\s/.test(s[i])) continue;
 			hay += s[i];
 			nodes.push(n);
-			offsets.push(i);
+			offsets.push(math ? -1 : i);
 		}
 	}
 	let at = hay.indexOf(needle);
@@ -190,7 +211,10 @@ export function findQuoteRange(root: HTMLElement, quote: string): Range | null {
 	}
 	if (at < 0) return null;
 	const range = document.createRange();
-	range.setStart(nodes[at], offsets[at]);
-	range.setEnd(nodes[at + len - 1], offsets[at + len - 1] + 1);
+	const last = at + len - 1;
+	if (offsets[at] < 0) range.setStartBefore(nodes[at]);
+	else range.setStart(nodes[at], offsets[at]);
+	if (offsets[last] < 0) range.setEndAfter(nodes[last]);
+	else range.setEnd(nodes[last], offsets[last] + 1);
 	return range;
 }

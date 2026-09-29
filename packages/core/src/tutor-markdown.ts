@@ -85,6 +85,79 @@ export function latexToPlain(s: string): string {
 		.trim();
 }
 
+export interface MathSource {
+	tex: string;
+	display: boolean;
+}
+
+/**
+ * The TeX of each formula in rendered markdown, in document order. MathJax
+ * output keeps no source, so this is how a rendered `.math` element gets its
+ * TeX back. Skips code, escaped `\$`, and `$` that Obsidian won't typeset.
+ */
+export function mathSources(md: string): MathSource[] {
+	const out: MathSource[] = [];
+	for (const part of splitFences(md)) {
+		if (part.fence) continue;
+		const s = part.text;
+		let i = 0;
+		while (i < s.length) {
+			const c = s[i];
+			if (c === "\\") {
+				i += 2;
+				continue;
+			}
+			if (c === "`") {
+				const tick = /^`+/.exec(s.slice(i))![0];
+				const end = s.indexOf(tick, i + tick.length);
+				i = end < 0 ? i + tick.length : end + tick.length;
+				continue;
+			}
+			if (s.startsWith("$$", i)) {
+				const end = s.indexOf("$$", i + 2);
+				if (end < 0) break;
+				const tex = s
+					.slice(i + 2, end)
+					.replace(/\n[ \t]*(?:>[ \t]?)+/g, "\n")
+					.trim();
+				if (tex) out.push({ tex, display: true });
+				i = end + 2;
+				continue;
+			}
+			if (c === "$") {
+				const end = closingDollar(s, i + 1);
+				if (end < 0 || /\s/.test(s[i + 1] ?? " ")) {
+					i++;
+					continue;
+				}
+				out.push({ tex: s.slice(i + 1, end), display: false });
+				i = end + 1;
+				continue;
+			}
+			i++;
+		}
+	}
+	return out;
+}
+
+function closingDollar(s: string, from: number): number {
+	for (let j = from; j < s.length; j++) {
+		if (s[j] === "\\") {
+			j++;
+			continue;
+		}
+		if (s[j] === "`" || (s[j] === "\n" && s[j + 1] === "\n")) return -1;
+		if (s[j] !== "$") continue;
+		return /\s/.test(s[j - 1]) || /\d/.test(s[j + 1] ?? "") ? -1 : j;
+	}
+	return -1;
+}
+
+/** A formula as quoted text, delimiters included. */
+export function texQuote(m: MathSource): string {
+	return m.display ? `$$${m.tex}$$` : `$${m.tex}$`;
+}
+
 function normalizeFlow(text: string): string {
 	let s = text;
 	s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_, inner: string) => `\n$$\n${inner.trim()}\n$$\n`);

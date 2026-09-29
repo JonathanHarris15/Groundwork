@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latexToPlain, normalizeTutorMarkdown } from "../src/tutor-markdown";
+import { latexToPlain, mathSources, normalizeTutorMarkdown } from "../src/tutor-markdown";
 import { prepareQuiz } from "../src/quiz";
 
 const GRADIENT_EXPLANATION =
@@ -114,5 +114,26 @@ describe("latexToPlain", () => {
 		expect(latexToPlain("Slope through $(1,2)$ and $(3,8)$?")).toBe("Slope through (1,2) and (3,8)?");
 		expect(latexToPlain("$\\frac{1}{3}$")).toBe("(1)/(3)");
 		expect(latexToPlain("$\\alpha \\mapsto x$")).toBe("α ↦ x");
+	});
+});
+
+describe("mathSources", () => {
+	it("lists inline and display formulas in document order", () => {
+		const md = "Let $M = B^\\top B$ where\n\n$$\nx^\\top M x \\ge 0\n$$\n\nso $M$ is PSD.";
+		expect(mathSources(md)).toEqual([
+			{ tex: "M = B^\\top B", display: false },
+			{ tex: "x^\\top M x \\ge 0", display: true },
+			{ tex: "M", display: false },
+		]);
+	});
+
+	it("skips code, escaped dollars, and prices", () => {
+		const md = "It costs \\$5 or $ 3 and $4, see `$x$` and\n```\n$y$\n```\nthen $z$.";
+		expect(mathSources(md)).toEqual([{ tex: "z", display: false }]);
+	});
+
+	it("strips callout prefixes from display math", () => {
+		const md = "> [!note]\n> $$\n> a^2 + b^2\n> $$";
+		expect(mathSources(md)).toEqual([{ tex: "a^2 + b^2", display: true }]);
 	});
 });
