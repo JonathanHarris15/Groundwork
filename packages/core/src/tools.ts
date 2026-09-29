@@ -262,11 +262,18 @@ export const TOOLS: ToolDef[] = [
 							prerequisites: strList("Direct prerequisite titles."),
 							summary: str("Optional one-line summary."),
 							domain: str("Optional subject area."),
+							requiredLevel: {
+								type: "integer",
+								minimum: 1,
+								maximum: 5,
+								description: "Exam depth this node must reach (same 1–5 scale as quizzes). Set when the goal is exam prep.",
+							},
 						},
 						required: ["title"],
 					},
 				},
 				status: { type: "string", enum: ["active", "paused", "done"] },
+				examPlan: str("Title of the exam plan note this goal was built from, if any."),
 			},
 			required: ["title", "objective", "target", "nodes"],
 		},
@@ -300,7 +307,16 @@ export const TOOLS: ToolDef[] = [
 					objective: r.goal.objective,
 					order: r.analysis.order.map((n) => {
 						const d = r.nodes.find((x) => x.id === n.id)!;
-						return { title: n.title, status: n.status, now: n.status === "unassessed" ? null : pct(n.current), edge: d.edge, misconceptions: d.openMisconceptions };
+						const need = r.goal.requiredLevels[n.id];
+						return {
+							title: n.title,
+							status: n.status,
+							now: n.status === "unassessed" ? null : pct(n.current),
+							edge: d.edge,
+							requiredLevel: need,
+							examReady: need ? (d.floor ?? 0) >= need && n.status === "solid" : undefined,
+							misconceptions: d.openMisconceptions,
+						};
 					}),
 					frontier: r.analysis.frontier.map((n) => n.title),
 					blocked: r.analysis.blocked.map((n) => n.title),
@@ -408,6 +424,78 @@ export const TOOLS: ToolDef[] = [
 				text: `Recorded. ${concept.title}: ${before.attempts ? pct(before.current) : "unassessed"} → ${pct(after.current)} (${after.status}; ${describeEdge(after)}).`,
 				summary: `Recorded ${input.outcome.replace("_", " ")} on “${concept.title}”`,
 			};
+		},
+	},
+	{
+		name: "ingest_exam_materials",
+		description:
+			"Parse course files (lecture slides, homeworks, study guides, practice exams) into the topics and the level each must be learned to, save an exam plan, and create a teaching goal. Call this as soon as the learner attaches or mentions those files — do not wait to 'just start teaching'. Pass vault paths and/or the text you extracted. Returns the blueprint, required levels (1–5), and the goal map.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				title: str("Goal / exam-plan title, e.g. 'Prepare for the calc midterm'."),
+				why: str("Why they are studying, in their words."),
+				userText: str("The learner's message, used to guess exam kind (midterm/final/quiz)."),
+				files: strList("Vault paths of attached or existing files (e.g. resources/HW2.md)."),
+				materials: {
+					type: "array",
+					description: "Text you pulled from a file the automatic parser couldn't read (compressed PDF, image, etc.).",
+					items: {
+						type: "object",
+						properties: {
+							name: str("File name."),
+							text: str("Extracted text or a close paraphrase of every problem/topic."),
+							kind: { type: "string", enum: ["lecture", "homework", "study_guide", "practice_exam", "exam", "notes", "unknown"] },
+							path: str("Vault path if you have one."),
+						},
+						required: ["name", "text"],
+					},
+				},
+				createGoal: { type: "boolean", description: "Default true. Set false to only write the exam plan." },
+			},
+		},
+		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: any; path?: string }>; createGoal?: boolean }, { store }) {
+			if (!(input.files?.length || input.materials?.length)) {
+				return { text: "Pass files (vault paths) and/or materials (extracted text).", isError: true };
+			}
+			const r = await store.ingestExamMaterials(input);
+			return {
+				text: json({
+					title: r.blueprint.title,
+					examKind: r.blueprint.examKind,
+					plan: r.planPath,
+					goal: r.goal
+						? {
+								title: r.goal.goal.title,
+								progress: `${r.goal.analysis.solidCount}/${r.goal.nodes.length} solid`,
+								frontier: r.goal.analysis.frontier.map((n) => n.title),
+								mermaid: r.goal.mermaid,
+							}
+						: null,
+					mustKnow: r.blueprint.mustKnow,
+					topics: r.blueprint.topics.map((t) => ({
+						title: t.title,
+						requiredLevel: t.requiredLevel,
+						sources: t.sources,
+						ideas: t.ideas,
+					})),
+					materials: r.blueprint.materials,
+					notes: r.blueprint.notes,
+				}),
+				summary: r.blueprint.topics.length
+					? `Exam plan: ${r.blueprint.topics.length} topic${r.blueprint.topics.length === 1 ? "" : "s"} from ${r.blueprint.materials.length} file${r.blueprint.materials.length === 1 ? "" : "s"}`
+					: "Couldn't extract topics yet — read the files and try again",
+			};
+		},
+	},
+	{
+		name: "get_exam_plan",
+		description: "Load a saved exam plan (topics, required levels, source files). Use after ingest_exam_materials or when continuing exam prep.",
+		inputSchema: { type: "object", properties: { exam: str("Exam plan title.") }, required: ["exam"] },
+		async run({ exam }: { exam: string }, { store }) {
+			const path = await store.resolveExamPlan(exam);
+			if (!path) return { text: `No exam plan named "${exam}". Call ingest_exam_materials first.`, isError: true };
+			return { text: await store.io.read(path), summary: `Opened exam plan “${exam}”` };
 		},
 	},
 	{

@@ -36,6 +36,8 @@ graph LR
 concepts/Derivative.md          one note per concept; `prerequisites: ["[[Limit]]", …]`
 goals/Understand the derivative.md   objective + auto-generated dependency map + progress table
 sessions/2026-09-28 ….md        transcript and summary of each session
+resources/HW2.md                files you attach: lectures, homeworks, study guides, practice exams
+exams/Prepare for the midterm.md  topics + required depth parsed from those files
 learner.md                      your background and how you learn best (the tutor reads + appends)
 .groundwork/evidence/*.jsonl    append-only quiz evidence: the source of truth
 .groundwork/chats/*.json        chat history, so sessions resume on any machine
@@ -50,6 +52,8 @@ Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency 
 2. **Plan** — a dependency DAG from caveat-free truths up to your goal, saved to `goals/` and shown as a map. It waits for your go-ahead.
 3. **Teach** — node by node: motivate → establish → connect → quiz-check, updating concept notes as it goes.
 
+**Exam prep** is the same loop, pointed at *their* files. Attach lecture slides, a couple of homeworks, a study guide, or a practice exam (paperclip, paste, or drop onto the tutor). Groundwork classifies each file, pulls out the topics and the level the exam seems to demand (the same 1–5 scale as quizzes: recognize → apply → combine → transfer), writes `exams/…`, and opens a goal so teaching starts at that depth. Homeworks say what is practiced; a practice exam or study guide says what is sufficient. The tutor still reads the files and can refine the plan (`ingest_exam_materials`).
+
 **The calibration model** (`packages/core/src/model.ts`). Each concept's state is a pure function of its evidence log, so merged logs from two machines converge to the same numbers:
 
 - *Ability* θ on a logit scale (Rasch/Elo). A question of difficulty $d \in 1..5$ has $P(\text{correct}) = \sigma(\theta - (d-3))$; each answer moves θ by $K(\text{outcome} - P)$, with $K$ shrinking as evidence accumulates.
@@ -60,7 +64,7 @@ Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency 
 
 ## Setup
 
-**Quick setup:** clone this repo and run `python setup_groundwork.py` (on Windows, `py setup_groundwork.py`; get Python with `winget install Python.Python.3.12` if you don't have it). It installs git, Node, Obsidian, Claude Code, and optionally the GitHub CLI; signs you in; builds and links `groundwork`; creates or clones your vault; and opens Obsidian. Rerun it any time. It skips whatever is already done. Flags: `--new NAME` or `--clone URL` to skip the vault question, `--vault DIR`, `--no-open`, `-y`. The manual steps are below.
+**Quick setup:** clone this repo and run `python setup.py` (same as `python setup_groundwork.py`; on Windows, `py setup.py`; get Python with `winget install Python.Python.3.12` if you don't have it). It installs git, Node, Obsidian, Claude Code, and optionally the GitHub CLI; signs you in; builds and links `groundwork`; creates or clones your vault; and opens Obsidian. If Groundwork is already installed, the same command `git pull`s this repo and rebuilds. Flags: `--new NAME` or `--clone URL` to skip the vault question, `--vault DIR`, `--no-open`, `--no-pull`, `-y`. The manual steps are below.
 
 Requires Node 20+, git, [Obsidian](https://obsidian.md) (desktop), and [Claude Code](https://claude.com/claude-code) signed in with your Claude subscription (see [Connect a model](#connect-a-model-your-claude-subscription-default)). `npm install` also downloads Claude Code's binary for the tests (~240 MB). The plugin uses the Claude Code you install yourself, not that copy.
 

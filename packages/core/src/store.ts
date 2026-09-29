@@ -1,3 +1,13 @@
+import {
+	blueprintToGoalInput,
+	buildExamBlueprint,
+	classifyMaterial,
+	formatExamPlanMarkdown,
+	materialFromVaultFile,
+	type ExamBlueprint,
+	type MaterialKind,
+	type MaterialSource,
+} from "./exam";
 import { analyzeGoal, findCycle, goalMermaid, type GoalAnalysis, type GraphNode } from "./graph";
 import { ensureDir, type VaultIO } from "./io";
 import {
@@ -16,6 +26,7 @@ import { computeStats, describeEdge, emptyStats, isDue, type ConceptStats, type 
 export const PATHS = {
 	concepts: "concepts",
 	goals: "goals",
+	exams: "exams",
 	sessions: "sessions",
 	learner: "learner.md",
 	data: ".groundwork",
@@ -61,6 +72,9 @@ export interface Goal {
 	created?: string;
 	objective?: string;
 	body: string;
+	/** Concept id → exam-required quiz difficulty (1–5). */
+	requiredLevels: Record<string, number>;
+	examPlan?: string;
 }
 
 export interface GoalInput {
@@ -70,13 +84,25 @@ export interface GoalInput {
 	approach?: string;
 	/** The concept that represents "goal achieved"; the sink of the DAG. */
 	target: string;
-	nodes: Array<{ title: string; prerequisites?: string[]; summary?: string; domain?: string }>;
+	nodes: Array<{ title: string; prerequisites?: string[]; summary?: string; domain?: string; requiredLevel?: number }>;
 	status?: GoalStatus;
+	examPlan?: string;
+}
+
+export interface IngestExamInput {
+	title?: string;
+	why?: string;
+	userText?: string;
+	/** Vault paths of attached or existing files. */
+	files?: string[];
+	/** Extra text the model extracted (e.g. from a compressed PDF it read). */
+	materials?: Array<{ name: string; text: string; kind?: MaterialKind; path?: string }>;
+	createGoal?: boolean;
 }
 
 export interface GoalReport {
 	goal: Goal;
-	nodes: Array<GraphNode & { edge: string; nextReview?: string; openMisconceptions: string[] }>;
+	nodes: Array<GraphNode & { edge: string; nextReview?: string; openMisconceptions: string[]; floor?: number }>;
 	analysis: GoalAnalysis;
 	mermaid: string;
 }
@@ -108,7 +134,7 @@ export class KnowledgeStore {
 	}
 
 	async ensureLayout(): Promise<void> {
-		for (const dir of [PATHS.concepts, PATHS.goals, PATHS.sessions, PATHS.data, PATHS.evidence, PATHS.chats]) {
+		for (const dir of [PATHS.concepts, PATHS.goals, PATHS.exams, PATHS.sessions, PATHS.data, PATHS.evidence, PATHS.chats]) {
 			await ensureDir(this.io, dir);
 		}
 		if (!(await this.io.exists(PATHS.learner))) {
@@ -342,6 +368,8 @@ export class KnowledgeStore {
 				created: typeof fm.created === "string" ? fm.created : undefined,
 				objective: getSection(body, "Objective"),
 				body,
+				requiredLevels: parseRequiredLevels(fm.targets),
+				examPlan: typeof fm.exam === "string" ? unwikilink(fm.exam) : undefined,
 			});
 		}
 		return out;
@@ -372,6 +400,13 @@ export class KnowledgeStore {
 		if (!target) throw new Error(`Goal target "${input.target}" must be one of the nodes.`);
 		nodeTitles.set(target.id, target.title);
 
+		const requiredLevels: Record<string, number> = {};
+		for (const node of input.nodes) {
+			if (!node.requiredLevel) continue;
+			const c = await this.requireConcept(node.title);
+			requiredLevels[c.id] = clampLevel(node.requiredLevel);
+		}
+
 		await ensureDir(this.io, PATHS.goals);
 		const existing = await this.resolveGoal(input.title);
 		const path = existing?.path ?? (await this.uniquePath(PATHS.goals, safeFileName(input.title)));
@@ -389,6 +424,8 @@ export class KnowledgeStore {
 			created: existing?.created ?? this.now().toISOString().slice(0, 10),
 			target: wikilink(target.title),
 			nodes: [...nodeTitles.values()].map(wikilink),
+			targets: Object.keys(requiredLevels).length ? Object.fromEntries([...nodeTitles.entries()].filter(([id]) => requiredLevels[id]).map(([id, title]) => [title, requiredLevels[id]])) : undefined,
+			exam: input.examPlan ? wikilink(input.examPlan) : existing?.examPlan ? wikilink(existing.examPlan) : prior.frontmatter.exam,
 			tags: ["groundwork/goal"],
 		};
 		await this.io.write(path, serializeNote(fm, body));
@@ -404,6 +441,71 @@ export class KnowledgeStore {
 		await this.io.write(goal.path, serializeNote(frontmatter, body));
 		this.changed(goal.path);
 		return { ...goal, status };
+	}
+
+	async ingestExamMaterials(input: IngestExamInput): Promise<{ blueprint: ExamBlueprint; planPath?: string; goal?: GoalReport }> {
+		const loaded: MaterialSource[] = [];
+		for (const path of input.files ?? []) {
+			try {
+				loaded.push(await materialFromVaultFile(this.io, path));
+			} catch {
+				loaded.push({ name: path, path, kind: "unknown", text: "" });
+			}
+		}
+		for (const m of input.materials ?? []) {
+			loaded.push({
+				name: m.name,
+				path: m.path,
+				kind: m.kind ?? classifyMaterial(m.name, m.text),
+				text: m.text,
+			});
+		}
+		const blueprint = buildExamBlueprint(loaded, { title: input.title, userText: input.userText });
+		let planPath: string | undefined;
+		if (blueprint.topics.length) {
+			await ensureDir(this.io, PATHS.exams);
+			const existing = await this.resolveExamPlan(blueprint.title);
+			planPath = existing ?? (await this.uniquePath(PATHS.exams, safeFileName(blueprint.title)));
+			const prior = existing ? parseNote(await this.io.read(existing)) : { frontmatter: {}, body: "" };
+			const fm = {
+				...prior.frontmatter,
+				title: blueprint.title,
+				type: "exam",
+				kind: blueprint.examKind,
+				materials: blueprint.materials.map((m) => (m.path ? wikilink(m.path) : m.name)),
+				tags: ["groundwork/exam"],
+			};
+			await this.writeFile(planPath, serializeNote(fm, formatExamPlanMarkdown(blueprint)));
+		}
+		let goal: GoalReport | undefined;
+		if (input.createGoal !== false && blueprint.topics.length) {
+			const gi = blueprintToGoalInput(blueprint, loaded, input.why);
+			if (planPath) gi.examPlan = blueprint.title;
+			goal = await this.setGoal(gi);
+		}
+		return { blueprint, planPath, goal };
+	}
+
+	async resolveExamPlan(ref: string): Promise<string | undefined> {
+		const id = slugify(unwikilink(ref));
+		if (!(await this.io.exists(PATHS.exams))) return undefined;
+		for (const path of await listMarkdown(this.io, PATHS.exams)) {
+			const { frontmatter } = parseNote(await this.io.read(path));
+			const title = typeof frontmatter.title === "string" ? frontmatter.title : path.split("/").pop()!.replace(/\.md$/, "");
+			if (slugify(title) === id) return path;
+		}
+		return undefined;
+	}
+
+	async examPlans(): Promise<Array<{ title: string; path: string; kind?: string }>> {
+		if (!(await this.io.exists(PATHS.exams))) return [];
+		const out = [];
+		for (const path of await listMarkdown(this.io, PATHS.exams)) {
+			const { frontmatter } = parseNote(await this.io.read(path));
+			const title = typeof frontmatter.title === "string" ? frontmatter.title : path.split("/").pop()!.replace(/\.md$/, "");
+			out.push({ title, path, kind: typeof frontmatter.kind === "string" ? frontmatter.kind : undefined });
+		}
+		return out;
 	}
 
 	async goalReport(ref: string): Promise<GoalReport> {
@@ -423,6 +525,7 @@ export class KnowledgeStore {
 				edge: describeEdge(c.stats),
 				nextReview: c.stats.nextReview,
 				openMisconceptions: c.stats.openMisconceptions,
+				floor: c.stats.floor,
 			}));
 		return { goal, nodes, analysis: analyzeGoal(nodes), mermaid: goalMermaid(nodes, goal.target) };
 	}
@@ -444,12 +547,13 @@ export class KnowledgeStore {
 			"",
 			`### Progress — ${analysis.solidCount}/${total} solid`,
 			"",
-			"| Concept | Status | Now | Edge |",
-			"| --- | --- | --- | --- |",
+			"| Concept | Status | Now | Edge | Need |",
+			"| --- | --- | --- | --- | --- |",
 			...analysis.order.map((n) => {
 				const r = report.nodes.find((x) => x.id === n.id)!;
 				const pct = n.status === "unassessed" ? "—" : `${Math.round(n.current * 100)}%`;
-				return `| [[${n.title}]] | ${n.status} | ${pct} | ${r.edge} |`;
+				const need = report.goal.requiredLevels[n.id] ? `d${report.goal.requiredLevels[n.id]}` : "—";
+				return `| [[${n.title}]] | ${n.status} | ${pct} | ${r.edge} | ${need} |`;
 			}),
 			"",
 			analysis.frontier.length
@@ -486,10 +590,10 @@ export class KnowledgeStore {
 
 	// ── search / overview ───────────────────────────────────────────────
 
-	async search(query: string, limit = 12): Promise<Array<{ kind: "concept" | "goal"; title: string; score: number; concept?: Concept }>> {
+	async search(query: string, limit = 12): Promise<Array<{ kind: "concept" | "goal" | "exam"; title: string; score: number; concept?: Concept }>> {
 		const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
 		if (!terms.length) return [];
-		const scored: Array<{ kind: "concept" | "goal"; title: string; score: number; concept?: Concept }> = [];
+		const scored: Array<{ kind: "concept" | "goal" | "exam"; title: string; score: number; concept?: Concept }> = [];
 		const score = (title: string, text: string) => {
 			const t = title.toLowerCase();
 			const b = text.toLowerCase();
@@ -507,6 +611,11 @@ export class KnowledgeStore {
 		for (const g of await this.goals()) {
 			const s = score(g.title, g.body);
 			if (s > 0) scored.push({ kind: "goal", title: g.title, score: s });
+		}
+		for (const e of await this.examPlans()) {
+			const body = await this.io.read(e.path);
+			const s = score(e.title, body);
+			if (s > 0) scored.push({ kind: "exam", title: e.title, score: s });
 		}
 		return scored.sort((a, b) => b.score - a.score).slice(0, limit);
 	}
@@ -541,6 +650,7 @@ export class KnowledgeStore {
 			openMisconceptions: concepts
 				.filter((c) => c.stats.openMisconceptions.length)
 				.map((c) => ({ concept: c.title, misconceptions: c.stats.openMisconceptions })),
+			examPlans: await this.examPlans(),
 		};
 	}
 
@@ -621,6 +731,20 @@ function asStringList(v: unknown): string[] {
 	if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
 	if (typeof v === "string" && v.trim()) return [v];
 	return [];
+}
+
+function parseRequiredLevels(v: unknown): Record<string, number> {
+	if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+	const out: Record<string, number> = {};
+	for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+		const level = typeof n === "number" ? n : Number(n);
+		if (Number.isFinite(level)) out[slugify(unwikilink(k))] = clampLevel(level);
+	}
+	return out;
+}
+
+function clampLevel(n: number): number {
+	return Math.min(5, Math.max(1, Math.round(n)));
 }
 
 export const DEFAULT_LEARNER_PROFILE = `# Learner profile

@@ -4,9 +4,11 @@ import {
 	basename,
 	buildSystemPrompt,
 	demoteHeadings,
+	examPrepInstruction,
 	fileKind,
 	letter,
 	loadVaultFile,
+	shouldAutoIngest,
 	parseNote,
 	PATHS,
 	RESOURCES_DIR,
@@ -69,6 +71,8 @@ const TOOL_VERBS: Record<string, string> = {
 	save_session_summary: "Saving the session summary",
 	list_vault_files: "Looking through your files",
 	read_vault_file: "Opening a file",
+	ingest_exam_materials: "Breaking the files into exam topics",
+	get_exam_plan: "Reading the exam plan",
 	Read: "Opening a file",
 	WebSearch: "Searching the web",
 	WebFetch: "Reading a web page",
@@ -298,7 +302,17 @@ export class ChatView extends ItemView implements ToolUI {
 		this.abort = new AbortController();
 		try {
 			const files = await Promise.all(attachments.map((p) => loadVaultFile(this.plugin.store.io, p)));
-			await agent.send(text, (e) => this.onEvent(e), this.abort.signal, files);
+			let toSend = text;
+			if (attachments.length && shouldAutoIngest(attachments.map(basename), text)) {
+				const ingested = await this.plugin.store.ingestExamMaterials({
+					files: attachments,
+					userText: text,
+					why: text || undefined,
+					createGoal: true,
+				});
+				toSend = [examPrepInstruction(ingested.blueprint), text].filter(Boolean).join("\n\n");
+			}
+			await agent.send(toSend, (e) => this.onEvent(e), this.abort.signal, files);
 		} finally {
 			this.finishSegment();
 			this.abort = null;
@@ -892,6 +906,8 @@ function iconFor(name: string): string {
 		case "set_goal":
 		case "get_goal":
 		case "set_goal_status":
+		case "ingest_exam_materials":
+		case "get_exam_plan":
 			return "git-fork";
 		case "save_session_summary":
 			return "notebook-pen";
