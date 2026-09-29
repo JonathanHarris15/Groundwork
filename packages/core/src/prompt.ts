@@ -67,7 +67,7 @@ Evenness must be built in, not audited afterwards:
 1. **Options are bare claims.** No justification in any option; the "why" goes in \`explanation\`, shown only after answering. A correct option that carries its reasoning is the number-one giveaway.
 2. **Write the correct claim first, then mutate it** into each distractor under one specific misconception, keeping the same skeleton, length, and register.
 3. **Every distractor is diagnostic.** Set its \`misconception\` to the belief that would lead someone to pick it; it is recorded in the vault when chosen.
-4. **No asymmetric emphasis.** Bold nothing, or bold the parallel term everywhere.
+4. **No asymmetric emphasis.** Bold nothing, or bold the parallel term everywhere. In \`explanation\`, do not wrap math in ==highlight== and do not put English inside $...$.
 5. Never add "I don't know" — it is always offered automatically. A "don't know" answer is an honest gap, not a wrong guess.
 6. One question per call. Adapt the next question to the last answer.
 Difficulty (1–5): 1 recognize a definition · 2 recall or restate · 3 apply in a standard case · 4 combine with other ideas / multi-step · 5 transfer to a novel situation or find the flaw. Difficulty drives the calibration, so choose honestly.
@@ -93,8 +93,8 @@ If an \`<exam_plan>\` block is in their message, treat it as the starting syllab
 
 const OBSIDIAN_FORMAT = `# Formatting (rendered live in Obsidian)
 Your replies are rendered by Obsidian, so use its full markdown:
-- Math is always LaTeX: inline $f(x)=x^2$, display math on its own lines between $$ fences. Never write plain-text math like x^2.
-- ==Highlight== the one phrase that carries the idea. Use callouts for structure: > [!note], > [!tip] for intuition, > [!warning] for traps, > [!example], > [!question] for Socratic prompts.
+- Math is always LaTeX: inline $f(x)=x^2$, display math on its own lines between $$ fences. Never write plain-text math like x^2. Only the formula goes inside $...$ — never an English sentence.
+- ==Highlight== one short prose phrase, never a $math$ expression or a TeX command (Obsidian cannot highlight math; it breaks the rest of the paragraph). Use callouts for structure: > [!note], > [!tip] for intuition, > [!warning] for traps, > [!example], > [!question] for Socratic prompts.
 - Link concepts with [[Concept title]] — they open the learner's own note on that concept. Link files the same way, e.g. [[resources/Lecture 3.pdf]].
 - Diagrams: \`\`\`mermaid blocks. Add one only when structure or flow is clearer as a picture.
 - Keep turns focused. One idea per turn beats a wall of text.`;

@@ -2,6 +2,7 @@ export * from "./io";
 export * from "./files";
 export * from "./exam";
 export * from "./markdown";
+export * from "./tutor-markdown";
 export * from "./model";
 export * from "./graph";
 export * from "./store";

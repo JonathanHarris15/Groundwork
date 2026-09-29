@@ -1,4 +1,5 @@
 import type { EvidenceKind, Outcome } from "./model";
+import { normalizeTutorMarkdown } from "./tutor-markdown";
 
 export interface QuizOptionInput {
 	label: string;
@@ -62,7 +63,7 @@ export function prepareQuiz(input: QuizInput, random: () => number = Math.random
 		const value = String(o.value ?? label).trim();
 		if (seen.has(value)) throw new Error(`Duplicate option value "${value}".`);
 		seen.add(value);
-		options.push({ label, value, misconception: o.misconception?.trim() || undefined });
+		options.push({ label: normalizeTutorMarkdown(label), value, misconception: o.misconception?.trim() || undefined });
 	}
 	if (options.length < 2) throw new Error("A quiz needs at least two options.");
 	if (options.some((o) => /^(i don'?t know|not sure|i'?m not sure)$/i.test(o.label))) {
@@ -89,11 +90,11 @@ export function prepareQuiz(input: QuizInput, random: () => number = Math.random
 	return {
 		id: `q_${Date.now().toString(36)}${Math.floor(random() * 1e6).toString(36)}`,
 		concept: input.concept,
-		question: input.question.trim(),
-		details: input.details?.trim() || undefined,
+		question: normalizeTutorMarkdown(input.question.trim()),
+		details: input.details?.trim() ? normalizeTutorMarkdown(input.details.trim()) : undefined,
 		options,
 		correct: [...new Set(correct)],
-		explanation: input.explanation?.trim() ?? "",
+		explanation: normalizeTutorMarkdown(input.explanation?.trim() ?? ""),
 		difficulty: Math.min(5, Math.max(1, Math.round(input.difficulty || 3))),
 		kind: input.kind ?? "check",
 		multiSelect,

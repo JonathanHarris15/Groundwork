@@ -8,8 +8,9 @@ import {
 	fileKind,
 	letter,
 	loadVaultFile,
-	shouldAutoIngest,
+	normalizeTutorMarkdown,
 	parseNote,
+	shouldAutoIngest,
 	PATHS,
 	RESOURCES_DIR,
 	serializeNote,
@@ -416,7 +417,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const next = createDiv();
 		const comp = new Component();
 		this.addChild(comp);
-		await MarkdownRenderer.render(this.app, seg.text, next, this.record.notePath ?? "", comp);
+		await MarkdownRenderer.render(this.app, normalizeTutorMarkdown(seg.text), next, this.record.notePath ?? "", comp);
 		// A newer render started while this one was in flight; drop the stale output.
 		if (version !== seg.version) {
 			this.removeChild(comp);
@@ -488,7 +489,7 @@ export class ChatView extends ItemView implements ToolUI {
 	// ── rendering ───────────────────────────────────────────────────────
 
 	private async renderMd(el: HTMLElement, markdown: string): Promise<void> {
-		await MarkdownRenderer.render(this.app, markdown, el, this.record?.notePath ?? "", this);
+		await MarkdownRenderer.render(this.app, normalizeTutorMarkdown(markdown), el, this.record?.notePath ?? "", this);
 		// Rendered options sit inside buttons; a lone paragraph adds unwanted margins.
 		const only = el.children.length === 1 ? el.firstElementChild : null;
 		if (only?.tagName === "P") only.addClass("gw-tight");

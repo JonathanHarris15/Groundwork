@@ -5,6 +5,7 @@ import {
 	buildSystemPrompt,
 	describeQuizOutcome,
 	KnowledgeStore,
+	latexToPlain,
 	letter,
 	mcpContent,
 	parseChatAnswer,
@@ -260,13 +261,13 @@ function presentQuiz(quiz: PreparedQuiz): string {
 }
 
 async function elicitQuiz(server: Server, quiz: PreparedQuiz) {
-	const choices = quiz.options.map((o, i) => ({ const: o.value, title: `${letter(i)}. ${plain(o.label)}` }));
+	const choices = quiz.options.map((o, i) => ({ const: o.value, title: `${letter(i)}. ${latexToPlain(o.label)}` }));
 	const DK = "__dont_know__";
 	const answer = quiz.multiSelect
 		? { type: "array", title: "Your answer (select all that apply)", items: { anyOf: choices } }
 		: { type: "string", title: "Your answer", oneOf: [...choices, { const: DK, title: "I don't know" }] };
 	const res = await server.elicitInput({
-		message: `Quiz · ${quiz.concept} · level ${quiz.difficulty}/5\n\n${plain(quiz.question)}${quiz.details ? `\n\n${plain(quiz.details)}` : ""}`,
+		message: `Quiz · ${quiz.concept} · level ${quiz.difficulty}/5\n\n${latexToPlain(quiz.question)}${quiz.details ? `\n\n${latexToPlain(quiz.details)}` : ""}`,
 		requestedSchema: {
 			type: "object",
 			properties: {
@@ -284,12 +285,3 @@ async function elicitQuiz(server: Server, quiz: PreparedQuiz) {
 	return { action: "accept" as const, content: { dontKnow, selected: dontKnow ? [] : selected, note } satisfies QuizResponse };
 }
 
-/** Elicitation forms render plain text, so strip the most common LaTeX/markdown wrappers. */
-function plain(s: string): string {
-	return s
-		.replace(/\$\$([\s\S]+?)\$\$/g, "$1")
-		.replace(/\$([^$]+)\$/g, "$1")
-		.replace(/\\(dfrac|frac)\{([^}]*)\}\{([^}]*)\}/g, "($2)/($3)")
-		.replace(/\*\*|__|==/g, "")
-		.trim();
-}
