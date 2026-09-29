@@ -15,9 +15,15 @@ export function bundledPluginDir(cliDir: string): string {
 }
 
 /** Copies the plugin into the vault and enables it. Returns true if anything changed. */
-export async function installPlugin(vault: string, pluginSrc: string): Promise<{ changed: boolean; version: string }> {
+export async function installPlugin(
+	vault: string,
+	pluginSrc: string,
+): Promise<{ changed: boolean; version: string; build: string | null; previousBuild: string | null; dest: string }> {
 	const dest = path.join(vault, ".obsidian", "plugins", PLUGIN_ID);
 	await fs.mkdir(dest, { recursive: true });
+	const stampOf = (file: string) => (existsSync(file) ? buildStamp(readFileSync(file, "utf8").slice(0, 200)) : null);
+	const previousBuild = stampOf(path.join(dest, "main.js"));
+	const build = stampOf(path.join(pluginSrc, "main.js"));
 	let changed = false;
 	for (const f of PLUGIN_FILES) {
 		const src = await fs.readFile(path.join(pluginSrc, f));
@@ -41,7 +47,11 @@ export async function installPlugin(vault: string, pluginSrc: string): Promise<{
 		changed = true;
 	}
 	const version = JSON.parse(readFileSync(path.join(pluginSrc, "manifest.json"), "utf8")).version as string;
-	return { changed, version };
+	return { changed, version, build, previousBuild, dest };
+}
+
+function buildStamp(head: string): string | null {
+	return /^\/\* groundwork-build: (.+?) \*\//.exec(head)?.[1] ?? null;
 }
 
 /** Obsidian keeps its list of known vaults in obsidian.json in its config folder. */

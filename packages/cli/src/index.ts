@@ -195,7 +195,9 @@ program
 	.action(async (opts: { vault?: string }) => {
 		const vault = await resolveVault(opts.vault);
 		const r = await installPlugin(vault, bundledPluginDir(cliDir));
-		say(r.changed ? `Installed plugin v${r.version}.` : `Plugin v${r.version} already installed.`);
+		const build = r.build ?? `v${r.version}`;
+		say(r.changed ? `Installed plugin build ${build}${r.previousBuild && r.previousBuild !== r.build ? ` (was ${r.previousBuild})` : ""}.` : `Plugin build ${build} already installed.`);
+		say(`  into ${r.dest}`);
 	});
 
 program.parseAsync().catch((e: Error) => {

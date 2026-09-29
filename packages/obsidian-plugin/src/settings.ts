@@ -1,5 +1,6 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { listAnthropicModels } from "@groundwork/core";
+import { BUILD } from "./build";
 import type GroundworkPlugin from "./main";
 
 export type ProviderId = "claude-code" | "anthropic" | "demo";
@@ -140,6 +141,15 @@ export class GroundworkSettingTab extends PluginSettingTab {
 					await save();
 				}),
 			);
+
+		new Setting(containerEl).setName("About").setHeading();
+
+		const version = new Setting(containerEl).setName("Running build").setDesc(BUILD);
+		void this.plugin.installedBuild().then((onDisk) => {
+			if (!onDisk || onDisk === BUILD) return;
+			version.setDesc(`${BUILD}. A newer build is installed: ${onDisk}.`);
+			version.addButton((b) => b.setButtonText("Reload Groundwork").setCta().onClick(() => void this.plugin.reloadSelf()));
+		});
 	}
 
 	private claudeCodeSettings(containerEl: HTMLElement, save: () => Promise<void>): void {

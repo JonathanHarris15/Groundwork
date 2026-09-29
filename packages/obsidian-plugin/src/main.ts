@@ -3,6 +3,7 @@ import { AnthropicProvider, DemoProvider, KnowledgeStore, type Provider } from "
 import { GitSync } from "@groundwork/core/node";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
+import { BUILD, readBuildStamp } from "./build";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { DEFAULT_SETTINGS, GroundworkSettingTab, loadApiKey, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
@@ -63,6 +64,49 @@ export default class GroundworkPlugin extends Plugin {
 
 		// Periodic pull keeps two open machines close even without local changes.
 		this.registerInterval(window.setInterval(() => this.settings.autoSync && void this.syncNow("periodic"), 10 * 60_000));
+
+		// Obsidian keeps running the loaded bundle after `update_groundwork.py` replaces it on disk.
+		console.log(`Groundwork build ${BUILD}`);
+		this.registerDomEvent(window, "focus", () => void this.checkForUpdate());
+		this.registerInterval(window.setInterval(() => void this.checkForUpdate(), 5 * 60_000));
+	}
+
+	private updateOffered = false;
+
+	async installedBuild(): Promise<string | null> {
+		if (!this.manifest.dir) return null;
+		try {
+			return readBuildStamp(await this.app.vault.adapter.read(`${this.manifest.dir}/main.js`));
+		} catch {
+			return null;
+		}
+	}
+
+	private async checkForUpdate(): Promise<void> {
+		if (this.updateOffered) return;
+		const onDisk = await this.installedBuild();
+		if (!onDisk || onDisk === BUILD) return;
+		this.updateOffered = true;
+		const notice = new Notice(
+			createFragment((f) => {
+				f.createDiv({ text: "Groundwork was updated. Reload it to use the new version." });
+				const btn = f.createEl("button", { text: "Reload Groundwork", cls: "mod-cta" });
+				btn.style.marginTop = "8px";
+				btn.addEventListener("click", () => {
+					notice.hide();
+					void this.reloadSelf();
+				});
+			}),
+			0,
+		);
+	}
+
+	async reloadSelf(): Promise<void> {
+		const plugins = (this.app as any).plugins;
+		const id = this.manifest.id;
+		await plugins.disablePlugin(id);
+		await plugins.enablePlugin(id);
+		new Notice(`Groundwork reloaded (build ${(await this.installedBuild()) ?? "unknown"}).`);
 	}
 
 	onunload(): void {

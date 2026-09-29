@@ -1,11 +1,24 @@
 import esbuild from "esbuild";
 import { builtinModules } from "node:module";
+import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const prod = process.argv[2] === "production";
+
+function commit() {
+	try {
+		const sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: here, encoding: "utf8" }).trim();
+		const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: here, encoding: "utf8" }).trim() ? "+local" : "";
+		return sha + dirty;
+	} catch {
+		return "unknown";
+	}
+}
+// The CLI and the running plugin read this stamp from the first line of main.js to tell builds apart.
+const build = `${commit()} ${new Date().toISOString().slice(0, 19).replace("T", " ")}Z`;
 const outdir = path.join(here, "dist");
 mkdirSync(outdir, { recursive: true });
 
@@ -35,9 +48,9 @@ const ctx = await esbuild.context({
 	target: "es2022",
 	external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
 	// The Agent SDK calls createRequire(import.meta.url) at load time; CJS has no import.meta, so give it a real file URL.
-	define: { "import.meta.url": "__gw_import_meta_url" },
+	define: { "import.meta.url": "__gw_import_meta_url", __GW_BUILD__: JSON.stringify(build) },
 	banner: {
-		js: `var __gw_import_meta_url = require("url").pathToFileURL(typeof __filename === "string" ? __filename : require("path").join(process.cwd(), "groundwork-plugin.js")).href;`,
+		js: `/* groundwork-build: ${build} */\nvar __gw_import_meta_url = require("url").pathToFileURL(typeof __filename === "string" ? __filename : require("path").join(process.cwd(), "groundwork-plugin.js")).href;`,
 	},
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
