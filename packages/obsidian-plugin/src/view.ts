@@ -920,12 +920,28 @@ export class ChatView extends ItemView implements ToolUI {
 			if (sel) this.openAside(sel.anchor, sel.quote);
 		});
 
-		this.registerDomEvent(this.uiMessagesEl, "mouseup", () => window.setTimeout(() => this.onSelectionEnd(), 0));
-		this.registerDomEvent(this.uiMessagesEl, "keyup", (e) => {
-			if (e.shiftKey) this.onSelectionEnd();
-		});
+		// Drags often end outside the chat, and selections can come from double-clicks or the keyboard,
+		// so watch the document rather than mouseup on the messages alone.
+		const doc = this.contentEl.doc;
+		let dragging = false;
+		let settle = 0;
 		this.registerDomEvent(this.uiMessagesEl, "mousedown", (e) => {
+			dragging = true;
 			if (e.target !== this.uiAskBtn) this.hideAskButton();
+		});
+		const release = () => {
+			if (!dragging) return;
+			dragging = false;
+			window.setTimeout(() => this.onSelectionEnd(), 0);
+		};
+		// mouseup is not delivered after some drag-selections in Obsidian, and text drag-and-drop ends with dragend.
+		this.registerDomEvent(doc, "pointerup", release);
+		this.registerDomEvent(doc, "mouseup", release);
+		this.registerDomEvent(doc, "dragend", release);
+		this.registerDomEvent(doc, "selectionchange", () => {
+			if (dragging) return;
+			window.clearTimeout(settle);
+			settle = window.setTimeout(() => this.onSelectionEnd(), 200);
 		});
 		this.registerDomEvent(this.uiMessagesEl, "scroll", () => this.hideAskButton());
 
@@ -938,13 +954,20 @@ export class ChatView extends ItemView implements ToolUI {
 	private onSelectionEnd(): void {
 		const sel = this.contentEl.win.getSelection();
 		if (!sel || sel.isCollapsed || !sel.rangeCount) return this.hideAskButton();
-		const range = sel.getRangeAt(0);
+		const range = sel.getRangeAt(0).cloneRange();
 		const elOf = (n: Node) => (n instanceof Element ? n : n.parentElement);
 		const start = elOf(range.startContainer);
 		const end = elOf(range.endContainer);
-		const turn = start?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
-		if (!turn || turn !== end?.closest(".gw-turn") || start?.closest(".gw-asides, textarea, input")) return this.hideAskButton();
-		const quote = sel.toString().trim();
+		if (start?.closest(".gw-asides, textarea, input")) return this.hideAskButton();
+		const startTurn = start?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
+		const endTurn = end?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
+		const turn = startTurn ?? endTurn;
+		if (!turn || !this.uiMessagesEl.contains(turn)) return this.hideAskButton();
+		// Drags often overshoot into the next card or the composer; keep the part inside the first message.
+		const body = (turn.querySelector(":scope > .gw-msg, :scope > .gw-card") as HTMLElement | null) ?? turn;
+		if (turn !== endTurn || end?.closest(".gw-asides")) range.setEnd(body, body.childNodes.length);
+		if (turn !== startTurn) range.setStart(body, 0);
+		const quote = range.toString().trim();
 		if (quote.length < 2) return this.hideAskButton();
 		this.selection = { anchor: turn.dataset.anchor!, quote: quote.slice(0, 1200) };
 
