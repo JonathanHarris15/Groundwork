@@ -31,8 +31,18 @@ from typing import NoReturn, Optional
 
 REPO = Path(__file__).resolve().parent
 CLI = REPO / "packages" / "cli" / "dist" / "groundwork.js"
-CONFIG = Path.home() / ".config" / "groundwork" / "config.json"
 IS_WIN = sys.platform == "win32"
+
+
+def _config_base() -> Path:
+    """Must match configPath() in packages/cli/src/config.ts, which is where the CLI saves the vault."""
+    if IS_WIN:
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+
+CONFIG = _config_base() / "groundwork" / "config.json"
+LEGACY_CONFIG = Path.home() / ".config" / "groundwork" / "config.json"
 IS_MAC = sys.platform == "darwin"
 MIN_NODE = 20
 
@@ -411,11 +421,47 @@ def groundwork(*args: str) -> None:
 
 
 def saved_vault() -> Optional[Path]:
+    for config in (CONFIG, LEGACY_CONFIG):
+        try:
+            vault = json.loads(config.read_text(encoding="utf-8")).get("vault")
+        except (OSError, json.JSONDecodeError):
+            continue
+        if vault and Path(vault).expanduser().exists():
+            return Path(vault).expanduser()
+    return None
+
+
+def save_vault(vault: Path) -> None:
     try:
-        vault = json.loads(CONFIG.read_text(encoding="utf-8")).get("vault")
+        cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
-    return Path(vault) if vault and Path(vault).exists() else None
+        cfg = {}
+    cfg["vault"] = str(vault)
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def obsidian_vaults_with_groundwork() -> list[Path]:
+    """Vaults Obsidian knows about that already have the Groundwork plugin, most recently opened first."""
+    home = Path.home()
+    if IS_WIN:
+        dirs = [Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming") / "obsidian"]
+    elif IS_MAC:
+        dirs = [home / "Library" / "Application Support" / "obsidian"]
+    else:
+        xdg = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config")
+        dirs = [xdg / "obsidian", home / ".var/app/md.obsidian.Obsidian/config/obsidian", home / "snap/obsidian/current/.config/obsidian"]
+    found: dict[Path, float] = {}
+    for d in dirs:
+        try:
+            vaults = json.loads((d / "obsidian.json").read_text(encoding="utf-8")).get("vaults", {})
+        except (OSError, json.JSONDecodeError, AttributeError):
+            continue
+        for v in vaults.values():
+            p = Path(v.get("path", ""))
+            if v.get("path") and (p / ".obsidian" / "plugins" / "groundwork").is_dir():
+                found[p] = max(found.get(p, 0), float(v.get("ts") or 0))
+    return sorted(found, key=lambda p: -found[p])
 
 
 def default_vault_dir() -> Path:

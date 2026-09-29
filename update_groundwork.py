@@ -6,7 +6,7 @@ Update Groundwork on this computer without touching vault setup.
     python update.py
 
 Pulls this repo, rebuilds the CLI and Obsidian plugin, and refreshes the plugin
-inside the vault already saved in ~/.config/groundwork/config.json. It never
+inside the vault already saved in Groundwork's config.json. It never
 asks you to create or clone a knowledge repo.
 
 First-time install is still `python setup_groundwork.py`.
@@ -72,19 +72,26 @@ def main() -> None:
 
     gw.title("Vault")
     vault = gw.saved_vault()
+    vaults = [vault] if vault else gw.obsidian_vaults_with_groundwork()
     if vault:
         gw.ok(f"Keeping your existing vault at {vault}")
-        gw.groundwork("install-plugin")
-        gw.ok("Refreshed the Obsidian plugin in that vault")
+    elif vaults:
+        gw.ok(f"Found Groundwork in Obsidian's vaults: {', '.join(map(str, vaults))}")
+        gw.save_vault(vaults[0])
+        gw.info(f"Saved {vaults[0]} as your vault in {gw.CONFIG}")
+    for v in vaults:
+        gw.groundwork("install-plugin", "--vault", str(v))
+    if vaults:
+        gw.ok("Refreshed the Obsidian plugin")
         if args.open:
             gw.groundwork("open")
     else:
-        gw.info("No vault is configured on this computer yet (nothing in ~/.config/groundwork/config.json).")
-        gw.info("Software is updated. Run python setup_groundwork.py only when you want to connect a vault.")
+        gw.warn(f"No vault is configured on this computer ({gw.CONFIG}), and no Obsidian vault has Groundwork installed.")
+        gw.info("Software is updated. Run python setup_groundwork.py to connect a vault.")
 
     gw.title("Done")
     gw.info("Day to day: `groundwork open`. To update Groundwork again: `python update_groundwork.py`.")
-    if vault and not args.open:
+    if vaults and not args.open:
         gw.info("If Obsidian is open, click \"Reload Groundwork\" when it offers, or quit it fully and reopen it.")
         gw.info("Settings → Groundwork → About shows the build Obsidian is running.")
 
