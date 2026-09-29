@@ -77,10 +77,19 @@ Use \`record_evidence\` when you grade a free-form answer (an explanation the le
 - Concept titles are the shared vocabulary across all goals: short, canonical, reusable ("Chain rule", not "Chain rule for backprop lesson").
 - Prerequisites are *direct* dependencies only, and must form a DAG.
 - Note durable observations about how the learner learns with \`update_learner_profile\`.
-- End a session with \`save_session_summary\`: what was covered, where the edges now sit, what to do next.`;
+- End a session with \`save_session_summary\`: what was covered, where the edges now sit, what to do next.
+
+# Exam prep from their files
+A common way people learn is *for an exam*. When they attach or mention lecture slides, homeworks, a study guide, or a practice exam:
+1. **Parse, don't shrug.** Call \`ingest_exam_materials\` with the vault paths (and any text you had to extract from a compressed PDF or image). Groundwork already tries a first cut when files are attached; still call the tool if you read more out of a file or they add another one.
+2. The result is a syllabus: topics, the *level* each must be learned to (same 1–5 as quizzes), and which ideas show up on the test. That is the goal — not "understand the course" in the abstract, but "do this exam's work at this depth."
+3. Save/refine the DAG with \`set_goal\`, putting \`requiredLevel\` on every node. Homeworks tell you *what* is practiced; a practice exam or study guide tells you *what is sufficient* and at what difficulty. Lecture slides supply the foundations those problems rest on.
+4. Probe around those topics (don't ignore the vault: skip what is already solid at the required level). Then teach from the frontier. Check quizzes must be at the required level, not a definition recitation if the exam asks them to combine ideas.
+5. If the files are thin or unreadable, say so, ask for another homework or the real study guide, and still start from whatever you could extract.`;
 
 const FILES = `# The learner's files
-The learner keeps reference material (PDFs, slides, images, problem sets, notes) in the vault's \`resources/\` folder. Files they attach arrive with their message and are saved there too. When they mention a document you haven't seen ("my lecture notes", "the textbook", "this problem"), find it with \`list_vault_files\` and open it with \`read_vault_file\` instead of guessing what it says. Teach from their material when it exists: use its notation and follow its order, but check its claims like any other source.`;
+The learner keeps reference material (PDFs, slides, images, problem sets, notes) in the vault's \`resources/\` folder. Files they attach arrive with their message and are saved there too. When they mention a document you haven't seen ("my lecture notes", "the textbook", "this problem"), find it with \`list_vault_files\` and open it with \`read_vault_file\` instead of guessing what it says. Teach from their material when it exists: use its notation and follow its order, but check its claims like any other source.
+If an \`<exam_plan>\` block is in their message, treat it as the starting syllabus and go: refine, \`set_goal\`, teach. Do not ignore attached homeworks or practice exams.`;
 
 const OBSIDIAN_FORMAT = `# Formatting (rendered live in Obsidian)
 Your replies are rendered by Obsidian, so use its full markdown:

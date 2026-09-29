@@ -6,8 +6,10 @@ Set up this computer for Groundwork, then open it.
     python setup_groundwork.py --new my-knowledge  # first computer: create your private knowledge repo
     python setup_groundwork.py --clone https://github.com/you/my-knowledge.git   # every other computer
 
-Every step checks first and skips what's already done, so it is safe to re-run
-(it also works as the "update" command after `git pull`).
+Every step checks first and skips what's already done, so it is safe to re-run.
+If this repo is already a git clone, the script pulls the latest Groundwork first
+(`git pull`), then rebuilds — so `python setup.py` (or this file) updates an
+existing install. Pass `--no-pull` to skip that.
 
 Steps: install missing tools (Node.js, git, GitHub CLI, Obsidian, Claude Code), set
 your git name/email, build Groundwork and put `groundwork` on your PATH, sign in to
@@ -225,6 +227,28 @@ def ensure_git() -> None:
     if not which("git"):
         fail("git is required. Install it from https://git-scm.com, open a new terminal, and re-run this script.")
     ok("git")
+
+
+def update_repo(*, skip: bool = False) -> None:
+    """If this is a git clone, pull first so a re-run updates an existing install."""
+    if skip:
+        return info("Skipped git pull (--no-pull).")
+    if not which("git") or not (REPO / ".git").exists():
+        return
+    remotes = output(["git", "-C", str(REPO), "remote"])
+    if not remotes:
+        return ok("No git remote on this clone — using the local tree")
+    r = run(["git", "-C", str(REPO), "pull", "--ff-only"], check=False, capture=True)
+    text = ((r.stdout or "") + "\n" + (r.stderr or "")).strip()
+    if r.returncode == 0:
+        if "Already up to date" in text or "Already up-to-date" in text:
+            ok("Groundwork source is already up to date")
+        else:
+            ok("Pulled the latest Groundwork, then will rebuild")
+    else:
+        warn("git pull --ff-only didn't apply (uncommitted changes or a diverged branch). Rebuilding what you have.")
+        if text:
+            info(text[-400:])
 
 
 def ensure_gh() -> bool:
@@ -451,6 +475,7 @@ def main() -> None:
     group.add_argument("--clone", metavar="URL", help="connect to your existing knowledge repo (other computers)")
     parser.add_argument("--vault", metavar="DIR", help="where the vault lives on this computer (default ~/Groundwork)")
     parser.add_argument("--no-open", action="store_true", help="don't open Obsidian at the end")
+    parser.add_argument("--no-pull", action="store_true", help="don't git pull this repo before rebuilding")
     parser.add_argument("-y", "--yes", action="store_true", help="install missing tools and accept defaults without asking")
     args = parser.parse_args()
     ASSUME_YES = args.yes
@@ -462,6 +487,7 @@ def main() -> None:
 
     title("Tools")
     ensure_git()
+    update_repo(skip=args.no_pull)
     ensure_node()
     have_gh = ensure_gh()
     ensure_obsidian()
@@ -486,7 +512,7 @@ def main() -> None:
     title("Done")
     info("In Obsidian: click “Trust author and enable plugins” (and “Allow” for Mermaid) the first time.")
     info("Then Settings → Groundwork → Check connection should say you're signed in.")
-    info("Next time, just run `groundwork open`. After `git pull`, re-run this script to rebuild.")
+    info("Next time, just run `groundwork open`. To update Groundwork itself: `python setup.py` (pulls + rebuilds).")
 
 
 if __name__ == "__main__":

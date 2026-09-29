@@ -15,6 +15,7 @@ This is a **Groundwork** knowledge vault: a calibrated, persistent memory of wha
 | \`goals/\` | Learning objectives, each with a dependency map colored by how well I know every node. |
 | \`sessions/\` | Transcripts and summaries of tutoring sessions. |
 | \`resources/\` | PDFs, slides, images, and notes I learn from. Files I attach in the tutor chat are saved here, and the tutor can open anything in it. |
+| \`exams/\` | Syllabi parsed from those files: topics and the level each must be learned to. |
 | \`learner.md\` | My background and how I learn best. The tutor reads it every session. |
 | \`.groundwork/evidence/\` | Append-only quiz evidence (source of truth for all stats). |
 
@@ -24,6 +25,7 @@ Open the **Groundwork** panel from the ribbon (graduation cap) to talk to the tu
 	[`${PATHS.concepts}/.gitkeep`]: "",
 	[`${PATHS.goals}/.gitkeep`]: "",
 	[`${PATHS.sessions}/.gitkeep`]: "",
+	[`${PATHS.exams}/.gitkeep`]: "",
 	[`${PATHS.evidence}/.gitkeep`]: "",
 	[`${PATHS.chats}/.gitkeep`]: "",
 	[`${RESOURCES_DIR}/.gitkeep`]: "",

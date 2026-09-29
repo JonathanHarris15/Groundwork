@@ -25,7 +25,8 @@ const INSTRUCTIONS = `Groundwork is the learner's persistent, calibrated knowled
 Whenever the learner wants to learn, understand, review, or be quizzed on something:
 1. Call get_learner_overview first. On the first call it also returns the teaching method; follow it for the whole conversation.
 2. Build on what the vault already knows (search_knowledge, get_concepts) instead of re-probing from scratch.
-3. Use quiz for every gradable question so the vault stays calibrated, and save goals, concepts, and a session summary as you go.`;
+3. Use quiz for every gradable question so the vault stays calibrated, and save goals, concepts, and a session summary as you go.
+4. If they attach or mention homeworks, lecture slides, a study guide, or a practice exam, call ingest_exam_materials, then teach to the required levels — that is exam prep.`;
 
 const DONT_KNOW = /^(e|\?|i\s*don'?t\s*know|idk|not\s*sure|no\s*idea|dont\s*know)$/i;
 
@@ -177,12 +178,31 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 				arguments: [{ name: "topic", description: "What you want to understand (optional).", required: false }],
 			},
 			{ name: "review", description: "Spaced review of concepts that are fading." },
+			{
+				name: "exam",
+				description: "Prepare for an exam from attached or vault files (homeworks, slides, study guide, practice exam).",
+				arguments: [{ name: "files", description: "Vault paths or file names, comma-separated (optional if already attached in chat).", required: false }],
+			},
 		],
 	}));
 
 	server.setRequestHandler(GetPromptRequestSchema, async (req) => {
 		const method = buildSystemPrompt("chat");
 		methodDelivered = true;
+		if (req.params.name === "exam") {
+			const files = typeof req.params.arguments?.files === "string" ? req.params.arguments.files : "";
+			return {
+				messages: [
+					{
+						role: "user",
+						content: {
+							type: "text",
+							text: `${method}\n\n---\n\nI want to prepare for an exam from my course files. Call get_learner_overview, then ingest_exam_materials${files ? ` with files: ${files}` : " (list_vault_files / read_vault_file first if you need paths)"}. Parse the homeworks, slides, study guide, and/or practice exam into topics and required levels, set_goal, and start teaching to that depth.`,
+						},
+					},
+				],
+			};
+		}
 		if (req.params.name === "review") {
 			return {
 				messages: [
