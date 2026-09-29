@@ -94,12 +94,7 @@ function wrapGraph(block: HTMLElement): void {
 			apply();
 			return;
 		}
-		svg.removeAttribute("width");
-		svg.removeAttribute("height");
-		svg.style.width = "auto";
-		svg.style.height = "auto";
-		svg.style.maxWidth = "none";
-		const bb = svgSize(svg);
+		const bb = sizeSvg(svg);
 		const pad = 20;
 		const s = Math.min((vw - pad) / bb.w, (vh - pad) / bb.h, 1.4);
 		scale = Math.min(MAX, Math.max(MIN, s));
@@ -177,30 +172,33 @@ function wrapGraph(block: HTMLElement): void {
 		fit();
 	});
 
-	window.requestAnimationFrame(() => {
-		fit();
-		window.setTimeout(fit, 80);
-		window.setTimeout(fit, 400);
-	});
+	// Mermaid renders asynchronously and the pane may be laid out after it is built; refit until the user takes over.
+	const refit = () => {
+		if (fitted) fit();
+	};
+	new ResizeObserver(refit).observe(view);
+	new MutationObserver(refit).observe(stage, { childList: true, subtree: true });
+	window.requestAnimationFrame(fit);
 }
 
-function svgSize(svg: SVGSVGElement): { w: number; h: number } {
-	try {
-		const box = svg.getBBox();
-		if (box.width > 1 && box.height > 1) return { w: box.width, h: box.height };
-	} catch {
-		// getBBox throws if the SVG is not in the layout yet
+/** Pin the SVG to its viewBox size in pixels; with auto sizing it collapses to 0×0 inside the shrink-to-fit stage. */
+function sizeSvg(svg: SVGSVGElement): { w: number; h: number } {
+	let vb = svg.viewBox?.baseVal;
+	if (!vb || vb.width <= 1 || vb.height <= 1) {
+		try {
+			const box = svg.getBBox();
+			if (box.width > 1 && box.height > 1) svg.setAttribute("viewBox", `${box.x} ${box.y} ${box.width} ${box.height}`);
+		} catch {
+			// getBBox throws if the SVG is not in the layout yet
+		}
+		vb = svg.viewBox?.baseVal;
 	}
-	const vb = svg.viewBox?.baseVal;
-	if (vb && vb.width > 1 && vb.height > 1) return { w: vb.width, h: vb.height };
-	const r = svg.getBoundingClientRect();
-	if (r.width > 1 && r.height > 1) return { w: r.width / Math.max(0.01, currentScale(svg)), h: r.height / Math.max(0.01, currentScale(svg)) };
-	return { w: 400, h: 240 };
-}
-
-function currentScale(el: Element): number {
-	const stage = el.closest(".gw-graph-stage") as HTMLElement | null;
-	if (!stage) return 1;
-	const m = /scale\(([^)]+)\)/.exec(stage.style.transform);
-	return m ? Number(m[1]) || 1 : 1;
+	const w = vb && vb.width > 1 ? vb.width : 400;
+	const h = vb && vb.height > 1 ? vb.height : 240;
+	svg.setAttribute("width", String(w));
+	svg.setAttribute("height", String(h));
+	svg.style.setProperty("width", `${w}px`, "important");
+	svg.style.setProperty("height", `${h}px`, "important");
+	svg.style.setProperty("max-width", "none", "important");
+	return { w, h };
 }
