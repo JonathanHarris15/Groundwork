@@ -33,7 +33,45 @@ const FENCE_LINE = /^(```+|~~~+)/;
 export function normalizeTutorMarkdown(md: string): string {
 	if (!md) return md;
 	const parts = splitFences(unescapeOverEscaped(md));
-	return parts.map((p) => (p.fence ? p.text : normalizeFlow(p.text))).join("");
+	return parts.map((p) => (p.fence ? p.text : normalizeQuoted(p.text))).join("");
+}
+
+const QUOTE_PREFIX = /^((?:[ \t]*>[ \t]?)+)/;
+
+/**
+ * Math must not pair across a blockquote/callout boundary, and lines added
+ * inside a quote need its `> ` prefix, or `$$` leaks out and swallows the
+ * prose after the callout. Normalize each run of quoted lines on its own.
+ */
+function normalizeQuoted(text: string): string {
+	const lines = text.split("\n");
+	const out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		const depth = quoteDepth(lines[i]);
+		let j = i + 1;
+		while (j < lines.length && quoteDepth(lines[j]) === depth) j++;
+		const run = lines.slice(i, j);
+		if (!depth) {
+			out.push(normalizeFlow(run.join("\n")));
+		} else {
+			const prefix = `${QUOTE_PREFIX.exec(run[0])![1].trimEnd()} `;
+			const inner = run.map((l) => l.replace(QUOTE_PREFIX, "")).join("\n");
+			out.push(
+				normalizeQuoted(inner)
+					.split("\n")
+					.map((l) => (l ? prefix + l : prefix.trimEnd()))
+					.join("\n"),
+			);
+		}
+		i = j;
+	}
+	return out.join("\n");
+}
+
+function quoteDepth(line: string): number {
+	const m = QUOTE_PREFIX.exec(line);
+	return m ? (m[1].match(/>/g) ?? []).length : 0;
 }
 
 /** Elicitation and other plain-text surfaces: drop markdown/TeX wrappers. */

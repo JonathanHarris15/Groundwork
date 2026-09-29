@@ -62,6 +62,27 @@ describe("normalizeTutorMarkdown", () => {
 		expect(normalizeTutorMarkdown(src)).toContain("$\\nabla f \\neq 0$");
 	});
 
+	it("keeps display math inside a callout so it cannot swallow the prose after it", () => {
+		const src = [
+			"> [!note] Root",
+			"> $x^\\top A x$ is a **scalar**, written out it is",
+			"> $$x^\\top A x = \\sum_{i,j} A_{ij}x_ix_j.$$",
+			"",
+			"This is just what the shapes force: $(1\\times n)(n\\times 1)$. Now:",
+			"",
+			"> $$",
+			"> \\nabla(x^\\top A x) = (A + A^\\top)x",
+			"> $$",
+			"",
+			"The two terms are a row-read and a column-read.",
+		].join("\n");
+		const out = normalizeTutorMarkdown(src);
+		expect(out).toContain("> $$\n> x^\\top A x = \\sum_{i,j} A_{ij}x_ix_j.\n> $$\n\nThis is just what");
+		expect(out).toContain("> $$\n> \\nabla(x^\\top A x) = (A + A^\\top)x\n> $$\n\nThe two terms");
+		for (const line of out.split("\n")) if (line.includes("$$")) expect(line.startsWith(">")).toBe(true);
+		expect(normalizeTutorMarkdown(out)).toBe(out);
+	});
+
 	it("is idempotent", () => {
 		const once = normalizeTutorMarkdown(GRADIENT_EXPLANATION);
 		expect(normalizeTutorMarkdown(once)).toBe(once);
