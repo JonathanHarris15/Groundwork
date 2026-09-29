@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Install or update Groundwork.
+"""First-time Groundwork install (same as setup_groundwork.py).
 
-First run builds the CLI and plugin. Later runs `git pull` this repo, then
-rebuild — so `python setup.py` updates an already-installed copy. Same flags
-as setup_groundwork.py (`--new`, `--clone`, `--no-pull`, `-y`, …).
+To update an existing install without reconnecting your vault, use
+`python update.py` / `python update_groundwork.py` instead.
 """
 
 from pathlib import Path

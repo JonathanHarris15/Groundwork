@@ -6,10 +6,9 @@ Set up this computer for Groundwork, then open it.
     python setup_groundwork.py --new my-knowledge  # first computer: create your private knowledge repo
     python setup_groundwork.py --clone https://github.com/you/my-knowledge.git   # every other computer
 
-Every step checks first and skips what's already done, so it is safe to re-run.
-If this repo is already a git clone, the script pulls the latest Groundwork first
-(`git pull`), then rebuilds — so `python setup.py` (or this file) updates an
-existing install. Pass `--no-pull` to skip that.
+Every step checks first and skips what's already done, so it is safe to re-run
+for a first install. To update Groundwork later without creating or reconnecting
+a vault, use `python update_groundwork.py` (or `python update.py`).
 
 Steps: install missing tools (Node.js, git, GitHub CLI, Obsidian, Claude Code), set
 your git name/email, build Groundwork and put `groundwork` on your PATH, sign in to
@@ -512,7 +511,7 @@ def main() -> None:
     title("Done")
     info("In Obsidian: click “Trust author and enable plugins” (and “Allow” for Mermaid) the first time.")
     info("Then Settings → Groundwork → Check connection should say you're signed in.")
-    info("Next time, just run `groundwork open`. To update Groundwork itself: `python setup.py` (pulls + rebuilds).")
+    info("Next time, just run `groundwork open`. To update Groundwork itself: `python update_groundwork.py`.")
 
 
 if __name__ == "__main__":
