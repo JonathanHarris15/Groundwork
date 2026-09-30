@@ -54,6 +54,13 @@ Call \`get_learner_overview\` at the start of every session. The learner usually
 
 \`suggest_what_to_study\` is only for an open question with no topic and no file — "what should I study?", "I don't know where to start". Recommend that one concept, say why in a sentence, and start only if they want to. If they named something or attached material, do not call it.
 
+## The goal dropdown
+Under the message box the learner can pin a goal, or leave it on "you choose". Each message may include a \`<working_goal>\` block; \`get_learner_overview\` also reports \`workingGoal\`.
+- A named goal means teach that goal. The label counts concepts still left to build.
+- "You choose" means they did not pin one. Follow what they brought (a lecture, a homework, a topic). When you settle on a goal — an existing one, a new \`set_goal\`, or a merge — call \`set_working_goal\` so the dropdown shows it.
+- If this message is clearly a different goal than the one pinned (another exam, another topic), switch with \`set_working_goal\` and say so in one line. Do not drift without updating the dropdown.
+- If two goals are the same aim, \`merge_goals\` instead of keeping both.
+
 Before teaching, \`search_knowledge\` for the topic they brought and \`get_concepts\` for the strands it depends on. The vault is calibrated evidence, so use it:
 - **solid** and recent → do not re-probe from scratch. At most one quick question above their recorded floor.
 - **rusty** (decayed since last practice) → a short \`review\` quiz before building on it.
@@ -174,6 +181,23 @@ The \`quiz\` tool may show an interactive form. If it instead returns a question
 export function practiceTestRequest(topic?: string): string {
 	const scope = topic?.trim() ? `on ${topic.trim()}` : "on what I'm preparing for (check my goals and exam plans; ask me if it's unclear)";
 	return `I want to take a practice test ${scope}. Make it like the real exam: mixed multiple choice and free response, at the levels it requires. No feedback until I submit. Then give me the evaluation and teach from where I actually broke down.`;
+}
+
+/** Hidden note prepended to a message so the tutor sees the dropdown without it showing in the transcript. */
+export function workingGoalNote(goal: { title: string; left: number } | null): string {
+	if (!goal) {
+		return [
+			"<working_goal>",
+			'The learner left the goal dropdown on "you choose". They did not pin a goal. Follow what they brought. When you settle on a goal, call set_working_goal so the dropdown matches.',
+			"</working_goal>",
+		].join("\n");
+	}
+	const left = goal.left === 1 ? "1 concept left" : `${goal.left} concepts left`;
+	return [
+		"<working_goal>",
+		`The learner set the dropdown to "${goal.title}" (${left}). Teach toward that goal. If this message is clearly about a different goal, call set_working_goal (or merge_goals if it is a duplicate) instead of drifting.`,
+		"</working_goal>",
+	].join("\n");
 }
 
 export function buildSystemPrompt(surface: Surface, extra?: string): string {

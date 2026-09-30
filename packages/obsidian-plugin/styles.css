@@ -1064,6 +1064,28 @@
 	font-size: var(--font-ui-medium);
 	line-height: 1.4;
 }
+.gw-goal-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+.gw-goal-label {
+	flex: 0 0 auto;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+.gw-goal-select {
+	flex: 1;
+	min-width: 0;
+	max-width: 100%;
+	font-size: var(--font-ui-small);
+	padding: 4px 8px;
+	border-radius: var(--gw-radius);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+}
 .gw-send {
 	width: 40px;
 	height: 40px;

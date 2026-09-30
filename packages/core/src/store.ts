@@ -33,6 +33,7 @@ export const PATHS = {
 	data: ".groundwork",
 	evidence: ".groundwork/evidence",
 	chats: ".groundwork/chats",
+	focus: ".groundwork/focus.json",
 } as const;
 
 export interface Concept {
@@ -62,6 +63,27 @@ export interface ConceptInput {
 }
 
 export type GoalStatus = "active" | "paused" | "done";
+
+export interface GoalChoice {
+	id: string;
+	title: string;
+	status: GoalStatus;
+	/** Concepts on this goal that are not built yet. */
+	left: number;
+}
+
+export interface WorkingGoal {
+	id: string;
+	title: string;
+	left: number;
+	status: GoalStatus;
+}
+
+/** Dropdown label, e.g. "427 exam → 10 concepts left". */
+export function goalChoiceLabel(choice: Pick<GoalChoice, "title" | "left" | "status">): string {
+	const left = choice.left === 1 ? "1 concept left" : `${choice.left} concepts left`;
+	return `${choice.title} → ${left}${choice.status === "paused" ? " (paused)" : ""}`;
+}
 
 export interface Goal {
 	id: string;
@@ -495,6 +517,133 @@ export class KnowledgeStore {
 		return { ...goal, status };
 	}
 
+	/** Goals the learner can pin in the dropdown, with how many concepts are still unbuilt. */
+	async goalChoices(): Promise<GoalChoice[]> {
+		const out: GoalChoice[] = [];
+		for (const g of await this.goals()) {
+			if (g.status === "done") continue;
+			const report = await this.goalReport(g.id);
+			if (report.goal.status === "done") continue;
+			if (report.goal.targets.length === 0 && report.goal.built.length > 0) continue;
+			out.push({
+				id: g.id,
+				title: g.title,
+				status: g.status,
+				left: report.goal.targets.length,
+			});
+		}
+		return out.sort((a, b) => Number(a.status === "paused") - Number(b.status === "paused") || a.title.localeCompare(b.title));
+	}
+
+	/** The goal pinned in the dropdown, or null when the learner left it on "you choose". */
+	async workingGoal(): Promise<WorkingGoal | null> {
+		const title = await this.readFocusTitle();
+		if (!title) return null;
+		const goal = await this.resolveGoal(title);
+		const report = goal && goal.status !== "done" ? await this.goalReport(goal.id) : null;
+		const open = report && !(report.goal.targets.length === 0 && report.goal.built.length > 0) && report.goal.status !== "done";
+		if (!goal || !report || !open) {
+			await this.setWorkingGoal(null);
+			return null;
+		}
+		return { id: goal.id, title: goal.title, left: report.goal.targets.length, status: goal.status };
+	}
+
+	/** Pin a goal, or pass null / "you choose" to clear the pin. A paused goal is resumed. */
+	async setWorkingGoal(ref: string | null): Promise<WorkingGoal | null> {
+		const cleared = !ref || /^you choose$/i.test(ref.trim());
+		await ensureDir(this.io, PATHS.data);
+		if (cleared) {
+			await this.io.write(PATHS.focus, `${JSON.stringify({ goal: null })}\n`);
+			this.changed(PATHS.focus);
+			return null;
+		}
+		let goal = await this.resolveGoal(ref);
+		if (!goal) throw new Error(`Unknown goal "${ref}".`);
+		if (goal.status === "paused") goal = await this.setGoalStatus(goal.id, "active");
+		if (goal.status === "done") throw new Error(`"${goal.title}" is already done.`);
+		await this.io.write(PATHS.focus, `${JSON.stringify({ goal: goal.title })}\n`);
+		this.changed(PATHS.focus);
+		return this.workingGoal();
+	}
+
+	/**
+	 * Fold duplicate goals into one. The kept goal gains the others' concepts.
+	 * The others are marked done and point at the kept goal. A pin on a folded
+	 * goal moves to the kept one.
+	 */
+	async mergeGoals(keepRef: string, dropRefs: string[]): Promise<GoalReport> {
+		const keep = await this.resolveGoal(keepRef);
+		if (!keep) throw new Error(`Unknown goal "${keepRef}".`);
+		const drops: Goal[] = [];
+		for (const ref of dropRefs) {
+			const goal = await this.resolveGoal(ref);
+			if (!goal) throw new Error(`Unknown goal "${ref}".`);
+			if (goal.id === keep.id || drops.some((d) => d.id === goal.id)) continue;
+			drops.push(goal);
+		}
+		if (!drops.length) throw new Error("Name a different goal to merge in.");
+
+		const index = await this.concepts();
+		const nodeIds = new Set<string>([...keep.nodes, ...drops.flatMap((d) => d.nodes)]);
+		const scopeIds = new Set<string>([...keep.targets, ...keep.built, ...drops.flatMap((d) => [...d.targets, ...d.built])]);
+		for (const id of scopeIds) nodeIds.add(id);
+		const nodes: GoalInput["nodes"] = [];
+		for (const id of nodeIds) {
+			const concept = index.get(id);
+			if (!concept) continue;
+			const levels = [keep.requiredLevels[id], ...drops.map((d) => d.requiredLevels[id])].filter((n): n is number => !!n);
+			nodes.push({
+				title: concept.title,
+				prerequisites: concept.prerequisites.map((p) => index.get(p)?.title).filter((t): t is string => !!t),
+				...(levels.length ? { requiredLevel: Math.max(...levels) } : {}),
+			});
+		}
+		const targets = [...scopeIds].map((id) => index.get(id)?.title).filter((t): t is string => !!t);
+		if (!targets.length) throw new Error("Those goals have no concepts to merge.");
+
+		const report = await this.setGoal({
+			title: keep.title,
+			objective: keep.objective,
+			targets,
+			nodes,
+			examPlan: keep.examPlan,
+			status: keep.status === "paused" ? "paused" : "active",
+		});
+		const mergedFrom = drops.map((d) => `- [[${d.title}]]`).join("\n");
+		const keptNote = parseNote(await this.io.read(report.goal.path));
+		await this.io.write(
+			report.goal.path,
+			serializeNote(keptNote.frontmatter, setSection(keptNote.body, "Merged from", mergedFrom, ["Targets", "Built", "Dependency map"])),
+		);
+		this.changed(report.goal.path);
+
+		const pinned = await this.readFocusTitle();
+		for (const drop of drops) {
+			await this.setGoalStatus(drop.id, "done");
+			const note = parseNote(await this.io.read(drop.path));
+			await this.io.write(
+				drop.path,
+				serializeNote(note.frontmatter, setSection(note.body, "Merged", `Merged into [[${keep.title}]].`, ["Targets", "Built", "Dependency map"])),
+			);
+			this.changed(drop.path);
+		}
+		if (pinned && drops.some((d) => d.id === slugify(unwikilink(pinned)) || d.title === pinned)) {
+			await this.setWorkingGoal(keep.title);
+		}
+		return this.goalReport(keep.title);
+	}
+
+	private async readFocusTitle(): Promise<string | null> {
+		if (!(await this.io.exists(PATHS.focus))) return null;
+		try {
+			const parsed = JSON.parse(await this.io.read(PATHS.focus)) as { goal?: unknown };
+			return typeof parsed.goal === "string" && parsed.goal.trim() ? parsed.goal.trim() : null;
+		} catch {
+			return null;
+		}
+	}
+
 	async ingestExamMaterials(input: IngestExamInput): Promise<{ blueprint: ExamBlueprint; planPath?: string; goal?: GoalReport }> {
 		const loaded: MaterialSource[] = [];
 		for (const path of input.files ?? []) {
@@ -804,6 +953,7 @@ export class KnowledgeStore {
 			counts,
 			activeGoals: active,
 			otherGoals,
+			workingGoal: await this.workingGoal(),
 			nextUp: await this.studyNext(),
 			dueReviews: (await this.dueReviews(10)).map(conceptSummary),
 			recentlyPracticed: recent.map(conceptSummary),

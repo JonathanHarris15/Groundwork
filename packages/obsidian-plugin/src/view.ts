@@ -8,6 +8,8 @@ import {
 	DemoAsideProvider,
 	marginNotes,
 	buildSystemPrompt,
+	goalChoiceLabel,
+	workingGoalNote,
 	demoteHeadings,
 	examPrepInstruction,
 	familiarityLabel,
@@ -87,6 +89,8 @@ const TOOL_VERBS: Record<string, string> = {
 	set_goal: "Mapping the goal's dependencies",
 	get_goal: "Checking goal progress",
 	set_goal_status: "Updating goal status",
+	set_working_goal: "Setting the goal you're working on",
+	merge_goals: "Merging duplicate goals",
 	record_evidence: "Recording evidence",
 	get_due_reviews: "Checking due reviews",
 	update_learner_profile: "Updating your learner profile",
@@ -121,6 +125,8 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiSyncBtn!: HTMLElement;
 	private uiMessagesEl!: HTMLElement;
 	private uiInputEl!: HTMLTextAreaElement;
+	private uiGoalEl!: HTMLSelectElement;
+	private refreshingGoalSelect = false;
 	private uiSendBtn!: HTMLButtonElement;
 	private uiPendingEl!: HTMLElement;
 	private uiFileInput!: HTMLInputElement;
@@ -213,11 +219,21 @@ export class ChatView extends ItemView implements ToolUI {
 		this.trackStatusBar();
 		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
+		const goalRow = composer.createDiv({ cls: "gw-goal-row" });
+		goalRow.createSpan({ cls: "gw-goal-label", text: "Goal" });
+		this.uiGoalEl = goalRow.createEl("select", { cls: "gw-goal-select", attr: { "aria-label": "Goal you are working toward" } });
+		this.registerDomEvent(this.uiGoalEl, "change", () => {
+			if (this.refreshingGoalSelect) return;
+			const id = this.uiGoalEl.value;
+			void this.plugin.store.setWorkingGoal(id || null).then(() => this.refreshGoalSelect());
+		});
+
 		this.setupMargin(root);
 
 		const last = await this.latestChat();
 		if (last) this.openChat(last);
 		else this.newSession();
+		await this.refreshGoalSelect();
 		this.refreshSyncIndicator();
 	}
 
@@ -368,8 +384,13 @@ export class ChatView extends ItemView implements ToolUI {
 					why: text || undefined,
 					createGoal: true,
 				});
+				if (ingested.goal && !(await this.plugin.store.workingGoal())) {
+					await this.plugin.store.setWorkingGoal(ingested.goal.goal.title);
+					await this.refreshGoalSelect();
+				}
 				toSend = [examPrepInstruction(ingested.blueprint), text].filter(Boolean).join("\n\n");
 			}
+			toSend = [workingGoalNote(await this.plugin.store.workingGoal()), toSend].filter(Boolean).join("\n\n");
 			const notes = this.marginNotes();
 			if (notes) toSend = [toSend, notes].filter(Boolean).join("\n\n");
 			await agent.send(toSend, (e) => this.onEvent(e), this.abort.signal, files);
@@ -464,6 +485,9 @@ export class ChatView extends ItemView implements ToolUI {
 				const summary = e.summary ?? e.name;
 				chip.createSpan({ text: summary });
 				this.record.items.push({ kind: "tool", name: e.name, summary });
+				if (["set_goal", "set_goal_status", "set_working_goal", "merge_goals", "ingest_exam_materials"].includes(e.name)) {
+					void this.refreshGoalSelect();
+				}
 				break;
 			}
 			case "error":
@@ -533,6 +557,24 @@ export class ChatView extends ItemView implements ToolUI {
 			this.scrollToBottom(true);
 			card.focus();
 		});
+	}
+
+	focusGoal(_title: string | null): void {
+		void this.refreshGoalSelect();
+	}
+
+	private async refreshGoalSelect(): Promise<void> {
+		if (!this.uiGoalEl) return;
+		const choices = await this.plugin.store.goalChoices();
+		const current = await this.plugin.store.workingGoal();
+		this.refreshingGoalSelect = true;
+		this.uiGoalEl.empty();
+		this.uiGoalEl.createEl("option", { text: "You choose", attr: { value: "" } });
+		for (const choice of choices) {
+			this.uiGoalEl.createEl("option", { text: goalChoiceLabel(choice), attr: { value: choice.id } });
+		}
+		this.uiGoalEl.value = current && choices.some((c) => c.id === current.id) ? current.id : "";
+		this.refreshingGoalSelect = false;
 	}
 
 	quizRecorded(o: QuizOutcome): void {
@@ -1336,6 +1378,8 @@ function iconFor(name: string): string {
 		case "set_goal":
 		case "get_goal":
 		case "set_goal_status":
+		case "set_working_goal":
+		case "merge_goals":
 		case "ingest_exam_materials":
 		case "get_exam_plan":
 			return "git-fork";

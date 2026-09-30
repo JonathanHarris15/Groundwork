@@ -47,6 +47,8 @@ export interface ToolUI {
 	ask(input: AskInput): Promise<AskResponse | null>;
 	/** Side questions the learner asked since the tutor last looked; appended to interactive results. */
 	marginNotes?(): string | undefined;
+	/** The dropdown pin changed (a goal title, or null for "you choose"). */
+	focusGoal?(title: string | null): void;
 }
 
 function withMarginNotes(text: string, ui: ToolUI): string {
@@ -191,7 +193,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_learner_overview",
 		description:
-			"Call FIRST in every learning session. Returns the learner profile, knowledge counts, active goals (each goal is the targets not yet built), due spaced reviews, recently practiced concepts, and open misconceptions. Use it to recall what they already hold about the topic they brought. It does not choose the topic.",
+			"Call FIRST in every learning session. Returns the learner profile, knowledge counts, active goals (each goal is the targets not yet built), workingGoal (the goal pinned in the dropdown, or null when they left it on \"you choose\"), due spaced reviews, recently practiced concepts, and open misconceptions. Use it to recall what they already hold about the topic they brought. A pin is not a reason to ignore a topic or file they just brought.",
 		inputSchema: { type: "object", properties: {} },
 		async run(_i, { store }) {
 			const o = await store.overview();
@@ -326,8 +328,9 @@ export const TOOLS: ToolDef[] = [
 			},
 			required: ["title", "targets", "nodes"],
 		},
-		async run(input: GoalInput, { store }) {
+		async run(input: GoalInput, { store, ui }) {
 			const r = await store.setGoal(input);
+			ui?.focusGoal?.((await store.workingGoal())?.title ?? null);
 			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			return {
 				text: json({
@@ -397,9 +400,58 @@ export const TOOLS: ToolDef[] = [
 			properties: { goal: str("Goal title."), status: { type: "string", enum: ["active", "paused", "done"] } },
 			required: ["goal", "status"],
 		},
-		async run({ goal, status }: { goal: string; status: GoalStatus }, { store }) {
+		async run({ goal, status }: { goal: string; status: GoalStatus }, { store, ui }) {
 			const g = await store.setGoalStatus(goal, status);
+			const pinned = await store.workingGoal();
+			if (!pinned || pinned.id === g.id) ui?.focusGoal?.(pinned?.title ?? null);
 			return { text: `Goal "${g.title}" is now ${status}.`, summary: `Goal “${g.title}” → ${status}` };
+		},
+	},
+	{
+		name: "set_working_goal",
+		description:
+			'Set the goal shown in the learner\'s dropdown. Pass the goal title, or "you choose" when they are not pinned to one. Call this when you create a goal, switch goals, or merge into one, so the dropdown matches the conversation.',
+		inputSchema: {
+			type: "object",
+			properties: { goal: str('Goal title, or "you choose".') },
+			required: ["goal"],
+		},
+		async run({ goal }: { goal: string }, { store, ui }) {
+			const pinned = await store.setWorkingGoal(goal);
+			ui?.focusGoal?.(pinned?.title ?? null);
+			if (!pinned) return { text: 'The goal dropdown is now "you choose".', summary: "Goal dropdown → you choose" };
+			const left = pinned.left === 1 ? "1 concept left" : `${pinned.left} concepts left`;
+			return { text: `The goal dropdown is now "${pinned.title}" (${left}). Teach toward it.`, summary: `Goal dropdown → ${pinned.title}` };
+		},
+	},
+	{
+		name: "merge_goals",
+		description:
+			"Fold duplicate goals into one. The kept goal gains the others' concepts. The others are marked done and point at the kept goal. If the dropdown was on a goal you folded in, it moves to the kept goal.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				keep: str("Goal title to keep."),
+				merge: strList("Goal titles to fold into it. These are marked done."),
+			},
+			required: ["keep", "merge"],
+		},
+		async run({ keep, merge }: { keep: string; merge: string[] }, { store, ui }) {
+			const report = await store.mergeGoals(keep, merge ?? []);
+			const pinned = await store.workingGoal();
+			ui?.focusGoal?.(pinned?.title ?? null);
+			const titleOf = (id: string) => report.nodes.find((n) => n.id === id)?.title ?? id;
+			return {
+				text: json({
+					goal: report.goal.title,
+					status: report.goal.status,
+					progress: describeGoalProgress(report.goal),
+					targets: report.goal.targets.map(titleOf),
+					built: report.goal.built.map(titleOf),
+					workingGoal: pinned?.title ?? null,
+				}),
+				summary: `Merged into “${report.goal.title}”`,
+			};
 		},
 	},
 	{
@@ -600,11 +652,12 @@ export const TOOLS: ToolDef[] = [
 				createGoal: { type: "boolean", description: "Default true. Set false to only write the exam plan." },
 			},
 		},
-		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: any; path?: string }>; createGoal?: boolean }, { store }) {
+		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: any; path?: string }>; createGoal?: boolean }, { store, ui }) {
 			if (!(input.files?.length || input.materials?.length)) {
 				return { text: "Pass files (vault paths) and/or materials (extracted text).", isError: true };
 			}
 			const r = await store.ingestExamMaterials(input);
+			ui?.focusGoal?.((await store.workingGoal())?.title ?? null);
 			return {
 				text: json({
 					title: r.blueprint.title,

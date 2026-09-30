@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { MemoryVaultIO } from "../src/io";
 import { parseNote } from "../src/markdown";
-import { KnowledgeStore } from "../src/store";
+import { goalChoiceLabel, KnowledgeStore } from "../src/store";
+import { workingGoalNote } from "../src/prompt";
 import { toolByName } from "../src/tools";
 
 const fixedNow = () => new Date("2026-09-28T12:00:00Z");
@@ -168,6 +169,30 @@ nodes:
 		expect(o.conceptCount).toBe(1);
 		expect(o.openMisconceptions[0].misconceptions).toEqual(["thinks the limit is f(a)"]);
 		expect(o.profile).toContain("Learner profile");
+	});
+
+	it("pins a goal for the dropdown and merges a duplicate into it", async () => {
+		const { io, store } = makeStore();
+		await store.setGoal({ title: "427 exam", targets: ["Limit", "Derivative"], nodes: [{ title: "Limit" }, { title: "Derivative", prerequisites: ["Limit"] }] });
+		await store.setGoal({ title: "Calc midterm", targets: ["Chain rule"], nodes: [{ title: "Chain rule" }] });
+		expect(goalChoiceLabel({ title: "427 exam", left: 2, status: "active" })).toBe("427 exam → 2 concepts left");
+		expect(await store.workingGoal()).toBeNull();
+		expect(workingGoalNote(null)).toContain("you choose");
+
+		const pinned = await store.setWorkingGoal("427 exam");
+		expect(pinned?.title).toBe("427 exam");
+		expect(pinned?.left).toBe(2);
+		expect(workingGoalNote(pinned)).toContain("427 exam");
+		expect(await io.read(".groundwork/focus.json")).toContain("427 exam");
+
+		await store.setWorkingGoal("Calc midterm");
+		const merged = await store.mergeGoals("427 exam", ["Calc midterm"]);
+		expect(merged.goal.targets.sort()).toEqual(["chain-rule", "derivative", "limit"]);
+		expect((await store.resolveGoal("Calc midterm"))?.status).toBe("done");
+		expect(await io.read("goals/Calc midterm.md")).toContain("Merged into [[427 exam]]");
+		expect((await store.workingGoal())?.title).toBe("427 exam");
+		await store.setWorkingGoal("you choose");
+		expect(await store.workingGoal()).toBeNull();
 	});
 
 	it("updates learner profile sections", async () => {
