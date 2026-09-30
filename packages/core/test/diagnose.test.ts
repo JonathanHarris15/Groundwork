@@ -49,9 +49,9 @@ describe("diagnose down, build up", () => {
 		await store.upsertConcept({ title: "Derivative", prerequisites: ["Limit", "Secant line"] });
 	});
 
-	it("descends after a miss instead of re-teaching, then climbs back to the original question", async () => {
+	it("while probing, descends briefly after a miss, then climbs back to the original question", async () => {
 		const first = await ask(q("Derivative", 4, "Differentiate x^3 from the definition"), { dontKnow: true, selected: [], familiarity: 0 });
-		expect(first).toContain("do NOT re-teach yet");
+		expect(first).toContain("sat above their frontier");
 		expect(first).toContain("I've never seen this");
 		expect(first).toMatch(/prerequisites, weakest first: Limit \(unassessed\), Secant line \(unassessed\)/);
 
@@ -90,17 +90,53 @@ describe("diagnose down, build up", () => {
 		expect(broke).toContain("They hold Secant line at d2; they miss Derivative at d3");
 	});
 
-	it("stops descending after several misses and states the basics directly", async () => {
+	it("stops asking after three misses and teaches the basics directly", async () => {
 		await ask(q("Derivative", 5), wrong);
 		await ask(q("Derivative", 4), wrong);
-		await ask(q("Limit", 3), wrong);
-		const text = await ask(q("Limit", 2), wrong);
-		expect(text).toContain("Stop descending");
+		const text = await ask(q("Limit", 3), wrong);
+		expect(text).toContain("Stop asking");
+		expect(text).toContain("teach forward from it");
 	});
 
 	it("pushes probes up sharply when there is no ceiling yet", async () => {
 		const text = await ask(q("Limit", 2), right);
 		expect(text).toContain("no ceiling found yet on Limit");
-		expect(text).toContain("jump to d4");
+		expect(text).toContain("Jump to d4");
+	});
+
+	it("re-teaches a missed check instead of starting a quiz descent", async () => {
+		const text = await ask(check("Derivative", 3), wrong);
+		expect(text).toContain("keep teaching forward");
+		expect(text).toContain("teach this step again from a different angle");
+		expect(text).toContain("confuses Derivative");
+		expect(ladderFor(session.id)).toBeUndefined();
+
+		const after = await ask(check("Derivative", 3), right);
+		expect(after).toContain("landed after re-teaching");
+		expect(after).toContain("Continue forward");
+	});
+
+	it("names solid prerequisites as the ground to re-teach from", async () => {
+		await store.recordEvidence("Limit", { outcome: "correct", difficulty: 4, kind: "check" });
+		await store.recordEvidence("Limit", { outcome: "correct", difficulty: 4, kind: "check" });
+		const text = await ask(check("Derivative", 3), wrong);
+		expect(text).toContain("They already hold Limit");
+	});
+
+	it("only looks underneath after a second miss on the same step, and stays on the goal's path", async () => {
+		await ask(check("Derivative", 3), wrong);
+		const second = await ask(check("Derivative", 3), wrong);
+		expect(second).toContain("second miss on Derivative");
+		expect(second).toContain("one quick question");
+		expect(second).toContain("goal actually needs");
+		expect(ladderFor(session.id)!.missed.map((r) => r.concept)).toEqual(["Derivative"]);
+	});
+
+	it("says nothing extra after a passed check, so teaching simply moves on", async () => {
+		expect(await ask(check("Derivative", 3), right)).not.toContain("Next move");
 	});
 });
+
+function check(concept: string, difficulty: number): QuizInput {
+	return { ...q(concept, difficulty), kind: "check" };
+}

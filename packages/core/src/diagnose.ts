@@ -1,13 +1,13 @@
 /**
- * Diagnose down, then build up.
+ * What to do after an answer.
  *
- * A miss or an "I don't know" says the question was above the learner's
- * frontier, not where the frontier is. Re-explaining from one step back
- * teaches into mid-air. Instead, each session keeps a ladder: the missed
- * rungs, top (the original question) to bottom. The tutor keeps asking
- * smaller, easier questions until one is answered correctly (the floor),
- * then teaches the rung directly above it and climbs back, one checked rung
- * at a time, until the original question is answered.
+ * Teaching moves forward: ground in what they hold, teach the next step,
+ * check it, and that step becomes the ground for the one after. A miss on a
+ * check is answered by teaching that step again from a different angle, not
+ * by a string of easier quizzes. Only a repeated miss on the same step, or a
+ * miss while probing (or on a practice test), starts a short descent: a few
+ * smaller questions to find the piece that is actually missing (the floor),
+ * then teaching back up to where it broke.
  */
 
 import type { ConceptStatus, EvidenceKind, Outcome } from "./model";
@@ -36,6 +36,8 @@ export interface Ladder {
 }
 
 const ladders = new Map<string, Ladder>();
+/** Per session: concepts whose teaching check was missed and re-taught, not yet passed. */
+const retaught = new Map<string, Set<string>>();
 
 export function ladderFor(sessionKey: string): Ladder | undefined {
 	return ladders.get(sessionKey);
@@ -43,6 +45,7 @@ export function ladderFor(sessionKey: string): Ladder | undefined {
 
 export function clearLadder(sessionKey: string): void {
 	ladders.delete(sessionKey);
+	retaught.delete(sessionKey);
 }
 
 /** Start (or extend) a descent from a miss found elsewhere, e.g. a practice test. */
@@ -52,23 +55,75 @@ export function seedLadder(sessionKey: string, rung: Rung): void {
 	ladders.set(sessionKey, l);
 }
 
-const MAX_DESCENT_BEFORE_TEACHING = 4;
+const MAX_DESCENT_BEFORE_TEACHING = 3;
 
 const rungName = (r: Pick<Rung, "concept" | "difficulty">) => `${r.concept} at d${r.difficulty}`;
 const sameRung = (a: Rung, b: Rung) => a.concept === b.concept && a.difficulty === b.difficulty;
 const quoteQ = (q: string) => `"${q.length > 140 ? `${q.slice(0, 137)}…` : q}"`;
+const isTeaching = (kind: EvidenceKind) => kind === "check" || kind === "review";
 
 const WEAK: Record<ConceptStatus, number> = { unassessed: 0, learning: 1, rusty: 2, shaky: 3, solid: 4 };
+
+const OFF_PATH =
+	"Only chase a piece the goal actually needs. If it is off the path to the goal, name it in a line and keep going toward the goal.";
 
 /** Record one answer on the session's ladder and say what to ask or teach next. */
 export function nextMove(
 	sessionKey: string,
-	step: Rung & { kind: EvidenceKind },
+	step: Rung & { kind: EvidenceKind; slip?: boolean },
 	ctx: { prerequisites: PrerequisiteState[]; floor?: number; ceiling?: number },
 ): string {
 	if (step.kind === "test") return "";
 	const ladder = ladders.get(sessionKey);
-	return step.outcome === "correct" ? afterCorrect(sessionKey, step, ladder, ctx) : afterMiss(sessionKey, step, ladder, ctx);
+	if (step.outcome === "correct") return afterCorrect(sessionKey, step, ladder, ctx);
+	if (isTeaching(step.kind) && !ladder?.missed.length) return afterTeachingMiss(sessionKey, step, ctx);
+	return afterMiss(sessionKey, step, ladder, ctx);
+}
+
+function weakPrerequisites(prerequisites: PrerequisiteState[]): PrerequisiteState[] {
+	return [...prerequisites].sort((a, b) => WEAK[a.status] - WEAK[b.status]).filter((p) => p.status !== "solid");
+}
+
+function solidPrerequisites(prerequisites: PrerequisiteState[]): string {
+	const solid = prerequisites.filter((p) => p.status === "solid").map((p) => p.title);
+	return solid.length ? ` They already hold ${solid.join(", ")}: build on that.` : "";
+}
+
+function afterTeachingMiss(sessionKey: string, step: Rung, ctx: { prerequisites: PrerequisiteState[] }): string {
+	const seen = retaught.get(sessionKey) ?? new Set<string>();
+	retaught.set(sessionKey, seen);
+	const lines: string[] = [];
+
+	if (!seen.has(step.concept)) {
+		seen.add(step.concept);
+		lines.push(
+			`Next move — keep teaching forward; do not start a string of easier quizzes. Say in a line what went wrong, then teach this step again from a different angle (a new example, a picture, a derivation from something they hold), grounded in what they already know.${solidPrerequisites(ctx.prerequisites)} Then check it once with a fresh question at the same level.`,
+		);
+		if (step.outcome === "dont_know") {
+			const f = step.familiarity ?? 0;
+			lines.push(
+				f >= 3
+					? `They said "I don't know" but it felt very familiar (${familiarityLabel(f)}): give a short cue or the first move, then let them finish it.`
+					: `They said "I don't know" (${familiarityLabel(f)}): the step did not land. Teach it directly this time, more concretely, before asking again.`,
+			);
+		} else if (step.outcome === "partial") {
+			lines.push("Partly right: name the one piece that broke and fix it in the explanation. If the core idea of this node is there, move on instead of re-checking.");
+		} else if (step.misconception) {
+			lines.push(`Their answer points to a belief: "${step.misconception}". Address it head-on in the re-teach: show a case where it gives the wrong answer and why the right idea does not.`);
+		}
+		lines.push("If it was really a slip (they plainly understand, only the arithmetic or a click went wrong), say so and continue with the plan instead.");
+		return lines.join("\n");
+	}
+
+	const l: Ladder = { missed: [step] };
+	ladders.set(sessionKey, l);
+	const weakest = weakPrerequisites(ctx.prerequisites);
+	lines.push(
+		`Next move — second miss on ${step.concept} after re-teaching, so a piece underneath is probably missing. Ask one quick question on the single piece this step most depends on${
+			weakest.length ? ` (weakest prerequisite: ${weakest[0].title}, ${weakest[0].status})` : ""
+		}, easier than this one. Right → teach from there back up to this step. Wrong → teach that piece directly. ${OFF_PATH}`,
+	);
+	return lines.join("\n");
 }
 
 function afterMiss(sessionKey: string, step: Rung, ladder: Ladder | undefined, ctx: { prerequisites: PrerequisiteState[] }): string {
@@ -86,13 +141,20 @@ function afterMiss(sessionKey: string, step: Rung, ladder: Ladder | undefined, c
 	}
 
 	const depth = l.missed.length;
+	if (depth >= MAX_DESCENT_BEFORE_TEACHING) {
+		lines.push(
+			`Next move — ${depth} rungs down without a correct answer. Stop asking: teach the most basic piece directly (as an unconditional truth or a short derivation), confirm it reads as obviously true, then teach forward from it toward ${rungName(l.missed[0])}. ${OFF_PATH}`,
+		);
+		return lines.join("\n");
+	}
+
 	lines.push(
 		depth === 1
-			? "Next move — do NOT re-teach yet. A miss shows the question was above their frontier, not where the frontier is. Find the floor first: ask smaller, easier questions until one is answered correctly, then teach up from there."
-			: `Next move — still above their frontier (${depth} rungs down from ${rungName(l.missed[0])} without a correct answer). Keep descending.`,
+			? "Next move — this question sat above their frontier. Find where it starts with one or two smaller questions, not a long descent, then teach up from the first one they get right."
+			: `Next move — still above their frontier (${depth} rungs down from ${rungName(l.missed[0])}). One more smaller question at most, then teach.`,
 	);
 
-	const weakest = [...ctx.prerequisites].sort((a, b) => WEAK[a.status] - WEAK[b.status]).filter((p) => p.status !== "solid");
+	const weakest = weakPrerequisites(ctx.prerequisites);
 	const prereqText = weakest.length
 		? `Its prerequisites, weakest first: ${weakest.map((p) => `${p.title} (${p.status}${p.floor ? `, holds d${p.floor}` : ""})`).join(", ")}.`
 		: ctx.prerequisites.length
@@ -110,36 +172,40 @@ function afterMiss(sessionKey: string, step: Rung, ladder: Ladder | undefined, c
 			lines.push(`Nothing to build on in this concept yet, so drop below it. ${prereqText}`);
 		} else {
 			lines.push(
-				`Something is there. Break the question into the pieces it needs and ask about one piece at a time, easiest plausible first: this concept at d${Math.max(1, step.difficulty - 2)}, or a prerequisite. ${prereqText}`,
+				`Something is there. Ask about the one piece it most needs, easier: this concept at d${Math.max(1, step.difficulty - 2)}, or a prerequisite. ${prereqText}`,
 			);
 		}
 	} else if (step.outcome === "partial") {
 		lines.push(`Partly right: part of the method is there. Ask a question on only the step that went wrong, one level easier (d${Math.max(1, step.difficulty - 1)}).`);
 	} else {
 		if (step.misconception) {
-			lines.push(`Their answer points to a belief: "${step.misconception}". Next, ask a smaller question that only someone holding that belief would miss, to confirm it before dislodging it.`);
+			lines.push(`Their answer points to a belief: "${step.misconception}". Dislodge it explicitly when you teach.`);
 		}
 		lines.push(`Step down: the same idea at d${Math.max(1, step.difficulty - 1)} or one piece of it. ${prereqText}`);
 	}
-	if (depth >= MAX_DESCENT_BEFORE_TEACHING) {
-		lines.push(
-			`That is ${depth} rungs without a correct answer. Stop descending: state the most basic piece directly as an unconditional truth, confirm it reads as obviously true, and check it. That becomes the floor.`,
-		);
-	}
-	lines.push("One question per rung; change the question, not just the numbers.");
+	lines.push(OFF_PATH);
 	return lines.join("\n");
 }
 
-function afterCorrect(sessionKey: string, step: Rung, ladder: Ladder | undefined, ctx: { floor?: number; ceiling?: number }): string {
+function afterCorrect(
+	sessionKey: string,
+	step: Rung & { kind: EvidenceKind; slip?: boolean },
+	ladder: Ladder | undefined,
+	ctx: { floor?: number; ceiling?: number },
+): string {
+	const recovered = retaught.get(sessionKey)?.delete(step.concept) ?? false;
+	const slipNote = step.slip ? "It was a slip, not a gap: mention it in a line and move on. " : "";
 	if (!ladder || !ladder.missed.length) {
 		ladders.delete(sessionKey);
+		if (recovered) return `Next move — ${slipNote}${step.concept} landed after re-teaching. Continue forward to the next step of the plan; do not re-check it.`;
+		if (step.kind !== "probe") return slipNote ? `Next move — ${slipNote}Continue with the plan.` : "";
 		if (ctx.ceiling !== undefined && ctx.ceiling <= step.difficulty + 1 && ctx.ceiling > step.difficulty) {
-			return `Next move — edge bracketed on ${step.concept}: holds d${step.difficulty}, misses d${ctx.ceiling}. Teaching on this strand starts at d${ctx.ceiling}.`;
+			return `Next move — ${slipNote}edge bracketed on ${step.concept}: holds d${step.difficulty}, misses d${ctx.ceiling}. Teaching on this strand starts at d${ctx.ceiling}.`;
 		}
 		if (ctx.ceiling === undefined && step.difficulty < 5) {
-			return `Next move — no ceiling found yet on ${step.concept}. If you are probing, jump to d${Math.min(5, step.difficulty + 2)} rather than inching up.`;
+			return `Next move — ${slipNote}no ceiling found yet on ${step.concept}. Jump to d${Math.min(5, step.difficulty + 2)} rather than inching up, or stop probing this strand if you know enough to plan.`;
 		}
-		return "";
+		return slipNote ? `Next move — ${slipNote}` : "";
 	}
 
 	ladder.floor = step;
@@ -149,13 +215,13 @@ function afterCorrect(sessionKey: string, step: Rung, ladder: Ladder | undefined
 	if (!next) {
 		const origin = climbed[0] ?? step;
 		ladders.delete(sessionKey);
-		return `Next move — gap closed: they now answer ${rungName(origin)}, the level they originally missed. Continue the plan; revisit this concept with a spaced review later.`;
+		return `Next move — ${slipNote}gap closed: they now answer ${rungName(origin)}, the level they originally missed. Continue the plan toward the goal.`;
 	}
 	const origin = ladder.missed[0];
 	return [
 		climbed.length
-			? `Next move — rung climbed (${rungName(step)}).`
-			: `Next move — floor found: they hold ${rungName(step)}. This is where teaching starts, not where you left off.`,
+			? `Next move — ${slipNote}rung climbed (${rungName(step)}).`
+			: `Next move — ${slipNote}floor found: they hold ${rungName(step)}. Teach forward from here; no more descending.`,
 		`Next rung up: ${rungName(next)} — ${quoteQ(next.question)}. Teach just the step from what they showed to that rung (motivate → establish → connect), then check it with a new question at that level.`,
 		ladder.missed.length > 1 ? `Rungs left to the original question (${rungName(origin)}): ${ladder.missed.length}.` : "",
 	]

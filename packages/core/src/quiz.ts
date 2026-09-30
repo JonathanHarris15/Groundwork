@@ -72,6 +72,8 @@ export interface QuizGrade {
 	misconception?: string;
 	/** Free response: the tutor's feedback on what they wrote. */
 	feedback?: string;
+	/** The understanding was right; only a non-conceptual slip went wrong. */
+	slip?: boolean;
 }
 
 /** The tutor's judgment of a free-response answer. */
@@ -79,6 +81,8 @@ export interface FreeResponseJudgment {
 	outcome: "correct" | "partial" | "incorrect";
 	feedback?: string;
 	misconception?: string;
+	/** Right method, careless error (arithmetic, sign, copying, typo). Recorded as correct with a slip, whatever outcome says. */
+	slip?: boolean;
 }
 
 export const FAMILIARITY_LABELS = [
@@ -199,7 +203,8 @@ export function gradeQuiz(quiz: PreparedQuiz, response: QuizResponse, judgment?:
 	}
 	if (quiz.format === "free") {
 		if (!judgment) throw new Error("A free-response answer is graded by the tutor: pass a judgment.");
-		const outcome = judgment.outcome === "correct" || judgment.outcome === "partial" ? judgment.outcome : "incorrect";
+		const slip = judgment.slip === true;
+		const outcome = slip ? "correct" : judgment.outcome === "correct" || judgment.outcome === "partial" ? judgment.outcome : "incorrect";
 		return {
 			outcome,
 			correct: outcome === "correct",
@@ -207,6 +212,7 @@ export function gradeQuiz(quiz: PreparedQuiz, response: QuizResponse, judgment?:
 			correctLabels,
 			misconception: outcome !== "correct" ? judgment.misconception?.trim() || undefined : undefined,
 			feedback: judgment.feedback?.trim() ? normalizeTutorMarkdown(judgment.feedback.trim()) : undefined,
+			...(slip ? { slip } : {}),
 		};
 	}
 	const sel = [...new Set(response.selected)];

@@ -126,7 +126,7 @@ describe("practice tests", () => {
 			["Derivative", 1.5],
 		]);
 		expect(done.text).toContain("2.5/4 (63%)");
-		expect(done.text).toContain("diagnose down first");
+		expect(done.text).toContain("teach forward from the first one they get right");
 		expect(done.text).toContain("forgets the chain rule");
 
 		const notePath = graded!.notePath!;
@@ -204,5 +204,34 @@ describe("free-response quiz", () => {
 		expect(evidence[0]).toMatchObject({ outcome: "partial", response: "$3x^2 + C$" });
 
 		expect((await toolByName("grade_answer")!.run({ quiz_id: quizId, outcome: "correct", feedback: "x" }, { store, ui })).isError).toBe(true);
+	});
+
+	it("records a slip as correct, without a misconception or a step back", async () => {
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		await store.upsertConcept({ title: "Algebra" });
+		const ui: ToolUI = {
+			async quiz() {
+				return { dontKnow: false, selected: [], text: "$2x + 6 = 10 \\Rightarrow x = 3$" };
+			},
+			async ask() {
+				return { selected: [] };
+			},
+		};
+		const input = { concept: "Algebra", question: "Solve $2x + 6 = 10$", format: "free", referenceAnswer: "$x = 2$", explanation: "Subtract 6, divide by 2", difficulty: 2, kind: "check" };
+		const submitted = await toolByName("quiz")!.run(input, { store, ui, session: { id: "slip" } });
+		const quizId = /quiz_id "([^"]+)"/.exec(submitted.text)![1];
+		const r = await toolByName("grade_answer")!.run(
+			{ quiz_id: quizId, outcome: "partial", slip: true, feedback: "Right method; $10 - 6$ is $4$, so $x = 2$.", misconception: "cannot subtract" },
+			{ store, ui, session: { id: "slip" } },
+		);
+		expect(r.text).toContain("with a slip");
+		expect(r.text).toContain("move on");
+		expect(r.text).not.toContain("teach this step again");
+		const c = (await store.resolve("Algebra"))!;
+		expect(c.stats.openMisconceptions).toEqual([]);
+		expect(c.stats.floor).toBe(2);
+		expect((await store.evidenceFor(c.id))[0]).toMatchObject({ outcome: "correct", slip: true });
+		expect(await store.io.read(c.path)).toContain("✅ slip");
 	});
 });

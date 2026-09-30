@@ -28,6 +28,9 @@ export function describeQuizOutcome(o: QuizOutcome): string {
 	if (grade.outcome === "dont_know") {
 		const f = response.familiarity ?? 0;
 		lines.push(`The learner chose "I don't know" — an honest gap, not a guess. Familiarity: ${familiarityLabel(f)} (${f}/3).`);
+	} else if (grade.slip) {
+		lines.push("The learner answered CORRECTLY, with a slip: the understanding is there, only a careless step went wrong. Point out the slip in one line and move on. Do not step back, re-check it, or treat it as a gap.");
+		if (quiz.format === "free") lines.push(`They wrote:\n${response.text ?? ""}`);
 	} else {
 		lines.push(`The learner answered ${VERDICT[grade.outcome]}.`);
 		if (quiz.format === "free") lines.push(`They wrote:\n${response.text ?? ""}`);
@@ -63,6 +66,7 @@ export async function recordQuizAnswer(
 		response: quiz.format === "free" && response.text ? response.text.slice(0, 2000) : undefined,
 		correctAnswer: grade.correctLabels.join(" | ").slice(0, 500),
 		misconception: grade.misconception,
+		slip: grade.slip,
 		familiarity: grade.outcome === "dont_know" ? (response.familiarity ?? 0) : undefined,
 		note: response.note,
 		session: session?.id,
@@ -81,6 +85,7 @@ export async function recordQuizAnswer(
 			outcome: grade.outcome,
 			familiarity: response.familiarity,
 			misconception: grade.misconception,
+			slip: grade.slip,
 			kind: quiz.kind,
 		},
 		{ prerequisites, floor: after.floor, ceiling: after.ceiling },
@@ -109,7 +114,7 @@ export function awaitJudgment(quiz: PreparedQuiz, response: QuizResponse): strin
 }
 
 export const FREE_RESPONSE_GRADING =
-	"Grading rules: judge the mathematics and reasoning, not the formatting. An equivalent form (rearranged, unsimplified but correct, different notation) is correct. partial = the method or key idea is right but there is a slip or a missing piece; incorrect = the approach itself is wrong or missing. In feedback, address them directly: name what is right first, then the exact step that went wrong. Use LaTeX for math. If a wrong belief shows, put it in misconception.";
+	"Grading rules: judge the understanding, not the formatting or the arithmetic. An equivalent form (rearranged, unsimplified but correct, different notation) is correct. A slip is a non-conceptual error in otherwise right work: an arithmetic or sign mistake, a dropped term while copying, a typo. Set slip: true for it (it is recorded as correct) and never call a slip a misconception. partial = the key idea is right but a conceptual piece is missing or wrong; incorrect = the approach itself is wrong or missing. In feedback, address them directly: name what is right first, then the exact step that went wrong (for a slip, one short line). Use LaTeX for math. If a wrong belief shows, put it in misconception.";
 
 export function takeAwaiting(quizId: string): { quiz: PreparedQuiz; response: QuizResponse } | undefined {
 	const hit = awaiting.get(quizId);

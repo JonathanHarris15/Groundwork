@@ -308,7 +308,7 @@ export function describeTestReport(report: TestReport): string {
 	lines.push(
 		"",
 		weak.length
-			? `Next move — debrief briefly (what held, where it broke, in two or three sentences, no re-listing of every question), then ask whether to work on the weakest area now. Remediate from ${weak[0].concept}, but do not re-teach from the top: diagnose down first. Ask a smaller question on the piece that missed question needed, keep stepping down until they get one right, then teach up from there. The diagnosis ladder is seeded with that miss.`
+			? `Next move — debrief briefly (what held, where it broke, in two or three sentences, no re-listing of every question), then ask whether to work on the weakest area now. Remediate from ${weak[0].concept}, but do not re-teach from the top: ask one or two smaller questions to find the piece that missed question needed, then teach forward from the first one they get right. Skip slips and anything the exam does not need. The diagnosis ladder is seeded with that miss.`
 			: "Next move — everything held. Say so briefly, then raise the bar: a harder test, or questions at a higher difficulty than the exam needs.",
 	);
 	return lines.join("\n");
@@ -338,7 +338,7 @@ async function writeTestNote(store: KnowledgeStore, test: PreparedTest, report: 
 	body.push("## Questions", "");
 	for (const r of report.results) {
 		const q = test.questions[r.number - 1];
-		body.push(`### Q${r.number} ${verdict[r.outcome]} · [[${q.concept}]] · level ${q.difficulty}`, "", demoteHeadings(q.question), "");
+		body.push(`### Q${r.number} ${verdict[r.outcome]}${r.grade.slip ? " (slip)" : ""} · [[${q.concept}]] · level ${q.difficulty}`, "", demoteHeadings(q.question), "");
 		if (q.format === "free") {
 			body.push(
 				r.outcome === "dont_know" ? `**Your answer:** I don't know (${familiarityLabel(r.response.familiarity)})` : `**Your answer:**\n\n${r.response.text ?? ""}`,
