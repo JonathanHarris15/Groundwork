@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MemoryVaultIO } from "../src/io";
 import { parseNote } from "../src/markdown";
 import { KnowledgeStore } from "../src/store";
+import { toolByName } from "../src/tools";
 
 const fixedNow = () => new Date("2026-09-28T12:00:00Z");
 
@@ -97,6 +98,10 @@ describe("KnowledgeStore", () => {
 		expect(report.goal.status).toBe("active");
 		expect(report.next?.concept).toBe("Derivative");
 		expect(report.next?.action).toBe("build");
+		const overview = await toolByName("get_learner_overview")!.run({}, { store });
+		expect(overview.text).not.toContain("nextUp");
+		const suggestion = await toolByName("suggest_what_to_study")!.run({}, { store });
+		expect(suggestion.text).toContain("Derivative");
 
 		for (const d of [3, 4, 5]) await store.recordEvidence("Derivative", { outcome: "correct", difficulty: d, kind: "check" });
 		const done = await store.goalReport("Rates of change");

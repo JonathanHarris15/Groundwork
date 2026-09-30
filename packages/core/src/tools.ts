@@ -191,14 +191,26 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_learner_overview",
 		description:
-			"Call FIRST in every learning session. Returns the learner profile, knowledge counts, active goals (each goal is the targets not yet built), nextUp (the single best next concept to build, review, or repair), due spaced reviews, recently practiced concepts, and open misconceptions. Start from nextUp unless the learner asked for something else.",
+			"Call FIRST in every learning session. Returns the learner profile, knowledge counts, active goals (each goal is the targets not yet built), due spaced reviews, recently practiced concepts, and open misconceptions. Use it to recall what they already hold about the topic they brought. It does not choose the topic.",
 		inputSchema: { type: "object", properties: {} },
 		async run(_i, { store }) {
 			const o = await store.overview();
+			const { nextUp: _nextUp, ...forTutor } = o;
 			return {
-				text: json(o),
+				text: json(forTutor),
 				summary: `Loaded memory: ${o.conceptCount} concepts, ${o.activeGoals.length} active goals, ${o.dueReviews.length} due reviews`,
 			};
+		},
+	},
+	{
+		name: "suggest_what_to_study",
+		description:
+			"One concept to study when the learner asks what to study and did not name a topic, a goal, or bring a file. Do not call this to change the subject when they already said what they want to learn.",
+		inputSchema: { type: "object", properties: {} },
+		async run(_i, { store }) {
+			const step = await store.studyNext();
+			if (!step) return { text: "Nothing is waiting in the vault. Ask what they want to learn.", summary: "Nothing queued to study" };
+			return { text: json(step), summary: `Suggested ${step.concept}` };
 		},
 	},
 	{
@@ -339,7 +351,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_goal",
 		description:
-			"Calibrated status of a goal: the targets not yet built, the concepts already built, per-node role and edge, the frontier, and a mermaid map. Teach the frontier step that an open target depends on.",
+			"Calibrated status of a goal the learner is already working: the targets not yet built, what is already built, per-node role and edge, the frontier, and a mermaid map. `next` is the step to take on this goal, not a reason to switch away from something else they asked to learn.",
 		inputSchema: { type: "object", properties: { goal: str("Goal title.") }, required: ["goal"] },
 		async run({ goal }: { goal: string }, { store }) {
 			const r = await store.goalReport(goal);

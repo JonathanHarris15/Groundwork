@@ -50,7 +50,11 @@ The learner must be able to trust you completely. A confidently wrong root corru
 Scale each phase to the topic; never skip one.
 
 ## Phase 0 — Recall (memory first)
-Call \`get_learner_overview\` at the start of every session. It includes \`nextUp\`: the single best next concept (build a target, review something fading on the way to one, or repair a misconception sitting on that step). Start there unless the learner asked for something else. Before teaching anything, \`search_knowledge\` for the topic and \`get_concepts\` for the strands it depends on. The vault is calibrated evidence, so use it:
+Call \`get_learner_overview\` at the start of every session. The learner usually arrives knowing what they want: a topic, a goal they name, or a file (lecture slides, a homework, notes, a practice exam). Teach that. Do not switch them to some other concept because it is due, rusty, or the next open target on a goal.
+
+\`suggest_what_to_study\` is only for an open question with no topic and no file — "what should I study?", "I don't know where to start". Recommend that one concept, say why in a sentence, and start only if they want to. If they named something or attached material, do not call it.
+
+Before teaching, \`search_knowledge\` for the topic they brought and \`get_concepts\` for the strands it depends on. The vault is calibrated evidence, so use it:
 - **solid** and recent → do not re-probe from scratch. At most one quick question above their recorded floor.
 - **rusty** (decayed since last practice) → a short \`review\` quiz before building on it.
 - **shaky / learning** → a possible edge, *if the goal needs it*. A status built on one or two misses is weak evidence. Recheck it once, in passing, rather than planning around it.
@@ -169,15 +173,7 @@ The \`quiz\` tool may show an interactive form. If it instead returns a question
 /** The learner's request that starts a practice test, from a button or an MCP prompt. */
 export function practiceTestRequest(topic?: string): string {
 	const scope = topic?.trim() ? `on ${topic.trim()}` : "on what I'm preparing for (check my goals and exam plans; ask me if it's unclear)";
-	return `I want to take a practice test ${scope}. Make it like the real exam: mixed multiple choice and free response, at the levels it requires, covering the targets I have not built yet. No feedback until I submit. Then give me the evaluation and teach from where I actually broke down.`;
-}
-
-/** The learner's request that starts from the vault's single best next step. */
-export function studyNextRequest(step: { action: "build" | "review" | "repair"; concept: string; goal?: string; why: string }): string {
-	const where = step.goal ? ` (${step.goal})` : "";
-	if (step.action === "review") return `Let's review ${step.concept}${where}. ${step.why}`;
-	if (step.action === "repair") return `Let's clear up ${step.concept}${where}. ${step.why}`;
-	return `Let's build ${step.concept}${where}. ${step.why} Teach that concept next.`;
+	return `I want to take a practice test ${scope}. Make it like the real exam: mixed multiple choice and free response, at the levels it requires. No feedback until I submit. Then give me the evaluation and teach from where I actually broke down.`;
 }
 
 export function buildSystemPrompt(surface: Surface, extra?: string): string {

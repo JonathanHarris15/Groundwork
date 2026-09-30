@@ -178,7 +178,6 @@ program
 				say(`  ${g.title} — ${g.progress}${g.targets.length ? `; still to build: ${g.targets.join(", ")}` : ""}`);
 			}
 		}
-		if (o.nextUp) say(`\nStudy next: ${o.nextUp.concept} — ${o.nextUp.why}`);
 		if (o.dueReviews.length) {
 			say("\nDue for review:");
 			for (const d of o.dueReviews) say(`  ${d.title} (${d.now}, due ${d.nextReview})`);

@@ -17,7 +17,6 @@ import {
 	normalizeTutorMarkdown,
 	parseNote,
 	practiceTestRequest,
-	studyNextRequest,
 	shouldAutoIngest,
 	PATHS,
 	RESOURCES_DIR,
@@ -81,6 +80,7 @@ const MARGIN_MIN_WIDTH = 900;
 
 const TOOL_VERBS: Record<string, string> = {
 	get_learner_overview: "Reading your knowledge vault",
+	suggest_what_to_study: "Checking what you could study",
 	search_knowledge: "Searching what you already know",
 	get_concepts: "Reading concept notes",
 	upsert_concept: "Updating a concept note",
@@ -686,7 +686,7 @@ export class ChatView extends ItemView implements ToolUI {
 		setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
 		hero.createEl("h2", { text: "What do you want to understand?" });
 		hero.createEl("p", {
-			text: "Name the concepts you still need to build. The tutor checks what you already hold, maps the steps up to those targets, and teaches until each one is solid.",
+			text: "Say what you want to learn, or drop in a lecture, homework, or notes. The tutor checks what you already hold and teaches that.",
 		});
 
 		const provider = this.plugin.providerLabel();
@@ -721,42 +721,28 @@ export class ChatView extends ItemView implements ToolUI {
 		if (provider.demo) {
 			suggest("play", "Run the demo lesson", "A scripted lesson on the derivative: recall, plan, quizzes, memory updates.", () => void this.submit("Teach me what a derivative really is."));
 		}
-		if (overview?.nextUp) {
-			const step = overview.nextUp;
-			const label = step.action === "review" ? `Review ${step.concept}` : step.action === "repair" ? `Clear up ${step.concept}` : `Build ${step.concept}`;
-			suggest("play", label, step.why, () => void this.submit(studyNextRequest(step)));
-		}
 		for (const g of overview?.activeGoals.slice(0, 3) ?? []) {
 			const waiting = g.targets.slice(0, 2).join(", ");
 			suggest("target", `Continue: ${g.title}`, `${g.progress}${waiting ? ` · ${waiting}` : ""}`, () =>
-				void this.submit(`Let's continue with "${g.title}". Teach the next target I have not built yet.`),
+				void this.submit(`Let's continue with my goal "${g.title}".`),
 			);
 		}
-		if (overview?.dueReviews.length && overview.nextUp?.action !== "review") {
+		if (overview?.dueReviews.length) {
 			suggest("rotate-ccw", `Review ${overview.dueReviews.length} fading concept${overview.dueReviews.length === 1 ? "" : "s"}`, overview.dueReviews.slice(0, 3).map((d) => d.title).join(", "), () =>
-				void this.submit("Let's do my due reviews. Start with any that sit on the way to a target I'm still building."),
+				void this.submit("Let's do my due reviews."),
 			);
 		}
-		const misconception = overview?.openMisconceptions[0];
-		if (misconception && overview?.nextUp?.action !== "repair") {
-			suggest("alert-triangle", `Clear up ${misconception.concept}`, misconception.misconceptions[0], () =>
-				void this.submit(`Let's clear up my misconception about ${misconception.concept}: ${misconception.misconceptions[0]}`),
-			);
-		}
-		const lastTest = overview?.practiceTests[0];
-		if (lastTest?.weakest?.length) {
-			suggest("clipboard-list", `Learn from ${lastTest.title}`, `${lastTest.score ? `${lastTest.score} · ` : ""}weakest: ${lastTest.weakest.slice(0, 2).join(", ")}`, () =>
-				void this.submit(`Let's learn from my last practice test "${lastTest.title}". Start from where I broke down: ${lastTest.weakest!.join(", ")}.`),
-			);
-		}
-		suggest("clipboard-check", "Take a practice test", "A mock exam on the targets you have not built yet, then an evaluation to learn from.", () =>
+		suggest("clipboard-check", "Take a practice test", "A mock exam with no feedback until you submit, then an evaluation to learn from.", () =>
 			void this.submit(practiceTestRequest(overview?.activeGoals[0]?.title)),
 		);
-		suggest("sparkles", "Start a new goal", "Name the concepts you want to be able to build.", () => {
-			this.uiInputEl.value = "I want to build ";
+		suggest("sparkles", "Start a new goal", "Tell the tutor what you want to be able to do.", () => {
+			this.uiInputEl.value = "I want to understand ";
 			this.uiInputEl.focus();
 			this.autoGrow();
 		});
+		if (overview?.nextUp) {
+			suggest("help-circle", "What should I study?", overview.nextUp.why, () => void this.submit("What should I study?"));
+		}
 
 		if (overview && overview.conceptCount) {
 			const c = overview.counts;
@@ -979,17 +965,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private async showGoals(evt: MouseEvent): Promise<void> {
 		const menu = new Menu();
 		const [goals, overview] = await Promise.all([this.plugin.store.goals(), this.plugin.store.overview()]);
-		if (overview.nextUp) {
-			const step = overview.nextUp;
-			menu.addItem((i) =>
-				i
-					.setTitle(`Study next: ${step.concept}`)
-					.setIcon("play")
-					.onClick(() => void this.submit(studyNextRequest(step))),
-			);
-			menu.addSeparator();
-		}
-		if (!goals.length) menu.addItem((i) => i.setTitle("No goals yet — name the concepts you want to build").setDisabled(true));
+		if (!goals.length) menu.addItem((i) => i.setTitle("No goals yet — tell the tutor what you want to learn").setDisabled(true));
 		const active = new Map(overview.activeGoals.map((g) => [g.title, g]));
 		for (const g of goals) {
 			const live = active.get(g.title);
@@ -1355,6 +1331,7 @@ function iconFor(name: string): string {
 		case "get_learner_overview":
 		case "search_knowledge":
 		case "get_concepts":
+		case "suggest_what_to_study":
 			return "brain";
 		case "set_goal":
 		case "get_goal":
