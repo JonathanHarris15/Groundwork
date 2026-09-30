@@ -90,14 +90,14 @@ export function marginNotes(threads: AsideThread[]): { text: string; shared: Map
 	}
 	if (!blocks.length) return null;
 	return {
-		text: `<margin_questions>\nWhile reading, the learner asked these side questions in the margin (already answered there). Treat them as evidence of where their understanding is shaky.\n\n${blocks.join("\n\n")}\n</margin_questions>`,
+		text: `<margin_questions>\nWhile reading, the learner asked these side questions in the margin (already answered there). Treat them as evidence of which step did not land, not as a verdict on the topic.\n\n${blocks.join("\n\n")}\n</margin_questions>`,
 		shared,
 	};
 }
 
 export const MARGIN_GUIDANCE = `# Margin questions
 The learner can highlight any part of your lesson and ask about it in a side thread. You receive those as a <margin_questions> block with their next message or quiz answer. They are evidence, not noise:
-- A question reveals the exact step that did not land. Account for it: if it exposes a misconception, write it into the concept with \`upsert_concept\` (misconceptions); if it shows a clear gap you can grade, \`record_evidence\` (kind "explain"); durable patterns go to \`update_learner_profile\`.
+- A question reveals the exact step that did not land. Account for it: if it exposes a misconception, write it into the concept with \`upsert_concept\` (misconceptions); if it shows a clear gap you can grade, \`record_evidence\` (kind "explain"); only patterns seen across sessions go to \`update_learner_profile\`. A clarifying question is curiosity or a gap in your explanation, not a weakness to record.
 - Do not re-answer what the margin already answered. Adjust the next explanation or quiz to the gap it revealed, and mention it briefly if useful ("you asked why x is constant — that is the key step, so…").`;
 
 function oneLine(s: string, max: number): string {

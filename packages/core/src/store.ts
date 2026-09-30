@@ -733,7 +733,7 @@ function historyTable(evidence: Evidence[]): string {
 		.map((e) => {
 			const q = (e.question ?? e.note ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ").slice(0, 140);
 			const miss = e.misconception ? ` — *${e.misconception.replace(/\|/g, "\\|")}*` : "";
-			return `| ${e.ts.slice(0, 10)} | ${icon[e.outcome]} | d${e.difficulty} ${e.kind} | ${q}${miss} |`;
+			return `| ${e.ts.slice(0, 10)} | ${icon[e.outcome]}${e.slip ? " slip" : ""} | d${e.difficulty} ${e.kind} | ${q}${miss} |`;
 		});
 	return ["| Date | | Level | Question |", "| --- | --- | --- | --- |", ...rows].join("\n");
 }
@@ -777,7 +777,8 @@ The tutor reads this at the start of every session and may append to it. Edit fr
 ## How I learn best
 
 - Build from unconditional truths; show me how I could have discovered each step.
-- Quiz me often — I'd rather find the edge of my understanding than be told I'm fine.
+- Teach me forward, one concept at a time toward the goal, with a quick check on each new step.
+- Mention careless slips, but don't treat them as gaps.
 
 ## Observations
 

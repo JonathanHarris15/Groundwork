@@ -40,6 +40,8 @@ export interface Evidence {
 	misconception?: string;
 	/** For "dont_know": how familiar the question felt, 0 (never seen) … MAX_FAMILIARITY (almost have it). */
 	familiarity?: number;
+	/** Right method, non-conceptual error (arithmetic, sign, copying, typo). Stored with outcome "correct". */
+	slip?: boolean;
 	/** Free-response questions: what the learner wrote. */
 	response?: string;
 	note?: string;
@@ -74,6 +76,8 @@ const DAY_MS = 86_400_000;
 const REVIEW_AT_RETENTION = 0.7;
 const SOLID = 0.8;
 const SHAKY = 0.6;
+/** A slip is noted, not held against them: nearly full credit, and it still counts as a success for memory and the edge. */
+export const SLIP_CREDIT = 0.9;
 
 export const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
@@ -178,11 +182,11 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 	};
 }
 
-/** Credit an answer earns in the ability update: 1 correct, ½ partial, a little for a familiar blank, 0 otherwise. */
-export function outcomeScore(ev: Pick<Evidence, "outcome" | "familiarity">): number {
+/** Credit an answer earns in the ability update: 1 correct (0.9 with a slip), ½ partial, a little for a familiar blank, 0 otherwise. */
+export function outcomeScore(ev: Pick<Evidence, "outcome" | "familiarity" | "slip">): number {
 	switch (ev.outcome) {
 		case "correct":
-			return 1;
+			return ev.slip ? SLIP_CREDIT : 1;
 		case "partial":
 			return 0.5;
 		case "dont_know":

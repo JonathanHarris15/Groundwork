@@ -50,7 +50,7 @@ Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency 
 0. **Recall** — read the vault first. Solid + recent concepts aren't re-probed; rusty ones get a quick review; open misconceptions get dislodged.
 1. **Probe** — quizzes that bracket the edge of your understanding on every prerequisite strand (a floor you get right *and* a ceiling you miss). Plus plain questions about what you actually want.
 2. **Plan** — a dependency DAG from caveat-free truths up to your goal, saved to `goals/` and shown as a map. It waits for your go-ahead.
-3. **Teach** — node by node: motivate → establish → connect → quiz-check, updating concept notes as it goes.
+3. **Teach** — forward, node by node: ground in what you already hold → teach the next step → quiz-check → that step becomes the ground for the next. A missed check gets re-taught from a different angle rather than a chain of easier quizzes. Gaps off the path to the goal are noted, not chased. Concept notes are updated as it goes.
 
 **Exam prep** is the same loop, pointed at *their* files. Attach lecture slides, a couple of homeworks, a study guide, or a practice exam (paperclip, paste, or drop onto the tutor). Groundwork classifies each file, pulls out the topics and the level the exam seems to demand (the same 1–5 scale as quizzes: recognize → apply → combine → transfer), writes `exams/…`, and opens a goal so teaching starts at that depth. Homeworks say what is practiced; a practice exam or study guide says what is sufficient. The tutor still reads the files and can refine the plan (`ingest_exam_materials`).
 
@@ -60,6 +60,7 @@ Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency 
 - *Memory half-life* $h$: spaced successes grow it, crammed ones barely do, misses shrink it. Retention $R = 2^{-\Delta t / h}$.
 - *Now* = ability discounted by forgetting. Status is `solid` / `shaky` / `learning` / `rusty` (was solid, decayed — review due) / `unassessed`.
 - The *edge*: highest difficulty answered correctly (floor) and lowest missed (ceiling).
+- *Slips*: a careless error in otherwise right work (arithmetic, a sign, a typo) is graded as a slip. It is recorded as correct with 0.9 credit, and it never creates a misconception or a step back.
 - *Misconceptions*: each distractor can carry the belief that would lead someone to pick it. Choosing it records that misconception on the concept until a correct answer at that level retires it. "I don't know" is recorded as an honest gap, never as a misconception.
 
 ## Setup

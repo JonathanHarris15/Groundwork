@@ -170,7 +170,12 @@ export const practiceTestInputSchema: JSONSchema = {
 const judgmentProperties: Record<string, JSONSchema> = {
 	outcome: { type: "string", enum: ["correct", "partial", "incorrect"] },
 	feedback: str("Shown to the learner: what is right, then the exact step that went wrong. LaTeX allowed."),
-	misconception: str("If a wrong belief shows: that belief, stated specifically."),
+	misconception: str("If a wrong belief shows: that belief, stated specifically. Never for a slip."),
+	slip: {
+		type: "boolean",
+		description:
+			"True when the method and understanding are right and the only error is non-conceptual (arithmetic, a sign, copying a term, a typo). Recorded as correct, barely counted against them. Mention the slip in feedback and move on.",
+	},
 };
 
 function iconFor(outcome: Outcome): string {
@@ -516,19 +521,22 @@ export const TOOLS: ToolDef[] = [
 				kind: { type: "string", enum: evidenceKinds },
 				what: str("What was asked / what they did."),
 				misconception: str("If incorrect: the specific wrong belief revealed."),
+				slip: { type: "boolean", description: "Right understanding, careless error only. Recorded as correct with a slip." },
 			},
 			required: ["concept", "outcome", "difficulty", "what"],
 		},
 		async run(
-			input: { concept: string; outcome: Outcome; difficulty: number; kind?: EvidenceKind; what: string; misconception?: string },
+			input: { concept: string; outcome: Outcome; difficulty: number; kind?: EvidenceKind; what: string; misconception?: string; slip?: boolean },
 			{ store, session },
 		) {
+			const slip = input.slip === true;
 			const { concept, before, after } = await store.recordEvidence(input.concept, {
-				outcome: input.outcome,
+				outcome: slip ? "correct" : input.outcome,
 				difficulty: input.difficulty,
 				kind: input.kind ?? "explain",
 				question: input.what,
-				misconception: input.misconception,
+				misconception: slip ? undefined : input.misconception,
+				...(slip ? { slip } : {}),
 				session: session?.id,
 			});
 			return {
@@ -653,12 +661,13 @@ export const TOOLS: ToolDef[] = [
 	},
 	{
 		name: "update_learner_profile",
-		description: "Write durable observations about the learner (background, how they learn best, recurring patterns) to learner.md.",
+		description:
+			"Write durable observations about the learner to learner.md: background, how they learn best, patterns seen across several sessions. Not a list of weak topics (per-concept mastery already lives in the evidence), and never a conclusion from one or two misses or from slips. When later evidence contradicts an observation, rewrite the section with mode replace.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				section: str("Section heading, e.g. 'Background', 'How I learn best', 'Observations'."),
-				content: str("Markdown."),
+				content: str("Markdown. With mode replace, the whole new section."),
 				mode: { type: "string", enum: ["append", "replace"] },
 			},
 			required: ["section", "content"],

@@ -23,6 +23,17 @@ describe("computeStats", () => {
 		expect(down.mastery).toBeLessThan(0.3);
 	});
 
+	it("barely counts a slip against the learner", () => {
+		const clean = computeStats([ev(0, "correct"), ev(1, "correct")], new Date(day(1)));
+		const slipped = computeStats([ev(0, "correct"), ev(1, "correct", 3, { slip: true })], new Date(day(1)));
+		const missed = computeStats([ev(0, "correct"), ev(1, "partial")], new Date(day(1)));
+		expect(slipped.ability).toBeLessThan(clean.ability);
+		expect(slipped.ability).toBeGreaterThan(missed.ability);
+		expect(clean.ability - slipped.ability).toBeLessThan((slipped.ability - missed.ability) / 3);
+		expect(slipped.status).toBe(clean.status);
+		expect(slipped.floor).toBe(3);
+	});
+
 	it("rewards hard questions more than easy ones", () => {
 		const easy = computeStats([ev(0, "correct", 1)], new Date(day(0)));
 		const hard = computeStats([ev(0, "correct", 5)], new Date(day(0)));
