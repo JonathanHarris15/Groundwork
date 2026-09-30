@@ -142,7 +142,7 @@ export class DemoProvider implements Provider {
 					why: "Demo goal: the foundation for everything in calculus.",
 					approach:
 						"Start from slope (an unconditional truth: rise over run for a straight line), ask how to get a slope for a curve, discover that zooming in makes curves look straight, formalize the zoom as a limit, and arrive at the derivative.",
-					target: "Derivative",
+					targets: ["Derivative"],
 					nodes: [
 						{ title: "Slope of a line", summary: "Rise over run: $m = \\frac{\\Delta y}{\\Delta x}$.", domain: "calculus" },
 						{ title: "Secant line", prerequisites: ["Slope of a line"], domain: "calculus" },

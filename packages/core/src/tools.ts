@@ -18,7 +18,8 @@ import {
 	type TestResponse,
 } from "./practice";
 import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
-import { conceptSummary, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
+import { isBuilt } from "./graph";
+import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
 
 export type JSONSchema = Record<string, unknown>;
 
@@ -190,7 +191,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_learner_overview",
 		description:
-			"Call FIRST in every learning session. Returns the learner profile, knowledge counts, active goals with progress and next nodes, due spaced reviews, recently practiced concepts, and open misconceptions.",
+			"Call FIRST in every learning session. Returns the learner profile, knowledge counts, active goals (each goal is the targets not yet built), nextUp (the single best next concept to build, review, or repair), due spaced reviews, recently practiced concepts, and open misconceptions. Start from nextUp unless the learner asked for something else.",
 		inputSchema: { type: "object", properties: {} },
 		async run(_i, { store }) {
 			const o = await store.overview();
@@ -278,15 +279,17 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal as a dependency DAG: the target concept (the sink), every node with its direct prerequisites, the objective, and your approach. Creates/links concept notes and returns the calibrated map: which nodes are solid, the frontier (ready to learn), blocked nodes, rusty nodes, unassessed nodes, and a mermaid map to show the learner.",
+			"Save a learning goal. A goal is not a sentence — it is the list of targets, the concepts the learner has not built yet. Pass those concepts as targets (each must also be a node). nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
-				title: str("Goal title, e.g. 'Understand backpropagation'."),
-				objective: str("Concrete, checkable end state in the learner's own terms."),
+				title: str("Short name for this set of targets, e.g. 'Backpropagation'."),
+				objective: str("Optional context in the learner's words. The goal is the targets, not this sentence."),
 				why: str("What the learner wants this for."),
 				approach: str("Your teaching plan in prose: order and why."),
-				target: str("Title of the node that represents the goal."),
+				targets: strList(
+					"Concepts this goal is made of. A target is a concept not yet built (not solid at its required level). Each must also appear in nodes. Name concepts they already hold too; those are recorded as built.",
+				),
 				nodes: {
 					type: "array",
 					items: {
@@ -309,46 +312,58 @@ export const TOOLS: ToolDef[] = [
 				status: { type: "string", enum: ["active", "paused", "done"] },
 				examPlan: str("Title of the exam plan note this goal was built from, if any."),
 			},
-			required: ["title", "objective", "target", "nodes"],
+			required: ["title", "targets", "nodes"],
 		},
 		async run(input: GoalInput, { store }) {
 			const r = await store.setGoal(input);
+			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			return {
 				text: json({
 					goal: r.goal.title,
 					note: r.goal.path,
-					progress: `${r.analysis.solidCount}/${r.nodes.length} solid`,
+					status: r.goal.status,
+					progress: describeGoalProgress(r.goal),
+					targets: r.goal.targets.map(titleOf),
+					built: r.goal.built.map(titleOf),
+					next: r.next ?? null,
 					frontier: r.analysis.frontier.map((n) => n.title),
 					blocked: r.analysis.blocked.map((n) => n.title),
 					rusty: r.analysis.rusty.map((n) => n.title),
 					unassessed: r.analysis.unassessed.map((n) => n.title),
 					mermaid: r.mermaid,
 				}),
-				summary: `Saved goal “${r.goal.title}” — ${r.nodes.length} nodes`,
+				summary: `Saved goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
 			};
 		},
 	},
 	{
 		name: "get_goal",
-		description: "Calibrated status of a goal's dependency map: per-node status and edge, frontier, blocked, rusty, unassessed, and a mermaid map.",
+		description:
+			"Calibrated status of a goal: the targets not yet built, the concepts already built, per-node role and edge, the frontier, and a mermaid map. Teach the frontier step that an open target depends on.",
 		inputSchema: { type: "object", properties: { goal: str("Goal title.") }, required: ["goal"] },
 		async run({ goal }: { goal: string }, { store }) {
 			const r = await store.goalReport(goal);
+			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			return {
 				text: json({
 					goal: r.goal.title,
 					status: r.goal.status,
 					objective: r.goal.objective,
+					progress: describeGoalProgress(r.goal),
+					targets: r.goal.targets.map(titleOf),
+					built: r.goal.built.map(titleOf),
+					next: r.next ?? null,
 					order: r.analysis.order.map((n) => {
 						const d = r.nodes.find((x) => x.id === n.id)!;
 						const need = r.goal.requiredLevels[n.id];
 						return {
 							title: n.title,
+							role: d.role,
 							status: n.status,
+							built: isBuilt(n.status, d.floor, need),
 							now: n.status === "unassessed" ? null : pct(n.current),
 							edge: d.edge,
 							requiredLevel: need,
-							examReady: need ? (d.floor ?? 0) >= need && n.status === "solid" : undefined,
 							misconceptions: d.openMisconceptions,
 						};
 					}),
@@ -358,7 +373,7 @@ export const TOOLS: ToolDef[] = [
 					unassessed: r.analysis.unassessed.map((n) => n.title),
 					mermaid: r.mermaid,
 				}),
-				summary: `Checked goal “${r.goal.title}” — ${r.analysis.solidCount}/${r.nodes.length} solid`,
+				summary: `Checked goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
 			};
 		},
 	},
@@ -586,7 +601,9 @@ export const TOOLS: ToolDef[] = [
 					goal: r.goal
 						? {
 								title: r.goal.goal.title,
-								progress: `${r.goal.analysis.solidCount}/${r.goal.nodes.length} solid`,
+								progress: describeGoalProgress(r.goal.goal),
+								targets: r.goal.goal.targets.map((id) => r.goal!.nodes.find((n) => n.id === id)?.title ?? id),
+								built: r.goal.goal.built.map((id) => r.goal!.nodes.find((n) => n.id === id)?.title ?? id),
 								frontier: r.goal.analysis.frontier.map((n) => n.title),
 								mermaid: r.goal.mermaid,
 							}

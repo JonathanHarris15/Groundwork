@@ -298,32 +298,29 @@ function topicPrereqs(topic: ExamTopic, all: ExamTopic[], materials: MaterialSou
 }
 
 export function blueprintToGoalInput(plan: ExamBlueprint, materials: MaterialSource[], why?: string): GoalInput {
-	const target = plan.title;
 	const nodes: GoalInput["nodes"] = plan.topics.map((t) => ({
 		title: t.title,
 		prerequisites: topicPrereqs(t, plan.topics, materials),
 		summary: t.ideas[0] ?? t.evidence[0],
 		requiredLevel: t.requiredLevel,
 	}));
-	nodes.push({
-		title: target,
-		prerequisites: plan.mustKnow.length ? plan.mustKnow : plan.topics.map((t) => t.title),
-		summary: "Exam-ready: every listed topic at the required level.",
-		requiredLevel: 4,
-	});
+	const topicTitles = new Set(plan.topics.map((t) => t.title));
+	const targets = (plan.mustKnow.length ? plan.mustKnow : plan.topics.map((t) => t.title)).filter((t) => topicTitles.has(t));
 	const approach = [
-		"This goal was built from the learner's course files (lectures, homeworks, study guides, practice exams).",
-		"Teach the graph from foundations up. For each node, the check quiz should be at that node's required level — that is the depth the exam appears to demand.",
-		plan.mustKnow.length ? `Must be exam-ready: ${plan.mustKnow.join(", ")}.` : "",
+		"This goal is the concepts the course files actually assess, not a slogan about the exam.",
+		"Teach from foundations up toward those targets. For each node, the check quiz should be at that node's required level — that is the depth the exam appears to demand.",
+		targets.length ? `Targets: ${targets.join(", ")}.` : "",
 	]
 		.filter(Boolean)
 		.join(" ");
 	return {
 		title: plan.title,
-		objective: `Be able to do the work these materials assess, at the required level for each topic (see the exam plan).`,
+		objective: targets.length
+			? `Build these concepts to the depth the files demand: ${targets.join(", ")}.`
+			: "Build the concepts these materials assess, at the required level for each one.",
 		why: why ?? "The learner is preparing from course files.",
 		approach,
-		target,
+		targets,
 		nodes,
 	};
 }
@@ -371,7 +368,7 @@ export function examPrepInstruction(plan: ExamBlueprint): string {
 		"Topics:",
 		table || "(no topics extracted — read the files with read_vault_file, then call ingest_exam_materials)",
 		plan.notes.join("\n"),
-		"Do this next: call get_learner_overview, refine the graph if needed, save it with set_goal (include requiredLevel on each node), then start teaching from the frontier. Check quizzes should hit each node's required level, not just recognition.",
+		"Do this next: call get_learner_overview, refine the graph if needed, save it with set_goal. The targets are the must-know concepts (not a concept named after the exam). Include requiredLevel on each node, then teach from the frontier toward those targets. Check quizzes should hit each node's required level, not just recognition.",
 		"The learner has not necessarily read these files. Define every symbol and term from them the first time you use it, and restate any problem you take from them in full.",
 		"</exam_plan>",
 	]

@@ -51,7 +51,7 @@ describe("KnowledgeStore", () => {
 		const report = await store.setGoal({
 			title: "Understand the derivative",
 			objective: "Derive d/dx x^2",
-			target: "Derivative",
+			targets: ["Derivative"],
 			nodes: [
 				{ title: "Slope of a line" },
 				{ title: "Secant line", prerequisites: ["Slope of a line"] },
@@ -59,8 +59,11 @@ describe("KnowledgeStore", () => {
 				{ title: "Derivative", prerequisites: ["Secant line", "Limit"] },
 			],
 		});
+		expect(report.goal.targets).toEqual(["derivative"]);
+		expect(report.goal.built).toEqual([]);
 		expect(report.analysis.frontier.map((n) => n.title).sort()).toEqual(["Limit", "Slope of a line"]);
 		expect(report.mermaid).toContain("graph BT");
+		expect(report.mermaid).toContain("{{");
 
 		for (const d of [2, 3, 4]) {
 			await store.recordEvidence("Slope of a line", { outcome: "correct", difficulty: d, kind: "probe" });
@@ -70,9 +73,85 @@ describe("KnowledgeStore", () => {
 		expect(r2.analysis.frontier.map((n) => n.title).sort()).toEqual(["Limit", "Secant line"]);
 
 		const goalNote = await io.read("goals/Understand the derivative.md");
-		expect(goalNote).toContain("1/4 solid");
+		expect(goalNote).toContain("0/1 targets built");
+		expect(goalNote).toContain("## Targets");
+		expect(goalNote).toContain("[[Derivative]]");
 		expect(goalNote).toContain("```mermaid");
 		expect(io.files.get(".groundwork/evidence/slope-of-a-line.jsonl")!.trim().split("\n")).toHaveLength(3);
+	});
+
+	it("keeps already-built concepts out of the open targets and finishes the goal when the last one is built", async () => {
+		const { store } = makeStore();
+		await store.upsertConcept({ title: "Limit" });
+		for (const d of [2, 3, 4]) await store.recordEvidence("Limit", { outcome: "correct", difficulty: d, kind: "check" });
+		const report = await store.setGoal({
+			title: "Rates of change",
+			targets: ["Limit", "Derivative"],
+			nodes: [
+				{ title: "Limit" },
+				{ title: "Derivative", prerequisites: ["Limit"], requiredLevel: 3 },
+			],
+		});
+		expect(report.goal.built).toEqual(["limit"]);
+		expect(report.goal.targets).toEqual(["derivative"]);
+		expect(report.goal.status).toBe("active");
+		expect(report.next?.concept).toBe("Derivative");
+		expect(report.next?.action).toBe("build");
+
+		for (const d of [3, 4, 5]) await store.recordEvidence("Derivative", { outcome: "correct", difficulty: d, kind: "check" });
+		const done = await store.goalReport("Rates of change");
+		expect(done.goal.status).toBe("done");
+		expect(done.goal.targets).toEqual([]);
+		expect(done.goal.built.sort()).toEqual(["derivative", "limit"]);
+		expect((await store.overview()).activeGoals).toEqual([]);
+		expect(await store.studyNext()).toBeNull();
+	});
+
+	it("refuses a goal that is not made of concrete concepts", async () => {
+		const { store } = makeStore();
+		await expect(store.setGoal({ title: "Understand calculus", targets: [], nodes: [{ title: "Limit" }] })).rejects.toThrow(/targets/);
+		await expect(store.setGoal({ title: "Off the graph", targets: ["Not a node"], nodes: [{ title: "Limit" }] })).rejects.toThrow(/Not a node/);
+		expect([...(await store.concepts()).keys()]).not.toContain("not-a-node");
+	});
+
+	it("reads a legacy single-target goal and its level map", async () => {
+		const { io, store } = makeStore();
+		await io.write(
+			"goals/Old.md",
+			`---
+title: Old
+status: active
+target: "[[Derivative]]"
+targets:
+  Derivative: 4
+nodes:
+  - "[[Limit]]"
+  - "[[Derivative]]"
+---
+# Old
+`,
+		);
+		const goal = await store.resolveGoal("Old");
+		expect(goal?.targets).toEqual(["derivative"]);
+		expect(goal?.requiredLevels.derivative).toBe(4);
+		expect(goal?.built).toEqual([]);
+	});
+
+	it("does not treat a solid concept as built when the goal still needs a deeper level", async () => {
+		const { store } = makeStore();
+		await store.upsertConcept({ title: "Chain rule" });
+		for (let i = 0; i < 4; i++) await store.recordEvidence("Chain rule", { outcome: "correct", difficulty: 3, kind: "check" });
+		const held = await store.resolve("Chain rule");
+		expect(held?.stats.status).toBe("solid");
+		expect(held?.stats.floor).toBe(3);
+		const report = await store.setGoal({
+			title: "Midterm",
+			targets: ["Chain rule"],
+			nodes: [{ title: "Chain rule", requiredLevel: 4 }],
+		});
+		expect(report.goal.status).toBe("active");
+		expect(report.goal.targets).toEqual(["chain-rule"]);
+		expect(report.nodes[0]?.role).toBe("target");
 	});
 
 	it("overview reports goals, counts, and misconceptions", async () => {

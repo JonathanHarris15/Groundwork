@@ -303,7 +303,7 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 						role: "user",
 						content: {
 							type: "text",
-							text: `${method}\n\n---\n\nI want to prepare for an exam from my course files. Call get_learner_overview, then ingest_exam_materials${files ? ` with files: ${files}` : " (list_vault_files / read_vault_file first if you need paths)"}. Parse the homeworks, slides, study guide, and/or practice exam into topics and required levels, set_goal, and start teaching to that depth.`,
+							text: `${method}\n\n---\n\nI want to prepare for an exam from my course files. Call get_learner_overview, then ingest_exam_materials${files ? ` with files: ${files}` : " (list_vault_files / read_vault_file first if you need paths)"}. Parse the homeworks, slides, study guide, and/or practice exam into topics and required levels, set_goal with those must-know concepts as the targets (not a concept named after the exam), and start teaching to that depth.`,
 						},
 					},
 				],
@@ -325,7 +325,7 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 				messages: [
 					{
 						role: "user",
-						content: { type: "text", text: `${method}\n\n---\n\nRun a spaced review session: call get_due_reviews, then quiz me (kind "review") on each due concept, adapting difficulty to my recorded edge.` },
+						content: { type: "text", text: `${method}\n\n---\n\nRun a spaced review session: call get_learner_overview. If nextUp is a review or a repair on the way to a target, start there. Then call get_due_reviews and quiz me (kind "review") on each due concept, adapting difficulty to my recorded edge.` },
 					},
 				],
 			};

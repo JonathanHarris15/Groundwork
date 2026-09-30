@@ -75,13 +75,49 @@ export function topoOrder(nodes: GraphNode[]): GraphNode[] {
 
 const byTitle = (a: GraphNode, b: GraphNode) => a.title.localeCompare(b.title);
 
-const KNOWN: ConceptStatus[] = ["solid"];
+/**
+ * A concept is built when the learner currently holds it: status solid, and —
+ * when the goal names a depth — their floor reaches that level. Rusty means it
+ * was built and has faded, so it is not built right now.
+ */
+export function isBuilt(status: ConceptStatus, floor?: number, requiredLevel?: number): boolean {
+	if (status !== "solid") return false;
+	if (requiredLevel == null || requiredLevel <= 0) return true;
+	return (floor ?? 0) >= requiredLevel;
+}
+
+/** Open targets reachable from `fromId`, including itself when it is a target. */
+export function targetsServed(
+	fromId: string,
+	nodes: Array<{ id: string; prerequisites: string[] }>,
+	targetIds: Set<string>,
+): string[] {
+	const dependents = new Map<string, string[]>();
+	for (const n of nodes) {
+		for (const p of n.prerequisites) {
+			const list = dependents.get(p);
+			if (list) list.push(n.id);
+			else dependents.set(p, [n.id]);
+		}
+	}
+	const out: string[] = [];
+	const seen = new Set<string>();
+	const stack = [fromId];
+	while (stack.length) {
+		const id = stack.pop()!;
+		if (seen.has(id)) continue;
+		seen.add(id);
+		if (targetIds.has(id)) out.push(id);
+		for (const d of dependents.get(id) ?? []) stack.push(d);
+	}
+	return out;
+}
 
 export interface GoalAnalysis {
 	order: GraphNode[];
-	/** Not yet solid, but every in-goal prerequisite is solid: teach these next. */
+	/** Not yet built, but every in-goal prerequisite is built: teach these next. */
 	frontier: GraphNode[];
-	/** Not solid and blocked by at least one non-solid prerequisite. */
+	/** Not built and blocked by at least one prerequisite that is not built. */
 	blocked: GraphNode[];
 	/** Previously solid, now decayed: review before building on them. */
 	rusty: GraphNode[];
@@ -90,10 +126,14 @@ export interface GoalAnalysis {
 	solidCount: number;
 }
 
-export function analyzeGoal(nodes: GraphNode[]): GoalAnalysis {
+export function analyzeGoal(nodes: GraphNode[], known?: (node: GraphNode) => boolean): GoalAnalysis {
 	const byId = new Map(nodes.map((n) => [n.id, n]));
 	const order = topoOrder(nodes);
-	const isKnown = (id: string) => KNOWN.includes(byId.get(id)?.status ?? "unassessed");
+	const isKnown = (id: string) => {
+		const n = byId.get(id);
+		if (!n) return false;
+		return known ? known(n) : n.status === "solid";
+	};
 	const frontier: GraphNode[] = [];
 	const blocked: GraphNode[] = [];
 	for (const n of order) {
@@ -120,15 +160,20 @@ const STATUS_CLASS: Record<ConceptStatus, string> = {
 	unassessed: "unassessed",
 };
 
-/** Mermaid dependency map, arrows point from prerequisite to dependent. */
-export function goalMermaid(nodes: GraphNode[], targetId?: string): string {
+/**
+ * Mermaid dependency map. Arrows point from prerequisite to dependent.
+ * Hexagons are open targets; rounded nodes are targets already built.
+ */
+export function goalMermaid(nodes: GraphNode[], openTargetIds: string[] = [], builtTargetIds: string[] = []): string {
+	const open = new Set(openTargetIds);
+	const built = new Set(builtTargetIds);
 	const ids = new Map<string, string>();
 	nodes.forEach((n, i) => ids.set(n.id, `n${i}`));
 	const lines = ["graph BT"];
 	for (const n of topoOrder(nodes)) {
 		const label = n.title.replace(/"/g, "'");
 		const pct = n.status === "unassessed" ? "?" : `${Math.round(n.current * 100)}%`;
-		const shape = n.id === targetId ? [`{{"`, `"}}`] : [`["`, `"]`];
+		const shape = open.has(n.id) ? [`{{"`, `"}}`] : built.has(n.id) ? [`(["`, `"])`] : [`["`, `"]`];
 		lines.push(`  ${ids.get(n.id)}${shape[0]}${label} · ${pct}${shape[1]}`);
 	}
 	for (const n of nodes) {

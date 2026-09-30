@@ -102,7 +102,11 @@ describe("exam material parsing", () => {
 		expect(plans.length).toBe(1);
 		const goal = (await store.goals())[0];
 		expect(Object.keys(goal.requiredLevels).length).toBeGreaterThan(0);
+		expect(goal.targets.length + goal.built.length).toBeGreaterThan(0);
+		const concepts = [...(await store.concepts()).values()];
+		expect(concepts.some((c) => c.title === goal.title)).toBe(false);
 		const report = await store.goalReport(goal.title);
 		expect(report.analysis.frontier.length).toBeGreaterThan(0);
+		expect(report.goal.targets.length).toBeGreaterThan(0);
 	});
 });
