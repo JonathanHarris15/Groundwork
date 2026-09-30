@@ -309,6 +309,33 @@ describe.skipIf(!exe)("ClaudeCodeSession against the real Claude Code binary", (
 		expect((await PDFDocument.load(Buffer.from(doc.source.data, "base64"))).getPageCount()).toBe(10);
 	}, 60_000);
 
+	it("points a direct Read of a long vault PDF at its parts instead of failing", async () => {
+		const vaultDir = mkdtempSync(path.join(os.tmpdir(), "gw-claude-directpdf-"));
+		mkdirSync(path.join(vaultDir, "resources"));
+		writeFileSync(path.join(vaultDir, "resources", "lecture_note_1.pdf"), await makePdf(14));
+		const store = new KnowledgeStore(new NodeVaultIO(vaultDir));
+		const api = await startMockAnthropic((req) => {
+			const results = toolResults(req);
+			if (results.length === 0) return [{ type: "tool_use", name: "Read", input: { file_path: path.join(vaultDir, "resources", "lecture_note_1.pdf") } }];
+			if (results.length === 1) {
+				const part = /pages 11-14: file_path "([^"]+)"/.exec(results[0])?.[1] ?? "missing";
+				return [{ type: "tool_use", name: "Read", input: { file_path: part } }];
+			}
+			return [{ type: "text", text: "Read the last part." }];
+		});
+		const session = new ClaudeCodeSession({ executable: exe!, cwd: vaultDir, env: { ...env, ANTHROPIC_BASE_URL: api.url }, store, tools: TOOLS, system: "x", session: { id: "s7" } });
+		await session.send("Read lecture 1", () => {});
+		session.close();
+		await api.close();
+
+		const last = api.requests.at(-1)!.messages;
+		const results = last.flatMap((m: any) => (Array.isArray(m.content) ? m.content.filter((b: any) => b.type === "tool_result") : []));
+		expect(JSON.stringify(results[0].content)).toContain("PDF of 14 pages");
+		expect(JSON.stringify(results[0].content)).not.toContain("too many to read");
+		const doc = (results[1].content as any[]).find((b) => b.type === "document");
+		expect((await PDFDocument.load(Buffer.from(doc.source.data, "base64"))).getPageCount()).toBe(4);
+	}, 60_000);
+
 	it("reports a missing login in plain language", async () => {
 		const home = mkdtempSync(path.join(os.tmpdir(), "gw-claude-nologin-"));
 		const bare = claudeCodeEnv({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: path.join(home, ".claude") });

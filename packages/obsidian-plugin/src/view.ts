@@ -449,16 +449,20 @@ export class ChatView extends ItemView implements ToolUI {
 			}
 			case "tool_end": {
 				const chip = this.toolChips.get(e.id);
-				if (chip) {
-					chip.removeClass("is-running");
-					chip.toggleClass("is-error", !!e.isError);
-					chip.empty();
-					setIcon(chip.createSpan({ cls: "gw-tool-icon" }), e.isError ? "alert-triangle" : iconFor(e.name));
-					const summary = e.isError ? `${TOOL_VERBS[e.name] ?? e.name} failed: ${e.text.replace(/^Error:\s*/, "").slice(0, 160)}` : (e.summary ?? e.name);
-					chip.createSpan({ text: summary });
-					this.record.items.push({ kind: "tool", name: e.name, summary, isError: e.isError });
-					this.toolChips.delete(e.id);
+				if (!chip) break;
+				this.toolChips.delete(e.id);
+				// A failed call is feedback for the tutor, which retries or explains in its reply.
+				if (e.isError) {
+					console.debug(`Groundwork: ${e.name} failed (the tutor was told): ${e.text}`);
+					chip.remove();
+					break;
 				}
+				chip.removeClass("is-running");
+				chip.empty();
+				setIcon(chip.createSpan({ cls: "gw-tool-icon" }), iconFor(e.name));
+				const summary = e.summary ?? e.name;
+				chip.createSpan({ text: summary });
+				this.record.items.push({ kind: "tool", name: e.name, summary });
 				break;
 			}
 			case "error":
@@ -638,8 +642,9 @@ export class ChatView extends ItemView implements ToolUI {
 				break;
 			}
 			case "tool": {
-				const chip = this.uiMessagesEl.createDiv({ cls: `gw-tool ${item.isError ? "is-error" : ""}` });
-				setIcon(chip.createSpan({ cls: "gw-tool-icon" }), item.isError ? "alert-triangle" : iconFor(item.name));
+				if (item.isError) break;
+				const chip = this.uiMessagesEl.createDiv({ cls: "gw-tool" });
+				setIcon(chip.createSpan({ cls: "gw-tool-icon" }), iconFor(item.name));
 				chip.createSpan({ text: item.summary });
 				break;
 			}

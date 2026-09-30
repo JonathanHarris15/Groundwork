@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { query, type AccountInfo, type ModelInfo, type Options, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk/core";
+import { query, type AccountInfo, type HookCallback, type ModelInfo, type Options, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -11,7 +11,7 @@ import type { SessionInfo, ToolDef, ToolResult, ToolUI } from "../tools";
 import type { AgentEvent, TutorSession } from "../agent/types";
 import { errorMessage } from "../agent/loop";
 import { guiPathDirs, withGuiPath } from "./env";
-import { pdfLayout } from "./pdf-parts";
+import { pdfLayout, type PdfLayout } from "./pdf-parts";
 
 export type { AccountInfo, ModelInfo };
 
@@ -21,6 +21,7 @@ const WEB_TOOLS = ["WebSearch", "WebFetch"];
 /** Claude Code's Read opens PDFs (split into parts by pdfLayout), which MCP tool results can't carry. Limited to the vault (cwd). */
 const READ_TOOL = "Read";
 const READ_RULE = "Read(./**)";
+const READ_WHOLE = "Read each file whole: don't pass pages (page ranges need poppler, which may not be installed).";
 const MAX_HISTORY_CHARS = 40_000;
 
 export interface ClaudeCodeConfig {
@@ -282,6 +283,7 @@ export class ClaudeCodeSession implements TutorSession {
 				allowedTools: [...toolNames, READ_RULE, ...web],
 				permissionMode: "dontAsk",
 				includePartialMessages: true,
+				hooks: { PreToolUse: [{ matcher: READ_TOOL, hooks: [this.guardPdfRead] }] },
 				resume: this.sessionId,
 				mcpServers: { [MCP_NAME]: { type: "sdk", name: MCP_NAME, instance: this.toolServer() as unknown as McpServer } },
 			},
@@ -321,23 +323,45 @@ export class ClaudeCodeSession implements TutorSession {
 	}
 
 	private async readPointer(f: VaultFile): Promise<string> {
-		const abs = (rel: string) => path.join(this.opts.cwd, ...rel.split("/"));
-		if (f.kind !== "pdf") return `${f.path} is ${f.kind === "image" ? "an image" : "a file"}. Open it with the ${READ_TOOL} tool: file_path "${abs(f.path)}".`;
+		if (f.kind !== "pdf") return `${f.path} is ${f.kind === "image" ? "an image" : "a file"}. Open it with the ${READ_TOOL} tool: file_path "${this.abs(f.path)}".`;
 		const layout = await pdfLayout(this.opts.cwd, f.path).catch(() => null);
-		if (!layout) return `${f.path} is a PDF. Open it with the ${READ_TOOL} tool: file_path "${abs(f.path)}". If it is too long to read whole, pass pages (e.g. "1-10") and read it in parts.`;
-		const whole = `Read each file whole: don't pass pages (page ranges need poppler, which may not be installed).`;
+		if (!layout) return `${f.path} is a PDF. Open it with the ${READ_TOOL} tool: file_path "${this.abs(f.path)}". If it is too long to read whole, pass pages (e.g. "1-10") and read it in parts.`;
 		if (layout.parts.length === 1 && layout.parts[0].path === f.path) {
-			return `${f.path} is a PDF (${plural(layout.pages, "page")}). Open it with the ${READ_TOOL} tool: file_path "${abs(f.path)}". ${whole}`;
+			return `${f.path} is a PDF (${plural(layout.pages, "page")}). Open it with the ${READ_TOOL} tool: file_path "${this.abs(f.path)}". ${READ_WHOLE}`;
 		}
+		return this.partsPointer(f.path, layout);
+	}
+
+	private abs(rel: string): string {
+		return path.join(this.opts.cwd, ...rel.split("/"));
+	}
+
+	private partsPointer(rel: string, layout: PdfLayout): string {
+		const abs = (p: string) => this.abs(p);
 		const lines = layout.parts.map((p) => {
 			const pages = p.first === p.last ? `page ${p.first}` : `pages ${p.first}-${p.last}`;
 			return p.bytes ? `- ${pages}: too large to open (${(p.bytes / 1024 / 1024).toFixed(1)} MB); ask the learner for a screenshot or the text` : `- ${pages}: file_path "${abs(p.path)}"`;
 		});
 		return [
-			`${f.path} is a PDF of ${plural(layout.pages, "page")}, too long to open in one go, so it has been split into parts. Open them with the ${READ_TOOL} tool. ${whole} Start with the first part to learn how it is organized, then read the parts you need.`,
+			`${rel} is a PDF of ${plural(layout.pages, "page")}, too long to open in one go, so it has been split into parts. Open them with the ${READ_TOOL} tool. ${READ_WHOLE} Start with the first part to learn how it is organized, then read the parts you need.`,
 			...lines,
 		].join("\n");
 	}
+
+	/** A vault PDF too long or large for Read to open whole is turned away with its split parts instead of failing. */
+	private guardPdfRead: HookCallback = async (input) => {
+		if (input.hook_event_name !== "PreToolUse") return {};
+		const args = input.tool_input as { file_path?: unknown; pages?: unknown } | undefined;
+		if (typeof args?.file_path !== "string" || args.pages !== undefined || !/\.pdf$/i.test(args.file_path)) return {};
+		const rel = path.relative(this.opts.cwd, path.resolve(this.opts.cwd, args.file_path));
+		if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return {};
+		const vaultPath = rel.split(path.sep).join("/");
+		const layout = await pdfLayout(this.opts.cwd, vaultPath).catch(() => null);
+		if (!layout || (layout.parts.length === 1 && layout.parts[0].path === vaultPath)) return {};
+		return {
+			hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: this.partsPointer(vaultPath, layout) },
+		};
+	};
 
 	private interrupt(): void {
 		const q = this.q;
