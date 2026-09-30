@@ -127,6 +127,9 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiInputEl!: HTMLTextAreaElement;
 	private uiGoalEl!: HTMLSelectElement;
 	private refreshingGoalSelect = false;
+	private uiLibraryEl!: HTMLElement;
+	private uiLibraryBtn!: HTMLElement;
+	private libraryOpen = false;
 	private uiSendBtn!: HTMLButtonElement;
 	private uiPendingEl!: HTMLElement;
 	private uiFileInput!: HTMLInputElement;
@@ -174,10 +177,12 @@ export class ChatView extends ItemView implements ToolUI {
 		const actions = header.createDiv({ cls: "gw-actions" });
 		this.iconButton(actions, "square-pen", "New session", () => this.newSession());
 		this.iconButton(actions, "history", "Past sessions", (e) => this.showHistory(e));
-		this.iconButton(actions, "target", "Goals", (e) => this.showGoals(e));
+		this.uiLibraryBtn = this.iconButton(actions, "library", "Library", () => void this.toggleLibrary());
 		this.uiSyncBtn = this.iconButton(actions, "refresh-cw", "Sync with GitHub", () => this.plugin.syncNow("manual"));
 
 		this.uiMessagesEl = root.createDiv({ cls: "gw-messages" });
+		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
+		this.uiLibraryEl.hide();
 		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
 			const a = (evt.target as HTMLElement).closest("a.internal-link") as HTMLAnchorElement | null;
 			if (!a) return;
@@ -253,6 +258,7 @@ export class ChatView extends ItemView implements ToolUI {
 	// ── session lifecycle ───────────────────────────────────────────────
 
 	newSession(): void {
+		this.closeLibrary();
 		if (this.agent?.busy) this.stop();
 		const now = new Date().toISOString();
 		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
@@ -272,6 +278,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private openChat(record: ChatRecord): void {
+		this.closeLibrary();
 		this.record = record;
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
 		this.dropAgent();
@@ -1004,29 +1011,248 @@ export class ChatView extends ItemView implements ToolUI {
 		menu.showAtMouseEvent(evt);
 	}
 
-	private async showGoals(evt: MouseEvent): Promise<void> {
-		const menu = new Menu();
-		const [goals, overview] = await Promise.all([this.plugin.store.goals(), this.plugin.store.overview()]);
-		if (!goals.length) menu.addItem((i) => i.setTitle("No goals yet — tell the tutor what you want to learn").setDisabled(true));
-		const active = new Map(overview.activeGoals.map((g) => [g.title, g]));
-		for (const g of goals) {
-			const live = active.get(g.title);
-			const suffix = live ? ` — ${live.targets.length} to build` : g.status === "active" ? " (done)" : ` (${g.status})`;
-			menu.addItem((i) =>
-				i
-					.setTitle(`${g.title}${suffix}`)
-					.setIcon(g.status === "done" || (!live && g.status !== "paused") ? "check-circle" : "target")
-					.onClick(() => void this.app.workspace.openLinkText(g.path, "", "tab")),
-			);
+	private async toggleLibrary(): Promise<void> {
+		if (this.libraryOpen) this.closeLibrary();
+		else await this.openLibrary();
+	}
+
+	private async openLibrary(): Promise<void> {
+		this.libraryOpen = true;
+		this.contentEl.addClass("is-library");
+		this.uiLibraryBtn.addClass("is-active");
+		this.uiLibraryEl.show();
+		await this.renderLibrary();
+	}
+
+	private closeLibrary(): void {
+		this.libraryOpen = false;
+		this.contentEl.removeClass("is-library");
+		this.uiLibraryBtn?.removeClass("is-active");
+		this.uiLibraryEl?.hide();
+		this.uiLibraryEl?.empty();
+	}
+
+	/** Goals, concepts, conversations, and extra tutor context. Nothing here opens a vault note. */
+	private async renderLibrary(): Promise<void> {
+		const store = this.plugin.store;
+		const draft = this.uiLibraryEl.querySelector("textarea.gw-lib-context");
+		const unsaved = draft instanceof HTMLTextAreaElement && draft.dataset.dirty === "1" ? draft.value : null;
+		this.uiLibraryEl.empty();
+		const scroll = this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
+
+		const head = scroll.createDiv({ cls: "gw-library-head" });
+		const titles = head.createDiv();
+		titles.createDiv({ cls: "gw-library-title", text: "Library" });
+		titles.createDiv({
+			cls: "gw-library-sub",
+			text: "Pick a goal or concept to work on, manage past conversations, or leave extra notes for the tutor.",
+		});
+		const close = head.createEl("button", { cls: "clickable-icon gw-icon-btn", attr: { "aria-label": "Close library", type: "button" } });
+		setIcon(close, "x");
+		close.addEventListener("click", () => this.closeLibrary());
+
+		let choices: Awaited<ReturnType<typeof store.goalChoices>> = [];
+		let goals: Awaited<ReturnType<typeof store.goals>> = [];
+		let concepts: Awaited<ReturnType<typeof store.concepts>> = new Map();
+		let chats: ChatRecord[] = [];
+		let context = "";
+		try {
+			[choices, goals, concepts, chats, context] = await Promise.all([
+				store.goalChoices(),
+				store.goals(),
+				store.concepts(),
+				this.listChats(),
+				store.tutorContext(),
+			]);
+		} catch (err) {
+			scroll.createDiv({ cls: "gw-error", text: err instanceof Error ? err.message : String(err) });
+			return;
 		}
-		menu.addSeparator();
-		menu.addItem((i) =>
-			i
-				.setTitle("Open knowledge graph")
-				.setIcon("git-fork")
-				.onClick(() => (this.app as any).commands?.executeCommandById("graph:open")),
-		);
-		menu.showAtMouseEvent(evt);
+
+		const goalSection = scroll.createDiv({ cls: "gw-lib-section" });
+		goalSection.createEl("h3", { text: "Goals" });
+		goalSection.createDiv({ cls: "gw-lib-help", text: "Work toward one, quiz it, or delete it. Deleting a goal leaves its concepts in place." });
+		const choiceIds = new Set(choices.map((c) => c.id));
+		if (!goals.length) goalSection.createDiv({ cls: "gw-lib-empty", text: "No goals yet. Tell the tutor what you want to learn." });
+		for (const choice of choices) {
+			const row = this.libraryRow(goalSection, choice.title, goalChoiceLabel(choice).replace(`${choice.title} → `, ""));
+			this.libraryButton(row, "Work toward", () => void this.workToward(choice.id));
+			this.libraryButton(row, "Quiz", () => void this.quizGoal(choice.id, choice.title, true));
+			this.libraryDelete(row, () => this.deleteListedGoal(choice.id));
+		}
+		for (const goal of goals) {
+			if (choiceIds.has(goal.id)) continue;
+			const row = this.libraryRow(goalSection, goal.title, goal.status === "paused" ? "Paused" : "Done");
+			this.libraryButton(row, "Quiz", () => void this.quizGoal(goal.id, goal.title, false));
+			this.libraryDelete(row, () => this.deleteListedGoal(goal.id));
+		}
+
+		const conceptSection = scroll.createDiv({ cls: "gw-lib-section" });
+		conceptSection.createEl("h3", { text: "Concepts" });
+		const filter = conceptSection.createEl("input", {
+			cls: "gw-lib-filter",
+			attr: { type: "search", placeholder: "Filter concepts", "aria-label": "Filter concepts" },
+		});
+		const conceptList = conceptSection.createDiv({ cls: "gw-lib-list" });
+		const conceptRows = [...concepts.values()].sort((a, b) => a.title.localeCompare(b.title));
+		const drawConcepts = () => {
+			conceptList.empty();
+			const q = filter.value.trim().toLowerCase();
+			const shown = conceptRows.filter((c) => !q || c.title.toLowerCase().includes(q) || c.aliases.some((a) => a.toLowerCase().includes(q)));
+			if (!shown.length) {
+				conceptList.createDiv({ cls: "gw-lib-empty", text: conceptRows.length ? "No concepts match." : "No concepts yet." });
+				return;
+			}
+			for (const concept of shown) {
+				const row = this.libraryRow(conceptList, concept.title, "");
+				const meta = row.querySelector(".gw-lib-meta") as HTMLElement | null;
+				meta?.empty();
+				meta?.createSpan({ cls: `gw-status is-${concept.stats.status}`, text: statusLabel(concept.stats.status) });
+				this.libraryButton(row, "Quiz", () => this.quizConcept(concept.title));
+			}
+		};
+		filter.addEventListener("input", drawConcepts);
+		drawConcepts();
+
+		const chatSection = scroll.createDiv({ cls: "gw-lib-section" });
+		chatSection.createEl("h3", { text: "Conversations" });
+		chatSection.createDiv({ cls: "gw-lib-help", text: "Deleting a conversation removes it from the tutor's history, including its session transcript." });
+		if (!chats.length) chatSection.createDiv({ cls: "gw-lib-empty", text: "No past conversations." });
+		for (const chat of chats) {
+			const when = chat.updated?.slice(0, 10) || chat.created?.slice(0, 10) || "";
+			const row = this.libraryRow(chatSection, chat.title || "Untitled", when);
+			if (chat.id === this.record?.id) row.addClass("is-current");
+			this.libraryButton(row, "Open", () => {
+				if (this.agent?.busy) this.stop();
+				this.openChat(chat);
+			});
+			this.libraryDelete(row, () => this.deleteListedChat(chat.id));
+		}
+
+		const contextSection = scroll.createDiv({ cls: "gw-lib-section" });
+		contextSection.createEl("h3", { text: "Extra context" });
+		contextSection.createDiv({
+			cls: "gw-lib-help",
+			text: "Notes the tutor reads every session. This is not your learner profile, and the tutor does not rewrite it.",
+		});
+		const area = contextSection.createEl("textarea", {
+			cls: "gw-lib-context",
+			attr: { rows: "6", placeholder: "Exam dates, a formula sheet, how you want explanations to go…", "aria-label": "Extra context for the tutor" },
+		});
+		area.value = unsaved ?? context;
+		if (unsaved !== null) area.dataset.dirty = "1";
+		area.addEventListener("input", () => {
+			area.dataset.dirty = "1";
+		});
+		const saveRow = contextSection.createDiv({ cls: "gw-lib-save-row" });
+		const save = saveRow.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Save", attr: { type: "button" } });
+		save.addEventListener("click", () => {
+			void store.setTutorContext(area.value).then(
+				() => {
+					area.dataset.dirty = "";
+					new Notice("Saved extra context for the tutor.");
+				},
+				(err: unknown) => new Notice(err instanceof Error ? err.message : String(err)),
+			);
+		});
+	}
+
+	private libraryRow(parent: HTMLElement, title: string, meta: string): HTMLElement {
+		const row = parent.createDiv({ cls: "gw-lib-row" });
+		const main = row.createDiv({ cls: "gw-lib-main" });
+		main.createDiv({ cls: "gw-lib-name", text: title });
+		main.createDiv({ cls: "gw-lib-meta", text: meta });
+		row.createDiv({ cls: "gw-lib-actions" });
+		return row;
+	}
+
+	private libraryButton(row: HTMLElement, label: string, onClick: () => void): HTMLElement {
+		const actions = row.querySelector(".gw-lib-actions") as HTMLElement;
+		const button = actions.createEl("button", { cls: "gw-lib-btn", text: label, attr: { type: "button" } });
+		button.addEventListener("click", onClick);
+		return button;
+	}
+
+	private libraryDelete(row: HTMLElement, run: () => Promise<void>): void {
+		const button = this.libraryButton(row, "Delete", () => {
+			if (button.dataset.armed !== "1") {
+				button.dataset.armed = "1";
+				button.setText("Delete?");
+				button.addClass("is-danger");
+				window.setTimeout(() => {
+					if (button.dataset.armed !== "1") return;
+					button.dataset.armed = "";
+					button.setText("Delete");
+					button.removeClass("is-danger");
+				}, 3000);
+				return;
+			}
+			button.dataset.armed = "";
+			void run();
+		});
+	}
+
+	private async workToward(id: string): Promise<void> {
+		try {
+			await this.plugin.store.setWorkingGoal(id);
+			await this.refreshGoalSelect();
+			this.closeLibrary();
+			this.uiInputEl?.focus();
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	private async quizGoal(id: string, title: string, pin: boolean): Promise<void> {
+		if (this.agent?.busy) {
+			new Notice("Groundwork: wait for the tutor to finish, then ask for a quiz.");
+			return;
+		}
+		if (pin) {
+			try {
+				await this.plugin.store.setWorkingGoal(id);
+				await this.refreshGoalSelect();
+			} catch (err) {
+				new Notice(err instanceof Error ? err.message : String(err));
+				return;
+			}
+		}
+		this.closeLibrary();
+		void this.submit(pin ? `Quiz me on ${title}.` : `Quiz me on the concepts in ${title}.`);
+	}
+
+	private quizConcept(title: string): void {
+		if (this.agent?.busy) {
+			new Notice("Groundwork: wait for the tutor to finish, then ask for a quiz.");
+			return;
+		}
+		this.closeLibrary();
+		void this.submit(`Quiz me on ${title}.`);
+	}
+
+	private async deleteListedGoal(id: string): Promise<void> {
+		try {
+			await this.plugin.store.deleteGoal(id);
+			await this.refreshGoalSelect();
+			if (this.libraryOpen) await this.renderLibrary();
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	private async deleteListedChat(id: string): Promise<void> {
+		const current = this.record?.id === id;
+		try {
+			await this.plugin.store.deleteChat(id);
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+			return;
+		}
+		if (current) {
+			this.newSession();
+			return;
+		}
+		if (this.libraryOpen) await this.renderLibrary();
 	}
 
 	// ── margin threads ──────────────────────────────────────────────────
@@ -1346,18 +1572,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async listChats(): Promise<ChatRecord[]> {
-		const io = this.plugin.store.io;
-		if (!(await io.exists(PATHS.chats))) return [];
-		const out: ChatRecord[] = [];
-		for (const f of (await io.list(PATHS.chats)).files) {
-			if (!f.endsWith(".json")) continue;
-			try {
-				out.push(JSON.parse(await io.read(f)));
-			} catch {
-				// ignore unreadable chat files
-			}
-		}
-		return out.sort((a, b) => b.updated.localeCompare(a.updated));
+		return (await this.plugin.store.listChats()) as ChatRecord[];
 	}
 
 	private async latestChat(): Promise<ChatRecord | null> {
@@ -1366,6 +1581,11 @@ export class ChatView extends ItemView implements ToolUI {
 		const ageHours = (Date.now() - Date.parse(last.updated)) / 3_600_000;
 		return ageHours < 12 ? last : null;
 	}
+}
+
+function statusLabel(status: string): string {
+	if (status === "unassessed") return "Not assessed";
+	return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function iconFor(name: string): string {

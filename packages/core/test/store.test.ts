@@ -195,6 +195,64 @@ nodes:
 		expect(await store.workingGoal()).toBeNull();
 	});
 
+	it("deletes a conversation and its session note, and leaves concepts alone", async () => {
+		const { io, store } = makeStore();
+		await store.upsertConcept({ title: "Limit" });
+		await store.writeFile(
+			".groundwork/chats/chat-1.json",
+			JSON.stringify({
+				id: "chat-1",
+				title: "Limits",
+				created: "2026-09-01T00:00:00.000Z",
+				updated: "2026-09-02T00:00:00.000Z",
+				notePath: "sessions/2026-09-01 Limits.md",
+				messages: [],
+				items: [],
+			}),
+		);
+		await store.writeFile("sessions/2026-09-01 Limits.md", "---\ntype: session\nchat: chat-1\n---\n# Limits\n");
+		await store.writeFile(
+			".groundwork/chats/chat-9.json",
+			JSON.stringify({ id: "chat-9", title: "Old", created: "2026-08-01T00:00:00.000Z", updated: "2026-08-02T00:00:00.000Z" }),
+		);
+		await store.writeFile("sessions/orphan.md", "---\nchat: chat-9\n---\n# Old\n");
+		await store.writeFile("sessions/other.md", "---\nchat: chat-2\n---\n# Other\n");
+
+		expect((await store.listChats()).map((c) => c.id)).toEqual(["chat-1", "chat-9"]);
+		await store.deleteChat("chat-1");
+		await store.deleteChat("chat-9");
+		expect(await io.exists(".groundwork/chats/chat-1.json")).toBe(false);
+		expect(await io.exists(".groundwork/chats/chat-9.json")).toBe(false);
+		expect(await io.exists("sessions/2026-09-01 Limits.md")).toBe(false);
+		expect(await io.exists("sessions/orphan.md")).toBe(false);
+		expect(await io.exists("sessions/other.md")).toBe(true);
+		expect(await store.resolve("Limit")).toBeTruthy();
+		await store.deleteChat("chat-1");
+	});
+
+	it("deletes a goal without its concepts, and keeps tutor context off the learner profile", async () => {
+		const { io, store } = makeStore();
+		await store.ensureLayout();
+		await store.setGoal({ title: "427 exam", targets: ["Limit"], nodes: [{ title: "Limit" }] });
+		await store.setWorkingGoal("427 exam");
+		await store.setTutorContext("I have a formula sheet.");
+		expect((await store.overview()).tutorContext).toContain("formula sheet");
+		const overview = await toolByName("get_learner_overview")!.run({}, { store });
+		expect(overview.text).toContain("formula sheet");
+		expect(overview.text).not.toContain("nextUp");
+
+		await store.deleteGoal("427 exam");
+		expect(await store.resolveGoal("427 exam")).toBeUndefined();
+		expect(await store.resolve("Limit")).toBeTruthy();
+		expect(await store.workingGoal()).toBeNull();
+		expect(await io.read(".groundwork/focus.json")).not.toContain("427 exam");
+		expect(await store.profile()).not.toContain("formula sheet");
+
+		await store.setTutorContext("   ");
+		expect(await store.tutorContext()).toBe("");
+		expect(await io.exists(".groundwork/tutor-context.md")).toBe(false);
+	});
+
 	it("updates learner profile sections", async () => {
 		const { store } = makeStore();
 		await store.ensureLayout();

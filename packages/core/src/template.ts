@@ -12,14 +12,15 @@ This is a **Groundwork** knowledge vault: a calibrated, persistent memory of wha
 | Folder | What lives there |
 | --- | --- |
 | \`concepts/\` | One note per concept. \`prerequisites\` link to the concepts it depends on, so Obsidian's graph view shows the dependency graph. Status and strength are recalculated from quiz evidence. |
-| \`goals/\` | Learning objectives, each with a dependency map colored by how well I know every node. |
-| \`sessions/\` | Transcripts and summaries of tutoring sessions. |
+| \`goals/\` | One note per goal. A goal is the concepts still left to build. |
+| \`sessions/\` | Transcripts of tutoring sessions. Manage and delete them from the Library. |
 | \`resources/\` | PDFs, slides, images, and notes I learn from. Files I attach in the tutor chat are saved here, and the tutor can open anything in it. |
 | \`exams/\` | Syllabi parsed from those files: topics and the level each must be learned to. |
-| \`learner.md\` | My background and how I learn best. The tutor reads it every session. |
+| \`learner.md\` | My background and how I learn best. The tutor reads it every session and may update it. |
+| \`.groundwork/tutor-context.md\` | Extra notes I write for the tutor in the Library. Separate from \`learner.md\`; the tutor reads them and does not rewrite them. |
 | \`.groundwork/evidence/\` | Append-only quiz evidence (source of truth for all stats). |
 
-Open the **Groundwork** panel from the ribbon (graduation cap) to talk to the tutor.
+Open the **Groundwork** panel from the ribbon (graduation cap) to talk to the tutor. Goals, concepts, past conversations, and extra tutor context are managed in the Library inside that panel. The folders above are storage; the Library is how you work with them.
 `,
 	[PATHS.learner]: DEFAULT_LEARNER_PROFILE,
 	[`${PATHS.concepts}/.gitkeep`]: "",

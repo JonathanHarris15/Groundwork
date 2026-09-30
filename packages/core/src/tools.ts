@@ -193,7 +193,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_learner_overview",
 		description:
-			"Call FIRST in every learning session. Returns the learner profile, knowledge counts, active goals (each goal is the targets not yet built), workingGoal (the goal pinned in the dropdown, or null when they left it on \"you choose\"), due spaced reviews, recently practiced concepts, and open misconceptions. Use it to recall what they already hold about the topic they brought. A pin is not a reason to ignore a topic or file they just brought.",
+			"Call FIRST in every learning session. Returns the learner profile, tutorContext (extra notes the learner wrote in the Library — read them, do not rewrite them or copy them into the learner profile), knowledge counts, active goals (each goal is the targets not yet built), workingGoal (the goal pinned in the dropdown, or null when they left it on \"you choose\"), due spaced reviews, recently practiced concepts, and open misconceptions. Use it to recall what they already hold about the topic they brought. A pin is not a reason to ignore a topic or file they just brought.",
 		inputSchema: { type: "object", properties: {} },
 		async run(_i, { store }) {
 			const o = await store.overview();

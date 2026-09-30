@@ -34,6 +34,8 @@ export const PATHS = {
 	evidence: ".groundwork/evidence",
 	chats: ".groundwork/chats",
 	focus: ".groundwork/focus.json",
+	/** Notes the learner writes in the Library. Not `learner.md`. */
+	tutorContext: ".groundwork/tutor-context.md",
 } as const;
 
 export interface Concept {
@@ -80,6 +82,15 @@ export interface WorkingGoal {
 }
 
 /** Dropdown label, e.g. "427 exam → 10 concepts left". */
+/** A saved conversation. The chat file may hold more fields than these; callers that resume a chat keep them. */
+export interface StoredChat {
+	id: string;
+	title: string;
+	created: string;
+	updated: string;
+	notePath?: string;
+}
+
 export function goalChoiceLabel(choice: Pick<GoalChoice, "title" | "left" | "status">): string {
 	const left = choice.left === 1 ? "1 concept left" : `${choice.left} concepts left`;
 	return `${choice.title} → ${left}${choice.status === "paused" ? " (paused)" : ""}`;
@@ -644,6 +655,97 @@ export class KnowledgeStore {
 		}
 	}
 
+	/**
+	 * Library operations. The panel calls these instead of opening vault files,
+	 * so a cloud backend can implement the same interface later.
+	 */
+	async listChats(): Promise<StoredChat[]> {
+		if (!(await this.io.exists(PATHS.chats))) return [];
+		const out: StoredChat[] = [];
+		for (const file of (await this.io.list(PATHS.chats)).files) {
+			if (!file.endsWith(".json")) continue;
+			try {
+				const parsed = JSON.parse(await this.io.read(file)) as Partial<StoredChat>;
+				if (!parsed || typeof parsed.id !== "string") continue;
+				out.push(parsed as StoredChat);
+			} catch {
+				// ignore unreadable chat files
+			}
+		}
+		return out.sort((a, b) => String(b.updated ?? "").localeCompare(String(a.updated ?? "")));
+	}
+
+	/** Removes the conversation and its session transcript. Concepts and evidence stay. */
+	async deleteChat(id: string): Promise<void> {
+		if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) throw new Error("Unknown conversation.");
+		const removed: string[] = [];
+		const notePaths = new Set<string>();
+		if (await this.io.exists(PATHS.chats)) {
+			for (const file of (await this.io.list(PATHS.chats)).files) {
+				if (!file.endsWith(".json")) continue;
+				let match = file === `${PATHS.chats}/${id}.json`;
+				try {
+					const parsed = JSON.parse(await this.io.read(file)) as { id?: string; notePath?: string };
+					if (parsed.id === id) match = true;
+					if (match && typeof parsed.notePath === "string" && parsed.notePath && !parsed.notePath.includes("..")) notePaths.add(parsed.notePath);
+				} catch {
+					// still remove a file whose name is this conversation
+				}
+				if (!match) continue;
+				await this.io.remove(file);
+				removed.push(file);
+			}
+		}
+		if (await this.io.exists(PATHS.sessions)) {
+			for (const path of await listMarkdown(this.io, PATHS.sessions)) {
+				try {
+					const { frontmatter } = parseNote(await this.io.read(path));
+					if (frontmatter.chat === id) notePaths.add(path);
+				} catch {
+					// skip unreadable notes
+				}
+			}
+		}
+		for (const path of notePaths) {
+			if (!(await this.io.exists(path))) continue;
+			await this.io.remove(path);
+			removed.push(path);
+		}
+		if (removed.length) this.changed(...removed);
+	}
+
+	/** Removes the goal note only. Concepts and evidence are shared, so they stay. Clears the pin when it was this goal. */
+	async deleteGoal(ref: string): Promise<void> {
+		const goal = await this.resolveGoal(ref);
+		if (!goal) throw new Error(`Unknown goal "${ref}".`);
+		const pin = await this.readFocusTitle();
+		await this.io.remove(goal.path);
+		this.changed(goal.path);
+		if (pin && (slugify(unwikilink(pin)) === goal.id || pin === goal.title)) await this.setWorkingGoal(null);
+	}
+
+	/** Extra notes the learner wrote for the tutor. Empty when they have not written any. */
+	async tutorContext(): Promise<string> {
+		if (!(await this.io.exists(PATHS.tutorContext))) return "";
+		return (await this.io.read(PATHS.tutorContext)).trim();
+	}
+
+	/** Saves extra tutor context, or removes it when the text is blank. Does not touch `learner.md`. */
+	async setTutorContext(text: string): Promise<string> {
+		const value = text.trim();
+		if (!value) {
+			if (await this.io.exists(PATHS.tutorContext)) {
+				await this.io.remove(PATHS.tutorContext);
+				this.changed(PATHS.tutorContext);
+			}
+			return "";
+		}
+		await ensureDir(this.io, PATHS.data);
+		await this.io.write(PATHS.tutorContext, `${value}\n`);
+		this.changed(PATHS.tutorContext);
+		return value;
+	}
+
 	async ingestExamMaterials(input: IngestExamInput): Promise<{ blueprint: ExamBlueprint; planPath?: string; goal?: GoalReport }> {
 		const loaded: MaterialSource[] = [];
 		for (const path of input.files ?? []) {
@@ -949,6 +1051,7 @@ export class KnowledgeStore {
 			.slice(0, 8);
 		return {
 			profile: await this.profile(),
+			tutorContext: await this.tutorContext(),
 			conceptCount: concepts.length,
 			counts,
 			activeGoals: active,
