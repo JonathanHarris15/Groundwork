@@ -8,7 +8,7 @@ import {
 	type MaterialKind,
 	type MaterialSource,
 } from "./exam";
-import { analyzeGoal, findCycle, goalMermaid, type GoalAnalysis, type GraphNode } from "./graph";
+import { analyzeGoal, findCycle, goalMermaid, isBuilt, targetsServed, type GoalAnalysis, type GraphNode } from "./graph";
 import { ensureDir, type VaultIO } from "./io";
 import {
 	demoteHeadings,
@@ -33,6 +33,9 @@ export const PATHS = {
 	data: ".groundwork",
 	evidence: ".groundwork/evidence",
 	chats: ".groundwork/chats",
+	focus: ".groundwork/focus.json",
+	/** Notes the learner writes in the Library. Not `learner.md`. */
+	tutorContext: ".groundwork/tutor-context.md",
 } as const;
 
 export interface Concept {
@@ -63,12 +66,48 @@ export interface ConceptInput {
 
 export type GoalStatus = "active" | "paused" | "done";
 
+export interface GoalChoice {
+	id: string;
+	title: string;
+	status: GoalStatus;
+	/** Concepts on this goal that are not built yet. */
+	left: number;
+}
+
+export interface WorkingGoal {
+	id: string;
+	title: string;
+	left: number;
+	status: GoalStatus;
+}
+
+/** Dropdown label, e.g. "427 exam → 10 concepts left". */
+/** A saved conversation. The chat file may hold more fields than these; callers that resume a chat keep them. */
+export interface StoredChat {
+	id: string;
+	title: string;
+	created: string;
+	updated: string;
+	notePath?: string;
+}
+
+export function goalChoiceLabel(choice: Pick<GoalChoice, "title" | "left" | "status">): string {
+	const left = choice.left === 1 ? "1 concept left" : `${choice.left} concepts left`;
+	return `${choice.title} → ${left}${choice.status === "paused" ? " (paused)" : ""}`;
+}
+
 export interface Goal {
 	id: string;
 	title: string;
 	path: string;
 	status: GoalStatus;
-	target?: string;
+	/**
+	 * Concepts this goal is made of that are not built yet.
+	 * A target is a concept the learner has not built to (not solid at the depth this goal requires).
+	 */
+	targets: string[];
+	/** Concepts this goal is made of that are already built. */
+	built: string[];
 	nodes: string[];
 	created?: string;
 	objective?: string;
@@ -80,14 +119,28 @@ export interface Goal {
 
 export interface GoalInput {
 	title: string;
-	objective: string;
+	/** Optional context. The goal itself is `targets`, not this sentence. */
+	objective?: string;
 	why?: string;
 	approach?: string;
-	/** The concept that represents "goal achieved"; the sink of the DAG. */
-	target: string;
+	/**
+	 * Concepts this goal is made of. Each must be a node.
+	 * Ones the learner already holds are recorded as built; the rest are the targets.
+	 * `target` is the old single-sink field, accepted only when `targets` is omitted.
+	 */
+	targets?: string[];
+	target?: string;
 	nodes: Array<{ title: string; prerequisites?: string[]; summary?: string; domain?: string; requiredLevel?: number }>;
 	status?: GoalStatus;
 	examPlan?: string;
+}
+
+/** The one next thing worth studying. */
+export interface StudyStep {
+	action: "build" | "review" | "repair";
+	concept: string;
+	goal?: string;
+	why: string;
 }
 
 export interface IngestExamInput {
@@ -103,9 +156,11 @@ export interface IngestExamInput {
 
 export interface GoalReport {
 	goal: Goal;
-	nodes: Array<GraphNode & { edge: string; nextReview?: string; openMisconceptions: string[]; floor?: number }>;
+	nodes: Array<GraphNode & { edge: string; nextReview?: string; openMisconceptions: string[]; floor?: number; role: "target" | "built" | "path" }>;
 	analysis: GoalAnalysis;
 	mermaid: string;
+	/** Best next step on this goal, when it still has open targets. */
+	next?: StudyStep;
 }
 
 export interface StoreOptions {
@@ -359,17 +414,19 @@ export class KnowledgeStore {
 			const { frontmatter: fm, body } = parseNote(await this.io.read(path));
 			const fileTitle = path.split("/").pop()!.replace(/\.md$/, "");
 			const title = typeof fm.title === "string" ? fm.title : fileTitle;
+			const shape = readGoalShape(fm);
 			out.push({
 				id: slugify(title),
 				title,
 				path,
 				status: (["active", "paused", "done"].includes(fm.status as string) ? fm.status : "active") as GoalStatus,
-				target: typeof fm.target === "string" ? slugify(unwikilink(fm.target)) : undefined,
+				targets: shape.targets,
+				built: shape.built,
 				nodes: asStringList(fm.nodes).map((n) => slugify(unwikilink(n))),
 				created: typeof fm.created === "string" ? fm.created : undefined,
 				objective: getSection(body, "Objective"),
 				body,
-				requiredLevels: parseRequiredLevels(fm.targets),
+				requiredLevels: shape.requiredLevels,
 				examPlan: typeof fm.exam === "string" ? unwikilink(fm.exam) : undefined,
 			});
 		}
@@ -382,6 +439,8 @@ export class KnowledgeStore {
 	}
 
 	async setGoal(input: GoalInput): Promise<GoalReport> {
+		const named = goalTargetTitles(input);
+		if (!named.length) throw new Error("A goal is made of targets: name at least one concept that has not been built yet.");
 		const nodeTitles = new Map<string, string>();
 		for (const node of input.nodes) {
 			await this.upsertConcept({
@@ -397,9 +456,29 @@ export class KnowledgeStore {
 				nodeTitles.set(pc.id, pc.title);
 			}
 		}
-		const target = await this.resolve(input.target);
-		if (!target) throw new Error(`Goal target "${input.target}" must be one of the nodes.`);
-		nodeTitles.set(target.id, target.title);
+		const missing: string[] = [];
+		const scopeTitles: string[] = [];
+		const seen = new Set<string>();
+		for (const title of named) {
+			const c = await this.resolve(title);
+			if (!c || !nodeTitles.has(c.id)) {
+				missing.push(title);
+				continue;
+			}
+			if (seen.has(c.id)) continue;
+			seen.add(c.id);
+			scopeTitles.push(c.title);
+		}
+		if (missing.length) throw new Error(`Every target must be a concept on this goal. Not on the graph: ${missing.join(", ")}.`);
+		const existingForScope = await this.resolveGoal(input.title);
+		if (existingForScope) {
+			const index = await this.concepts();
+			for (const id of existingForScope.built) {
+				if (seen.has(id) || !nodeTitles.has(id)) continue;
+				seen.add(id);
+				scopeTitles.push(index.get(id)?.title ?? nodeTitles.get(id)!);
+			}
+		}
 
 		const requiredLevels: Record<string, number> = {};
 		for (const node of input.nodes) {
@@ -407,28 +486,33 @@ export class KnowledgeStore {
 			const c = await this.requireConcept(node.title);
 			requiredLevels[c.id] = clampLevel(node.requiredLevel);
 		}
+		const required = Object.fromEntries(
+			[...nodeTitles.entries()].filter(([id]) => requiredLevels[id]).map(([id, title]) => [title, requiredLevels[id]]),
+		);
 
 		await ensureDir(this.io, PATHS.goals);
 		const existing = await this.resolveGoal(input.title);
 		const path = existing?.path ?? (await this.uniquePath(PATHS.goals, safeFileName(input.title)));
 		const prior = existing ? parseNote(await this.io.read(path)) : { frontmatter: {}, body: `# ${input.title}\n` };
 		let body = prior.body;
-		const beforeMap = ["Dependency map"];
-		body = setSection(body, "Objective", demoteHeadings(input.objective), beforeMap);
-		if (input.why) body = setSection(body, "Why", demoteHeadings(input.why), beforeMap);
-		if (input.approach) body = setSection(body, "Approach", demoteHeadings(input.approach), beforeMap);
-		const fm = {
+		const generated = ["Targets", "Built", "Dependency map"];
+		if (input.objective) body = setSection(body, "Objective", demoteHeadings(input.objective), generated);
+		if (input.why) body = setSection(body, "Why", demoteHeadings(input.why), generated);
+		if (input.approach) body = setSection(body, "Approach", demoteHeadings(input.approach), generated);
+		const fm: Record<string, unknown> = {
 			...prior.frontmatter,
 			title: input.title,
 			type: "goal",
 			status: input.status ?? existing?.status ?? "active",
 			created: existing?.created ?? this.now().toISOString().slice(0, 10),
-			target: wikilink(target.title),
+			targets: scopeTitles.map(wikilink),
 			nodes: [...nodeTitles.values()].map(wikilink),
-			targets: Object.keys(requiredLevels).length ? Object.fromEntries([...nodeTitles.entries()].filter(([id]) => requiredLevels[id]).map(([id, title]) => [title, requiredLevels[id]])) : undefined,
+			required: Object.keys(required).length ? required : undefined,
 			exam: input.examPlan ? wikilink(input.examPlan) : existing?.examPlan ? wikilink(existing.examPlan) : prior.frontmatter.exam,
 			tags: ["groundwork/goal"],
 		};
+		delete fm.target;
+		delete fm.built;
 		await this.io.write(path, serializeNote(fm, body));
 		this.changed(path);
 		return this.renderGoal(slugify(input.title));
@@ -442,6 +526,224 @@ export class KnowledgeStore {
 		await this.io.write(goal.path, serializeNote(frontmatter, body));
 		this.changed(goal.path);
 		return { ...goal, status };
+	}
+
+	/** Goals the learner can pin in the dropdown, with how many concepts are still unbuilt. */
+	async goalChoices(): Promise<GoalChoice[]> {
+		const out: GoalChoice[] = [];
+		for (const g of await this.goals()) {
+			if (g.status === "done") continue;
+			const report = await this.goalReport(g.id);
+			if (report.goal.status === "done") continue;
+			if (report.goal.targets.length === 0 && report.goal.built.length > 0) continue;
+			out.push({
+				id: g.id,
+				title: g.title,
+				status: g.status,
+				left: report.goal.targets.length,
+			});
+		}
+		return out.sort((a, b) => Number(a.status === "paused") - Number(b.status === "paused") || a.title.localeCompare(b.title));
+	}
+
+	/** The goal pinned in the dropdown, or null when the learner left it on "you choose". */
+	async workingGoal(): Promise<WorkingGoal | null> {
+		const title = await this.readFocusTitle();
+		if (!title) return null;
+		const goal = await this.resolveGoal(title);
+		const report = goal && goal.status !== "done" ? await this.goalReport(goal.id) : null;
+		const open = report && !(report.goal.targets.length === 0 && report.goal.built.length > 0) && report.goal.status !== "done";
+		if (!goal || !report || !open) {
+			await this.setWorkingGoal(null);
+			return null;
+		}
+		return { id: goal.id, title: goal.title, left: report.goal.targets.length, status: goal.status };
+	}
+
+	/** Pin a goal, or pass null / "you choose" to clear the pin. A paused goal is resumed. */
+	async setWorkingGoal(ref: string | null): Promise<WorkingGoal | null> {
+		const cleared = !ref || /^you choose$/i.test(ref.trim());
+		await ensureDir(this.io, PATHS.data);
+		if (cleared) {
+			await this.io.write(PATHS.focus, `${JSON.stringify({ goal: null })}\n`);
+			this.changed(PATHS.focus);
+			return null;
+		}
+		let goal = await this.resolveGoal(ref);
+		if (!goal) throw new Error(`Unknown goal "${ref}".`);
+		if (goal.status === "paused") goal = await this.setGoalStatus(goal.id, "active");
+		if (goal.status === "done") throw new Error(`"${goal.title}" is already done.`);
+		await this.io.write(PATHS.focus, `${JSON.stringify({ goal: goal.title })}\n`);
+		this.changed(PATHS.focus);
+		return this.workingGoal();
+	}
+
+	/**
+	 * Fold duplicate goals into one. The kept goal gains the others' concepts.
+	 * The others are marked done and point at the kept goal. A pin on a folded
+	 * goal moves to the kept one.
+	 */
+	async mergeGoals(keepRef: string, dropRefs: string[]): Promise<GoalReport> {
+		const keep = await this.resolveGoal(keepRef);
+		if (!keep) throw new Error(`Unknown goal "${keepRef}".`);
+		const drops: Goal[] = [];
+		for (const ref of dropRefs) {
+			const goal = await this.resolveGoal(ref);
+			if (!goal) throw new Error(`Unknown goal "${ref}".`);
+			if (goal.id === keep.id || drops.some((d) => d.id === goal.id)) continue;
+			drops.push(goal);
+		}
+		if (!drops.length) throw new Error("Name a different goal to merge in.");
+
+		const index = await this.concepts();
+		const nodeIds = new Set<string>([...keep.nodes, ...drops.flatMap((d) => d.nodes)]);
+		const scopeIds = new Set<string>([...keep.targets, ...keep.built, ...drops.flatMap((d) => [...d.targets, ...d.built])]);
+		for (const id of scopeIds) nodeIds.add(id);
+		const nodes: GoalInput["nodes"] = [];
+		for (const id of nodeIds) {
+			const concept = index.get(id);
+			if (!concept) continue;
+			const levels = [keep.requiredLevels[id], ...drops.map((d) => d.requiredLevels[id])].filter((n): n is number => !!n);
+			nodes.push({
+				title: concept.title,
+				prerequisites: concept.prerequisites.map((p) => index.get(p)?.title).filter((t): t is string => !!t),
+				...(levels.length ? { requiredLevel: Math.max(...levels) } : {}),
+			});
+		}
+		const targets = [...scopeIds].map((id) => index.get(id)?.title).filter((t): t is string => !!t);
+		if (!targets.length) throw new Error("Those goals have no concepts to merge.");
+
+		const report = await this.setGoal({
+			title: keep.title,
+			objective: keep.objective,
+			targets,
+			nodes,
+			examPlan: keep.examPlan,
+			status: keep.status === "paused" ? "paused" : "active",
+		});
+		const mergedFrom = drops.map((d) => `- [[${d.title}]]`).join("\n");
+		const keptNote = parseNote(await this.io.read(report.goal.path));
+		await this.io.write(
+			report.goal.path,
+			serializeNote(keptNote.frontmatter, setSection(keptNote.body, "Merged from", mergedFrom, ["Targets", "Built", "Dependency map"])),
+		);
+		this.changed(report.goal.path);
+
+		const pinned = await this.readFocusTitle();
+		for (const drop of drops) {
+			await this.setGoalStatus(drop.id, "done");
+			const note = parseNote(await this.io.read(drop.path));
+			await this.io.write(
+				drop.path,
+				serializeNote(note.frontmatter, setSection(note.body, "Merged", `Merged into [[${keep.title}]].`, ["Targets", "Built", "Dependency map"])),
+			);
+			this.changed(drop.path);
+		}
+		if (pinned && drops.some((d) => d.id === slugify(unwikilink(pinned)) || d.title === pinned)) {
+			await this.setWorkingGoal(keep.title);
+		}
+		return this.goalReport(keep.title);
+	}
+
+	private async readFocusTitle(): Promise<string | null> {
+		if (!(await this.io.exists(PATHS.focus))) return null;
+		try {
+			const parsed = JSON.parse(await this.io.read(PATHS.focus)) as { goal?: unknown };
+			return typeof parsed.goal === "string" && parsed.goal.trim() ? parsed.goal.trim() : null;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Library operations. The panel calls these instead of opening vault files,
+	 * so a cloud backend can implement the same interface later.
+	 */
+	async listChats(): Promise<StoredChat[]> {
+		if (!(await this.io.exists(PATHS.chats))) return [];
+		const out: StoredChat[] = [];
+		for (const file of (await this.io.list(PATHS.chats)).files) {
+			if (!file.endsWith(".json")) continue;
+			try {
+				const parsed = JSON.parse(await this.io.read(file)) as Partial<StoredChat>;
+				if (!parsed || typeof parsed.id !== "string") continue;
+				out.push(parsed as StoredChat);
+			} catch {
+				// ignore unreadable chat files
+			}
+		}
+		return out.sort((a, b) => String(b.updated ?? "").localeCompare(String(a.updated ?? "")));
+	}
+
+	/** Removes the conversation and its session transcript. Concepts and evidence stay. */
+	async deleteChat(id: string): Promise<void> {
+		if (!id || id.includes("/") || id.includes("\\") || id.includes("..")) throw new Error("Unknown conversation.");
+		const removed: string[] = [];
+		const notePaths = new Set<string>();
+		if (await this.io.exists(PATHS.chats)) {
+			for (const file of (await this.io.list(PATHS.chats)).files) {
+				if (!file.endsWith(".json")) continue;
+				let match = file === `${PATHS.chats}/${id}.json`;
+				try {
+					const parsed = JSON.parse(await this.io.read(file)) as { id?: string; notePath?: string };
+					if (parsed.id === id) match = true;
+					if (match && typeof parsed.notePath === "string" && parsed.notePath && !parsed.notePath.includes("..")) notePaths.add(parsed.notePath);
+				} catch {
+					// still remove a file whose name is this conversation
+				}
+				if (!match) continue;
+				await this.io.remove(file);
+				removed.push(file);
+			}
+		}
+		if (await this.io.exists(PATHS.sessions)) {
+			for (const path of await listMarkdown(this.io, PATHS.sessions)) {
+				try {
+					const { frontmatter } = parseNote(await this.io.read(path));
+					if (frontmatter.chat === id) notePaths.add(path);
+				} catch {
+					// skip unreadable notes
+				}
+			}
+		}
+		for (const path of notePaths) {
+			if (!(await this.io.exists(path))) continue;
+			await this.io.remove(path);
+			removed.push(path);
+		}
+		if (removed.length) this.changed(...removed);
+	}
+
+	/** Removes the goal note only. Concepts and evidence are shared, so they stay. Clears the pin when it was this goal. */
+	async deleteGoal(ref: string): Promise<void> {
+		const goal = await this.resolveGoal(ref);
+		if (!goal) throw new Error(`Unknown goal "${ref}".`);
+		const pin = await this.readFocusTitle();
+		await this.io.remove(goal.path);
+		this.changed(goal.path);
+		if (pin && (slugify(unwikilink(pin)) === goal.id || pin === goal.title)) await this.setWorkingGoal(null);
+	}
+
+	/** Extra notes the learner wrote for the tutor. Empty when they have not written any. */
+	async tutorContext(): Promise<string> {
+		if (!(await this.io.exists(PATHS.tutorContext))) return "";
+		return (await this.io.read(PATHS.tutorContext)).trim();
+	}
+
+	/** Saves extra tutor context, or removes it when the text is blank. Does not touch `learner.md`. */
+	async setTutorContext(text: string): Promise<string> {
+		const value = text.trim();
+		if (!value) {
+			if (await this.io.exists(PATHS.tutorContext)) {
+				await this.io.remove(PATHS.tutorContext);
+				this.changed(PATHS.tutorContext);
+			}
+			return "";
+		}
+		await ensureDir(this.io, PATHS.data);
+		await this.io.write(PATHS.tutorContext, `${value}\n`);
+		this.changed(PATHS.tutorContext);
+		return value;
 	}
 
 	async ingestExamMaterials(input: IngestExamInput): Promise<{ blueprint: ExamBlueprint; planPath?: string; goal?: GoalReport }> {
@@ -527,10 +829,14 @@ export class KnowledgeStore {
 	}
 
 	async goalReport(ref: string): Promise<GoalReport> {
-		const goal = await this.resolveGoal(ref);
-		if (!goal) throw new Error(`Unknown goal "${ref}".`);
+		const stored = await this.resolveGoal(ref);
+		if (!stored) throw new Error(`Unknown goal "${ref}".`);
 		const index = await this.concepts();
+		const classified = classifyScope(stored, index);
+		const goal: Goal = { ...stored, targets: classified.targets, built: classified.built };
 		const inGoal = new Set(goal.nodes);
+		const open = new Set(goal.targets);
+		const built = new Set(goal.built);
 		const nodes = goal.nodes
 			.map((id) => index.get(id))
 			.filter((c): c is Concept => !!c)
@@ -544,43 +850,112 @@ export class KnowledgeStore {
 				nextReview: c.stats.nextReview,
 				openMisconceptions: c.stats.openMisconceptions,
 				floor: c.stats.floor,
+				role: (open.has(c.id) ? "target" : built.has(c.id) ? "built" : "path") as "target" | "built" | "path",
 			}));
-		return { goal, nodes, analysis: analyzeGoal(nodes), mermaid: goalMermaid(nodes, goal.target) };
+		const report: GoalReport = {
+			goal,
+			nodes,
+			analysis: analyzeGoal(nodes, (n) => isBuilt(n.status, nodes.find((x) => x.id === n.id)?.floor, goal.requiredLevels[n.id])),
+			mermaid: goalMermaid(nodes, goal.targets, goal.built),
+		};
+		report.next = bestGoalStep(report);
+		return report;
 	}
 
-	/** Regenerates the goal's dependency map and progress region. */
+	/** Regenerates the goal note: open targets, what is already built, and the map. */
 	async renderGoal(ref: string): Promise<GoalReport> {
 		const report = await this.goalReport(ref);
-		const { goal, analysis, mermaid } = report;
+		let goal = report.goal;
+		const scope = goal.targets.length + goal.built.length;
+		if (goal.status === "active" && scope > 0 && goal.targets.length === 0) goal = { ...goal, status: "done" };
 		const { frontmatter, body } = parseNote(await this.io.read(goal.path));
-		const total = report.nodes.length;
-		frontmatter.progress = `${analysis.solidCount}/${total} solid`;
+		const name = (id: string) => report.nodes.find((n) => n.id === id)?.title ?? id;
+		frontmatter.status = goal.status;
+		frontmatter.progress = describeGoalProgress(goal);
+		frontmatter.targets = goal.targets.length ? goal.targets.map((id) => wikilink(name(id))) : undefined;
+		frontmatter.built = goal.built.length ? goal.built.map((id) => wikilink(name(id))) : undefined;
+		const required: Record<string, number> = {};
+		for (const [id, level] of Object.entries(goal.requiredLevels)) required[name(id)] = level;
+		frontmatter.required = Object.keys(required).length ? required : undefined;
+		delete frontmatter.target;
+
+		const { analysis, mermaid } = report;
 		const lines = [
 			"```mermaid",
 			mermaid,
 			"```",
 			"",
 			"> [!info] Legend",
-			"> Arrows point from a prerequisite to what it unlocks. Green = solid, amber = shaky, orange = learning, purple = rusty (review due), grey = not assessed yet. The hexagon is the goal.",
+			"> Hexagons are targets (not built yet). Rounded nodes are targets already built. Rectangles are steps on the way. Arrows point from a prerequisite to what it unlocks. Green = solid, amber = shaky, orange = learning, purple = rusty (review due), grey = not assessed yet.",
 			"",
-			`### Progress — ${analysis.solidCount}/${total} solid`,
+			`### Progress — ${describeGoalProgress(goal)}`,
 			"",
-			"| Concept | Status | Now | Edge | Need |",
-			"| --- | --- | --- | --- | --- |",
+			"| Concept | Role | Status | Now | Edge | Need |",
+			"| --- | --- | --- | --- | --- | --- |",
 			...analysis.order.map((n) => {
 				const r = report.nodes.find((x) => x.id === n.id)!;
 				const pct = n.status === "unassessed" ? "—" : `${Math.round(n.current * 100)}%`;
-				const need = report.goal.requiredLevels[n.id] ? `d${report.goal.requiredLevels[n.id]}` : "—";
-				return `| [[${n.title}]] | ${n.status} | ${pct} | ${r.edge} | ${need} |`;
+				const need = goal.requiredLevels[n.id] ? `d${goal.requiredLevels[n.id]}` : "—";
+				return `| [[${n.title}]] | ${r.role} | ${n.status} | ${pct} | ${r.edge} | ${need} |`;
 			}),
 			"",
-			analysis.frontier.length
-				? `**Ready to learn next:** ${analysis.frontier.map((n) => `[[${n.title}]]`).join(", ")}`
-				: "**Ready to learn next:** nothing — every node is solid.",
+			goal.targets.length === 0
+				? "**Ready to learn next:** nothing — every target is built."
+				: analysis.frontier.length
+					? `**Ready to learn next:** ${analysis.frontier.map((n) => `[[${n.title}]]`).join(", ")}`
+					: "**Ready to learn next:** nothing is ready — a prerequisite is still in the way.",
 		];
-		await this.io.write(goal.path, serializeNote(frontmatter, setSection(body, "Dependency map", lines.join("\n"))));
+		let nextBody = setSection(body, "Targets", targetsSection(report, goal), ["Targets", "Built", "Dependency map"]);
+		nextBody = setSection(nextBody, "Built", builtSection(report, goal), ["Dependency map"]);
+		nextBody = setSection(nextBody, "Dependency map", lines.join("\n"));
+		await this.io.write(goal.path, serializeNote(frontmatter, nextBody));
 		this.changed(goal.path);
-		return report;
+		return { ...report, goal };
+	}
+
+	/**
+	 * The single best next concept: an open target that is ready, otherwise the
+	 * step that unblocks one, otherwise a due review (goal-path first).
+	 */
+	async studyNext(): Promise<StudyStep | null> {
+		const ranked: Array<{ rank: number; step: StudyStep }> = [];
+		const active = (await this.goals()).filter((g) => g.status === "active");
+		const reports: GoalReport[] = [];
+		for (const g of active) reports.push(await this.goalReport(g.id));
+		for (const report of reports) ranked.push(...rankGoalSteps(report));
+		const goalOf = new Map<string, string>();
+		for (const report of reports) for (const n of report.nodes) if (!goalOf.has(n.id)) goalOf.set(n.id, report.goal.title);
+		const seen = new Set(ranked.map((r) => r.step.concept));
+		for (const c of await this.dueReviews(8)) {
+			if (seen.has(c.title)) continue;
+			const goal = goalOf.get(c.id);
+			ranked.push({
+				rank: goal ? 4 : 5,
+				step: {
+					action: "review",
+					concept: c.title,
+					goal,
+					why: goal ? `${c.title} is due for review, and “${goal}” builds on it.` : `${c.title} is due for review.`,
+				},
+			});
+			seen.add(c.title);
+		}
+		if (!ranked.length) {
+			for (const c of (await this.concepts()).values()) {
+				if (!c.stats.openMisconceptions.length) continue;
+				ranked.push({
+					rank: 6,
+					step: {
+						action: "repair",
+						concept: c.title,
+						why: `${c.title} still carries a wrong belief (${c.stats.openMisconceptions[0]}).`,
+					},
+				});
+				break;
+			}
+		}
+		ranked.sort((a, b) => a.rank - b.rank);
+		return ranked[0]?.step ?? null;
 	}
 
 	private async refreshGoalsContaining(id: string): Promise<void> {
@@ -644,12 +1019,29 @@ export class KnowledgeStore {
 		for (const c of concepts) counts[c.stats.status]++;
 		const goals = await this.goals();
 		const active = [];
-		for (const g of goals.filter((g) => g.status === "active")) {
+		const otherGoals: Array<{ title: string; status: GoalStatus }> = [];
+		for (const g of goals) {
+			if (g.status === "paused") {
+				otherGoals.push({ title: g.title, status: "paused" });
+				continue;
+			}
+			if (g.status === "done") {
+				otherGoals.push({ title: g.title, status: "done" });
+				continue;
+			}
 			const r = await this.goalReport(g.id);
+			const complete = r.goal.targets.length === 0 && r.goal.built.length > 0;
+			if (complete) {
+				otherGoals.push({ title: g.title, status: "done" });
+				continue;
+			}
+			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			active.push({
 				title: g.title,
 				objective: g.objective,
-				progress: `${r.analysis.solidCount}/${r.nodes.length} solid`,
+				targets: r.goal.targets.map(titleOf),
+				built: r.goal.built.map(titleOf),
+				progress: describeGoalProgress(r.goal),
 				next: r.analysis.frontier.map((n) => n.title),
 			});
 		}
@@ -659,10 +1051,13 @@ export class KnowledgeStore {
 			.slice(0, 8);
 		return {
 			profile: await this.profile(),
+			tutorContext: await this.tutorContext(),
 			conceptCount: concepts.length,
 			counts,
 			activeGoals: active,
-			otherGoals: goals.filter((g) => g.status !== "active").map((g) => ({ title: g.title, status: g.status })),
+			otherGoals,
+			workingGoal: await this.workingGoal(),
+			nextUp: await this.studyNext(),
 			dueReviews: (await this.dueReviews(10)).map(conceptSummary),
 			recentlyPracticed: recent.map(conceptSummary),
 			openMisconceptions: concepts
@@ -750,6 +1145,127 @@ function asStringList(v: unknown): string[] {
 	if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
 	if (typeof v === "string" && v.trim()) return [v];
 	return [];
+}
+
+export function describeGoalProgress(goal: Pick<Goal, "targets" | "built">): string {
+	const total = goal.targets.length + goal.built.length;
+	if (!total) return "no targets";
+	return `${goal.built.length}/${total} targets built`;
+}
+
+function goalTargetTitles(input: GoalInput): string[] {
+	const listed = (input.targets ?? []).map((t) => t.trim()).filter(Boolean);
+	if (listed.length) return listed;
+	if (input.target?.trim()) return [input.target.trim()];
+	return [];
+}
+
+/** New notes store targets as a list. Older notes stored one `target` and a level map under `targets`. */
+function readGoalShape(fm: Record<string, unknown>): { targets: string[]; built: string[]; requiredLevels: Record<string, number> } {
+	const built = asStringList(fm.built).map((n) => slugify(unwikilink(n))).filter(Boolean);
+	const field = fm.targets;
+	const legacyLevels = !!field && typeof field === "object" && !Array.isArray(field);
+	const requiredLevels = parseRequiredLevels(legacyLevels ? field : fm.required);
+	let targets = legacyLevels ? [] : asStringList(field).map((n) => slugify(unwikilink(n))).filter(Boolean);
+	if (!targets.length && !built.length && typeof fm.target === "string") {
+		const id = slugify(unwikilink(fm.target));
+		if (id) targets = [id];
+	}
+	return { targets, built, requiredLevels };
+}
+
+function classifyScope(goal: Goal, index: Map<string, Concept>): { targets: string[]; built: string[] } {
+	const scope = [...new Set([...goal.targets, ...goal.built])];
+	if (goal.status === "done") return { targets: [], built: scope };
+	const targets: string[] = [];
+	const built: string[] = [];
+	for (const id of scope) {
+		const c = index.get(id);
+		if (c && isBuilt(c.stats.status, c.stats.floor, goal.requiredLevels[id])) built.push(id);
+		else targets.push(id);
+	}
+	return { targets, built };
+}
+
+function conceptBullet(report: GoalReport, id: string): string {
+	const n = report.nodes.find((x) => x.id === id);
+	if (!n) return `- [[${id}]]`;
+	const pct = n.status === "unassessed" ? "not assessed" : `${Math.round(n.current * 100)}%`;
+	const need = report.goal.requiredLevels[id] ? `, need d${report.goal.requiredLevels[id]}` : "";
+	return `- [[${n.title}]] — ${n.status}, ${pct}${need}. ${n.edge}.`;
+}
+
+function targetsSection(report: GoalReport, goal: Goal): string {
+	if (!goal.targets.length) return "Every target has been built.";
+	return ["These are the concepts this goal is made of that are not built yet.", "", ...goal.targets.map((id) => conceptBullet(report, id))].join("\n");
+}
+
+function builtSection(report: GoalReport, goal: Goal): string {
+	if (!goal.built.length) return "Nothing on this goal is built yet.";
+	return goal.built.map((id) => conceptBullet(report, id)).join("\n");
+}
+
+function rankGoalSteps(report: GoalReport): Array<{ rank: number; step: StudyStep }> {
+	const open = new Set(report.goal.targets);
+	if (!open.size) return [];
+	const byId = new Map(report.nodes.map((n) => [n.id, n]));
+	const out: Array<{ rank: number; step: StudyStep }> = [];
+	for (const n of report.analysis.frontier) {
+		const served = targetsServed(n.id, report.nodes, open);
+		if (!served.length) continue;
+		const node = byId.get(n.id)!;
+		const viaNames = served.filter((id) => id !== n.id).map((id) => byId.get(id)?.title ?? id);
+		const via = viaNames.length ? ` on the way to ${viaNames.join(", ")}` : "";
+		const need = report.goal.requiredLevels[n.id];
+		const depth = need ? ` Needs level ${need}.` : "";
+		if (node.openMisconceptions.length) {
+			out.push({
+				rank: 0,
+				step: {
+					action: "repair",
+					concept: n.title,
+					goal: report.goal.title,
+					why: `${n.title} still carries a wrong belief (${node.openMisconceptions[0]})${via}.`,
+				},
+			});
+		} else if (n.status === "rusty") {
+			out.push({
+				rank: 1,
+				step: {
+					action: "review",
+					concept: n.title,
+					goal: report.goal.title,
+					why: open.has(n.id) ? `${n.title} is a target of this goal, and it has faded.` : `${n.title} has faded${via}. Review it before building on it.`,
+				},
+			});
+		} else if (open.has(n.id)) {
+			out.push({
+				rank: 2,
+				step: {
+					action: "build",
+					concept: n.title,
+					goal: report.goal.title,
+					why: `${n.title} is a target, and what it depends on is in place.${depth}`,
+				},
+			});
+		} else {
+			out.push({
+				rank: 3,
+				step: {
+					action: "build",
+					concept: n.title,
+					goal: report.goal.title,
+					why: `${n.title} is the next step${via}.${depth}`,
+				},
+			});
+		}
+	}
+	return out;
+}
+
+function bestGoalStep(report: GoalReport): StudyStep | undefined {
+	const ranked = rankGoalSteps(report).sort((a, b) => a.rank - b.rank);
+	return ranked[0]?.step;
 }
 
 function parseRequiredLevels(v: unknown): Record<string, number> {

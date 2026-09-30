@@ -39,6 +39,13 @@ export class NodeVaultIO implements VaultIO {
 	async mkdir(p: string): Promise<void> {
 		await fs.mkdir(this.abs(p), { recursive: true });
 	}
+	async remove(p: string): Promise<void> {
+		try {
+			await fs.unlink(this.abs(p));
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+		}
+	}
 	async list(p: string): Promise<{ files: string[]; folders: string[] }> {
 		const entries = await fs.readdir(this.abs(p), { withFileTypes: true });
 		const rel = (name: string) => (p ? `${p.replace(/\/$/, "")}/${name}` : name);

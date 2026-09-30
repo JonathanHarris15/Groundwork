@@ -18,7 +18,8 @@ import {
 	type TestResponse,
 } from "./practice";
 import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
-import { conceptSummary, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
+import { isBuilt } from "./graph";
+import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
 
 export type JSONSchema = Record<string, unknown>;
 
@@ -46,6 +47,8 @@ export interface ToolUI {
 	ask(input: AskInput): Promise<AskResponse | null>;
 	/** Side questions the learner asked since the tutor last looked; appended to interactive results. */
 	marginNotes?(): string | undefined;
+	/** The dropdown pin changed (a goal title, or null for "you choose"). */
+	focusGoal?(title: string | null): void;
 }
 
 function withMarginNotes(text: string, ui: ToolUI): string {
@@ -190,14 +193,26 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_learner_overview",
 		description:
-			"Call FIRST in every learning session. Returns the learner profile, knowledge counts, active goals with progress and next nodes, due spaced reviews, recently practiced concepts, and open misconceptions.",
+			"Call FIRST in every learning session. Returns the learner profile, tutorContext (extra notes the learner wrote in the Library — read them, do not rewrite them or copy them into the learner profile), knowledge counts, active goals (each goal is the targets not yet built), workingGoal (the goal pinned in the dropdown, or null when they left it on \"you choose\"), due spaced reviews, recently practiced concepts, and open misconceptions. Use it to recall what they already hold about the topic they brought. A pin is not a reason to ignore a topic or file they just brought.",
 		inputSchema: { type: "object", properties: {} },
 		async run(_i, { store }) {
 			const o = await store.overview();
+			const { nextUp: _nextUp, ...forTutor } = o;
 			return {
-				text: json(o),
+				text: json(forTutor),
 				summary: `Loaded memory: ${o.conceptCount} concepts, ${o.activeGoals.length} active goals, ${o.dueReviews.length} due reviews`,
 			};
+		},
+	},
+	{
+		name: "suggest_what_to_study",
+		description:
+			"One concept to study when the learner asks what to study and did not name a topic, a goal, or bring a file. Do not call this to change the subject when they already said what they want to learn.",
+		inputSchema: { type: "object", properties: {} },
+		async run(_i, { store }) {
+			const step = await store.studyNext();
+			if (!step) return { text: "Nothing is waiting in the vault. Ask what they want to learn.", summary: "Nothing queued to study" };
+			return { text: json(step), summary: `Suggested ${step.concept}` };
 		},
 	},
 	{
@@ -278,15 +293,17 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal as a dependency DAG: the target concept (the sink), every node with its direct prerequisites, the objective, and your approach. Creates/links concept notes and returns the calibrated map: which nodes are solid, the frontier (ready to learn), blocked nodes, rusty nodes, unassessed nodes, and a mermaid map to show the learner.",
+			"Save a learning goal. A goal is not a sentence — it is the list of targets, the concepts the learner has not built yet. Pass those concepts as targets (each must also be a node). nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
-				title: str("Goal title, e.g. 'Understand backpropagation'."),
-				objective: str("Concrete, checkable end state in the learner's own terms."),
+				title: str("Short name for this set of targets, e.g. 'Backpropagation'."),
+				objective: str("Optional context in the learner's words. The goal is the targets, not this sentence."),
 				why: str("What the learner wants this for."),
 				approach: str("Your teaching plan in prose: order and why."),
-				target: str("Title of the node that represents the goal."),
+				targets: strList(
+					"Concepts this goal is made of. A target is a concept not yet built (not solid at its required level). Each must also appear in nodes. Name concepts they already hold too; those are recorded as built.",
+				),
 				nodes: {
 					type: "array",
 					items: {
@@ -309,46 +326,59 @@ export const TOOLS: ToolDef[] = [
 				status: { type: "string", enum: ["active", "paused", "done"] },
 				examPlan: str("Title of the exam plan note this goal was built from, if any."),
 			},
-			required: ["title", "objective", "target", "nodes"],
+			required: ["title", "targets", "nodes"],
 		},
-		async run(input: GoalInput, { store }) {
+		async run(input: GoalInput, { store, ui }) {
 			const r = await store.setGoal(input);
+			ui?.focusGoal?.((await store.workingGoal())?.title ?? null);
+			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			return {
 				text: json({
 					goal: r.goal.title,
 					note: r.goal.path,
-					progress: `${r.analysis.solidCount}/${r.nodes.length} solid`,
+					status: r.goal.status,
+					progress: describeGoalProgress(r.goal),
+					targets: r.goal.targets.map(titleOf),
+					built: r.goal.built.map(titleOf),
+					next: r.next ?? null,
 					frontier: r.analysis.frontier.map((n) => n.title),
 					blocked: r.analysis.blocked.map((n) => n.title),
 					rusty: r.analysis.rusty.map((n) => n.title),
 					unassessed: r.analysis.unassessed.map((n) => n.title),
 					mermaid: r.mermaid,
 				}),
-				summary: `Saved goal “${r.goal.title}” — ${r.nodes.length} nodes`,
+				summary: `Saved goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
 			};
 		},
 	},
 	{
 		name: "get_goal",
-		description: "Calibrated status of a goal's dependency map: per-node status and edge, frontier, blocked, rusty, unassessed, and a mermaid map.",
+		description:
+			"Calibrated status of a goal the learner is already working: the targets not yet built, what is already built, per-node role and edge, the frontier, and a mermaid map. `next` is the step to take on this goal, not a reason to switch away from something else they asked to learn.",
 		inputSchema: { type: "object", properties: { goal: str("Goal title.") }, required: ["goal"] },
 		async run({ goal }: { goal: string }, { store }) {
 			const r = await store.goalReport(goal);
+			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			return {
 				text: json({
 					goal: r.goal.title,
 					status: r.goal.status,
 					objective: r.goal.objective,
+					progress: describeGoalProgress(r.goal),
+					targets: r.goal.targets.map(titleOf),
+					built: r.goal.built.map(titleOf),
+					next: r.next ?? null,
 					order: r.analysis.order.map((n) => {
 						const d = r.nodes.find((x) => x.id === n.id)!;
 						const need = r.goal.requiredLevels[n.id];
 						return {
 							title: n.title,
+							role: d.role,
 							status: n.status,
+							built: isBuilt(n.status, d.floor, need),
 							now: n.status === "unassessed" ? null : pct(n.current),
 							edge: d.edge,
 							requiredLevel: need,
-							examReady: need ? (d.floor ?? 0) >= need && n.status === "solid" : undefined,
 							misconceptions: d.openMisconceptions,
 						};
 					}),
@@ -358,7 +388,7 @@ export const TOOLS: ToolDef[] = [
 					unassessed: r.analysis.unassessed.map((n) => n.title),
 					mermaid: r.mermaid,
 				}),
-				summary: `Checked goal “${r.goal.title}” — ${r.analysis.solidCount}/${r.nodes.length} solid`,
+				summary: `Checked goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
 			};
 		},
 	},
@@ -370,9 +400,58 @@ export const TOOLS: ToolDef[] = [
 			properties: { goal: str("Goal title."), status: { type: "string", enum: ["active", "paused", "done"] } },
 			required: ["goal", "status"],
 		},
-		async run({ goal, status }: { goal: string; status: GoalStatus }, { store }) {
+		async run({ goal, status }: { goal: string; status: GoalStatus }, { store, ui }) {
 			const g = await store.setGoalStatus(goal, status);
+			const pinned = await store.workingGoal();
+			if (!pinned || pinned.id === g.id) ui?.focusGoal?.(pinned?.title ?? null);
 			return { text: `Goal "${g.title}" is now ${status}.`, summary: `Goal “${g.title}” → ${status}` };
+		},
+	},
+	{
+		name: "set_working_goal",
+		description:
+			'Set the goal shown in the learner\'s dropdown. Pass the goal title, or "you choose" when they are not pinned to one. Call this when you create a goal, switch goals, or merge into one, so the dropdown matches the conversation.',
+		inputSchema: {
+			type: "object",
+			properties: { goal: str('Goal title, or "you choose".') },
+			required: ["goal"],
+		},
+		async run({ goal }: { goal: string }, { store, ui }) {
+			const pinned = await store.setWorkingGoal(goal);
+			ui?.focusGoal?.(pinned?.title ?? null);
+			if (!pinned) return { text: 'The goal dropdown is now "you choose".', summary: "Goal dropdown → you choose" };
+			const left = pinned.left === 1 ? "1 concept left" : `${pinned.left} concepts left`;
+			return { text: `The goal dropdown is now "${pinned.title}" (${left}). Teach toward it.`, summary: `Goal dropdown → ${pinned.title}` };
+		},
+	},
+	{
+		name: "merge_goals",
+		description:
+			"Fold duplicate goals into one. The kept goal gains the others' concepts. The others are marked done and point at the kept goal. If the dropdown was on a goal you folded in, it moves to the kept goal.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				keep: str("Goal title to keep."),
+				merge: strList("Goal titles to fold into it. These are marked done."),
+			},
+			required: ["keep", "merge"],
+		},
+		async run({ keep, merge }: { keep: string; merge: string[] }, { store, ui }) {
+			const report = await store.mergeGoals(keep, merge ?? []);
+			const pinned = await store.workingGoal();
+			ui?.focusGoal?.(pinned?.title ?? null);
+			const titleOf = (id: string) => report.nodes.find((n) => n.id === id)?.title ?? id;
+			return {
+				text: json({
+					goal: report.goal.title,
+					status: report.goal.status,
+					progress: describeGoalProgress(report.goal),
+					targets: report.goal.targets.map(titleOf),
+					built: report.goal.built.map(titleOf),
+					workingGoal: pinned?.title ?? null,
+				}),
+				summary: `Merged into “${report.goal.title}”`,
+			};
 		},
 	},
 	{
@@ -573,11 +652,12 @@ export const TOOLS: ToolDef[] = [
 				createGoal: { type: "boolean", description: "Default true. Set false to only write the exam plan." },
 			},
 		},
-		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: any; path?: string }>; createGoal?: boolean }, { store }) {
+		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: any; path?: string }>; createGoal?: boolean }, { store, ui }) {
 			if (!(input.files?.length || input.materials?.length)) {
 				return { text: "Pass files (vault paths) and/or materials (extracted text).", isError: true };
 			}
 			const r = await store.ingestExamMaterials(input);
+			ui?.focusGoal?.((await store.workingGoal())?.title ?? null);
 			return {
 				text: json({
 					title: r.blueprint.title,
@@ -586,7 +666,9 @@ export const TOOLS: ToolDef[] = [
 					goal: r.goal
 						? {
 								title: r.goal.goal.title,
-								progress: `${r.goal.analysis.solidCount}/${r.goal.nodes.length} solid`,
+								progress: describeGoalProgress(r.goal.goal),
+								targets: r.goal.goal.targets.map((id) => r.goal!.nodes.find((n) => n.id === id)?.title ?? id),
+								built: r.goal.goal.built.map((id) => r.goal!.nodes.find((n) => n.id === id)?.title ?? id),
 								frontier: r.goal.analysis.frontier.map((n) => n.title),
 								mermaid: r.goal.mermaid,
 							}

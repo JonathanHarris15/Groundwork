@@ -34,7 +34,7 @@ graph LR
 
 ```
 concepts/Derivative.md          one note per concept; `prerequisites: ["[[Limit]]", …]`
-goals/Understand the derivative.md   objective + auto-generated dependency map + progress table
+goals/The derivative.md         the concepts not built yet (the targets), plus the dependency map
 sessions/2026-09-28 ….md        transcript and summary of each session
 resources/HW2.md                files you attach: lectures, homeworks, study guides, practice exams
 exams/Prepare for the midterm.md  topics + required depth parsed from those files
@@ -43,16 +43,16 @@ learner.md                      your background and how you learn best (the tuto
 .groundwork/chats/*.json        chat history, so sessions resume on any machine
 ```
 
-Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency graph (colored by status). Concepts are shared across goals, so learning "Chain rule" for one goal counts toward every other goal that needs it.
+Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency graph (colored by status). A goal is not a slogan. It is the list of concepts you have not built yet — the targets — plus the steps that get you there. Concepts are shared across goals, so building "Chain rule" for one goal counts toward every other goal that still has it as a target.
 
 **The session shape** the tutor follows (see `packages/core/src/prompt.ts`):
 
 0. **Recall** — read the vault first. Solid + recent concepts aren't re-probed; rusty ones get a quick review; open misconceptions get dislodged.
 1. **Probe** — quizzes that bracket the edge of your understanding on every prerequisite strand (a floor you get right *and* a ceiling you miss). Plus plain questions about what you actually want.
-2. **Plan** — a dependency DAG from caveat-free truths up to your goal, saved to `goals/` and shown as a map. It waits for your go-ahead.
-3. **Teach** — forward, node by node: ground in what you already hold → teach the next step → quiz-check → that step becomes the ground for the next. A missed check gets re-taught from a different angle rather than a chain of easier quizzes. Gaps off the path to the goal are noted, not chased. Concept notes are updated as it goes.
+2. **Plan** — a dependency DAG from caveat-free truths up to the concepts you have not built yet. Those concepts are the goal's targets. The plan is saved to `goals/` and shown as a map. It waits for your go-ahead.
+3. **Teach** — forward, target by target: ground in what you already hold → teach the next step → quiz-check → that step becomes the ground for the next. A missed check gets re-taught from a different angle rather than a chain of easier quizzes. Gaps off the path to a target are noted, not chased. When every target is built, the goal is done. Concept notes are updated as it goes.
 
-**Exam prep** is the same loop, pointed at *their* files. Attach lecture slides, a couple of homeworks, a study guide, or a practice exam (paperclip, paste, or drop onto the tutor). Groundwork classifies each file, pulls out the topics and the level the exam seems to demand (the same 1–5 scale as quizzes: recognize → apply → combine → transfer), writes `exams/…`, and opens a goal so teaching starts at that depth. Homeworks say what is practiced; a practice exam or study guide says what is sufficient. The tutor still reads the files and can refine the plan (`ingest_exam_materials`).
+**Exam prep** is the same loop, pointed at *their* files. Attach lecture slides, a couple of homeworks, a study guide, or a practice exam (paperclip, paste, or drop onto the tutor). Groundwork classifies each file, pulls out the topics and the level the exam seems to demand (the same 1–5 scale as quizzes: recognize → apply → combine → transfer), writes `exams/…`, and opens a goal whose targets are those topics — not a concept named after the exam. Homeworks say what is practiced; a practice exam or study guide says what is sufficient. The tutor still reads the files and can refine the plan (`ingest_exam_materials`).
 
 **The calibration model** (`packages/core/src/model.ts`). Each concept's state is a pure function of its evidence log, so merged logs from two machines converge to the same numbers:
 

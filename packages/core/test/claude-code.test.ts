@@ -55,7 +55,7 @@ function tutor(req: MockRequest): MockBlock[] {
 					input: {
 						title: "Understand slope",
 						objective: "Compute the slope of a line from two points.",
-						target: "Slope of a line",
+						targets: ["Slope of a line"],
 						nodes: [{ title: "Slope of a line", summary: "Rise over run." }],
 					},
 				},

@@ -30,7 +30,7 @@ describe("sections", () => {
 	it("regenerating stats and goal maps is idempotent", async () => {
 		const io = new MemoryVaultIO();
 		const store = new KnowledgeStore(io, { now: () => new Date("2026-09-28T12:00:00Z") });
-		await store.setGoal({ title: "G", objective: "## sneaky heading in objective", target: "B", nodes: [{ title: "A" }, { title: "B", prerequisites: ["A"] }] });
+		await store.setGoal({ title: "G", objective: "## sneaky heading in objective", targets: ["B"], nodes: [{ title: "A" }, { title: "B", prerequisites: ["A"] }] });
 		await store.recordEvidence("A", { outcome: "correct", difficulty: 3, kind: "check" });
 		await store.recordEvidence("A", { outcome: "correct", difficulty: 4, kind: "check" });
 		await store.upsertConcept({ title: "A", summary: "Added after history exists." });

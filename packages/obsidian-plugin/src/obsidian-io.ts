@@ -29,6 +29,9 @@ export class ObsidianVaultIO implements VaultIO {
 	list(path: string) {
 		return this.adapter.list(path);
 	}
+	async remove(path: string) {
+		if (await this.adapter.exists(path)) await this.adapter.remove(path);
+	}
 
 	private async ensureParent(path: string) {
 		const dir = path.split("/").slice(0, -1).join("/");

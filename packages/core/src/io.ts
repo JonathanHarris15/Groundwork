@@ -12,6 +12,8 @@ export interface VaultIO {
 	mkdir(path: string): Promise<void>;
 	/** Lists direct children of a folder (vault-relative paths). */
 	list(path: string): Promise<{ files: string[]; folders: string[] }>;
+	/** Removes a file. Missing files are not an error. */
+	remove(path: string): Promise<void>;
 }
 
 /** In-memory implementation used by tests and the demo provider. */
@@ -45,6 +47,10 @@ export class MemoryVaultIO implements VaultIO {
 		return false;
 	}
 	async mkdir(): Promise<void> {}
+	async remove(path: string): Promise<void> {
+		this.files.delete(path);
+		this.binaries.delete(path);
+	}
 	async list(path: string): Promise<{ files: string[]; folders: string[] }> {
 		const prefix = path === "" || path === "/" ? "" : path.endsWith("/") ? path : `${path}/`;
 		const files: string[] = [];

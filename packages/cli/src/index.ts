@@ -174,7 +174,9 @@ program
 		say(`Concepts: ${o.conceptCount}  (${Object.entries(o.counts).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "none yet"})`);
 		if (o.activeGoals.length) {
 			say("\nActive goals:");
-			for (const g of o.activeGoals) say(`  ${g.title} — ${g.progress}${g.next.length ? `; next: ${g.next.join(", ")}` : ""}`);
+			for (const g of o.activeGoals) {
+				say(`  ${g.title} — ${g.progress}${g.targets.length ? `; still to build: ${g.targets.join(", ")}` : ""}`);
+			}
 		}
 		if (o.dueReviews.length) {
 			say("\nDue for review:");
