@@ -1,5 +1,5 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
-import { listAnthropicModels } from "@groundwork/core";
+import { listAnthropicModels, PLANS, PLAN_IDS, type AccountView, type PlanId } from "@groundwork/core";
 import { BUILD } from "./build";
 import type GroundworkPlugin from "./main";
 
@@ -14,6 +14,8 @@ export interface GroundworkSettings {
 	model: string;
 	maxTokens: number;
 	webSearch: boolean;
+	/** Groundwork account server. Empty uses the tutor model to grade written answers on this device. */
+	accountServer: string;
 	autoSync: boolean;
 	syncDelaySeconds: number;
 	gitPath: string;
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 	model: "claude-sonnet-4-5",
 	maxTokens: 8192,
 	webSearch: false,
+	accountServer: "",
 	autoSync: true,
 	syncDelaySeconds: 30,
 	gitPath: "git",
@@ -59,6 +62,9 @@ export class GroundworkSettingTab extends PluginSettingTab {
 		const save = async () => {
 			await this.plugin.saveSettings();
 		};
+
+		new Setting(containerEl).setName("Account").setHeading();
+		this.accountSettings(containerEl, save);
 
 		new Setting(containerEl).setName("Tutor").setHeading();
 
@@ -150,6 +156,49 @@ export class GroundworkSettingTab extends PluginSettingTab {
 			version.setDesc(`${BUILD}. A newer build is installed: ${onDisk}.`);
 			version.addButton((b) => b.setButtonText("Reload Groundwork").setCta().onClick(() => void this.plugin.reloadSelf()));
 		});
+	}
+
+	private accountSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
+		const s = this.plugin.settings;
+		new Setting(containerEl)
+			.setName("Account server")
+			.setDesc("Where this account's plan and grading live. The Jev key stays there; it is not a setting on this device.")
+			.addText((t) =>
+				t.setPlaceholder("http://127.0.0.1:8787").setValue(s.accountServer).onChange(async (v) => {
+					s.accountServer = v.trim();
+					await save();
+					this.plugin.resetAgent();
+				}),
+			);
+
+		const status = new Setting(containerEl).setName("Plan");
+		const text = status.descEl.createDiv({ cls: "gw-setting-status" });
+		const server = s.accountServer.trim() || process.env.GROUNDWORK_API_URL?.trim() || "";
+		if (!server) {
+			text.setText("No account server yet. Written answers are graded by the tutor model on this device.");
+			return;
+		}
+		text.setText("Checking the account…");
+		void loadAccount(server).then(
+			(view) => {
+				text.setText(planLine(view));
+				status.addDropdown((d) => {
+					if (view.needsPlan) d.addOption("", "Choose a plan");
+					for (const id of PLAN_IDS) d.addOption(id, `${PLANS[id].name} — ${priceLabel(id)}`);
+					d.setValue(view.plan ?? "").onChange(async (v) => {
+						if (!v) return;
+						try {
+							const next = await chooseAccountPlan(server, v as PlanId);
+							text.setText(planLine(next));
+							new Notice(`Plan: ${next.name}`);
+						} catch (e) {
+							new Notice(`Could not change plan: ${(e as Error).message}`);
+						}
+					});
+				});
+			},
+			(e: Error) => text.setText(e.message),
+		);
 	}
 
 	private claudeCodeSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
@@ -284,4 +333,33 @@ export class GroundworkSettingTab extends PluginSettingTab {
 			}),
 		);
 	}
+}
+
+function priceLabel(id: PlanId): string {
+	const plan = PLANS[id];
+	const price = plan.priceUsdPerMonth === 0 ? "free" : `$${plan.priceUsdPerMonth}/month`;
+	if (plan.ownModel) return price;
+	return `${price}, $${plan.hostedCreditUsd} credit`;
+}
+
+function planLine(view: AccountView): string {
+	if (view.needsPlan) return "Choose a plan to start. Free includes $3 of model credit a month.";
+	if (view.ownModel) return `${view.name}. $${view.priceUsdPerMonth}/month. Your model, your usage.`;
+	return `${view.name}. $${view.remainingUsd.toFixed(2)} of $${view.creditUsd.toFixed(0)} left this month.`;
+}
+
+async function loadAccount(server: string): Promise<AccountView> {
+	const res = await fetch(`${server.replace(/\/$/, "")}/v1/account`);
+	if (!res.ok) throw new Error(`Account server returned ${res.status}.`);
+	return (await res.json()) as AccountView;
+}
+
+async function chooseAccountPlan(server: string, plan: PlanId): Promise<AccountView> {
+	const res = await fetch(`${server.replace(/\/$/, "")}/v1/account/plan`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ plan }),
+	});
+	if (!res.ok) throw new Error(`Account server returned ${res.status}.`);
+	return (await res.json()) as AccountView;
 }

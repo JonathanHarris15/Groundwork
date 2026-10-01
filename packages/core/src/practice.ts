@@ -6,6 +6,7 @@
 
 import { seedLadder } from "./diagnose";
 import { FREE_RESPONSE_GRADING, recordQuizAnswer, stripMd } from "./grading";
+import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
 import { demoteHeadings, safeFileName, serializeNote, wikilink } from "./markdown";
 import type { ConceptStats, ConceptStatus, Outcome } from "./model";
 import { familiarityLabel, letter, needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizGrade, type QuizInput, type QuizResponse } from "./quiz";
@@ -150,6 +151,19 @@ async function recordOne(store: KnowledgeStore, state: TestGrading, q: PreparedQ
 
 export function ungraded(state: TestGrading): PreparedQuiz[] {
 	return state.test.questions.filter((q) => !state.grades.has(q.id));
+}
+
+/** Grade written answers with Jev when a grader is configured. Uncertain ones stay for the tutor. */
+export async function gradeOutstandingWritten(store: KnowledgeStore, state: TestGrading, grader: AnswerGrader | undefined, signal?: AbortSignal): Promise<void> {
+	const pending = ungraded(state);
+	if (!grader || !pending.length) return;
+	const items = pending.map((q) => toGradeItem(q, answerFor(state.test, state.response, q.id)));
+	const judgments = await judgmentsFor(grader, items, signal);
+	const ready = pending.flatMap((q, i) => {
+		const judgment = judgments[i];
+		return judgment ? [{ question: q.id, ...judgment }] : [];
+	});
+	if (ready.length) await applyTestJudgments(store, state, ready);
 }
 
 export function testInProgress(testId: string): TestGrading | undefined {

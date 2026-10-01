@@ -1,0 +1,19 @@
+{
+  "name": "@groundwork/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && node dist/server.js",
+    "dev": "node build.mjs && node --watch dist/server.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "@groundwork/core": "*",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "firebase-admin": "^13.6.0"
+  }
+}

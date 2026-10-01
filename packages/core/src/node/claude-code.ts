@@ -7,7 +7,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { basename, fileBlocks, mcpContent, userContent, type McpContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
-import type { SessionInfo, ToolDef, ToolResult, ToolUI } from "../tools";
+import type { SessionInfo, ToolContext, ToolDef, ToolResult, ToolUI } from "../tools";
 import type { AgentEvent, TutorSession } from "../agent/types";
 import { errorMessage } from "../agent/loop";
 import { guiPathDirs, withGuiPath } from "./env";
@@ -46,6 +46,7 @@ export interface ClaudeCodeSessionOptions extends ClaudeCodeConfig {
 	/** Earlier conversation as text, replayed when the Claude Code session can't be resumed (e.g. it started on another computer). */
 	history?: string;
 	onSessionId?: (id: string) => void;
+	grader?: ToolContext["grader"];
 }
 
 /**
@@ -307,7 +308,7 @@ export class ClaudeCodeSession implements TutorSession {
 			let result: ToolResult;
 			try {
 				if (!tool) throw new Error(`Unknown tool ${name}`);
-				result = await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal });
+				result = await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, grader: this.opts.grader });
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}

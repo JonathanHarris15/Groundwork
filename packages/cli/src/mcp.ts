@@ -10,6 +10,8 @@ import {
 	describeTestReport,
 	FAMILIARITY_LABELS,
 	finishTest,
+	gradeOutstandingWritten,
+	judgmentsFor,
 	KnowledgeStore,
 	latexToPlain,
 	letter,
@@ -23,8 +25,10 @@ import {
 	prepareTest,
 	quizInputSchema,
 	recordQuizAnswer,
+	remoteAnswerGrader,
 	startTestGrading,
 	TOOLS,
+	toGradeItem,
 	ungraded,
 	type PracticeTestInput,
 	type PreparedQuiz,
@@ -64,6 +68,8 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 		}, 20_000);
 	};
 	const store = new KnowledgeStore(new NodeVaultIO(vaultDir), { device, onChange: scheduleSync });
+	const accountServer = process.env.GROUNDWORK_API_URL?.trim();
+	const grader = accountServer ? remoteAnswerGrader(accountServer) : undefined;
 	await store.ensureLayout();
 	if (opts.autoSync) {
 		const r = await git.sync(undefined, () => store.recomputeAll()).catch(() => null);
@@ -110,7 +116,12 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 	/** Record a response, or hand a free-response answer back to the tutor to grade. */
 	const answered = async (quiz: PreparedQuiz, response: QuizResponse): Promise<string> => {
 		if (needsJudgment(quiz, response)) {
-			return `${awaitJudgment(quiz, response)}\n\nAfter grade_answer, tell the learner the result, your feedback, and the reference answer (render the math).`;
+			const [judgment] = await judgmentsFor(grader, [toGradeItem(quiz, response)]);
+			if (!judgment) {
+				return `${awaitJudgment(quiz, response)}\n\nAfter grade_answer, tell the learner the result, your feedback, and the reference answer (render the math).`;
+			}
+			const outcome = await recordQuizAnswer(store, quiz, response, session, judgment);
+			return `${describeQuizOutcome(outcome)}\n\nAlready graded. Tell the learner the result and give this explanation (render the math):\n${quiz.explanation}`;
 		}
 		const outcome = await recordQuizAnswer(store, quiz, response, session);
 		return `${describeQuizOutcome(outcome)}\n\nNow tell the learner the result and give this explanation (render the math):\n${quiz.explanation}`;
@@ -171,6 +182,7 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 
 	const testSubmitted = async (test: PreparedTest, response: TestResponse): Promise<string> => {
 		const state = await startTestGrading(store, test, response, session);
+		await gradeOutstandingWritten(store, state, grader);
 		if (ungraded(state).length) return describeTestForGrading(state);
 		return `${describeTestReport(await finishTest(store, state))}\n\nShow the learner their score and the per-concept breakdown.`;
 	};
@@ -259,7 +271,7 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 		if (!tool) return { content: [{ type: "text", text: `Unknown tool ${req.params.name}` }], isError: true };
 		let result: ToolResult;
 		try {
-			result = await tool.run(req.params.arguments ?? {}, { store, session });
+			result = await tool.run(req.params.arguments ?? {}, { store, session, grader });
 		} catch (e) {
 			result = { text: `Error: ${(e as Error).message}`, isError: true };
 		}

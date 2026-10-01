@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
-import { AnthropicProvider, DemoProvider, KnowledgeStore, type Provider } from "@groundwork/core";
+import { AnthropicProvider, DemoProvider, KnowledgeStore, remoteAnswerGrader, type AnswerGrader, type Provider } from "@groundwork/core";
 import { GitSync } from "@groundwork/core/node";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
@@ -145,6 +145,12 @@ export default class GroundworkPlugin extends Plugin {
 
 	claudeExecutable(): string | null {
 		return findClaudeExecutable(this.settings.claudePath);
+	}
+
+	/** Jev grading goes through the account server. This device never holds the Jev key. */
+	answerGrader(): AnswerGrader | undefined {
+		const url = this.settings.accountServer.trim() || process.env.GROUNDWORK_API_URL?.trim() || "";
+		return url ? remoteAnswerGrader(url) : undefined;
 	}
 
 	claudeCodeConfig(): ClaudeCodeConfig | null {

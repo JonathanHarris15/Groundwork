@@ -7,6 +7,7 @@ import {
 	describeTestForGrading,
 	describeTestReport,
 	finishTest,
+	gradeOutstandingWritten,
 	MAX_TEST_QUESTIONS,
 	prepareTest,
 	startTestGrading,
@@ -17,6 +18,7 @@ import {
 	type TestReport,
 	type TestResponse,
 } from "./practice";
+import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
 import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
 import { isBuilt } from "./graph";
 import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
@@ -67,6 +69,8 @@ export interface ToolContext {
 	ui?: ToolUI;
 	session?: SessionInfo;
 	signal?: AbortSignal;
+	/** Server-side Jev grader. When set, written answers are graded without another tutor turn. */
+	grader?: AnswerGrader;
 }
 
 export interface ToolResult {
@@ -461,9 +465,9 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask ONE graded question and wait for the learner's answer; it is recorded as calibrated evidence on the concept. Multiple choice (format choice) is graded instantly and shown with the explanation. Free response (format free) lets the learner type an answer with LaTeX; you then grade it with grade_answer. Use for probing the edge (kind probe), confirming a node (check), and spaced review (review). 'I don't know' (with a familiarity slider from 'never seen this' to 'almost have it') and a note are always offered automatically. The result includes a 'Next move' from the diagnosis ladder: follow it.",
+			"Ask ONE graded question and wait for the learner's answer; it is recorded as calibrated evidence on the concept. Multiple choice (format choice) is graded instantly and shown with the explanation. Free response (format free) lets the learner type an answer with LaTeX. When the result says the answer was already graded, teach from it and do not call grade_answer. Otherwise grade it with grade_answer. Use for probing the edge (kind probe), confirming a node (check), and spaced review (review). 'I don't know' (with a familiarity slider from 'never seen this' to 'almost have it') and a note are always offered automatically. The result includes a 'Next move' from the diagnosis ladder: follow it.",
 		inputSchema: quizInputSchema,
-		async run(input: QuizInput, { store, ui, session }) {
+		async run(input: QuizInput, { store, ui, session, grader, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
 			const concept = await store.resolve(input.concept);
 			if (!concept) {
@@ -473,7 +477,15 @@ export const TOOLS: ToolDef[] = [
 			const response = await ui.quiz(quiz);
 			if (!response) return { text: withMarginNotes("The learner dismissed the quiz without answering. Nothing was recorded.", ui), summary: "Quiz dismissed" };
 			if (needsJudgment(quiz, response)) {
-				return { text: withMarginNotes(awaitJudgment(quiz, response), ui), summary: `Answer submitted on ${concept.title} — grading` };
+				const [judgment] = await judgmentsFor(grader, [toGradeItem(quiz, response)], signal);
+				if (!judgment) return { text: withMarginNotes(awaitJudgment(quiz, response), ui), summary: `Answer submitted on ${concept.title} — grading` };
+				const outcome = await recordQuizAnswer(store, quiz, response, session, judgment);
+				ui.quizRecorded?.(outcome);
+				return {
+					text: withMarginNotes(`${describeQuizOutcome(outcome)}\n\nAlready graded. Teach from this result.`, ui),
+					summary: outcomeSummary(outcome),
+					data: outcome,
+				};
 			}
 			const outcome = await recordQuizAnswer(store, quiz, response, session);
 			ui.quizRecorded?.(outcome);
@@ -502,9 +514,9 @@ export const TOOLS: ToolDef[] = [
 		name: "practice_test",
 		interactive: true,
 		description:
-			"Give the learner a full practice test (exam prep): many questions at once, multiple choice and free response mixed, with no feedback until they submit. Multiple choice is graded on submit; you grade free responses with grade_practice_test. Every answer is recorded as evidence, and an evaluation (score, per-concept breakdown, misconceptions) is saved to tests/ and shown to the learner. Build it from the exam plan or goal: cover every topic, at the required levels, in the real exam's proportions.",
+			"Give the learner a full practice test (exam prep): many questions at once, multiple choice and free response mixed, with no feedback until they submit. Multiple choice is graded on submit. Written answers are graded with the result when Groundwork can; otherwise you grade them with grade_practice_test. Every answer is recorded as evidence, and an evaluation (score, per-concept breakdown, misconceptions) is saved to tests/ and shown to the learner. Build it from the exam plan or goal: cover every topic, at the required levels, in the real exam's proportions.",
 		inputSchema: practiceTestInputSchema,
-		async run(input: PracticeTestInput, { store, ui, session }) {
+		async run(input: PracticeTestInput, { store, ui, session, grader, signal }) {
 			if (!ui?.test) return { text: "practice_test needs an interactive surface; quiz them one question at a time instead.", isError: true };
 			const unknown: string[] = [];
 			const questions: QuizInput[] = [];
@@ -520,6 +532,7 @@ export const TOOLS: ToolDef[] = [
 			const response = await ui.test(test);
 			if (!response) return { text: withMarginNotes("The learner closed the practice test without submitting. Nothing was recorded.", ui), summary: "Practice test dismissed" };
 			const state = await startTestGrading(store, test, response, session);
+			await gradeOutstandingWritten(store, state, grader, signal);
 			if (ungraded(state).length) {
 				return { text: withMarginNotes(describeTestForGrading(state), ui), summary: `Practice test submitted — grading ${ungraded(state).length} written answer${ungraded(state).length === 1 ? "" : "s"}` };
 			}

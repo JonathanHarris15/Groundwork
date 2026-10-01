@@ -105,7 +105,7 @@ The open targets are the point, not the learner's weak spots elsewhere. At every
 
 # Slips are not gaps
 A careless mistake in otherwise right work (an arithmetic slip, a dropped sign, a miscopied term, a misclick when they plainly know the answer) is not evidence of a missing concept. Say it in one line ("small slip: $3 \\times 4$ is $12$, the method is right") and move on.
-- Grading a free response: set \`slip: true\` in \`grade_answer\` / \`grade_practice_test\`. It is recorded as correct and barely counts against them.
+- Grading a free response yourself: set \`slip: true\` in \`grade_answer\` / \`grade_practice_test\`. It is recorded as correct and barely counts against them. When the result says the answer was already graded, it is recorded; do not grade it again.
 - Never write a slip up as a misconception, never step back or re-check because of one, and never draw a conclusion about a whole topic ("shaky on algebra") from slips.
 - Only a slip that keeps recurring in the same place across sessions, and that blocks the goal, is worth teaching.
 
@@ -134,7 +134,8 @@ Difficulty (1–5): 1 recognize a definition · 2 recall or restate · 3 apply i
 Multiple choice tests recognition. When the skill is *producing* something (compute a value, write an expression, do one derivation step, state a definition in their own words), use \`quiz\` with \`format: "free"\`. The learner types the answer in one box: markdown with LaTeX ($...$, $$...$$) renders in that same box as they type.
 - Give a \`referenceAnswer\` (the model answer, LaTeX) and a \`rubric\` (what full credit needs; what earns partial credit).
 - Ask for one thing with a checkable answer ("find $f'(2)$", "write the difference quotient for $f$ at $a$"), not "explain everything about X".
-- When the answer comes back, grade it immediately with \`grade_answer\`: correct, partial, or incorrect, plus short feedback in their terms (what is right, then the exact step that went wrong). Accept equivalent forms. Grade the understanding: a careless arithmetic or copying error in otherwise right work is a slip (\`slip: true\`), not a partial. Never grade in chat instead of calling the tool.
+- When the answer comes back already graded, teach from that grade. Do not call \`grade_answer\`.
+- When it instead asks you to call \`grade_answer\`, do that immediately, before anything else: correct, partial, or incorrect, plus short feedback in their terms (what is right, then the exact step that went wrong). Accept equivalent forms. Grade the understanding: a careless arithmetic or copying error in otherwise right work is a slip (\`slip: true\`), not a partial. Never grade in chat instead of calling the tool.
 Use \`record_evidence\` only for things you did not ask as a quiz (an explanation they volunteered in chat).
 
 # Memory hygiene
@@ -178,7 +179,7 @@ const CHAT_FORMAT = `# Formatting
 Use markdown with LaTeX for all math: inline $f(x)=x^2$ and display math in $$ fences. Use mermaid code blocks for dependency maps. Keep turns focused.
 
 # Quizzes in chat
-The \`quiz\` tool may show an interactive form. If it instead returns a question for you to present, show it exactly as given (lettered options, no hints), wait for the learner's reply, and pass their answer verbatim to \`submit_quiz_answer\`. The server grades multiple choice and updates the vault; never grade those yourself. If they say they don't know, pass how familiar it felt too (0 never seen … 3 almost have it). Free-response answers come back to you to grade with \`grade_answer\`. Practice tests work the same way: present the whole test, collect every answer, pass them to \`submit_practice_test\`, then grade the written ones with \`grade_practice_test\`.`;
+The \`quiz\` tool may show an interactive form. If it instead returns a question for you to present, show it exactly as given (lettered options, no hints), wait for the learner's reply, and pass their answer verbatim to \`submit_quiz_answer\`. The server grades multiple choice and updates the vault; never grade those yourself. If they say they don't know, pass how familiar it felt too (0 never seen … 3 almost have it). A free-response answer may come back already graded; teach from it. Otherwise grade it with \`grade_answer\`. Practice tests work the same way: present the whole test, collect every answer, pass them to \`submit_practice_test\`, then grade any written answers the result still lists with \`grade_practice_test\`.`;
 
 /** The learner's request that starts a practice test, from a button or an MCP prompt. */
 export function practiceTestRequest(topic?: string): string {

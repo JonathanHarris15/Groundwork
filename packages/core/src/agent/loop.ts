@@ -1,6 +1,6 @@
 import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
-import type { SessionInfo, ToolDef, ToolUI } from "../tools";
+import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
 import type { AgentEvent, ChatMessage, ContentBlock, Provider, TutorSession } from "./types";
 
 export interface AgentOptions {
@@ -12,6 +12,7 @@ export interface AgentOptions {
 	session: SessionInfo;
 	messages?: ChatMessage[];
 	maxSteps?: number;
+	grader?: ToolContext["grader"];
 }
 
 export class AgentSession implements TutorSession {
@@ -86,6 +87,7 @@ export class AgentSession implements TutorSession {
 						ui: this.opts.ui,
 						session: this.opts.session,
 						signal,
+						grader: this.opts.grader,
 					});
 					text = r.text;
 					isError = !!r.isError;

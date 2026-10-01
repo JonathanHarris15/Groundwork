@@ -327,6 +327,7 @@ export class ChatView extends ItemView implements ToolUI {
 				session: this.session,
 				resume: resumable ? c.sessionId : undefined,
 				history,
+				grader: this.plugin.answerGrader(),
 			});
 			return this.agent;
 		}
@@ -342,7 +343,7 @@ export class ChatView extends ItemView implements ToolUI {
 						{ role: "assistant", content: "Got it. I'll continue from there." },
 					]
 				: [];
-		this.agent = new AgentSession({ provider, store: this.plugin.store, tools: TOOLS, system, ui: this, session: this.session, messages });
+		this.agent = new AgentSession({ provider, store: this.plugin.store, tools: TOOLS, system, ui: this, session: this.session, messages, grader: this.plugin.answerGrader() });
 		return this.agent;
 	}
 
