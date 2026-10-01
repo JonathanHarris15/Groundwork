@@ -11,6 +11,7 @@ import {
 	FAMILIARITY_LABELS,
 	finishTest,
 	KnowledgeStore,
+	jevFromEnv,
 	latexToPlain,
 	letter,
 	mcpContent,
@@ -63,7 +64,7 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 			void git.sync(undefined, () => store.recomputeAll()).catch(() => undefined);
 		}, 20_000);
 	};
-	const store = new KnowledgeStore(new NodeVaultIO(vaultDir), { device, onChange: scheduleSync });
+	const store = new KnowledgeStore(new NodeVaultIO(vaultDir), { device, onChange: scheduleSync, judgments: jevFromEnv() });
 	await store.ensureLayout();
 	if (opts.autoSync) {
 		const r = await git.sync(undefined, () => store.recomputeAll()).catch(() => null);
@@ -87,23 +88,25 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 			"Ask the learner ONE graded question; the answer is recorded as calibrated evidence on the concept. format choice = multiple choice, graded by the server. format free = a typed answer (LaTeX allowed) that you grade with grade_answer. If the client supports forms, the learner answers inline. Otherwise you get the question to present verbatim; then pass the learner's reply to submit_quiz_answer. Never add an 'I don't know' option (always offered) and never grade multiple choice yourself.",
 		inputSchema: quizInputSchema,
 		async run(input) {
-			const concept = await store.resolve(input.concept);
-			if (!concept) return { text: `Unknown concept "${input.concept}". Create it with upsert_concept or set_goal first.`, isError: true };
+			const hit = await store.resolveForEvidence(input.concept, input.question);
+			if (!hit) return { text: `Unknown concept "${input.concept}". Create it with upsert_concept or set_goal first.`, isError: true };
+			const concept = hit.concept;
 			const quiz = prepareQuiz({ ...input, concept: concept.title });
 			pending.set(quiz.id, quiz);
+			const matched = hit.matchedFrom ? `Matched “${hit.matchedFrom}” to [[${concept.title}]].\n` : "";
 
 			if (canElicit()) {
 				const res = await elicitQuiz(server, quiz).catch(() => null);
 				if (res && res.action === "accept" && res.content) {
 					pending.delete(quiz.id);
-					return { text: await answered(quiz, res.content) };
+					return { text: matched + (await answered(quiz, res.content)) };
 				}
 				if (res && (res.action === "decline" || res.action === "cancel")) {
 					pending.delete(quiz.id);
 					return { text: "The learner dismissed the quiz. Nothing was recorded." };
 				}
 			}
-			return { text: presentQuiz(quiz) };
+			return { text: matched + presentQuiz(quiz) };
 		},
 	};
 
@@ -153,9 +156,9 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 			const unknown: string[] = [];
 			const questions: QuizInput[] = [];
 			for (const q of input.questions ?? []) {
-				const c = await store.resolve(q.concept);
-				if (!c) unknown.push(q.concept);
-				else questions.push({ ...q, concept: c.title });
+				const hit = await store.resolveForEvidence(q.concept, q.question);
+				if (!hit) unknown.push(q.concept);
+				else questions.push({ ...q, concept: hit.concept.title });
 			}
 			if (unknown.length) return { text: `Unknown concepts: ${[...new Set(unknown)].join(", ")}. Create them with upsert_concept or set_goal first.`, isError: true };
 			const test = prepareTest({ ...input, questions });

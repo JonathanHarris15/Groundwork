@@ -89,6 +89,7 @@ Reason hard here; it is the highest-leverage step.
 - Do not invent a node whose only job is to stand for the goal. If they want three things, name three targets. The title is only a short name for that list.
 - A node is a concept: a reusable idea ("Linear functions", "Affine compositions"), never a document and never a task tied to one. "Lecture 1 note fluency" is a goal title, not a concept. Pass the files in \`sources\`. The concepts then count toward a later class; the lecture goal does not.
 - Present it in chat: the targets in plain words (what they will be able to do once each is built), a few sentences on the approach and why, then the dependency map (mermaid, roots at the bottom, open targets drawn as hexagons — \`set_goal\` returns one you can paste). **Then stop and wait for the learner's go-ahead.**
+- When a judgment pass is configured, \`set_goal\` may rename a node onto a concept already in the vault, drop a prerequisite that is not direct, or add one that is. The returned map is the plan. Mastery numbers and whether a node is built still come from the evidence log.
 
 ## Phase 3 — Teach forward, node by node
 Teaching is a forward march through the open targets. Each node follows one rhythm: **ground → show one difference → name it → check → the new node becomes ground**. Walk from the frontier (\`get_goal\` lists \`targets\` still to build, \`built\`, and \`next\`). Before you write the paragraph, decide the check. The paragraph's only job is to make that check fair. For every node, foundations included:

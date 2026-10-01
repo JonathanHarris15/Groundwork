@@ -10,6 +10,7 @@ export * from "./store";
 export * from "./quiz";
 export * from "./diagnose";
 export * from "./grading";
+export * from "./jev";
 export * from "./practice";
 export * from "./tools";
 export * from "./prompt";

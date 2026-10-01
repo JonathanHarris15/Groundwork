@@ -348,6 +348,7 @@ export const TOOLS: ToolDef[] = [
 					unassessed: r.analysis.unassessed.map((n) => n.title),
 					sources: r.goal.sources,
 					mermaid: r.mermaid,
+					judgments: r.judgmentNotes ?? [],
 				}),
 				summary: `Saved goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
 			};
@@ -360,6 +361,7 @@ export const TOOLS: ToolDef[] = [
 		inputSchema: { type: "object", properties: { goal: str("Goal title.") }, required: ["goal"] },
 		async run({ goal }: { goal: string }, { store }) {
 			const r = await store.goalReport(goal);
+			const next = await store.chooseNext(r);
 			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			return {
 				text: json({
@@ -369,7 +371,7 @@ export const TOOLS: ToolDef[] = [
 					progress: describeGoalProgress(r.goal),
 					targets: r.goal.targets.map(titleOf),
 					built: r.goal.built.map(titleOf),
-					next: r.next ?? null,
+					next: next ?? r.next ?? null,
 					order: r.analysis.order.map((n) => {
 						const d = r.nodes.find((x) => x.id === n.id)!;
 						const need = r.goal.requiredLevels[n.id];
@@ -465,10 +467,11 @@ export const TOOLS: ToolDef[] = [
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
-			const concept = await store.resolve(input.concept);
-			if (!concept) {
+			const hit = await store.resolveForEvidence(input.concept, input.question);
+			if (!hit) {
 				return { text: `Unknown concept "${input.concept}". Create it with upsert_concept (or set_goal) first, then ask again.`, isError: true };
 			}
+			const concept = hit.concept;
 			const quiz = prepareQuiz({ ...input, concept: concept.title });
 			const response = await ui.quiz(quiz);
 			if (!response) return { text: withMarginNotes("The learner dismissed the quiz without answering. Nothing was recorded.", ui), summary: "Quiz dismissed" };
@@ -477,7 +480,8 @@ export const TOOLS: ToolDef[] = [
 			}
 			const outcome = await recordQuizAnswer(store, quiz, response, session);
 			ui.quizRecorded?.(outcome);
-			return { text: withMarginNotes(describeQuizOutcome(outcome), ui), summary: outcomeSummary(outcome), data: outcome };
+			const matched = hit.matchedFrom ? `Matched “${hit.matchedFrom}” to [[${concept.title}]].\n` : "";
+			return { text: withMarginNotes(matched + describeQuizOutcome(outcome), ui), summary: outcomeSummary(outcome), data: outcome };
 		},
 	},
 	{
@@ -509,9 +513,9 @@ export const TOOLS: ToolDef[] = [
 			const unknown: string[] = [];
 			const questions: QuizInput[] = [];
 			for (const q of input.questions ?? []) {
-				const c = await store.resolve(q.concept);
-				if (!c) unknown.push(q.concept);
-				else questions.push({ ...q, concept: c.title });
+				const hit = await store.resolveForEvidence(q.concept, q.question);
+				if (!hit) unknown.push(q.concept);
+				else questions.push({ ...q, concept: hit.concept.title });
 			}
 			if (unknown.length) {
 				return { text: `Unknown concepts: ${[...new Set(unknown)].join(", ")}. Create them with upsert_concept (or set_goal) first, then give the test.`, isError: true };
@@ -612,7 +616,9 @@ export const TOOLS: ToolDef[] = [
 			{ store, session },
 		) {
 			const slip = input.slip === true;
-			const { concept, before, after } = await store.recordEvidence(input.concept, {
+			const hit = await store.resolveForEvidence(input.concept, input.what);
+			if (!hit) return { text: `Unknown concept "${input.concept}". Create it with upsert_concept or set_goal first.`, isError: true };
+			const { concept, before, after } = await store.recordEvidence(hit.concept.title, {
 				outcome: slip ? "correct" : input.outcome,
 				difficulty: input.difficulty,
 				kind: input.kind ?? "explain",
@@ -686,6 +692,7 @@ export const TOOLS: ToolDef[] = [
 					})),
 					materials: r.blueprint.materials,
 					notes: r.blueprint.notes,
+					judgments: r.goal?.judgmentNotes ?? [],
 				}),
 				summary: r.blueprint.topics.length
 					? `Exam plan: ${r.blueprint.topics.length} topic${r.blueprint.topics.length === 1 ? "" : "s"} from ${r.blueprint.materials.length} file${r.blueprint.materials.length === 1 ? "" : "s"}`
