@@ -35,7 +35,7 @@ export const PATHS = {
 	evidence: ".groundwork/evidence",
 	chats: ".groundwork/chats",
 	focus: ".groundwork/focus.json",
-	/** Notes the learner writes in the Library. Not `learner.md`. */
+	/** Notes the learner writes in Settings. Not `learner.md`. */
 	tutorContext: ".groundwork/tutor-context.md",
 } as const;
 
@@ -810,6 +810,31 @@ export class KnowledgeStore {
 		if (pin && (slugify(unwikilink(pin)) === goal.id || pin === goal.title)) await this.setWorkingGoal(null);
 	}
 
+	/**
+	 * Deletes goals, concepts, chats, session notes, exam plans, practice tests,
+	 * quiz evidence, the working-goal pin, and extra tutor notes, then restores
+	 * `learner.md`. Leaves `resources/` and vault config in place.
+	 */
+	async resetVault(): Promise<void> {
+		const removed: string[] = [];
+		for (const dir of [PATHS.concepts, PATHS.goals, PATHS.exams, PATHS.tests, PATHS.sessions, PATHS.evidence, PATHS.chats]) {
+			for (const file of await listAllFiles(this.io, dir)) {
+				if (file.endsWith(".gitkeep")) continue;
+				await this.io.remove(file);
+				removed.push(file);
+			}
+		}
+		for (const file of [PATHS.focus, PATHS.tutorContext]) {
+			if (!(await this.io.exists(file))) continue;
+			await this.io.remove(file);
+			removed.push(file);
+		}
+		await this.io.write(PATHS.learner, DEFAULT_LEARNER_PROFILE);
+		removed.push(PATHS.learner);
+		this.invalidate();
+		this.changed(...removed);
+	}
+
 	/** Extra notes the learner wrote for the tutor. Empty when they have not written any. */
 	async tutorContext(): Promise<string> {
 		if (!(await this.io.exists(PATHS.tutorContext))) return "";
@@ -1067,6 +1092,15 @@ export class KnowledgeStore {
 		return getSection(newBody, section) ?? "";
 	}
 
+	/** Replaces `learner.md`. A blank edit restores the default profile. */
+	async setProfile(text: string): Promise<string> {
+		const value = text.replace(/\s+$/, "");
+		const out = value ? `${value}\n` : DEFAULT_LEARNER_PROFILE;
+		await this.io.write(PATHS.learner, out);
+		this.changed(PATHS.learner);
+		return out;
+	}
+
 	// ── search / overview ───────────────────────────────────────────────
 
 	async search(query: string, limit = 12): Promise<Array<{ kind: "concept" | "goal" | "exam"; title: string; score: number; concept?: Concept }>> {
@@ -1226,6 +1260,15 @@ async function listMarkdown(io: VaultIO, dir: string): Promise<string[]> {
 	for (const f of files) if (f.endsWith(".md")) out.push(f);
 	for (const sub of folders) out.push(...(await listMarkdown(io, sub)));
 	return out.sort();
+}
+
+async function listAllFiles(io: VaultIO, dir: string): Promise<string[]> {
+	if (!(await io.exists(dir))) return [];
+	const out: string[] = [];
+	const { files, folders } = await io.list(dir);
+	out.push(...files);
+	for (const sub of folders) out.push(...(await listAllFiles(io, sub)));
+	return out;
 }
 
 function asStringList(v: unknown): string[] {
