@@ -253,6 +253,61 @@ nodes:
 		expect(await io.exists(".groundwork/tutor-context.md")).toBe(false);
 	});
 
+	it("keeps concepts abstract, lets goals name the source, and deletes a concept", async () => {
+		const { io, store } = makeStore();
+		await expect(store.upsertConcept({ title: "Lecture Note 1 fluency" })).rejects.toThrow(/cannot be a concept/);
+		await expect(store.upsertConcept({ title: "Practice Exam 1" })).rejects.toThrow(/cannot be a concept/);
+		await expect(store.upsertConcept({ title: "Practice Exam 1 Solutions" })).rejects.toThrow(/cannot be a concept/);
+		await expect(store.upsertConcept({ title: "Prepare for HV 25H exam" })).rejects.toThrow(/cannot be a concept/);
+		await expect(store.upsertConcept({ title: "Linear functions", aliases: ["Lecture Note 1"] })).rejects.toThrow(/cannot be a concept/);
+		await expect(
+			store.upsertConcept({ title: "Matrix inverse", connections: "See [[resources/Lecture Note 1.pdf]]." }),
+		).rejects.toThrow(/source document/);
+		await expect(
+			store.setGoal({
+				title: "Lecture 1 note fluency",
+				targets: ["Lecture Note 1 fluency"],
+				nodes: [{ title: "Lecture Note 1 fluency" }],
+			}),
+		).rejects.toThrow(/cannot be a concept/);
+		expect([...(await store.concepts()).keys()]).toEqual([]);
+
+		for (const title of ["Linear functions", "Affine compositions", "Final value theorem", "Series solutions"]) {
+			await store.upsertConcept({ title });
+		}
+		const report = await store.setGoal({
+			title: "Lecture 1 note fluency",
+			sources: ["resources/Lecture Note 1.pdf"],
+			targets: ["Linear functions", "Affine compositions"],
+			nodes: [
+				{ title: "Linear functions" },
+				{ title: "Affine compositions", prerequisites: ["Linear functions"], requiredLevel: 3 },
+			],
+		});
+		expect(report.goal.sources).toEqual(["resources/Lecture Note 1.pdf"]);
+		expect(report.goal.targets.sort()).toEqual(["affine-compositions", "linear-functions"]);
+		const goalNote = await io.read(report.goal.path);
+		expect(goalNote).toContain("[[resources/Lecture Note 1.pdf]]");
+		expect(goalNote).toContain("## Sources");
+
+		await store.recordEvidence("Linear functions", { outcome: "incorrect", difficulty: 2, kind: "probe", question: "Is f(x)=x^2 linear?" });
+		expect(await io.exists(".groundwork/evidence/linear-functions.jsonl")).toBe(true);
+		await store.deleteConcept("Linear functions");
+		expect(await store.resolve("Linear functions")).toBeUndefined();
+		expect(await io.exists("concepts/Linear functions.md")).toBe(false);
+		expect(await io.exists(".groundwork/evidence/linear-functions.jsonl")).toBe(false);
+		expect((await store.resolve("Affine compositions"))?.prerequisites).toEqual([]);
+		const goal = await store.resolveGoal("Lecture 1 note fluency");
+		expect(goal?.nodes).not.toContain("linear-functions");
+		expect(goal?.targets).not.toContain("linear-functions");
+		expect(goal?.sources).toEqual(["resources/Lecture Note 1.pdf"]);
+		const after = await io.read(goal!.path);
+		expect(after).toContain("[[resources/Lecture Note 1.pdf]]");
+		expect(after).not.toContain("[[Linear functions]]");
+		expect(after).toContain("[[Affine compositions]]");
+		await expect(store.deleteConcept("Linear functions")).rejects.toThrow(/Unknown concept/);
+	});
+
 	it("updates learner profile sections", async () => {
 		const { store } = makeStore();
 		await store.ensureLayout();

@@ -149,6 +149,9 @@
 .gw-lib-meta {
 	margin-top: 2px;
 }
+.gw-lib-bound {
+	margin-left: 6px;
+}
 .gw-lib-actions {
 	display: flex;
 	flex-wrap: wrap;

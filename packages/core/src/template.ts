@@ -11,8 +11,8 @@ This is a **Groundwork** knowledge vault: a calibrated, persistent memory of wha
 
 | Folder | What lives there |
 | --- | --- |
-| \`concepts/\` | One note per concept. \`prerequisites\` link to the concepts it depends on, so Obsidian's graph view shows the dependency graph. Status and strength are recalculated from quiz evidence. |
-| \`goals/\` | One note per goal. A goal is the concepts still left to build. |
+| \`concepts/\` | One note per reusable idea (linear functions, the chain rule). A concept never names a lecture, homework, or exam. \`prerequisites\` link to the concepts it depends on. Status is recalculated from quiz evidence. |
+| \`goals/\` | One note per goal. A goal can name a course or a file (Lecture 1 note fluency) and list those source documents. It is made of concepts, which stay useful for the next goal. |
 | \`sessions/\` | Transcripts of tutoring sessions. Manage and delete them from the Library. |
 | \`resources/\` | PDFs, slides, images, and notes I learn from. Files I attach in the tutor chat are saved here, and the tutor can open anything in it. |
 | \`exams/\` | Syllabi parsed from those files: topics and the level each must be learned to. |

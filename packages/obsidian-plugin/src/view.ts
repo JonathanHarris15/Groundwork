@@ -24,6 +24,7 @@ import {
 	RESOURCES_DIR,
 	serializeNote,
 	setSection,
+	sourceBoundConceptReason,
 	TOOLS,
 	withoutFileData,
 	type AgentEvent,
@@ -1071,7 +1072,10 @@ export class ChatView extends ItemView implements ToolUI {
 
 		const goalSection = scroll.createDiv({ cls: "gw-lib-section" });
 		goalSection.createEl("h3", { text: "Goals" });
-		goalSection.createDiv({ cls: "gw-lib-help", text: "Work toward one, quiz it, or delete it. Deleting a goal leaves its concepts in place." });
+		goalSection.createDiv({
+			cls: "gw-lib-help",
+			text: "A goal can name a course or a file, like Lecture 1 note fluency. Its concepts stay abstract so they carry to the next goal. Work toward one, quiz it, or delete it. Deleting a goal leaves those concepts in place.",
+		});
 		const choiceIds = new Set(choices.map((c) => c.id));
 		if (!goals.length) goalSection.createDiv({ cls: "gw-lib-empty", text: "No goals yet. Tell the tutor what you want to learn." });
 		for (const choice of choices) {
@@ -1089,6 +1093,10 @@ export class ChatView extends ItemView implements ToolUI {
 
 		const conceptSection = scroll.createDiv({ cls: "gw-lib-section" });
 		conceptSection.createEl("h3", { text: "Concepts" });
+		conceptSection.createDiv({
+			cls: "gw-lib-help",
+			text: "A concept is a reusable idea, like linear functions — not a lecture, a homework, or an exam. Quiz one or delete it. Deleting removes its note and quiz history.",
+		});
 		const filter = conceptSection.createEl("input", {
 			cls: "gw-lib-filter",
 			attr: { type: "search", placeholder: "Filter concepts", "aria-label": "Filter concepts" },
@@ -1108,7 +1116,11 @@ export class ChatView extends ItemView implements ToolUI {
 				const meta = row.querySelector(".gw-lib-meta") as HTMLElement | null;
 				meta?.empty();
 				meta?.createSpan({ cls: `gw-status is-${concept.stats.status}`, text: statusLabel(concept.stats.status) });
+				if (sourceBoundConceptReason(concept.title) || concept.aliases.some((alias) => sourceBoundConceptReason(alias))) {
+					meta?.createSpan({ cls: "gw-lib-bound", text: "Names a document" });
+				}
 				this.libraryButton(row, "Quiz", () => this.quizConcept(concept.title));
+				this.libraryDelete(row, () => this.deleteListedConcept(concept.title));
 			}
 		};
 		filter.addEventListener("input", drawConcepts);
@@ -1228,6 +1240,16 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 		this.closeLibrary();
 		void this.submit(`Quiz me on ${title}.`);
+	}
+
+	private async deleteListedConcept(title: string): Promise<void> {
+		try {
+			await this.plugin.store.deleteConcept(title);
+			await this.refreshGoalSelect();
+			if (this.libraryOpen) await this.renderLibrary();
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
 	}
 
 	private async deleteListedGoal(id: string): Promise<void> {
