@@ -11,6 +11,10 @@ export interface AccountRecord {
 	/** `YYYY-MM` of `spentUsd`. A new month starts spent back at 0. */
 	period: string;
 	spentUsd: number;
+	/** Chosen on the account site. Falls back to the Google account name when empty. */
+	displayName?: string;
+	email?: string;
+	stripeCustomerId?: string;
 }
 
 export interface AccountView {
@@ -22,6 +26,10 @@ export interface AccountView {
 	spentUsd: number;
 	remainingUsd: number;
 	ownModel: boolean;
+	displayName: string | null;
+	email: string | null;
+	/** A Stripe customer exists, so billing can be managed in the portal. */
+	hasBilling: boolean;
 }
 
 export function emptyAccount(uid: string, now: Date = new Date()): AccountRecord {
@@ -47,6 +55,9 @@ export function viewAccount(record: AccountRecord, now: Date = new Date()): Acco
 			spentUsd: 0,
 			remainingUsd: 0,
 			ownModel: false,
+			displayName: current.displayName ?? null,
+			email: current.email ?? null,
+			hasBilling: !!current.stripeCustomerId,
 		};
 	}
 	const plan = PLANS[current.plan];
@@ -60,7 +71,28 @@ export function viewAccount(record: AccountRecord, now: Date = new Date()): Acco
 		spentUsd: spent,
 		remainingUsd: roundUsd(Math.max(0, plan.hostedCreditUsd - spent)),
 		ownModel: plan.ownModel,
+		displayName: current.displayName ?? null,
+		email: current.email ?? null,
+		hasBilling: !!current.stripeCustomerId,
 	};
+}
+
+/** Fill email and name from Google the first time we see them. A chosen display name stays. */
+export function rememberProfile(record: AccountRecord, profile: { email?: string; name?: string }): AccountRecord {
+	return {
+		...record,
+		email: record.email || profile.email || undefined,
+		displayName: record.displayName || profile.name || undefined,
+	};
+}
+
+export function setDisplayName(record: AccountRecord, name: string): AccountRecord {
+	const displayName = name.trim().slice(0, 80);
+	return { ...record, displayName: displayName || undefined };
+}
+
+export function setStripeCustomer(record: AccountRecord, customerId: string): AccountRecord {
+	return { ...record, stripeCustomerId: customerId };
 }
 
 export function choosePlan(record: AccountRecord, plan: PlanId, now: Date = new Date()): AccountRecord {

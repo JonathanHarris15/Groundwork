@@ -3,14 +3,33 @@ import { USER_KEY_PROVIDERS } from "@groundwork/core";
 import { AccountDirectory } from "../src/accounts";
 import { route, type ServerDeps } from "../src/app";
 import type { Auth } from "../src/auth";
+import type { Billing } from "../src/billing";
+import { readSite } from "../src/static";
 import { SecretDirectory } from "../src/secrets";
 
+function billing(over: Partial<Billing> = {}): Billing {
+	return {
+		configured: false,
+		async checkout() {
+			throw Object.assign(new Error("Stripe isn't connected yet."), { status: 503 });
+		},
+		async portal() {
+			throw Object.assign(new Error("Stripe isn't connected yet."), { status: 503 });
+		},
+		async applyEvent() {
+			throw Object.assign(new Error("Stripe isn't connected yet."), { status: 503 });
+		},
+		...over,
+	};
+}
+
 function deps(over: Partial<ServerDeps> = {}): ServerDeps {
-	const auth: Auth = { firebase: false, async uid() { return "local"; } };
+	const auth: Auth = { firebase: false, async uid() { return { uid: "local", email: "ada@example.com", name: "Ada" }; } };
 	return {
 		auth,
 		accounts: new AccountDirectory(),
 		secrets: new SecretDirectory(),
+		billing: billing(),
 		jev: true,
 		async grade(items) {
 			return items.map(() => ({ outcome: "correct" as const, feedback: "Matched.", slip: false }));
@@ -80,6 +99,38 @@ describe("account server", () => {
 		expect(graded.status).toBe(200);
 		expect(seen).toBe(1);
 		expect(graded.json).toMatchObject({ judgments: [{ outcome: "partial" }] });
+	});
+
+	it("serves the account site and keeps paid plans on Stripe", async () => {
+		const site = readSite("/");
+		expect(site?.type).toContain("text/html");
+		expect(site?.body).toContain('src="/app.js"');
+		const script = readSite("/app.js")?.body ?? "";
+		expect(script).toContain("Sign in with Google");
+		expect(script).toContain("signInWithPopup");
+		expect(readSite("/../.env")).toBeNull();
+
+		const server = deps();
+		const config = await route("GET", "/v1/web-config", null, server);
+		expect(config.json).toMatchObject({ firebase: null, billing: false });
+		const paid = await route("POST", "/v1/account/plan", { plan: "included" }, server);
+		expect(paid.status).toBe(503);
+
+		const checkoutServer = deps({
+			billing: billing({
+				configured: true,
+				async checkout(_uid, _email, plan) {
+					return `https://checkout.stripe.test/${plan}`;
+				},
+			}),
+		});
+		const checkout = await route("POST", "/v1/billing/checkout", { plan: "byom" }, checkoutServer, undefined, { origin: "https://groundwork.test" });
+		expect(checkout.json).toEqual({ url: "https://checkout.stripe.test/byom" });
+		const direct = await route("POST", "/v1/account/plan", { plan: "included" }, checkoutServer);
+		expect(direct.status).toBe(402);
+
+		const profile = await route("POST", "/v1/account/profile", { displayName: "Ada Lovelace" }, server);
+		expect(profile.json).toMatchObject({ displayName: "Ada Lovelace", email: "ada@example.com" });
 	});
 
 	it("reports Jev as unavailable when the server key is missing", async () => {

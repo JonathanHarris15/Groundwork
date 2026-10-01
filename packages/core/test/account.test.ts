@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isUserKeyProvider, PLANS, USER_KEY_PROVIDERS } from "../src/account/plans";
-import { choosePlan, emptyAccount, spendHosted, viewAccount } from "../src/account/usage";
+import { choosePlan, emptyAccount, rememberProfile, setDisplayName, spendHosted, viewAccount } from "../src/account/usage";
 
 describe("plans", () => {
 	it("gives the free plan $3 of hosted credit and keeps Jev off the key list", () => {
@@ -43,6 +43,14 @@ describe("hosted credit", () => {
 		const chosen = choosePlan(emptyAccount("u", now), "byom", now);
 		const spent = spendHosted(chosen, 0.1, now);
 		expect(spent.ok).toBe(false);
+	});
+
+	it("keeps a chosen display name when Google sends one later", () => {
+		const named = setDisplayName(rememberProfile(emptyAccount("u", now), { email: "ada@example.com", name: "Ada" }), "Countess");
+		const again = rememberProfile(named, { name: "Ada Lovelace" });
+		expect(again.displayName).toBe("Countess");
+		expect(again.email).toBe("ada@example.com");
+		expect(viewAccount(again, now).hasBilling).toBe(false);
 	});
 
 	it("resets spend when the month changes", () => {
