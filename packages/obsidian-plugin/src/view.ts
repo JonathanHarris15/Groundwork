@@ -140,9 +140,8 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiSettingsEl!: HTMLElement;
 	private uiSettingsBtn!: HTMLElement;
 	private settingsOpen = false;
-	/** Unsaved settings text. Null means show what is saved in the vault. */
+	/** Unsaved learner file. Null means show what is saved in the vault. */
 	private learnerDraft: string | null = null;
-	private contextDraft: string | null = null;
 	private uiSendBtn!: HTMLButtonElement;
 	private uiPendingEl!: HTMLElement;
 	private uiFileInput!: HTMLInputElement;
@@ -1216,18 +1215,17 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 	}
 
-	/** Learner file, tutor notes, a few preferences, and a vault reset. */
+	/** Learner file, a few preferences, and a vault reset. */
 	private async renderSettings(): Promise<void> {
 		const store = this.plugin.store;
 		this.uiSettingsEl.empty();
 		const top = this.uiSettingsEl.createDiv({ cls: "gw-library-top" });
-		this.panelHead(top, "Settings", "Your learner file, notes for the tutor, and a way to start the vault over.", "Close settings", () => this.closeSettings());
+		this.panelHead(top, "Settings", "Your learner file, and a way to start the vault over.", "Close settings", () => this.closeSettings());
 		const scroll = this.uiSettingsEl.createDiv({ cls: "gw-library-scroll" });
 
 		let profile = "";
-		let context = "";
 		try {
-			[profile, context] = await Promise.all([store.profile(), store.tutorContext()]);
+			profile = await store.profile();
 		} catch (err) {
 			scroll.createDiv({ cls: "gw-error", text: err instanceof Error ? err.message : String(err) });
 			return;
@@ -1261,33 +1259,6 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 		const openLearner = learnerSave.createEl("button", { cls: "gw-lib-btn", text: "Open note", attr: { type: "button" } });
 		openLearner.addEventListener("click", () => void this.openLearnerNote(learnerArea));
-
-		const notes = scroll.createDiv({ cls: "gw-lib-section" });
-		notes.createEl("h3", { text: "Extra context" });
-		notes.createDiv({
-			cls: "gw-lib-help",
-			text: "Notes the tutor reads every session. This is not your learner file, and the tutor does not rewrite it.",
-		});
-		const contextArea = notes.createEl("textarea", {
-			cls: "gw-lib-context",
-			attr: { rows: "6", placeholder: "Exam dates, a formula sheet, how you want explanations to go…", "aria-label": "Extra context for the tutor" },
-		});
-		contextArea.value = this.contextDraft ?? context;
-		contextArea.addEventListener("input", () => {
-			this.contextDraft = contextArea.value;
-		});
-		const contextSave = notes.createDiv({ cls: "gw-lib-save-row" });
-		const saveContext = contextSave.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Save", attr: { type: "button" } });
-		saveContext.addEventListener("click", () => {
-			void store.setTutorContext(contextArea.value).then(
-				(saved) => {
-					this.contextDraft = null;
-					contextArea.value = saved;
-					new Notice("Saved extra context for the tutor.");
-				},
-				(err: unknown) => new Notice(err instanceof Error ? err.message : String(err)),
-			);
-		});
 
 		const prefs = scroll.createDiv({ cls: "gw-lib-section" });
 		prefs.createEl("h3", { text: "Preferences" });
@@ -1405,7 +1376,6 @@ export class ChatView extends ItemView implements ToolUI {
 			return;
 		}
 		this.learnerDraft = null;
-		this.contextDraft = null;
 		this.conceptQuery = "";
 		const now = new Date().toISOString();
 		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
