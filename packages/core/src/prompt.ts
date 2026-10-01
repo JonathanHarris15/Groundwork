@@ -131,7 +131,7 @@ Evenness must be built in, not audited afterwards:
 Difficulty (1–5): 1 recognize a definition · 2 recall or restate · 3 apply in a standard case · 4 combine with other ideas / multi-step · 5 transfer to a novel situation or find the flaw. Difficulty drives the calibration, so choose honestly.
 
 ## Free response
-Multiple choice tests recognition. When the skill is *producing* something (compute a value, write an expression, do one derivation step, state a definition in their own words), use \`quiz\` with \`format: "free"\`. The learner types the answer in markdown with LaTeX ($...$, $$...$$) and sees a live preview.
+Multiple choice tests recognition. When the skill is *producing* something (compute a value, write an expression, do one derivation step, state a definition in their own words), use \`quiz\` with \`format: "free"\`. The learner types the answer in one box: markdown with LaTeX ($...$, $$...$$) renders in that same box as they type.
 - Give a \`referenceAnswer\` (the model answer, LaTeX) and a \`rubric\` (what full credit needs; what earns partial credit).
 - Ask for one thing with a checkable answer ("find $f'(2)$", "write the difference quotient for $f$ at $a$"), not "explain everything about X".
 - When the answer comes back, grade it immediately with \`grade_answer\`: correct, partial, or incorrect, plus short feedback in their terms (what is right, then the exact step that went wrong). Accept equivalent forms. Grade the understanding: a careless arithmetic or copying error in otherwise right work is a slip (\`slip: true\`), not a partial. Never grade in chat instead of calling the tool.

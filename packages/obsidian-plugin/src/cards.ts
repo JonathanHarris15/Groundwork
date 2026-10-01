@@ -1,4 +1,5 @@
 import { setIcon } from "obsidian";
+import { MathField } from "./math-field";
 import {
 	FAMILIARITY_LABELS,
 	familiarityLabel,
@@ -46,9 +47,8 @@ export class QuizCard {
 	private sliderEl!: HTMLInputElement;
 	private familiarityTextEl!: HTMLElement;
 	private freeEl?: HTMLElement;
-	private answerEl?: HTMLTextAreaElement;
-	private previewEl?: HTMLElement;
-	private previewTimer: number | null = null;
+	private field?: MathField;
+	private answerEl?: HTMLElement;
 	private noteEl!: HTMLTextAreaElement;
 	private submitEl?: HTMLButtonElement;
 	private feedbackEl!: HTMLElement;
@@ -118,13 +118,14 @@ export class QuizCard {
 
 		this.el.addEventListener("keydown", (e) => {
 			if (this.done || e.target === this.noteEl) return;
-			if (e.target === this.answerEl) {
+			if (e.target instanceof Node && this.answerEl?.contains(e.target)) {
 				if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !this.inTest) {
 					this.submit();
 					e.preventDefault();
 				}
 				return;
 			}
+			if (e.target instanceof Node && this.freeEl?.contains(e.target)) return;
 			if (e.target === this.sliderEl) return;
 			const n = e.key.toLowerCase();
 			const idx = /^[1-9]$/.test(n) ? Number(n) - 1 : /^[a-i]$/.test(n) ? n.charCodeAt(0) - 97 : -1;
@@ -145,21 +146,15 @@ export class QuizCard {
 
 	private buildFreeInput(list: HTMLElement): void {
 		this.freeEl = list.createDiv({ cls: "gw-free" });
-		this.answerEl = this.freeEl.createEl("textarea", {
-			cls: "gw-free-input",
-			attr: { rows: "3", placeholder: "Type your answer. Use $x^2$ for inline math and $$…$$ for display math.", spellcheck: "false" },
+		this.field = new MathField(this.freeEl, this.renderMd, {
+			placeholder: "Write your answer. $x^2$ renders inline, a $$ line displays a formula.",
+			hint: this.inTest ? "Formulas render as you type. Click one to edit it." : "Formulas render as you type. Click one to edit it · Ctrl/Cmd+Enter to submit",
+			onChange: () => {
+				if (this.dontKnow && this.field!.value.trim()) this.dontKnow = false;
+				this.refresh();
+			},
 		});
-		this.previewEl = this.freeEl.createDiv({ cls: "gw-free-preview markdown-rendered" });
-		this.freeEl.createDiv({ cls: "gw-free-hint", text: this.inTest ? "Preview updates as you type." : "Preview updates as you type · Ctrl/Cmd+Enter to submit" });
-		this.answerEl.addEventListener("input", () => {
-			if (this.dontKnow && this.answerEl!.value.trim()) {
-				this.dontKnow = false;
-			}
-			this.growAnswer();
-			this.schedulePreview();
-			this.refresh();
-		});
-		this.renderPreview();
+		this.answerEl = this.field.editor;
 	}
 
 	private buildFamiliarity(list: HTMLElement): void {
@@ -190,31 +185,9 @@ export class QuizCard {
 		this.opts.onChange?.();
 	}
 
-	private growAnswer(): void {
-		if (!this.answerEl) return;
-		this.answerEl.style.height = "auto";
-		this.answerEl.style.height = `${Math.min(this.answerEl.scrollHeight, 320)}px`;
-	}
-
-	private schedulePreview(): void {
-		if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
-		this.previewTimer = window.setTimeout(() => {
-			this.previewTimer = null;
-			this.renderPreview();
-		}, 180);
-	}
-
-	private renderPreview(): void {
-		if (!this.previewEl || !this.answerEl) return;
-		const text = this.answerEl.value.trim();
-		this.previewEl.empty();
-		this.previewEl.toggleClass("is-empty", !text);
-		if (text) void this.renderMd(this.previewEl, text);
-		else this.previewEl.setText("Your rendered answer appears here.");
-	}
-
 	focus(): void {
-		(this.answerEl ?? this.el).focus({ preventScroll: true });
+		if (this.field) this.field.focus();
+		else this.el.focus({ preventScroll: true });
 	}
 
 	private toggle(value: string): void {
@@ -240,7 +213,7 @@ export class QuizCard {
 
 	private hasAnswer(): boolean {
 		if (this.dontKnow) return true;
-		return this.quiz.format === "free" ? !!this.answerEl?.value.trim() : this.selected.size > 0;
+		return this.quiz.format === "free" ? !!this.field?.value.trim() : this.selected.size > 0;
 	}
 
 	private refresh(): void {
@@ -258,7 +231,7 @@ export class QuizCard {
 		if (!this.hasAnswer()) return null;
 		const note = this.noteEl.value.trim() || undefined;
 		if (this.dontKnow) return { dontKnow: true, selected: [], familiarity: this.familiarity, note };
-		if (this.quiz.format === "free") return { dontKnow: false, selected: [], text: this.answerEl!.value.trim(), note };
+		if (this.quiz.format === "free") return { dontKnow: false, selected: [], text: this.field!.value.trim(), note };
 		return { dontKnow: false, selected: [...this.selected], note };
 	}
 
@@ -281,7 +254,7 @@ export class QuizCard {
 		this.noteEl.disabled = true;
 		this.submitEl?.remove();
 		if (!this.noteEl.value) this.noteEl.remove();
-		if (this.answerEl) this.answerEl.disabled = true;
+		this.field?.disable();
 	}
 
 	/** Restore a response into the controls (history, or a test being graded). */
@@ -293,7 +266,7 @@ export class QuizCard {
 		this.familiarityTextEl.setText(familiarityLabel(this.familiarity));
 		this.familiarityEl.querySelectorAll(".gw-familiarity-tick").forEach((el, i) => el.toggleClass("is-active", i === this.familiarity));
 		if (response.note) this.noteEl.value = response.note;
-		if (this.answerEl) this.answerEl.value = response.text ?? "";
+		if (this.field) this.field.value = response.text ?? "";
 		this.refresh();
 		if (response.dontKnow) this.dontKnowLabelEl.setText(`I don't know · ${familiarityLabel(this.familiarity)}`);
 	}
@@ -310,8 +283,9 @@ export class QuizCard {
 		this.freeEl.addClass("is-submitted");
 		this.freeEl.createDiv({ cls: "gw-free-label", text: "Your answer" });
 		void this.renderMd(this.freeEl.createDiv({ cls: "gw-free-answer markdown-rendered" }), response.text ?? "");
+		this.field?.destroy();
+		this.field = undefined;
 		this.answerEl = undefined;
-		this.previewEl = undefined;
 	}
 
 	/** A free-response answer waiting for the tutor's grade. */

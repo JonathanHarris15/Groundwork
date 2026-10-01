@@ -105,7 +105,7 @@ const questionProperties: Record<string, JSONSchema> = {
 		type: "string",
 		enum: ["choice", "free"],
 		description:
-			'"choice" (default): multiple choice, graded instantly. "free": the learner types an answer (markdown + LaTeX, with live preview) and YOU grade it against referenceAnswer with grade_answer. Use free when the skill is producing something: a computation, an expression, a derivation step, a definition in their words.',
+			'"choice" (default): multiple choice, graded instantly. "free": the learner types an answer (markdown + LaTeX; math renders in the answer box) and YOU grade it against referenceAnswer with grade_answer. Use free when the skill is producing something: a computation, an expression, a derivation step, a definition in their words.',
 	},
 	options: {
 		type: "array",

@@ -789,13 +789,13 @@
 .gw-grade-feedback > :first-child,
 .gw-reference .markdown-rendered > :first-child,
 .gw-free-answer > :first-child,
-.gw-free-preview > :first-child {
+.gw-math-atom > :first-child {
 	margin-top: 0;
 }
 .gw-grade-feedback > :last-child,
 .gw-reference .markdown-rendered > :last-child,
 .gw-free-answer > :last-child,
-.gw-free-preview > :last-child {
+.gw-math-atom > :last-child {
 	margin-bottom: 0;
 }
 
@@ -887,7 +887,7 @@
 	cursor: default;
 }
 
-/* Free response */
+/* Free response — one box, math renders in place, symbols in a drawer on the right */
 .gw-quiz-free {
 	border-left-color: var(--gw-learning);
 }
@@ -899,26 +899,150 @@
 .gw-free.is-muted {
 	opacity: 0.45;
 }
-.gw-free-input {
-	width: 100%;
-	min-height: 64px;
-	resize: vertical;
-	font-family: var(--font-monospace);
-	font-size: var(--font-ui-small);
+.gw-free-box {
+	position: relative;
+	display: flex;
+	align-items: stretch;
+	min-height: 96px;
+	border: 1px solid var(--background-modifier-border);
 	border-radius: 8px;
+	background: var(--background-primary);
+	overflow: hidden;
 }
-.gw-free-preview,
+.gw-free-box:focus-within {
+	border-color: var(--interactive-accent);
+}
+.gw-free-editor {
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 96px;
+	padding: 8px 10px;
+	outline: none;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	line-height: 1.55;
+	font-size: var(--font-ui-small);
+}
+.gw-free-editor:empty::before {
+	content: attr(data-placeholder);
+	color: var(--text-faint);
+	pointer-events: none;
+}
+.gw-free-box.is-symbols-open .gw-free-editor {
+	min-height: 240px;
+	padding-right: 220px;
+}
+.gw-free-editor[contenteditable="false"] {
+	cursor: default;
+}
+.gw-math-live {
+	font-family: var(--font-monospace);
+	background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+	border-radius: 3px;
+}
+.gw-math-atom {
+	cursor: pointer;
+	border-radius: 3px;
+}
+.gw-math-atom:hover {
+	background: var(--background-modifier-hover);
+}
+.gw-math-atom p {
+	margin: 0;
+}
+.gw-math-atom:not(.is-display) p {
+	display: inline;
+}
+.gw-math-atom.is-display {
+	display: block;
+	margin: 4px 0;
+	overflow-x: auto;
+}
+.gw-symbols-tab {
+	flex: 0 0 34px;
+	width: 34px;
+	min-width: 34px;
+	align-self: stretch;
+	margin: 0;
+	padding: 0;
+	border: none;
+	border-left: 1px solid var(--background-modifier-border);
+	border-radius: 0;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: 16px;
+	line-height: 1;
+	cursor: pointer;
+	box-shadow: none;
+}
+.gw-symbols-tab:hover,
+.gw-free-box.is-symbols-open .gw-symbols-tab {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+.gw-symbols-drawer {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	right: 34px;
+	width: 220px;
+	box-sizing: border-box;
+	overflow: auto;
+	padding: 8px;
+	border-left: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+}
+.gw-symbols-head {
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+}
+.gw-symbols-note {
+	margin: 2px 0 8px;
+	font-size: var(--font-ui-smaller);
+	line-height: 1.35;
+	color: var(--text-faint);
+}
+.gw-symbol-group {
+	margin: 8px 0 4px;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+.gw-symbol-group:first-of-type {
+	margin-top: 0;
+}
+.gw-symbol-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 4px;
+}
+.gw-symbol-btn {
+	height: 30px;
+	margin: 0;
+	padding: 0 2px;
+	border-radius: 6px;
+	border: 1px solid transparent;
+	background: var(--background-secondary);
+	box-shadow: none;
+	font-size: 14px;
+	line-height: 1;
+	cursor: pointer;
+}
+.gw-symbol-btn:hover {
+	border-color: var(--background-modifier-border);
+	background: var(--background-modifier-hover);
+}
 .gw-free-answer {
 	padding: 8px 10px;
 	border-radius: 8px;
 	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
 	overflow-x: auto;
-}
-.gw-free-preview.is-empty {
-	color: var(--text-faint);
-	font-size: var(--font-ui-small);
-	font-style: italic;
 }
 .gw-free-hint {
 	font-size: var(--font-ui-smaller);

@@ -1326,7 +1326,7 @@ export class ChatView extends ItemView implements ToolUI {
 		// MathJax glyphs can't be text-selected, so a click on a formula selects the whole thing.
 		this.registerDomEvent(this.uiMessagesEl, "click", (e) => {
 			const math = mathOf(e.target as Node);
-			if (!math || (e.target as Element).closest("button, a, .gw-asides")) return;
+			if (!math || (e.target as Element).closest("button, a, .gw-asides, .gw-free-editor")) return;
 			const sel = this.contentEl.win.getSelection();
 			if (!sel || (!sel.isCollapsed && !sel.getRangeAt(0).intersectsNode(math))) return;
 			const range = this.contentEl.doc.createRange();
@@ -1349,7 +1349,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const elOf = (n: Node) => (n instanceof Element ? n : n.parentElement);
 		const start = elOf(range.startContainer);
 		const end = elOf(range.endContainer);
-		if (start?.closest(".gw-asides, textarea, input")) return this.hideAskButton();
+		if (start?.closest(".gw-asides, textarea, input, .gw-free-editor, .gw-symbols-drawer")) return this.hideAskButton();
 		const startTurn = start?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
 		const endTurn = end?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
 		const turn = startTurn ?? endTurn;
