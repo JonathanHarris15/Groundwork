@@ -24,13 +24,14 @@ export class AsideCard {
 		private readonly render: RenderInto,
 		private readonly cb: AsideCallbacks,
 	) {
-		this.el = parent.createDiv({ cls: "gw-aside" });
+		const hint = thread.kind === "hint";
+		this.el = parent.createDiv({ cls: `gw-aside${hint ? " is-hint" : ""}` });
 		this.el.dataset.thread = thread.id;
 		this.el.addEventListener("mouseenter", () => cb.hover(true));
 		this.el.addEventListener("mouseleave", () => cb.hover(false));
 
 		const head = this.el.createDiv({ cls: "gw-aside-head" });
-		setIcon(head.createSpan({ cls: "gw-aside-icon" }), "message-square-quote");
+		setIcon(head.createSpan({ cls: "gw-aside-icon" }), hint ? "lightbulb" : "message-square-quote");
 		renderQuote(head.createDiv({ cls: "gw-aside-quote" }), thread.quote.replace(/\s+/g, " ").trim());
 		const collapse = head.createEl("button", { cls: "clickable-icon gw-aside-btn", attr: { "aria-label": "Collapse", type: "button" } });
 		setIcon(collapse, "chevron-up");
@@ -51,7 +52,7 @@ export class AsideCard {
 		const composer = this.el.createDiv({ cls: "gw-aside-composer" });
 		this.inputEl = composer.createEl("textarea", {
 			cls: "gw-aside-input",
-			attr: { rows: "1", placeholder: thread.messages.length ? "Reply…" : "Ask about this passage…" },
+			attr: { rows: "1", placeholder: this.composerPlaceholder() },
 		});
 		this.sendEl = composer.createEl("button", { cls: "clickable-icon gw-aside-send", attr: { "aria-label": "Ask", type: "button" } });
 		setIcon(this.sendEl, "arrow-up");
@@ -84,7 +85,13 @@ export class AsideCard {
 	private setCollapsed(on: boolean): void {
 		this.el.toggleClass("is-collapsed", on);
 		const n = this.thread.messages.filter((m) => m.role === "user").length;
-		this.el.dataset.count = n ? `${n} question${n === 1 ? "" : "s"}` : "";
+		const noun = this.thread.kind === "hint" ? "hint" : "question";
+		this.el.dataset.count = n ? `${n} ${noun}${n === 1 ? "" : "s"}` : "";
+	}
+
+	private composerPlaceholder(): string {
+		if (this.thread.kind === "hint") return "Ask for a stronger nudge…";
+		return this.thread.messages.length ? "Reply…" : "Ask about this passage…";
 	}
 
 	private submit(): void {
@@ -92,7 +99,7 @@ export class AsideCard {
 		if (!text || this.busy) return;
 		this.inputEl.value = "";
 		this.grow();
-		this.inputEl.placeholder = "Reply…";
+		this.inputEl.placeholder = this.composerPlaceholder();
 		this.cb.send(text);
 	}
 

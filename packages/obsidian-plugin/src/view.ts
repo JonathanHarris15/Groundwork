@@ -3,7 +3,10 @@ import {
 	AgentSession,
 	ASIDE_PROMPT,
 	ASIDE_TOOL_NAMES,
+	HINT_PROMPT,
 	asideOpening,
+	hintNotes,
+	hintOpening,
 	basename,
 	DemoAsideProvider,
 	marginNotes,
@@ -29,6 +32,7 @@ import {
 	withoutFileData,
 	type AgentEvent,
 	type AsideThread,
+	type HintBrief,
 	type AskInput,
 	type AskResponse,
 	type ChatMessage,
@@ -143,6 +147,9 @@ export class ChatView extends ItemView implements ToolUI {
 	private waitingTest: PreparedTest | null = null;
 	private asideCards = new Map<string, AsideCard>();
 	private asideAgents = new Map<string, TutorSession>();
+	/** Answer keys for open hint chats. Never written onto the saved thread. */
+	private hintKeys = new Map<string, HintBrief>();
+	private hintInflight = new Map<string, Promise<void>>();
 	private asideRanges = new Map<string, Range>();
 	private highlightFrame = 0;
 	private uiAskBtn!: HTMLElement;
@@ -554,17 +561,25 @@ export class ChatView extends ItemView implements ToolUI {
 		return new Promise((resolve) => {
 			const settle = (v: QuizResponse | null) => {
 				this.pending.delete(settle as (v: null) => void);
-				if (this.waitingQuiz === quiz) this.waitingQuiz = null;
-				resolve(v);
+				void this.releaseQuiz(quiz, v, resolve);
 			};
 			this.pending.add(settle as (v: null) => void);
 			this.waitingQuiz = quiz;
-			const card = new QuizCard(this.turn(`quiz:${quiz.id}`), quiz, (el, md) => this.renderMd(el, md), (r) => settle(r));
+			const card = new QuizCard(this.turn(`quiz:${quiz.id}`), quiz, (el, md) => this.renderMd(el, md), (r) => settle(r), {
+				onHint: () => this.openHint(`quiz:${quiz.id}`, quiz),
+			});
 			this.liveQuizCards.set(quiz.id, card);
 			this.keepThinkingLast();
 			this.scrollToBottom(true);
 			card.focus();
 		});
+	}
+
+	/** Let an in-flight hint finish so the tutor reads the nudge they actually got. */
+	private async releaseQuiz(quiz: PreparedQuiz, v: QuizResponse | null, resolve: (v: QuizResponse | null) => void): Promise<void> {
+		if (v) await this.hintsSettled([quiz.id]);
+		if (this.waitingQuiz === quiz) this.waitingQuiz = null;
+		resolve(v);
 	}
 
 	focusGoal(_title: string | null): void {
@@ -599,18 +614,32 @@ export class ChatView extends ItemView implements ToolUI {
 		return new Promise((resolve) => {
 			const settle = (v: TestResponse | null) => {
 				this.pending.delete(settle as (v: null) => void);
-				if (this.waitingTest === test) this.waitingTest = null;
-				if (v) this.record.items.push({ kind: "test", test, response: v });
-				resolve(v);
+				void this.releaseTest(test, v, resolve);
 			};
 			this.pending.add(settle as (v: null) => void);
 			this.waitingTest = test;
-			const card = new TestCard(this.turn(`test:${test.id}`), test, (el, md) => this.renderMd(el, md), (r) => settle(r), (p) => this.openVaultNote(p));
+			const card = new TestCard(
+				this.turn(`test:${test.id}`),
+				test,
+				(el, md) => this.renderMd(el, md),
+				(r) => settle(r),
+				(p) => this.openVaultNote(p),
+				(q) => this.openHint(`test:${test.id}`, q),
+			);
 			this.liveTestCards.set(test.id, card);
 			this.keepThinkingLast();
 			this.scrollToBottom(true);
 			card.focus();
 		});
+	}
+
+	private async releaseTest(test: PreparedTest, v: TestResponse | null, resolve: (v: TestResponse | null) => void): Promise<void> {
+		if (v) {
+			this.record.items.push({ kind: "test", test, response: v });
+			await this.hintsSettled(test.questions.map((q) => q.id));
+		}
+		if (this.waitingTest === test) this.waitingTest = null;
+		resolve(v);
 	}
 
 	testGraded(report: TestReport): void {
@@ -1388,6 +1417,35 @@ export class ChatView extends ItemView implements ToolUI {
 		this.pickedMath = els;
 	}
 
+	/** One hint thread per quiz. The first click asks for a nudge; later clicks just focus it. */
+	private openHint(anchor: string, quiz: PreparedQuiz): void {
+		this.hintKeys.set(quiz.id, hintBrief(quiz));
+		const existing = (this.record.asides ?? []).find((t) => t.kind === "hint" && t.hintFor === quiz.id && !t.resolved);
+		if (existing) {
+			(this.asideCards.get(existing.id) ?? this.mountAside(existing))?.focus();
+			return;
+		}
+		const thread: AsideThread = {
+			id: `h_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
+			anchor,
+			quote: quiz.question,
+			created: new Date().toISOString(),
+			messages: [],
+			shared: 0,
+			kind: "hint",
+			hintFor: quiz.id,
+		};
+		(this.record.asides ??= []).push(thread);
+		const card = this.mountAside(thread);
+		if (!card) {
+			this.record.asides = this.record.asides.filter((t) => t !== thread);
+			return;
+		}
+		card.focus();
+		if (!this.uiMessagesEl.hasClass("has-margin")) card.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+		void this.askAside(thread, "Give me a hint.");
+	}
+
 	private openAside(anchor: string, quote: string): void {
 		const thread: AsideThread = {
 			id: `m_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
@@ -1436,8 +1494,30 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async askAside(thread: AsideThread, text: string): Promise<void> {
+		const run = this.deliverAside(thread, text);
+		if (thread.kind === "hint") this.hintInflight.set(thread.id, run);
+		try {
+			await run;
+		} finally {
+			if (this.hintInflight.get(thread.id) === run) this.hintInflight.delete(thread.id);
+		}
+	}
+
+	private async hintsSettled(quizIds: string[]): Promise<void> {
+		const ids = new Set(quizIds);
+		const jobs: Promise<void>[] = [];
+		for (const t of this.record.asides ?? []) {
+			if (t.kind !== "hint" || !t.hintFor || !ids.has(t.hintFor)) continue;
+			const job = this.hintInflight.get(t.id);
+			if (job) jobs.push(job);
+		}
+		if (jobs.length) await Promise.all(jobs);
+	}
+
+	private async deliverAside(thread: AsideThread, text: string): Promise<void> {
 		const card = this.asideCards.get(thread.id);
 		if (!card) return;
+		const hint = thread.kind === "hint";
 		const earlier = thread.messages.slice();
 		thread.messages.push({ role: "user", text, at: new Date().toISOString() });
 		await card.renderMessage("user", text);
@@ -1445,7 +1525,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 		let agent = this.asideAgents.get(thread.id);
 		const fresh = !agent;
-		agent ??= this.makeAsideAgent() ?? undefined;
+		agent ??= this.makeAsideAgent(hint ? "hint" : "margin", thread.id) ?? undefined;
 		if (!agent) {
 			reply.finish(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
 			return;
@@ -1453,9 +1533,12 @@ export class ChatView extends ItemView implements ToolUI {
 		this.asideAgents.set(thread.id, agent);
 
 		const others = (this.record.asides ?? []).filter((t) => t !== thread);
-		const prompt = fresh
-			? asideOpening({ lesson: transcript(this.record.items, others), quote: thread.quote, pendingQuiz: this.waitingQuiz ?? testAsQuiz(this.waitingTest), earlier }, text)
-			: text;
+		const lesson = transcript(this.record.items, others);
+		const prompt = !fresh
+			? text
+			: hint
+				? hintOpening({ lesson, quote: thread.quote, brief: thread.hintFor ? this.hintKeys.get(thread.hintFor) : undefined, earlier }, text)
+				: asideOpening({ lesson, quote: thread.quote, pendingQuiz: this.waitingQuiz ?? testAsQuiz(this.waitingTest), earlier }, text);
 		let error: string | undefined;
 		try {
 			await agent.send(prompt, (e) => {
@@ -1470,17 +1553,18 @@ export class ChatView extends ItemView implements ToolUI {
 		await this.persist();
 	}
 
-	private makeAsideAgent(): TutorSession | null {
+	private makeAsideAgent(kind: "margin" | "hint", threadId: string): TutorSession | null {
 		const tools = TOOLS.filter((t) => ASIDE_TOOL_NAMES.includes(t.name));
-		const session: SessionInfo = { id: `${this.record.id}-margin` };
+		const system = kind === "hint" ? HINT_PROMPT : ASIDE_PROMPT;
+		const session: SessionInfo = { id: kind === "hint" ? `${this.record.id}-hint-${threadId}` : `${this.record.id}-margin` };
 		const store = this.plugin.store;
 		const { provider } = this.plugin.settings;
 		if (provider === "claude-code") {
 			const cfg = this.plugin.claudeCodeConfig();
-			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system: ASIDE_PROMPT, session }) : null;
+			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session }) : null;
 		}
 		const p = provider === "demo" ? new DemoAsideProvider() : this.plugin.makeProvider();
-		return p ? new AgentSession({ provider: p, store, tools, system: ASIDE_PROMPT, session, maxSteps: 8 }) : null;
+		return p ? new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8 }) : null;
 	}
 
 	private dropAsides(): void {
@@ -1488,19 +1572,22 @@ export class ChatView extends ItemView implements ToolUI {
 		this.asideAgents.clear();
 		this.asideCards.clear();
 		this.asideRanges.clear();
+		this.hintKeys.clear();
+		this.hintInflight.clear();
 		this.clearHighlights();
 	}
 
-	/** ToolUI hook: margin questions the main tutor hasn't seen, marked as shared. */
+	/** ToolUI hook: margin questions and hint chats the main tutor hasn't seen, marked as shared. */
 	marginNotes(): string | undefined {
 		const threads = this.record?.asides ?? [];
-		const notes = marginNotes(threads);
-		if (!notes) return undefined;
+		const margin = marginNotes(threads);
+		const hints = hintNotes(threads);
+		if (!margin && !hints) return undefined;
 		for (const t of threads) {
-			const n = notes.shared.get(t.id);
+			const n = margin?.shared.get(t.id) ?? hints?.shared.get(t.id);
 			if (n !== undefined) t.shared = n;
 		}
-		return notes.text;
+		return [margin?.text, hints?.text].filter(Boolean).join("\n\n");
 	}
 
 	private updateMarginMode(): void {
@@ -1728,12 +1815,27 @@ function quizLines(quiz: PreparedQuiz, response: QuizResponse, grade?: QuizGrade
 	return lines;
 }
 
+function hintBrief(quiz: PreparedQuiz): HintBrief {
+	return {
+		concept: quiz.concept,
+		question: quiz.question,
+		format: quiz.format,
+		details: quiz.details,
+		multiSelect: quiz.multiSelect,
+		options: quiz.format === "free" ? undefined : quiz.options.map((o) => ({ label: o.label, correct: quiz.correct.includes(o.value) })),
+		reference: quiz.reference,
+		rubric: quiz.rubric,
+		explanation: quiz.explanation,
+	};
+}
+
 function transcript(items: DisplayItem[], asides: AsideThread[] = []): string {
 	const out: string[] = [];
 	const margin = (anchor: string) => {
 		for (const t of asides) {
 			if (t.anchor !== anchor || !t.messages.length) continue;
-			const lines = [`> [!comment]- Margin question on “${t.quote.replace(/\s+/g, " ").trim().slice(0, 160)}”`];
+			const label = t.quote.replace(/\s+/g, " ").trim().slice(0, 160);
+			const lines = [t.kind === "hint" ? `> [!tip]- Hint on “${label}”` : `> [!comment]- Margin question on “${label}”`];
 			for (const m of t.messages) lines.push(">", m.role === "user" ? `> **You:** ${m.text.replace(/\n/g, " ")}` : quote(m.text));
 			out.push(lines.join("\n"), "");
 		}

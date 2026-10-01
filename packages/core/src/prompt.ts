@@ -6,7 +6,7 @@
  * calibrated memory, so every session starts from what is already known.
  */
 
-import { MARGIN_GUIDANCE } from "./aside";
+import { HINT_GUIDANCE, MARGIN_GUIDANCE } from "./aside";
 
 export type Surface = "obsidian" | "chat";
 
@@ -204,6 +204,6 @@ export function workingGoalNote(goal: { title: string; left: number } | null): s
 }
 
 export function buildSystemPrompt(surface: Surface, extra?: string): string {
-	const format = surface === "obsidian" ? `${OBSIDIAN_FORMAT}\n\n${MARGIN_GUIDANCE}` : CHAT_FORMAT;
+	const format = surface === "obsidian" ? `${OBSIDIAN_FORMAT}\n\n${MARGIN_GUIDANCE}\n\n${HINT_GUIDANCE}` : CHAT_FORMAT;
 	return [TEACHING_METHOD, FILES, format, extra ?? ""].filter(Boolean).join("\n\n");
 }

@@ -33,6 +33,8 @@ interface QuizCardOptions {
 	/** Inside a practice test: numbered, no per-question submit or feedback until the whole test is graded. */
 	testNumber?: number;
 	onChange?: () => void;
+	/** Live questions only. Opens the hint side chat. */
+	onHint?: () => void;
 }
 
 export class QuizCard {
@@ -51,6 +53,7 @@ export class QuizCard {
 	private answerEl?: HTMLElement;
 	private noteEl!: HTMLTextAreaElement;
 	private submitEl?: HTMLButtonElement;
+	private hintEl?: HTMLButtonElement;
 	private feedbackEl!: HTMLElement;
 	private mastery?: HTMLElement;
 	private done = false;
@@ -78,6 +81,16 @@ export class QuizCard {
 		head.createSpan({ cls: "gw-pill gw-pill-muted", text: `level ${quiz.difficulty}/5` });
 		if (free) head.createSpan({ cls: "gw-pill gw-pill-muted", text: "written answer" });
 		else if (quiz.multiSelect) head.createSpan({ cls: "gw-pill gw-pill-muted", text: "select all that apply" });
+		if (opts.onHint && (onSubmit || this.inTest)) {
+			this.hintEl = head.createEl("button", { cls: "gw-hint-btn", attr: { type: "button" } });
+			setIcon(this.hintEl.createSpan({ cls: "gw-hint-icon" }), "lightbulb");
+			this.hintEl.createSpan({ text: "Give me a hint" });
+			this.hintEl.addEventListener("click", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				opts.onHint?.();
+			});
+		}
 
 		if (quiz.purpose) {
 			const why = this.el.createDiv({ cls: "gw-purpose" });
@@ -117,7 +130,8 @@ export class QuizCard {
 		this.feedbackEl = this.el.createDiv({ cls: "gw-feedback" });
 
 		this.el.addEventListener("keydown", (e) => {
-			if (this.done || e.target === this.noteEl) return;
+			if (this.done || e.target === this.noteEl || e.target === this.hintEl) return;
+			if (e.target instanceof Node && this.hintEl?.contains(e.target)) return;
 			if (e.target instanceof Node && this.answerEl?.contains(e.target)) {
 				if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !this.inTest) {
 					this.submit();
@@ -252,6 +266,7 @@ export class QuizCard {
 		this.sliderEl.disabled = true;
 		this.familiarityEl.querySelectorAll("button").forEach((b) => ((b as HTMLButtonElement).disabled = true));
 		this.noteEl.disabled = true;
+		if (this.hintEl) this.hintEl.disabled = true;
 		this.submitEl?.remove();
 		if (!this.noteEl.value) this.noteEl.remove();
 		this.field?.disable();
@@ -369,6 +384,7 @@ export class TestCard {
 		private readonly renderMd: RenderMd,
 		private readonly onSubmit?: (r: TestResponse) => void,
 		private readonly openNote?: (path: string) => void,
+		private readonly onHint?: (quiz: PreparedQuiz) => void,
 	) {
 		this.el = parent.createDiv({ cls: "gw-card gw-test" });
 		const head = this.el.createDiv({ cls: "gw-card-head" });
@@ -391,7 +407,13 @@ export class TestCard {
 
 		const list = this.el.createDiv({ cls: "gw-test-questions" });
 		test.questions.forEach((q, i) => {
-			this.cards.push(new QuizCard(list, q, renderMd, undefined, { testNumber: i + 1, onChange: () => this.refresh() }));
+			this.cards.push(
+				new QuizCard(list, q, renderMd, undefined, {
+					testNumber: i + 1,
+					onChange: () => this.refresh(),
+					onHint: onSubmit && onHint ? () => onHint(q) : undefined,
+				}),
+			);
 		});
 
 		const footer = this.el.createDiv({ cls: "gw-card-footer gw-test-footer" });

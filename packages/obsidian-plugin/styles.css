@@ -299,6 +299,16 @@
 	border-color: color-mix(in srgb, var(--gw-shaky) 70%, transparent);
 	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 }
+.gw-aside.is-hint.is-active,
+.gw-aside.is-hint:focus-within {
+	border-color: color-mix(in srgb, var(--gw-learning) 70%, transparent);
+}
+.gw-aside.is-hint .gw-aside-icon svg {
+	color: var(--gw-learning);
+}
+.gw-aside.is-hint .gw-aside-quote {
+	border-left-color: var(--gw-learning);
+}
 .gw-aside-head {
 	display: flex;
 	align-items: flex-start;
@@ -615,6 +625,30 @@
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
+}
+.gw-hint-btn {
+	margin-left: auto;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	border: 1px solid color-mix(in srgb, var(--gw-learning) 55%, var(--background-modifier-border));
+	background: transparent;
+	color: var(--gw-learning);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+}
+.gw-hint-btn:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--gw-learning) 12%, transparent);
+}
+.gw-hint-btn:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.gw-hint-icon svg {
+	width: 14px;
+	height: 14px;
 }
 .gw-pill {
 	padding: 1px 8px;
