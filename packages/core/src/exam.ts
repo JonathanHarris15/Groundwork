@@ -385,7 +385,7 @@ export function examPrepInstruction(plan: ExamBlueprint): string {
 		"Topics:",
 		table || "(no topics extracted — read the files with read_vault_file, then call ingest_exam_materials)",
 		plan.notes.join("\n"),
-		"Do this next: call get_learner_overview, refine the graph if needed, save it with set_goal. Targets are reusable ideas (linear functions, affine compositions), never a document and never fluency on a lecture. The goal title may name the exam or the file. Put the files in sources. Include requiredLevel on each node, then teach from the frontier toward those targets. Check quizzes should hit each node's required level, not just recognition.",
+		"Do this next: call get_learner_overview, refine the graph if needed, save it with set_goal. Targets are reusable ideas (linear functions, affine compositions), never a document and never fluency on a lecture. The goal title may name the exam or the file. Put the files in sources. Include requiredLevel on each node, then teach from the frontier toward those targets. Install each node with a small check on a new case of the one feature you just taught. Once that lands, one check at the node's required level is what marks it built.",
 		"The learner has not necessarily read these files. Define every symbol and term from them the first time you use it, and restate any problem you take from them in full.",
 		"</exam_plan>",
 	]
