@@ -135,6 +135,14 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiLibraryEl!: HTMLElement;
 	private uiLibraryBtn!: HTMLElement;
 	private libraryOpen = false;
+	private libraryTab: "goals" | "concepts" | "chats" = "goals";
+	private conceptQuery = "";
+	private uiSettingsEl!: HTMLElement;
+	private uiSettingsBtn!: HTMLElement;
+	private settingsOpen = false;
+	/** Unsaved settings text. Null means show what is saved in the vault. */
+	private learnerDraft: string | null = null;
+	private contextDraft: string | null = null;
 	private uiSendBtn!: HTMLButtonElement;
 	private uiPendingEl!: HTMLElement;
 	private uiFileInput!: HTMLInputElement;
@@ -186,11 +194,14 @@ export class ChatView extends ItemView implements ToolUI {
 		this.iconButton(actions, "square-pen", "New session", () => this.newSession());
 		this.iconButton(actions, "history", "Past sessions", (e) => this.showHistory(e));
 		this.uiLibraryBtn = this.iconButton(actions, "library", "Library", () => void this.toggleLibrary());
+		this.uiSettingsBtn = this.iconButton(actions, "settings", "Settings", () => void this.toggleSettings());
 		this.uiSyncBtn = this.iconButton(actions, "refresh-cw", "Sync with GitHub", () => this.plugin.syncNow("manual"));
 
 		this.uiMessagesEl = root.createDiv({ cls: "gw-messages" });
 		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
 		this.uiLibraryEl.hide();
+		this.uiSettingsEl = root.createDiv({ cls: "gw-settings" });
+		this.uiSettingsEl.hide();
 		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
 			const a = (evt.target as HTMLElement).closest("a.internal-link") as HTMLAnchorElement | null;
 			if (!a) return;
@@ -267,6 +278,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	newSession(): void {
 		this.closeLibrary();
+		this.closeSettings();
 		if (this.agent?.busy) this.stop();
 		const now = new Date().toISOString();
 		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
@@ -287,6 +299,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private openChat(record: ChatRecord): void {
 		this.closeLibrary();
+		this.closeSettings();
 		this.record = record;
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
 		this.dropAgent();
@@ -1047,6 +1060,8 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async openLibrary(): Promise<void> {
+		this.closeSettings();
+		this.uiInputEl?.blur();
 		this.libraryOpen = true;
 		this.contentEl.addClass("is-library");
 		this.uiLibraryBtn.addClass("is-active");
@@ -1062,106 +1077,136 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiLibraryEl?.empty();
 	}
 
-	/** Goals, concepts, conversations, and extra tutor context. Nothing here opens a vault note. */
+	private async toggleSettings(): Promise<void> {
+		if (this.settingsOpen) this.closeSettings();
+		else await this.openSettings();
+	}
+
+	private async openSettings(): Promise<void> {
+		this.closeLibrary();
+		this.uiInputEl?.blur();
+		this.settingsOpen = true;
+		this.contentEl.addClass("is-settings");
+		this.uiSettingsBtn.addClass("is-active");
+		this.uiSettingsEl.show();
+		await this.renderSettings();
+	}
+
+	private closeSettings(): void {
+		this.settingsOpen = false;
+		this.contentEl.removeClass("is-settings");
+		this.uiSettingsBtn?.removeClass("is-active");
+		this.uiSettingsEl?.hide();
+		this.uiSettingsEl?.empty();
+	}
+
+	/** Goals, concepts, and chats, one tab at a time. Nothing here opens a vault note. */
 	private async renderLibrary(): Promise<void> {
 		const store = this.plugin.store;
-		const draft = this.uiLibraryEl.querySelector("textarea.gw-lib-context");
-		const unsaved = draft instanceof HTMLTextAreaElement && draft.dataset.dirty === "1" ? draft.value : null;
 		this.uiLibraryEl.empty();
+		const top = this.uiLibraryEl.createDiv({ cls: "gw-library-top" });
+		this.panelHead(top, "Library", "Goals, concepts, and past chats.", "Close library", () => this.closeLibrary());
+		const tabs = top.createDiv({ cls: "gw-lib-tabs", attr: { role: "tablist", "aria-label": "Library" } });
 		const scroll = this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
-
-		const head = scroll.createDiv({ cls: "gw-library-head" });
-		const titles = head.createDiv();
-		titles.createDiv({ cls: "gw-library-title", text: "Library" });
-		titles.createDiv({
-			cls: "gw-library-sub",
-			text: "Pick a goal or concept to work on, manage past conversations, or leave extra notes for the tutor.",
-		});
-		const close = head.createEl("button", { cls: "clickable-icon gw-icon-btn", attr: { "aria-label": "Close library", type: "button" } });
-		setIcon(close, "x");
-		close.addEventListener("click", () => this.closeLibrary());
 
 		let choices: Awaited<ReturnType<typeof store.goalChoices>> = [];
 		let goals: Awaited<ReturnType<typeof store.goals>> = [];
 		let concepts: Awaited<ReturnType<typeof store.concepts>> = new Map();
 		let chats: ChatRecord[] = [];
-		let context = "";
 		try {
-			[choices, goals, concepts, chats, context] = await Promise.all([
-				store.goalChoices(),
-				store.goals(),
-				store.concepts(),
-				this.listChats(),
-				store.tutorContext(),
-			]);
+			[choices, goals, concepts, chats] = await Promise.all([store.goalChoices(), store.goals(), store.concepts(), this.listChats()]);
 		} catch (err) {
 			scroll.createDiv({ cls: "gw-error", text: err instanceof Error ? err.message : String(err) });
 			return;
 		}
 
-		const goalSection = scroll.createDiv({ cls: "gw-lib-section" });
-		goalSection.createEl("h3", { text: "Goals" });
-		goalSection.createDiv({
-			cls: "gw-lib-help",
-			text: "A goal can name a course or a file, like Lecture 1 note fluency. Its concepts stay abstract so they carry to the next goal. Work toward one, quiz it, or delete it. Deleting a goal leaves those concepts in place.",
-		});
-		const choiceIds = new Set(choices.map((c) => c.id));
-		if (!goals.length) goalSection.createDiv({ cls: "gw-lib-empty", text: "No goals yet. Tell the tutor what you want to learn." });
-		for (const choice of choices) {
-			const row = this.libraryRow(goalSection, choice.title, goalChoiceLabel(choice).replace(`${choice.title} → `, ""));
-			this.libraryButton(row, "Work toward", () => void this.workToward(choice.id));
-			this.libraryButton(row, "Quiz", () => void this.quizGoal(choice.id, choice.title, true));
-			this.libraryDelete(row, () => this.deleteListedGoal(choice.id));
-		}
-		for (const goal of goals) {
-			if (choiceIds.has(goal.id)) continue;
-			const row = this.libraryRow(goalSection, goal.title, goal.status === "paused" ? "Paused" : "Done");
-			this.libraryButton(row, "Quiz", () => void this.quizGoal(goal.id, goal.title, false));
-			this.libraryDelete(row, () => this.deleteListedGoal(goal.id));
-		}
-
-		const conceptSection = scroll.createDiv({ cls: "gw-lib-section" });
-		conceptSection.createEl("h3", { text: "Concepts" });
-		conceptSection.createDiv({
-			cls: "gw-lib-help",
-			text: "A concept is a reusable idea, like linear functions — not a lecture, a homework, or an exam. Quiz one or delete it. Deleting removes its note and quiz history.",
-		});
-		const filter = conceptSection.createEl("input", {
-			cls: "gw-lib-filter",
-			attr: { type: "search", placeholder: "Filter concepts", "aria-label": "Filter concepts" },
-		});
-		const conceptList = conceptSection.createDiv({ cls: "gw-lib-list" });
-		const conceptRows = [...concepts.values()].sort((a, b) => a.title.localeCompare(b.title));
-		const drawConcepts = () => {
-			conceptList.empty();
-			const q = filter.value.trim().toLowerCase();
-			const shown = conceptRows.filter((c) => !q || c.title.toLowerCase().includes(q) || c.aliases.some((a) => a.toLowerCase().includes(q)));
-			if (!shown.length) {
-				conceptList.createDiv({ cls: "gw-lib-empty", text: conceptRows.length ? "No concepts match." : "No concepts yet." });
-				return;
-			}
-			for (const concept of shown) {
-				const row = this.libraryRow(conceptList, concept.title, "");
-				const meta = row.querySelector(".gw-lib-meta") as HTMLElement | null;
-				meta?.empty();
-				meta?.createSpan({ cls: `gw-status is-${concept.stats.status}`, text: statusLabel(concept.stats.status) });
-				if (sourceBoundConceptReason(concept.title) || concept.aliases.some((alias) => sourceBoundConceptReason(alias))) {
-					meta?.createSpan({ cls: "gw-lib-bound", text: "Names a document" });
-				}
-				this.libraryButton(row, "Quiz", () => this.quizConcept(concept.title));
-				this.libraryDelete(row, () => this.deleteListedConcept(concept.title));
-			}
+		const tab = (id: "goals" | "concepts" | "chats", label: string, count: number) => {
+			const button = tabs.createEl("button", {
+				cls: `gw-lib-tab${this.libraryTab === id ? " is-active" : ""}`,
+				attr: { type: "button", role: "tab", "aria-selected": this.libraryTab === id ? "true" : "false" },
+			});
+			button.createSpan({ text: label });
+			button.createSpan({ cls: "gw-lib-count", text: String(count) });
+			button.addEventListener("click", () => {
+				if (this.libraryTab === id) return;
+				this.libraryTab = id;
+				void this.renderLibrary();
+			});
 		};
-		filter.addEventListener("input", drawConcepts);
-		drawConcepts();
+		tab("goals", "Goals", goals.length);
+		tab("concepts", "Concepts", concepts.size);
+		tab("chats", "Chats", chats.length);
 
-		const chatSection = scroll.createDiv({ cls: "gw-lib-section" });
-		chatSection.createEl("h3", { text: "Conversations" });
-		chatSection.createDiv({ cls: "gw-lib-help", text: "Deleting a conversation removes it from the tutor's history, including its session transcript." });
-		if (!chats.length) chatSection.createDiv({ cls: "gw-lib-empty", text: "No past conversations." });
+		if (this.libraryTab === "goals") {
+			const section = scroll.createDiv({ cls: "gw-lib-section" });
+			section.createDiv({
+				cls: "gw-lib-help",
+				text: "A goal can name a course or a file, like Lecture 1 note fluency. Its concepts stay abstract so they carry to the next goal. Work toward one, quiz it, or delete it. Deleting a goal leaves those concepts in place.",
+			});
+			const choiceIds = new Set(choices.map((c) => c.id));
+			if (!goals.length) section.createDiv({ cls: "gw-lib-empty", text: "No goals yet. Tell the tutor what you want to learn." });
+			for (const choice of choices) {
+				const row = this.libraryRow(section, choice.title, goalChoiceLabel(choice).replace(`${choice.title} → `, ""));
+				this.libraryButton(row, "Work toward", () => void this.workToward(choice.id));
+				this.libraryButton(row, "Quiz", () => void this.quizGoal(choice.id, choice.title, true));
+				this.libraryDelete(row, () => this.deleteListedGoal(choice.id));
+			}
+			for (const goal of goals) {
+				if (choiceIds.has(goal.id)) continue;
+				const row = this.libraryRow(section, goal.title, goal.status === "paused" ? "Paused" : "Done");
+				this.libraryButton(row, "Quiz", () => void this.quizGoal(goal.id, goal.title, false));
+				this.libraryDelete(row, () => this.deleteListedGoal(goal.id));
+			}
+			return;
+		}
+
+		if (this.libraryTab === "concepts") {
+			const section = scroll.createDiv({ cls: "gw-lib-section" });
+			section.createDiv({
+				cls: "gw-lib-help",
+				text: "A concept is a reusable idea, like linear functions — not a lecture, a homework, or an exam. Quiz one or delete it. Deleting removes its note and quiz history.",
+			});
+			const filter = section.createEl("input", {
+				cls: "gw-lib-filter",
+				attr: { type: "search", placeholder: "Filter concepts", "aria-label": "Filter concepts" },
+			});
+			filter.value = this.conceptQuery;
+			const conceptList = section.createDiv({ cls: "gw-lib-list" });
+			const conceptRows = [...concepts.values()].sort((a, b) => a.title.localeCompare(b.title));
+			const drawConcepts = () => {
+				conceptList.empty();
+				const q = filter.value.trim().toLowerCase();
+				const shown = conceptRows.filter((c) => !q || c.title.toLowerCase().includes(q) || c.aliases.some((a) => a.toLowerCase().includes(q)));
+				if (!shown.length) {
+					conceptList.createDiv({ cls: "gw-lib-empty", text: conceptRows.length ? "No concepts match." : "No concepts yet." });
+					return;
+				}
+				for (const concept of shown) {
+					const row = this.libraryRow(conceptList, concept.title, "");
+					const meta = row.querySelector(".gw-lib-meta") as HTMLElement | null;
+					meta?.empty();
+					meta?.createSpan({ cls: `gw-status is-${concept.stats.status}`, text: statusLabel(concept.stats.status) });
+					if (sourceBoundConceptReason(concept.title) || concept.aliases.some((alias) => sourceBoundConceptReason(alias))) {
+						meta?.createSpan({ cls: "gw-lib-bound", text: "Names a document" });
+					}
+					this.libraryButton(row, "Quiz", () => this.quizConcept(concept.title));
+					this.libraryDelete(row, () => this.deleteListedConcept(concept.title));
+				}
+			};
+			filter.addEventListener("input", () => {
+				this.conceptQuery = filter.value;
+				drawConcepts();
+			});
+			drawConcepts();
+			return;
+		}
+
+		const section = scroll.createDiv({ cls: "gw-lib-section" });
+		section.createDiv({ cls: "gw-lib-help", text: "Deleting a chat removes it from the tutor's history, including its session transcript." });
+		if (!chats.length) section.createDiv({ cls: "gw-lib-empty", text: "No past chats." });
 		for (const chat of chats) {
 			const when = chat.updated?.slice(0, 10) || chat.created?.slice(0, 10) || "";
-			const row = this.libraryRow(chatSection, chat.title || "Untitled", when);
+			const row = this.libraryRow(section, chat.title || "Untitled", when);
 			if (chat.id === this.record?.id) row.addClass("is-current");
 			this.libraryButton(row, "Open", () => {
 				if (this.agent?.busy) this.stop();
@@ -1169,33 +1214,216 @@ export class ChatView extends ItemView implements ToolUI {
 			});
 			this.libraryDelete(row, () => this.deleteListedChat(chat.id));
 		}
+	}
 
-		const contextSection = scroll.createDiv({ cls: "gw-lib-section" });
-		contextSection.createEl("h3", { text: "Extra context" });
-		contextSection.createDiv({
+	/** Learner file, tutor notes, a few preferences, and a vault reset. */
+	private async renderSettings(): Promise<void> {
+		const store = this.plugin.store;
+		this.uiSettingsEl.empty();
+		const top = this.uiSettingsEl.createDiv({ cls: "gw-library-top" });
+		this.panelHead(top, "Settings", "Your learner file, notes for the tutor, and a way to start the vault over.", "Close settings", () => this.closeSettings());
+		const scroll = this.uiSettingsEl.createDiv({ cls: "gw-library-scroll" });
+
+		let profile = "";
+		let context = "";
+		try {
+			[profile, context] = await Promise.all([store.profile(), store.tutorContext()]);
+		} catch (err) {
+			scroll.createDiv({ cls: "gw-error", text: err instanceof Error ? err.message : String(err) });
+			return;
+		}
+
+		const learner = scroll.createDiv({ cls: "gw-lib-section" });
+		learner.createEl("h3", { text: "Learner file" });
+		learner.createDiv({
 			cls: "gw-lib-help",
-			text: "Notes the tutor reads every session. This is not your learner profile, and the tutor does not rewrite it.",
+			text: "This is learner.md. The tutor reads it every session and may add how you learn. Save writes the note. Open note shows it in the vault.",
 		});
-		const area = contextSection.createEl("textarea", {
+		const learnerArea = learner.createEl("textarea", {
+			cls: "gw-lib-context gw-learner",
+			attr: { rows: "12", placeholder: "Background, how you learn best, observations…", "aria-label": "Learner file" },
+		});
+		learnerArea.value = this.learnerDraft ?? profile;
+		learnerArea.addEventListener("input", () => {
+			this.learnerDraft = learnerArea.value;
+		});
+		const learnerSave = learner.createDiv({ cls: "gw-lib-save-row" });
+		const saveLearner = learnerSave.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Save", attr: { type: "button" } });
+		saveLearner.addEventListener("click", () => {
+			void store.setProfile(learnerArea.value).then(
+				(saved) => {
+					this.learnerDraft = null;
+					learnerArea.value = saved;
+					new Notice("Saved learner.md.");
+				},
+				(err: unknown) => new Notice(err instanceof Error ? err.message : String(err)),
+			);
+		});
+		const openLearner = learnerSave.createEl("button", { cls: "gw-lib-btn", text: "Open note", attr: { type: "button" } });
+		openLearner.addEventListener("click", () => void this.openLearnerNote(learnerArea));
+
+		const notes = scroll.createDiv({ cls: "gw-lib-section" });
+		notes.createEl("h3", { text: "Extra context" });
+		notes.createDiv({
+			cls: "gw-lib-help",
+			text: "Notes the tutor reads every session. This is not your learner file, and the tutor does not rewrite it.",
+		});
+		const contextArea = notes.createEl("textarea", {
 			cls: "gw-lib-context",
 			attr: { rows: "6", placeholder: "Exam dates, a formula sheet, how you want explanations to go…", "aria-label": "Extra context for the tutor" },
 		});
-		area.value = unsaved ?? context;
-		if (unsaved !== null) area.dataset.dirty = "1";
-		area.addEventListener("input", () => {
-			area.dataset.dirty = "1";
+		contextArea.value = this.contextDraft ?? context;
+		contextArea.addEventListener("input", () => {
+			this.contextDraft = contextArea.value;
 		});
-		const saveRow = contextSection.createDiv({ cls: "gw-lib-save-row" });
-		const save = saveRow.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Save", attr: { type: "button" } });
-		save.addEventListener("click", () => {
-			void store.setTutorContext(area.value).then(
-				() => {
-					area.dataset.dirty = "";
+		const contextSave = notes.createDiv({ cls: "gw-lib-save-row" });
+		const saveContext = contextSave.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Save", attr: { type: "button" } });
+		saveContext.addEventListener("click", () => {
+			void store.setTutorContext(contextArea.value).then(
+				(saved) => {
+					this.contextDraft = null;
+					contextArea.value = saved;
 					new Notice("Saved extra context for the tutor.");
 				},
 				(err: unknown) => new Notice(err instanceof Error ? err.message : String(err)),
 			);
 		});
+
+		const prefs = scroll.createDiv({ cls: "gw-lib-section" });
+		prefs.createEl("h3", { text: "Preferences" });
+		if (this.plugin.settings.provider !== "demo") {
+			this.settingToggle(
+				prefs,
+				"Web search",
+				this.plugin.settings.provider === "claude-code"
+					? "Lets the tutor look things up when it is unsure of a fact."
+					: "Lets the tutor verify facts with Anthropic's web search tool.",
+				this.plugin.settings.webSearch,
+				(on) => {
+					this.plugin.settings.webSearch = on;
+					void this.plugin.saveSettings();
+				},
+			);
+		}
+		this.settingToggle(prefs, "Sync with GitHub", "Pulls when Obsidian opens, and commits after the tutor changes your knowledge.", this.plugin.settings.autoSync, (on) => {
+			this.plugin.settings.autoSync = on;
+			void this.plugin.saveSettings();
+		});
+		const connection = prefs.createDiv({ cls: "gw-setting-row" });
+		const connectionText = connection.createDiv();
+		connectionText.createDiv({ cls: "gw-setting-name", text: "Model and connection" });
+		connectionText.createDiv({ cls: "gw-setting-desc", text: "Provider, API key, Claude model, and git path." });
+		const openPluginSettings = connection.createEl("button", { cls: "gw-lib-btn", text: "Open", attr: { type: "button" } });
+		openPluginSettings.addEventListener("click", () => this.plugin.openSettings());
+
+		this.renderVaultReset(scroll);
+	}
+
+	private settingToggle(parent: HTMLElement, name: string, desc: string, value: boolean, onChange: (on: boolean) => void): void {
+		const row = parent.createDiv({ cls: "gw-setting-row" });
+		const text = row.createDiv();
+		text.createDiv({ cls: "gw-setting-name", text: name });
+		text.createDiv({ cls: "gw-setting-desc", text: desc });
+		const label = row.createEl("label", { cls: "gw-switch" });
+		const input = label.createEl("input", { type: "checkbox", attr: { "aria-label": name } });
+		input.checked = value;
+		label.createSpan({ cls: "gw-switch-ui" });
+		input.addEventListener("change", () => onChange(input.checked));
+	}
+
+	private async openLearnerNote(area: HTMLTextAreaElement): Promise<void> {
+		try {
+			if (this.learnerDraft !== null) {
+				const saved = await this.plugin.store.setProfile(area.value);
+				this.learnerDraft = null;
+				area.value = saved;
+			} else await this.plugin.store.ensureLayout();
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+			return;
+		}
+		const file = this.app.vault.getAbstractFileByPath(PATHS.learner);
+		if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
+		else new Notice("learner.md is not in the vault yet.");
+	}
+
+	private renderVaultReset(parent: HTMLElement): void {
+		const section = parent.createDiv({ cls: "gw-lib-section gw-danger" });
+		section.createEl("h3", { text: "Reset learning vault" });
+		section.createDiv({
+			cls: "gw-lib-help",
+			text: "Deletes every goal, concept, chat, session note, exam plan, practice test, and quiz record. Restores learner.md and clears extra notes. Files in resources/ stay. If sync is on, this is pushed to GitHub.",
+		});
+		const start = section.createEl("button", { cls: "gw-lib-btn is-danger", text: "Reset learning vault", attr: { type: "button" } });
+		const box = section.createDiv({ cls: "gw-reset-box" });
+		box.hide();
+		box.createDiv({ cls: "gw-lib-help", text: "Type RESET to confirm. This cannot be undone from here." });
+		const row = box.createDiv({ cls: "gw-reset-row" });
+		const input = row.createEl("input", {
+			cls: "gw-lib-filter",
+			attr: { type: "text", placeholder: "RESET", "aria-label": "Type RESET to confirm", autocomplete: "off", spellcheck: "false" },
+		});
+		const go = row.createEl("button", { cls: "gw-lib-btn is-danger", text: "Reset everything", attr: { type: "button" } });
+		go.disabled = true;
+		const cancel = row.createEl("button", { cls: "gw-lib-btn", text: "Cancel", attr: { type: "button" } });
+		start.addEventListener("click", () => {
+			start.hide();
+			box.show();
+			input.focus();
+		});
+		input.addEventListener("input", () => {
+			go.disabled = input.value.trim() !== "RESET";
+		});
+		cancel.addEventListener("click", () => {
+			input.value = "";
+			go.disabled = true;
+			box.hide();
+			start.show();
+		});
+		go.addEventListener("click", () => {
+			if (input.value.trim() !== "RESET" || go.dataset.busy === "1") return;
+			go.dataset.busy = "1";
+			go.disabled = true;
+			void this.resetLearningVault().finally(() => {
+				go.dataset.busy = "";
+				if (go.isConnected) go.disabled = input.value.trim() !== "RESET";
+			});
+		});
+	}
+
+	private async resetLearningVault(): Promise<void> {
+		if (this.agent?.busy || [...this.asideAgents.values()].some((agent) => agent.busy)) {
+			new Notice("Groundwork: wait for the tutor to finish, then reset the vault.");
+			return;
+		}
+		this.dropAgent();
+		this.dropAsides();
+		try {
+			await this.plugin.store.resetVault();
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+			return;
+		}
+		this.learnerDraft = null;
+		this.contextDraft = null;
+		this.conceptQuery = "";
+		const now = new Date().toISOString();
+		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
+		this.session = { id: this.record.id };
+		this.renderAll();
+		await this.refreshGoalSelect();
+		if (this.settingsOpen) await this.renderSettings();
+		new Notice("Learning vault reset. Files in resources/ are still there.");
+	}
+
+	private panelHead(parent: HTMLElement, title: string, subtitle: string, closeLabel: string, onClose: () => void): void {
+		const head = parent.createDiv({ cls: "gw-library-head" });
+		const titles = head.createDiv();
+		titles.createDiv({ cls: "gw-library-title", text: title });
+		titles.createDiv({ cls: "gw-library-sub", text: subtitle });
+		const close = head.createEl("button", { cls: "clickable-icon gw-icon-btn", attr: { "aria-label": closeLabel, type: "button" } });
+		setIcon(close, "x");
+		close.addEventListener("click", onClose);
 	}
 
 	private libraryRow(parent: HTMLElement, title: string, meta: string): HTMLElement {
