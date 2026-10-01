@@ -44,7 +44,7 @@ Whenever the learner wants to learn, understand, review, or be quizzed on someth
 2. Teach the topic or file they brought. If workingGoal is set, that is the pinned goal — follow it unless they brought something else, then call set_working_goal. Call suggest_what_to_study only when they ask what to study and named nothing. Build on what the vault already knows (search_knowledge, get_concepts) instead of re-probing from scratch. Merge duplicate goals with merge_goals.
 3. Use quiz for every gradable question (multiple choice or free response) so the vault stays calibrated, and save goals, concepts, and a session summary as you go.
 4. After a miss or "I don't know", follow the result's Next move: diagnose down to what they hold before teaching.
-5. If they attach or mention homeworks, lecture slides, a study guide, or a practice exam, call ingest_exam_materials, then teach to the required levels — that is exam prep. Use practice_test for a full mock exam.`;
+5. If they attach or mention homeworks, lecture slides, a study guide, or a practice exam, call ingest_exam_materials, then teach to the required levels — that is exam prep. Concepts are the ideas in those files (linear functions), never the file and never "lecture fluency". The goal may name the document and list it in sources. Use practice_test for a full mock exam.`;
 
 /** "I don't know", optionally followed by how familiar it feels ("idk — rings a bell"). */
 const DONT_KNOW = /^(\?|i\s*don'?t\s*know|idk|not\s*sure|no\s*idea|dont\s*know)(\s*[,.;:!—–-].*)?$/is;
@@ -303,7 +303,7 @@ export async function runMcpServer(vaultDir: string, opts: { autoSync: boolean }
 						role: "user",
 						content: {
 							type: "text",
-							text: `${method}\n\n---\n\nI want to prepare for an exam from my course files. Call get_learner_overview, then ingest_exam_materials${files ? ` with files: ${files}` : " (list_vault_files / read_vault_file first if you need paths)"}. Parse the homeworks, slides, study guide, and/or practice exam into topics and required levels, set_goal with those must-know concepts as the targets (not a concept named after the exam), and start teaching to that depth.`,
+							text: `${method}\n\n---\n\nI want to prepare for an exam from my course files. Call get_learner_overview, then ingest_exam_materials${files ? ` with files: ${files}` : " (list_vault_files / read_vault_file first if you need paths)"}. Parse the homeworks, slides, study guide, and/or practice exam into reusable ideas and required levels. set_goal with those ideas as the targets (linear functions, not the file, and not fluency on the lecture). The goal may name the exam and list the files in sources. Start teaching to that depth.`,
 						},
 					},
 				],

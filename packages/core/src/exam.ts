@@ -1,3 +1,4 @@
+import { directSourceReference, sourceBoundConceptReason } from "./concept-title";
 import { basename, loadVaultFile, type VaultFile } from "./files";
 import { slugify } from "./markdown";
 import type { VaultIO } from "./io";
@@ -248,7 +249,9 @@ function guessCourse(materials: MaterialSource[]): string | undefined {
 
 export function buildExamBlueprint(materials: MaterialSource[], opts: { title?: string; userText?: string } = {}): ExamBlueprint {
 	const hits = materials.flatMap(extractHits);
-	const topics = mergeTopics(hits);
+	const merged = mergeTopics(hits);
+	const documentNamed = merged.filter((t) => sourceBoundConceptReason(t.title)).map((t) => t.title);
+	const topics = merged.filter((t) => !sourceBoundConceptReason(t.title));
 	const examSources = new Set(materials.filter((m) => m.kind === "exam" || m.kind === "practice_exam" || m.kind === "study_guide").map((m) => m.name));
 	const mustKnow = topics.filter((t) => t.sources.some((s) => examSources.has(s)) || t.requiredLevel >= 4).map((t) => t.title);
 	const kind = examKindOf(materials, opts.userText);
@@ -257,7 +260,12 @@ export function buildExamBlueprint(materials: MaterialSource[], opts: { title?: 
 	const title = opts.title?.trim() || (courseGuess ? `Prepare for ${courseGuess} ${label}` : `Prepare for the ${label}`);
 	const notes: string[] = [];
 	if (materials.some((m) => !m.text.trim())) notes.push("Some files had no extractable text (image or compressed PDF). Open them with read_vault_file and refine this plan.");
-	if (!topics.length) notes.push("No topics could be parsed automatically. Read the files and name the concepts yourself.");
+	if (documentNamed.length) {
+		notes.push(
+			`These name a source document, so they were not made into concepts (a goal may name them; the file belongs in the goal's sources): ${documentNamed.join(", ")}.`,
+		);
+	}
+	if (!topics.length) notes.push("No topics could be parsed automatically. Read the files and name the concepts yourself — ideas such as linear functions, not the document.");
 	return {
 		title,
 		courseGuess,
@@ -297,11 +305,19 @@ function topicPrereqs(topic: ExamTopic, all: ExamTopic[], materials: MaterialSou
 	return related.map((t) => t.title);
 }
 
+/** A one-line idea for a concept note. Headings that name the file are left off the concept. */
+function abstractBlurb(text: string | undefined): string | undefined {
+	if (!text) return undefined;
+	const raw = text.replace(/^#+\s*/, "").trim();
+	if (!raw || sourceBoundConceptReason(raw) || directSourceReference(raw)) return undefined;
+	return raw;
+}
+
 export function blueprintToGoalInput(plan: ExamBlueprint, materials: MaterialSource[], why?: string): GoalInput {
 	const nodes: GoalInput["nodes"] = plan.topics.map((t) => ({
 		title: t.title,
 		prerequisites: topicPrereqs(t, plan.topics, materials),
-		summary: t.ideas[0] ?? t.evidence[0],
+		summary: abstractBlurb(t.ideas[0] ?? t.evidence[0]),
 		requiredLevel: t.requiredLevel,
 	}));
 	const topicTitles = new Set(plan.topics.map((t) => t.title));
@@ -322,6 +338,7 @@ export function blueprintToGoalInput(plan: ExamBlueprint, materials: MaterialSou
 		approach,
 		targets,
 		nodes,
+		sources: [...new Set(materials.map((m) => m.path || m.name).filter(Boolean))],
 	};
 }
 
@@ -368,7 +385,7 @@ export function examPrepInstruction(plan: ExamBlueprint): string {
 		"Topics:",
 		table || "(no topics extracted — read the files with read_vault_file, then call ingest_exam_materials)",
 		plan.notes.join("\n"),
-		"Do this next: call get_learner_overview, refine the graph if needed, save it with set_goal. The targets are the must-know concepts (not a concept named after the exam). Include requiredLevel on each node, then teach from the frontier toward those targets. Check quizzes should hit each node's required level, not just recognition.",
+		"Do this next: call get_learner_overview, refine the graph if needed, save it with set_goal. Targets are reusable ideas (linear functions, affine compositions), never a document and never fluency on a lecture. The goal title may name the exam or the file. Put the files in sources. Include requiredLevel on each node, then teach from the frontier toward those targets. Check quizzes should hit each node's required level, not just recognition.",
 		"The learner has not necessarily read these files. Define every symbol and term from them the first time you use it, and restate any problem you take from them in full.",
 		"</exam_plan>",
 	]

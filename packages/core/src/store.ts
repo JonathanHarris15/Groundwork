@@ -1,3 +1,4 @@
+import { assertAbstractConcept, assertConceptOmitsSources } from "./concept-title";
 import {
 	blueprintToGoalInput,
 	buildExamBlueprint,
@@ -115,6 +116,8 @@ export interface Goal {
 	/** Concept id → exam-required quiz difficulty (1–5). */
 	requiredLevels: Record<string, number>;
 	examPlan?: string;
+	/** Vault files this goal draws on. Concepts never store these. */
+	sources: string[];
 }
 
 export interface GoalInput {
@@ -133,6 +136,8 @@ export interface GoalInput {
 	nodes: Array<{ title: string; prerequisites?: string[]; summary?: string; domain?: string; requiredLevel?: number }>;
 	status?: GoalStatus;
 	examPlan?: string;
+	/** Vault paths of the files this goal draws on. Allowed here, never on a concept. */
+	sources?: string[];
 }
 
 /** The one next thing worth studying. */
@@ -249,8 +254,17 @@ export class KnowledgeStore {
 	}
 
 	async upsertConcept(input: ConceptInput): Promise<{ concept: Concept; created: boolean; createdPrerequisites: string[] }> {
-		const title = input.title.trim();
+		const title = unwikilink(input.title).trim();
 		if (!slugify(title)) throw new Error("Concept title must contain letters or numbers.");
+		assertAbstractConcept(title);
+		for (const alias of input.aliases ?? []) assertAbstractConcept(alias);
+		for (const raw of input.prerequisites ?? []) {
+			const ref = unwikilink(raw).trim();
+			if (slugify(ref)) assertAbstractConcept(ref);
+		}
+		assertConceptOmitsSources(
+			[input.summary, input.unconditionalTruths, input.connections, input.misconceptions, input.notes].filter((s): s is string => !!s?.trim()).join("\n"),
+		);
 		const existing = await this.resolve(title);
 
 		const createdPrerequisites: string[] = [];
@@ -428,6 +442,7 @@ export class KnowledgeStore {
 				body,
 				requiredLevels: shape.requiredLevels,
 				examPlan: typeof fm.exam === "string" ? unwikilink(fm.exam) : undefined,
+				sources: asStringList(fm.sources).map((s) => unwikilink(s)).filter(Boolean),
 			});
 		}
 		return out;
@@ -441,6 +456,8 @@ export class KnowledgeStore {
 	async setGoal(input: GoalInput): Promise<GoalReport> {
 		const named = goalTargetTitles(input);
 		if (!named.length) throw new Error("A goal is made of targets: name at least one concept that has not been built yet.");
+		for (const title of [...named, ...input.nodes.flatMap((n) => [n.title, ...(n.prerequisites ?? [])])]) assertAbstractConcept(title);
+		for (const node of input.nodes) if (node.summary) assertConceptOmitsSources(node.summary);
 		const nodeTitles = new Map<string, string>();
 		for (const node of input.nodes) {
 			await this.upsertConcept({
@@ -494,8 +511,19 @@ export class KnowledgeStore {
 		const existing = await this.resolveGoal(input.title);
 		const path = existing?.path ?? (await this.uniquePath(PATHS.goals, safeFileName(input.title)));
 		const prior = existing ? parseNote(await this.io.read(path)) : { frontmatter: {}, body: `# ${input.title}\n` };
+		const sourceList = normalizeSources(input.sources ?? existing?.sources ?? []);
 		let body = prior.body;
-		const generated = ["Targets", "Built", "Dependency map"];
+		const generated = ["Sources", "Targets", "Built", "Dependency map"];
+		if (sourceList.length || input.sources) {
+			body = setSection(
+				body,
+				"Sources",
+				sourceList.length
+					? ["Files this goal draws on. The concepts stay reusable without these files.", "", ...sourceList.map((s) => `- ${wikilink(s)}`)].join("\n")
+					: "No source files are attached to this goal.",
+				["Targets", "Built", "Dependency map"],
+			);
+		}
 		if (input.objective) body = setSection(body, "Objective", demoteHeadings(input.objective), generated);
 		if (input.why) body = setSection(body, "Why", demoteHeadings(input.why), generated);
 		if (input.approach) body = setSection(body, "Approach", demoteHeadings(input.approach), generated);
@@ -509,6 +537,7 @@ export class KnowledgeStore {
 			nodes: [...nodeTitles.values()].map(wikilink),
 			required: Object.keys(required).length ? required : undefined,
 			exam: input.examPlan ? wikilink(input.examPlan) : existing?.examPlan ? wikilink(existing.examPlan) : prior.frontmatter.exam,
+			sources: sourceList.length ? sourceList.map(wikilink) : undefined,
 			tags: ["groundwork/goal"],
 		};
 		delete fm.target;
@@ -612,6 +641,7 @@ export class KnowledgeStore {
 		}
 		const targets = [...scopeIds].map((id) => index.get(id)?.title).filter((t): t is string => !!t);
 		if (!targets.length) throw new Error("Those goals have no concepts to merge.");
+		const sources = [...keep.sources, ...drops.flatMap((d) => d.sources)];
 
 		const report = await this.setGoal({
 			title: keep.title,
@@ -619,6 +649,7 @@ export class KnowledgeStore {
 			targets,
 			nodes,
 			examPlan: keep.examPlan,
+			...(sources.length ? { sources } : {}),
 			status: keep.status === "paused" ? "paused" : "active",
 		});
 		const mergedFrom = drops.map((d) => `- [[${d.title}]]`).join("\n");
@@ -712,6 +743,61 @@ export class KnowledgeStore {
 			removed.push(path);
 		}
 		if (removed.length) this.changed(...removed);
+	}
+
+	/**
+	 * Removes the concept note and its quiz evidence, and drops it from other concepts' prerequisites and from goals.
+	 * Goals that named it keep their other concepts and any source files.
+	 */
+	async deleteConcept(ref: string): Promise<void> {
+		const concept = await this.resolve(ref);
+		if (!concept) throw new Error(`Unknown concept "${ref}".`);
+		const touched: string[] = [];
+
+		for (const other of (await this.concepts()).values()) {
+			if (!other.prerequisites.includes(concept.id)) continue;
+			const { frontmatter, body } = parseNote(await this.io.read(other.path));
+			const next = other.prerequisites.filter((p) => p !== concept.id);
+			if (next.length) {
+				const index = await this.concepts();
+				frontmatter.prerequisites = next.map((p) => wikilink(index.get(p)?.title ?? p));
+			} else delete frontmatter.prerequisites;
+			await this.io.write(other.path, serializeNote(frontmatter, body));
+			touched.push(other.path);
+		}
+
+		const affectedGoals: string[] = [];
+		for (const goal of await this.goals()) {
+			const mentioned = goal.nodes.includes(concept.id) || goal.targets.includes(concept.id) || goal.built.includes(concept.id) || concept.id in goal.requiredLevels;
+			if (!mentioned) continue;
+			const { frontmatter, body } = parseNote(await this.io.read(goal.path));
+			const nodes = dropWikilinks(frontmatter.nodes, concept.id);
+			const built = dropWikilinks(frontmatter.built, concept.id);
+			frontmatter.nodes = nodes.length ? nodes : undefined;
+			frontmatter.built = built.length ? built : undefined;
+			if (frontmatter.targets && typeof frontmatter.targets === "object" && !Array.isArray(frontmatter.targets)) {
+				frontmatter.targets = dropRequiredKey(frontmatter.targets, concept.id);
+			} else {
+				const targets = dropWikilinks(frontmatter.targets, concept.id);
+				frontmatter.targets = targets.length ? targets : undefined;
+			}
+			if (frontmatter.required && typeof frontmatter.required === "object") frontmatter.required = dropRequiredKey(frontmatter.required, concept.id);
+			if (typeof frontmatter.target === "string" && slugify(unwikilink(frontmatter.target)) === concept.id) delete frontmatter.target;
+			await this.io.write(goal.path, serializeNote(frontmatter, body));
+			touched.push(goal.path);
+			affectedGoals.push(goal.id);
+		}
+
+		const evidence = this.evidencePath(concept.id);
+		if (await this.io.exists(evidence)) {
+			await this.io.remove(evidence);
+			touched.push(evidence);
+		}
+		await this.io.remove(concept.path);
+		touched.push(concept.path);
+		this.invalidate();
+		if (touched.length) this.changed(...touched);
+		for (const id of affectedGoals) await this.renderGoal(id);
 	}
 
 	/** Removes the goal note only. Concepts and evidence are shared, so they stay. Clears the pin when it was this goal. */
@@ -1039,6 +1125,7 @@ export class KnowledgeStore {
 			active.push({
 				title: g.title,
 				objective: g.objective,
+				sources: g.sources,
 				targets: r.goal.targets.map(titleOf),
 				built: r.goal.built.map(titleOf),
 				progress: describeGoalProgress(r.goal),
@@ -1145,6 +1232,30 @@ function asStringList(v: unknown): string[] {
 	if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
 	if (typeof v === "string" && v.trim()) return [v];
 	return [];
+}
+
+function normalizeSources(sources: string[]): string[] {
+	const out: string[] = [];
+	for (const raw of sources) {
+		const s = unwikilink(raw).trim();
+		if (s && !out.includes(s)) out.push(s);
+	}
+	return out;
+}
+
+function dropWikilinks(v: unknown, id: string): string[] {
+	return asStringList(v).filter((item) => slugify(unwikilink(item)) !== id);
+}
+
+function dropRequiredKey(v: unknown, id: string): Record<string, number> | undefined {
+	if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+	const out: Record<string, number> = {};
+	for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+		if (slugify(unwikilink(k)) === id) continue;
+		const level = typeof n === "number" ? n : Number(n);
+		if (Number.isFinite(level)) out[k] = level;
+	}
+	return Object.keys(out).length ? out : undefined;
 }
 
 export function describeGoalProgress(goal: Pick<Goal, "targets" | "built">): string {

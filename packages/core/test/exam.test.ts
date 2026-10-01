@@ -70,6 +70,42 @@ describe("exam material parsing", () => {
 		expect(chain.sources.length).toBeGreaterThan(1);
 		expect(plan.mustKnow.length).toBeGreaterThan(0);
 		expect(examPrepInstruction(plan)).toContain("need level");
+		expect(examPrepInstruction(plan)).toContain("sources");
+	});
+
+	it("drops document names and keeps the ideas inside them", () => {
+		const plan = buildExamBlueprint([
+			{
+				name: "Lecture Note 1.pdf",
+				kind: "lecture",
+				text: "# Lecture Note 1 fluency\n\n# Linear functions\n\nA linear function preserves addition.\n\n# Practice Exam 1\n",
+			},
+		]);
+		const titles = plan.topics.map((t) => t.title);
+		expect(titles).toContain("Linear Functions");
+		expect(titles.some((t) => /fluency|practice exam|lecture note/i.test(t))).toBe(false);
+		expect(plan.notes.join("\n")).toMatch(/not made into concepts/);
+
+		const empty = buildExamBlueprint([{ name: "Lecture Note 1.pdf", kind: "notes", text: "" }]);
+		expect(empty.topics).toEqual([]);
+		expect(empty.notes.join("\n")).toMatch(/not made into concepts/);
+	});
+
+	it("stores the lecture file on the goal and keeps it out of the concept note", async () => {
+		const io = new MemoryVaultIO();
+		io.files.set("resources/Lecture 4.md", LECTURE);
+		const store = new KnowledgeStore(io);
+		await store.ingestExamMaterials({ files: ["resources/Lecture 4.md"], createGoal: true });
+		const concepts = [...(await store.concepts()).values()];
+		expect(concepts.some((c) => /chain rule/i.test(c.title))).toBe(true);
+		for (const concept of concepts) {
+			expect(concept.title).not.toMatch(/lecture/i);
+			expect(concept.body).not.toMatch(/lecture/i);
+			expect(concept.body).not.toMatch(/resources\//i);
+		}
+		const goal = (await store.goals())[0];
+		expect(goal.sources).toEqual(["resources/Lecture 4.md"]);
+		expect(await io.read(goal.path)).toContain("[[resources/Lecture 4.md]]");
 	});
 
 	it("extracts text from a simple PDF so a homework file still yields topics", async () => {
@@ -102,6 +138,7 @@ describe("exam material parsing", () => {
 		expect(plans.length).toBe(1);
 		const goal = (await store.goals())[0];
 		expect(Object.keys(goal.requiredLevels).length).toBeGreaterThan(0);
+		expect(goal.sources).toEqual(["resources/HW2.md", "resources/practice midterm.md"]);
 		expect(goal.targets.length + goal.built.length).toBeGreaterThan(0);
 		const concepts = [...(await store.concepts()).values()];
 		expect(concepts.some((c) => c.title === goal.title)).toBe(false);

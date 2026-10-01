@@ -264,11 +264,11 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "upsert_concept",
 		description:
-			"Create or update a concept note in the vault. Prerequisites are DIRECT dependencies (missing ones are created as stubs) and are merged with existing ones unless replacePrerequisites is true. Sections are markdown and replace the existing section.",
+			"Create or update a concept note in the vault. A concept is a reusable idea (Linear functions, Affine compositions), never a source document or a task tied to one (Lecture Note 1 fluency, Practice Exam 1, Prepare for the midterm). Those are goals: put the file in the goal's sources. Prerequisites are DIRECT dependencies (missing ones are created as stubs) and are merged with existing ones unless replacePrerequisites is true. Sections are markdown and replace the existing section. Do not mention a file path or a document title in the note.",
 		inputSchema: {
 			type: "object",
 			properties: {
-				title: str("Short canonical title, reused across goals."),
+				title: str("Reusable idea, e.g. 'Linear functions'. Not a lecture, homework, exam, or fluency task."),
 				domain: str("Subject area, e.g. 'linear algebra'."),
 				aliases: strList("Other names."),
 				prerequisites: strList("Titles of direct prerequisite concepts."),
@@ -293,11 +293,11 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal. A goal is not a sentence — it is the list of targets, the concepts the learner has not built yet. Pass those concepts as targets (each must also be a node). nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
+			"Save a learning goal. A goal is the list of targets: concepts the learner has not built yet. The title may name a course, exam, or document (Lecture 1 note fluency, Prepare for the midterm). targets and nodes must be abstract concepts that would still make sense in another class — never a file and never fluency on a file. Pass sources for the vault files this goal draws on. nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
-				title: str("Short name for this set of targets, e.g. 'Backpropagation'."),
+				title: str("Short name. May name a course or a file, e.g. 'Lecture 1 note fluency' or 'Backpropagation'."),
 				objective: str("Optional context in the learner's words. The goal is the targets, not this sentence."),
 				why: str("What the learner wants this for."),
 				approach: str("Your teaching plan in prose: order and why."),
@@ -325,6 +325,7 @@ export const TOOLS: ToolDef[] = [
 				},
 				status: { type: "string", enum: ["active", "paused", "done"] },
 				examPlan: str("Title of the exam plan note this goal was built from, if any."),
+				sources: strList("Vault paths of the source documents for this goal, e.g. resources/Lecture Note 1.pdf. Never put these on a concept."),
 			},
 			required: ["title", "targets", "nodes"],
 		},
@@ -345,6 +346,7 @@ export const TOOLS: ToolDef[] = [
 					blocked: r.analysis.blocked.map((n) => n.title),
 					rusty: r.analysis.rusty.map((n) => n.title),
 					unassessed: r.analysis.unassessed.map((n) => n.title),
+					sources: r.goal.sources,
 					mermaid: r.mermaid,
 				}),
 				summary: `Saved goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
@@ -386,6 +388,7 @@ export const TOOLS: ToolDef[] = [
 					blocked: r.analysis.blocked.map((n) => n.title),
 					rusty: r.analysis.rusty.map((n) => n.title),
 					unassessed: r.analysis.unassessed.map((n) => n.title),
+					sources: r.goal.sources,
 					mermaid: r.mermaid,
 				}),
 				summary: `Checked goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
@@ -670,6 +673,7 @@ export const TOOLS: ToolDef[] = [
 								targets: r.goal.goal.targets.map((id) => r.goal!.nodes.find((n) => n.id === id)?.title ?? id),
 								built: r.goal.goal.built.map((id) => r.goal!.nodes.find((n) => n.id === id)?.title ?? id),
 								frontier: r.goal.analysis.frontier.map((n) => n.title),
+								sources: r.goal.goal.sources,
 								mermaid: r.goal.mermaid,
 							}
 						: null,
