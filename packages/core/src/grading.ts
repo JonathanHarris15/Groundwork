@@ -52,7 +52,7 @@ export function describeQuizOutcome(o: QuizOutcome): string {
 	return lines.join("\n");
 }
 
-/** Grade, record, and describe a quiz answer. Shared by the Obsidian card flow, MCP, and practice tests. */
+/** Grade, record, and describe a quiz answer. Shared by quiz cards and practice tests. */
 export async function recordQuizAnswer(
 	store: KnowledgeStore,
 	quiz: PreparedQuiz,

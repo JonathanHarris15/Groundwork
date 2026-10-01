@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -7,15 +7,21 @@ import { fileURLToPath } from "node:url";
 import { KnowledgeStore } from "@groundwork/core";
 import { git, GitSync, NodeVaultIO, scaffoldVault } from "@groundwork/core/node";
 import { expandHome, defaultVaultDir, readConfig, resolveVault, writeConfig } from "./config";
-import { connectClient, hasCommand, type Client } from "./connect";
-import { runMcpServer } from "./mcp";
 import { bundledPluginDir, installPlugin, launchObsidian, obsidianUri, registerVault } from "./obsidian";
 
-const cliPath = fileURLToPath(import.meta.url);
-const cliDir = path.dirname(cliPath);
+const cliDir = path.dirname(fileURLToPath(import.meta.url));
 
 const say = (msg = "") => console.log(msg);
 const step = (msg: string) => console.log(`  • ${msg}`);
+
+function hasCommand(cmd: string): boolean {
+	try {
+		execFileSync(process.platform === "win32" ? "where" : "which", [cmd], { stdio: "ignore" });
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 async function must(dir: string, args: string[]) {
 	const r = await git(dir, args, "git", 180_000);
@@ -90,7 +96,7 @@ program
 		step(`Saved as your default vault`);
 		await prepareAndOpen(dir, opts.open);
 		say();
-		say("Next: connect chat apps to the same memory with `groundwork connect claude-desktop` (or claude-code / cursor).");
+		say("Next: in Obsidian, tell the tutor what you want to learn.");
 	});
 
 program
@@ -127,28 +133,6 @@ program
 		const r = await new GitSync(vault).sync(undefined, () => store.recomputeAll());
 		step(`Sync: ${r.message || r.state}`);
 		await prepareAndOpen(vault, opts.launch);
-	});
-
-program
-	.command("mcp")
-	.description("Run the MCP server (stdio) so Claude Desktop, Claude Code, Cursor, etc. can tutor from your vault")
-	.option("--vault <dir>")
-	.option("--no-sync", "don't pull/push with git")
-	.action(async (opts: { vault?: string; sync: boolean }) => {
-		const vault = await resolveVault(opts.vault);
-		await runMcpServer(vault, { autoSync: opts.sync });
-	});
-
-program
-	.command("connect")
-	.description("Register the MCP server with a chat client: claude-desktop | claude-code | cursor | print")
-	.argument("<client>")
-	.option("--vault <dir>")
-	.action(async (client: string, opts: { vault?: string }) => {
-		const valid = ["claude-desktop", "claude-code", "cursor", "print"];
-		if (!valid.includes(client)) throw new Error(`Unknown client "${client}". Use one of: ${valid.join(", ")}`);
-		const vault = await resolveVault(opts.vault);
-		say(await connectClient(client as Client, cliPath, vault));
 	});
 
 program

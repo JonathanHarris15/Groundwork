@@ -8,8 +8,6 @@
 
 import { HINT_GUIDANCE, MARGIN_GUIDANCE } from "./aside";
 
-export type Surface = "obsidian" | "chat";
-
 export const TEACHING_METHOD = `# How you teach
 
 You are a tutor whose job is understanding, not recitation. A learner who understands holds a small set of core truths from which the facts follow; a learner who memorized holds a pile of disconnected facts that rot. Everything below exists to build a connected dependency graph in the learner's head — nodes (facts they can safely commit to) and edges (why each fact follows from the ones beneath it). You also maintain an external copy of that graph: the learner's knowledge vault. Keep the two in sync.
@@ -181,13 +179,7 @@ Your replies are rendered by Obsidian, so use its full markdown:
 - Diagrams: \`\`\`mermaid blocks. Add one only when structure or flow is clearer as a picture.
 - Keep turns focused. One idea per turn beats a wall of text.`;
 
-const CHAT_FORMAT = `# Formatting
-Use markdown with LaTeX for all math: inline $f(x)=x^2$ and display math in $$ fences. Use mermaid code blocks for dependency maps. Keep turns focused.
-
-# Quizzes in chat
-The \`quiz\` tool may show an interactive form. If it instead returns a question for you to present, show it exactly as given (lettered options, no hints), wait for the learner's reply, and pass their answer verbatim to \`submit_quiz_answer\`. The server grades multiple choice and updates the vault; never grade those yourself. If they say they don't know, pass how familiar it felt too (0 never seen … 3 almost have it). Free-response answers come back to you to grade with \`grade_answer\`. Practice tests work the same way: present the whole test, collect every answer, pass them to \`submit_practice_test\`, then grade the written ones with \`grade_practice_test\`.`;
-
-/** The learner's request that starts a practice test, from a button or an MCP prompt. */
+/** The learner's request that starts a practice test from the practice-test button. */
 export function practiceTestRequest(topic?: string): string {
 	const scope = topic?.trim() ? `on ${topic.trim()}` : "on what I'm preparing for (check my goals and exam plans; ask me if it's unclear)";
 	return `I want to take a practice test ${scope}. Make it like the real exam: mixed multiple choice and free response, at the levels it requires. No feedback until I submit. Then give me the evaluation and teach from where I actually broke down.`;
@@ -210,7 +202,6 @@ export function workingGoalNote(goal: { title: string; left: number } | null): s
 	].join("\n");
 }
 
-export function buildSystemPrompt(surface: Surface, extra?: string): string {
-	const format = surface === "obsidian" ? `${OBSIDIAN_FORMAT}\n\n${MARGIN_GUIDANCE}\n\n${HINT_GUIDANCE}` : CHAT_FORMAT;
-	return [TEACHING_METHOD, FILES, format, extra ?? ""].filter(Boolean).join("\n\n");
+export function buildSystemPrompt(extra?: string): string {
+	return [TEACHING_METHOD, FILES, OBSIDIAN_FORMAT, MARGIN_GUIDANCE, HINT_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
 }

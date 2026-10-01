@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildSystemPrompt } from "../src/prompt";
 
 describe("teaching method", () => {
-	const method = buildSystemPrompt("obsidian");
+	const method = buildSystemPrompt();
 
 	it("introduces a node by one difference, then a small check on a new case", () => {
 		expect(method).toContain("Unconditional truths first");

@@ -321,7 +321,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private ensureAgent(): TutorSession | null {
 		if (this.agent) return this.agent;
 		const today = new Date().toISOString().slice(0, 10);
-		const system = buildSystemPrompt("obsidian", `# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`);
+		const system = buildSystemPrompt(`# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`);
 		const record = this.record;
 		const history = record.items.length ? transcript(record.items, record.asides) : undefined;
 

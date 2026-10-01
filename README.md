@@ -1,8 +1,8 @@
 # Groundwork
 
-A tutor that plans any learning goal from first principles, calibrates what you actually know with quizzes, and **remembers it** — in a private GitHub repo that is also an Obsidian vault, so the same memory follows you to every computer and every chat app.
+A tutor that plans any learning goal from first principles, calibrates what you actually know with quizzes, and **remembers it** — in a private GitHub repo that is also an Obsidian vault, so the same memory follows you to every computer.
 
-You talk to it **inside Obsidian** (a chat panel with native LaTeX, callouts, highlights, mermaid, and clickable quiz cards), or from **any MCP chat client** (Claude Desktop, Claude Code, Cursor) against the same vault.
+You talk to it **inside Obsidian**: a chat panel with native LaTeX, callouts, highlights, mermaid, and clickable quiz cards.
 
 Inspired by [amosblomqvist/learn](https://github.com/amosblomqvist/learn): the teaching method — unconditional truths first, "how could I have discovered this?", probe → plan → teach, diagnostic quizzes — comes from there. What changes:
 
@@ -11,21 +11,17 @@ Inspired by [amosblomqvist/learn](https://github.com/amosblomqvist/learn): the t
 | TUI on one side, Obsidian mirroring a log file on the other | One surface: the chat lives *in* Obsidian and renders natively. `groundwork open` launches everything. |
 | Memory is the current session | Persistent, calibrated memory: every quiz answer is evidence; per-concept mastery, forgetting, and misconceptions are recomputed from it. |
 | Tied to one project directory | A private git repo synced automatically (pull on open, debounced commit + push after changes), merge-safe across machines. |
-| pi-only | Obsidian plugin **and** an MCP server, sharing one core. |
+| pi-only | An Obsidian plugin. The chat lives in the vault. |
 
 ## How it works
 
 ```mermaid
 graph LR
-  subgraph Surfaces
-    P[Obsidian plugin<br/>chat panel + quiz cards<br/>model: your Claude subscription via Claude Code]
-    M[MCP server<br/>Claude Desktop / Code / Cursor]
-  end
+  P[Obsidian plugin<br/>chat panel + quiz cards<br/>model: your Claude subscription via Claude Code]
   C[core<br/>teaching method · tools · mastery model · goal DAGs]
   V[(Knowledge vault<br/>markdown + evidence logs)]
   G[(Private GitHub repo)]
   P --> C
-  M --> C
   C --> V
   V <-->|auto git sync| G
 ```
@@ -114,7 +110,7 @@ claude                                             # first run asks you to log i
 
 Then in Obsidian: **Settings → Groundwork → Check connection** should say *Signed in as …* and list the models your plan can use. Groundwork finds `claude` on your PATH and in the usual install folders (`~/.local/bin`, `~/.claude/local`, Homebrew). If it doesn't, paste the output of `which claude` into **Claude Code executable**.
 
-How it works: the plugin starts Claude Code with the Agent SDK, replaces Claude Code's system prompt with the tutor's, turns off all of Claude Code's own tools (no file edits or shell), and hands it Groundwork's tools as an in-process MCP server, so quiz cards still appear in the panel. `ANTHROPIC_API_KEY` is removed from Claude Code's environment so it always uses your subscription login. Claude Code keeps chat sessions on the machine that ran them. When you continue a chat on another computer, the tutor gets the transcript instead.
+How it works: the plugin starts Claude Code with the Agent SDK, replaces Claude Code's system prompt with the tutor's, turns off all of Claude Code's own tools (no file edits or shell), and hands it Groundwork's tools in-process, so quiz cards still appear in the panel. `ANTHROPIC_API_KEY` is removed from Claude Code's environment so it always uses your subscription login. Claude Code keeps chat sessions on the machine that ran them. When you continue a chat on another computer, the tutor gets the transcript instead.
 
 This is meant for your own use with your own login. Don't ship it to other people as a product that signs in with claude.ai accounts.
 
@@ -130,14 +126,6 @@ Attach files to a message with the paperclip (**Upload from this computer** or *
 
 The tutor reads images (PNG, JPEG, GIF, WebP), PDFs, and text files (markdown, code, CSV, LaTeX, …). It can also look in `resources/` on its own (`list_vault_files`, `read_vault_file`): drop your lecture notes or textbook there and say "use my lecture 3 notes". With the Claude subscription, PDFs are read with Claude Code's `Read` tool, which is limited to the vault folder. Groundwork splits PDFs longer than 10 pages or larger than 16 MB into parts under `.groundwork/cache/pdf-parts/` (ignored by git) so each part opens whole, with no need for poppler (`pdftoppm`) on the machine. Limits: 50 MB per upload (the vault is a git repo), and images must be under 5 MB and PDFs under 20 MB to be sent inline. Saved chats don't store file contents, only the paths.
 
-### Use it from Claude Desktop, Claude Code, or Cursor
-
-```bash
-groundwork connect claude-desktop   # or: claude-code, cursor, print
-```
-
-Then ask the assistant to teach you something (or use the `teach` / `review` prompts). The server tells the model to load your learner state and the teaching method first. Quizzes appear as an inline form when the client supports MCP elicitation; otherwise the model shows lettered options in chat and the **server** grades your reply (`submit_quiz_answer`), so the vault stays calibrated either way. It commits and pushes after changes, just like the plugin.
-
 ## CLI reference
 
 | Command | What it does |
@@ -145,8 +133,6 @@ Then ask the assistant to teach you something (or use the `teach` / `review` pro
 | `groundwork init [dir] [--github name \| --remote url] [--no-open]` | Create a vault, git repo, and (optionally) private GitHub repo; install the plugin; open Obsidian |
 | `groundwork clone <url> [dir]` | Set up an existing vault on this machine |
 | `groundwork open [--vault dir]` | Pull, update the plugin, open Obsidian |
-| `groundwork mcp [--vault dir] [--no-sync]` | Run the MCP server over stdio |
-| `groundwork connect <client>` | Register the MCP server with `claude-desktop`, `claude-code`, `cursor`, or `print` the JSON |
 | `groundwork sync` · `groundwork status` · `groundwork install-plugin` | Sync now · summary of what you know · reinstall the plugin |
 
 The default vault is saved in `~/.config/groundwork/config.json`; override with `--vault` or `GROUNDWORK_VAULT`. `OBSIDIAN_BIN` overrides how Obsidian is launched (e.g. an AppImage path).
@@ -156,13 +142,13 @@ The default vault is saved in `~/.config/groundwork/config.json`; override with 
 ```
 packages/core             vault store, mastery model, goal DAGs, quiz grading, tools, teaching prompt, agent loop, git sync
 packages/obsidian-plugin  chat panel, quiz/question cards, settings, auto-sync
-packages/cli              `groundwork` CLI and MCP server (bundles the plugin)
+packages/cli              `groundwork` CLI (bundles the plugin)
 ```
 
 ## Development
 
 ```bash
-npm test                 # vitest: model, store, quiz grading, agent loop, two-machine git merge, MCP end-to-end,
+npm test                 # vitest: model, store, quiz grading, agent loop, two-machine git merge,
                          # and the Claude Code session driving the real binary against a mock Messages API
 npm run typecheck
 npm run build            # plugin → packages/obsidian-plugin/dist, CLI → packages/cli/dist
@@ -173,6 +159,5 @@ Sync details: evidence logs use git's `union` merge driver (`.gitattributes`), s
 
 ## Not built yet
 
-- **claude.ai on the web / phone** — needs a hosted remote MCP server that talks to the GitHub repo through the API instead of a local clone.
 - **Obsidian mobile** — the plugin is desktop-only because sync shells out to git.
 - **Generated visuals** — the reference system's SVG/mermaid maker subagents. For now the tutor writes mermaid inline and goal maps are generated.

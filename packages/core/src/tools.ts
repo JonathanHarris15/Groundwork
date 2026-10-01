@@ -36,7 +36,7 @@ export interface AskResponse {
 	text?: string;
 }
 
-/** Interactive surface. The Obsidian plugin renders cards; MCP uses elicitation or a two-step fallback. */
+/** Interactive surface. The Obsidian plugin renders quiz cards and questions. */
 export interface ToolUI {
 	quiz(quiz: PreparedQuiz): Promise<QuizResponse | null>;
 	/** Called once an answer is graded and recorded (for free response, after the tutor's grade_answer). */

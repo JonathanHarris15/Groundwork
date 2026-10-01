@@ -57,8 +57,7 @@ describe("margin notes", () => {
 	});
 
 	it("tells the Obsidian tutor how to use margin questions", () => {
-		expect(buildSystemPrompt("obsidian")).toContain("<margin_questions>");
-		expect(buildSystemPrompt("chat")).not.toContain("<margin_questions>");
+		expect(buildSystemPrompt()).toContain("<margin_questions>");
 	});
 
 	it("does not hand hint chats to the tutor as margin questions", () => {
@@ -172,10 +171,9 @@ describe("hint chats", () => {
 	});
 
 	it("tells the Obsidian tutor to judge how much of a hint was used", () => {
-		const obsidian = buildSystemPrompt("obsidian");
+		const obsidian = buildSystemPrompt();
 		expect(obsidian).toContain("<hint_transcript>");
 		expect(obsidian).toContain("assisted correct is not solid mastery");
-		expect(buildSystemPrompt("chat")).not.toContain("<hint_transcript>");
 		expect(FREE_RESPONSE_GRADING).toContain("<hint_transcript>");
 	});
 });
