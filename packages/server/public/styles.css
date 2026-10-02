@@ -781,6 +781,12 @@ label { font-size: 15px; font-weight: 500; }
 
 .welcome-sub { font-size: 19px; color: #4a4f57; margin: 12px 0 0; }
 
+.open-obsidian {
+	display: flex;
+	justify-content: center;
+	margin-top: 28px;
+}
+
 .board {
 	position: relative;
 	isolation: isolate;
