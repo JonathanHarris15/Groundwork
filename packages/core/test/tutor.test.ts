@@ -145,14 +145,18 @@ describe("provider requests", () => {
 });
 
 describe("tutor runtime", () => {
-	it("follows the account when one is signed in, and the computer when it is not", () => {
-		expect(tutorRuntime({ selected: "claude", account: null, claudeReady: true, localKey: false }).runtime).toBe("claude");
-		expect(tutorRuntime({ selected: "claude", account: null, claudeReady: false, localKey: false }).runtime).toBe("setup");
-		expect(tutorRuntime({ selected: "claude", account: status("hosted"), claudeReady: true, localKey: true }).runtime).toBe("proxy");
-		expect(tutorRuntime({ selected: "demo", account: status("hosted"), claudeReady: true, localKey: true }).runtime).toBe("demo");
-		expect(tutorRuntime({ selected: "anthropic", account: status("key"), claudeReady: false, localKey: false }).runtime).toBe("proxy");
-		const blocked = tutorRuntime({ selected: "claude", account: status("blocked"), claudeReady: true, localKey: true });
+	it("asks a signed-out learner to sign in before the tutor runs", () => {
+		const signedOut = tutorRuntime({ selected: "claude", account: null, signedIn: false, claudeReady: true });
+		expect(signedOut).toMatchObject({ runtime: "setup", website: true, detail: expect.stringMatching(/Sign in/) });
+		expect(tutorRuntime({ selected: "demo", account: null, signedIn: false, claudeReady: true }).runtime).toBe("setup");
+		expect(tutorRuntime({ selected: "anthropic", account: null, signedIn: false, claudeReady: false }).runtime).toBe("setup");
+		expect(tutorRuntime({ selected: "claude", account: status("hosted"), signedIn: true, claudeReady: true }).runtime).toBe("proxy");
+		expect(tutorRuntime({ selected: "demo", account: status("hosted"), signedIn: true, claudeReady: true }).runtime).toBe("demo");
+		expect(tutorRuntime({ selected: "anthropic", account: status("key"), signedIn: true, claudeReady: false }).runtime).toBe("proxy");
+		const blocked = tutorRuntime({ selected: "claude", account: status("blocked"), signedIn: true, claudeReady: true });
 		expect(blocked).toMatchObject({ runtime: "setup", website: true });
+		const unlinked = tutorRuntime({ selected: "claude", account: null, signedIn: true, claudeReady: true });
+		expect(unlinked).toMatchObject({ runtime: "setup", website: true });
 	});
 });
 

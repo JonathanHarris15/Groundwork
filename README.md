@@ -17,9 +17,9 @@ Groundwork is [MIT licensed](LICENSE).
 
 ## Payment, account, and network
 
-Payment is required for full access. The Free plan uses Groundwork's smaller model. **Bring your own model** is $9 per month and uses the Claude subscription already on this computer, or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. **Groundwork** is $20 per month and Groundwork runs the models. Paid plans are billed on the [Groundwork website](https://groundworklearn.com) through Stripe. A scripted demo lesson runs without an account or a payment.
+Payment is required for full access. The Free plan uses Groundwork's smaller model. **Bring your own model** is $9 per month and uses the Claude subscription already on this computer, or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. **Groundwork** is $20 per month and Groundwork runs the models. Paid plans are billed on the [Groundwork website](https://groundworklearn.com) through Stripe.
 
-An account is required for full access. Sign in with Google on that website, or in Obsidian under **Settings → Groundwork → Account**. Tutor memory — concept notes, goals, quiz evidence, chats, and the learner profile — is stored on the account.
+An account is required before the tutor will run. Sign in with Google on that website, then choose **Open Obsidian**. Until this device is connected, sending a message only asks you to sign in. Tutor memory — concept notes, goals, quiz evidence, chats, and the learner profile — is stored on the account.
 
 The plugin uses the network for these services:
 
@@ -142,11 +142,7 @@ How it works: the plugin starts Claude Code with the Agent SDK, replaces Claude 
 
 This is meant for your own use with your own login. Don't ship it to other people as a product that signs in with claude.ai accounts.
 
-**When this computer is not signed in** (Settings → Groundwork → Provider):
-- **Anthropic API key**: stored on this device only, not in the vault, so it is never pushed to GitHub.
-- **Demo**: a scripted lesson on the derivative that exercises everything (recall, plan with a map, LaTeX, quizzes that update the vault, session summary) without calling any model.
-
-A signed-in Bring your own model account uses the choice on the website: Claude on this computer, or a key saved on the account. Free and Groundwork ignore the local provider and use Groundwork's model.
+A signed-in Bring your own model account uses the choice on the website: Claude on this computer, or a key saved on the account. Free and Groundwork use Groundwork's model.
 
 Web search (optional) lets the tutor verify facts: Claude Code's WebSearch/WebFetch tools on the subscription, or Anthropic's web search tool with an API key.
 

@@ -24,7 +24,6 @@ import {
 	fileKind,
 	letter,
 	loadVaultFile,
-	listAnthropicModels,
 	normalizeTutorMarkdown,
 	normalizeVaultPath,
 	parseNote,
@@ -68,7 +67,7 @@ import { AskCard, QuizCard, TestCard } from "./cards";
 import { FlashcardsPane } from "./flashcards-pane";
 import { enhanceGraphs } from "./graph-pane";
 import type GroundworkPlugin from "./main";
-import { accountOrigin, folderAccessFrom, loadAccountToken, loadApiKey, saveApiKey, VaultFolderModal, type ProviderId } from "./settings";
+import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
 
 export const VIEW_TYPE = "groundwork-chat";
 
@@ -173,7 +172,6 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiSettingsEl!: HTMLElement;
 	private uiSettingsBtn!: HTMLElement;
 	private settingsOpen = false;
-	private anthropicModels: Array<{ id: string; name: string }> = [];
 	/** Unsaved learner file. Null means show what is saved in the vault. */
 	private learnerDraft: string | null = null;
 	private uiSendBtn!: HTMLButtonElement;
@@ -394,7 +392,12 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private async ensureAgent(): Promise<TutorSession | null> {
 		if (this.agent?.busy) return this.agent;
-		if (loadAccountToken(this.app)) await this.plugin.refreshTutorRoute();
+		await this.plugin.refreshTutorRoute();
+		if (!this.plugin.signedIn()) {
+			this.dropAgent();
+			this.agentKey = "";
+			return null;
+		}
 		const key = this.plugin.tutorRouteKey();
 		if (this.agent && this.agentKey === key) return this.agent;
 		this.dropAgent();
@@ -430,8 +433,7 @@ export class ChatView extends ItemView implements ToolUI {
 			return this.agent;
 		}
 
-		const provider = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : runtime.runtime === "demo" ? new DemoProvider() : this.plugin.makeProvider();
-		if (!provider) return null;
+		const provider = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : new DemoProvider();
 		const current = record.messages.length > 0 && (record.messagesAt === undefined || record.messagesAt === record.items.length);
 		const messages: ChatMessage[] = current
 			? record.messages
@@ -462,8 +464,8 @@ export class ChatView extends ItemView implements ToolUI {
 		const agent = await this.ensureAgent();
 		if (!agent) {
 			const runtime = this.plugin.runtime();
-			new Notice(runtime.detail ?? this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
-			if (runtime.website) window.open(accountOrigin());
+			new Notice(runtime.detail ?? this.plugin.providerLabel().setup?.detail ?? "Sign in on the Groundwork website, then choose Open Obsidian.");
+			if (runtime.website) window.open(this.plugin.signedIn() ? accountOrigin() : accountSignInUrl());
 			else this.plugin.openSettings();
 			return;
 		}
@@ -881,13 +883,15 @@ export class ChatView extends ItemView implements ToolUI {
 			void MarkdownRenderer.render(this.app, provider.setup.detail, warn.createDiv({ cls: "gw-setup-detail" }), "", this);
 			const row = warn.createDiv({ cls: "gw-row" });
 			row.createEl("button", { cls: "mod-cta", text: provider.setup.action }).addEventListener("click", () => {
-				if (provider.setup?.website) window.open(accountOrigin());
+				if (provider.setup?.website) window.open(this.plugin.signedIn() ? accountOrigin() : accountSignInUrl());
 				else this.plugin.openSettings();
 			});
-			row.createEl("button", { text: "Try the demo" }).addEventListener("click", async () => {
-				await this.plugin.useDemo();
-				this.renderAll();
-			});
+			if (this.plugin.signedIn()) {
+				row.createEl("button", { text: "Try the demo" }).addEventListener("click", async () => {
+					await this.plugin.useDemo();
+					this.renderAll();
+				});
+			}
 		}
 
 		const store = this.plugin.store;
@@ -1244,7 +1248,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.closeFlashcards();
 		this.closeLibrary();
 		this.uiInputEl?.blur();
-		if (loadAccountToken(this.app)) await this.plugin.refreshTutorRoute();
+		await this.plugin.refreshTutorRoute();
 		this.settingsOpen = true;
 		this.contentEl.addClass("is-settings");
 		this.uiSettingsBtn.addClass("is-active");
@@ -1438,8 +1442,8 @@ export class ChatView extends ItemView implements ToolUI {
 			text: connected ? "This device is connected. On the website, choose Open Obsidian again if you switch accounts." : "Open the website, sign in, and choose Open Obsidian.",
 		});
 		const row = section.createDiv({ cls: "gw-lib-save-row" });
-		const open = row.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Open website", attr: { type: "button" } });
-		open.addEventListener("click", () => window.open(accountOrigin()));
+		const open = row.createEl("button", { cls: "gw-lib-btn mod-cta", text: connected ? "Open website" : "Sign in", attr: { type: "button" } });
+		open.addEventListener("click", () => window.open(connected ? accountOrigin() : accountSignInUrl()));
 	}
 
 	private renderVaultFolders(parent: HTMLElement): void {
@@ -1496,38 +1500,34 @@ export class ChatView extends ItemView implements ToolUI {
 			cls: "gw-lib-help",
 			text: "The tutor looks things up on the web when a fact is uncertain. Written answers are graded on the website.",
 		});
-		const route = this.plugin.tutorRoute;
-		if (route?.action === "hosted") {
-			const used = Math.round((route.budgetUsed || 0) * 100);
+		if (!loadAccountToken(this.app)) {
+			section.createDiv({
+				cls: "gw-lib-help",
+				text: "Sign in on the Groundwork website, then choose Open Obsidian. The tutor waits until this device is connected.",
+			});
+			const signIn = section.createEl("button", { cls: "gw-lib-btn", text: "Sign in", attr: { type: "button" } });
+			signIn.addEventListener("click", () => window.open(accountSignInUrl()));
+		} else if (this.plugin.tutorRoute?.action === "hosted") {
+			const used = Math.round((this.plugin.tutorRoute.budgetUsed || 0) * 100);
 			section.createDiv({
 				cls: "gw-lib-help",
 				text: `This account uses Groundwork's smaller model. ${used}% of this month's budget is used. A Claude subscription is the Bring your own model plan.`,
 			});
-		} else if (route?.action === "key") {
-			section.createDiv({ cls: "gw-lib-help", text: `The tutor calls ${route.label} with the key saved on your account. Change that on the website.` });
-		} else if (route?.action === "blocked") {
-			section.createDiv({ cls: "gw-lib-help", text: route.error ?? "Open the website to finish setup." });
+		} else if (this.plugin.tutorRoute?.action === "key") {
+			section.createDiv({ cls: "gw-lib-help", text: `The tutor calls ${this.plugin.tutorRoute.label} with the key saved on your account. Change that on the website.` });
+		} else if (this.plugin.tutorRoute?.action === "blocked") {
+			section.createDiv({ cls: "gw-lib-help", text: this.plugin.tutorRoute.error ?? "Open the website to finish setup." });
 			const open = section.createEl("button", { cls: "gw-lib-btn", text: "Open website", attr: { type: "button" } });
 			open.addEventListener("click", () => window.open(accountOrigin()));
-		} else if (route?.action === "claude") {
+		} else if (this.plugin.tutorRoute?.action === "claude") {
 			this.renderClaudeSettings(section);
 		} else {
-		const provider = this.settingField(section, "Provider", "Claude subscription uses Claude Code. Anthropic API bills a key. Demo plays a scripted lesson.");
-		const select = provider.createEl("select", { cls: "gw-lib-filter" });
-		for (const [value, label] of [
-			["claude-code", "Claude subscription (Claude Code)"],
-			["anthropic", "Anthropic API key"],
-			["demo", "Demo (scripted)"],
-		] as const) {
-			select.createEl("option", { text: label, attr: { value } });
-		}
-		select.value = s.provider;
-		select.addEventListener("change", () => {
-			s.provider = select.value as ProviderId;
-			void this.plugin.saveSettings().then(() => this.renderSettings());
-		});
-		if (s.provider === "claude-code") this.renderClaudeSettings(section);
-		if (s.provider === "anthropic") this.renderAnthropicSettings(section);
+			section.createDiv({
+				cls: "gw-lib-help",
+				text: "This device is signed in, and the account has not answered yet. On the website, choose Open Obsidian.",
+			});
+			const open = section.createEl("button", { cls: "gw-lib-btn", text: "Open website", attr: { type: "button" } });
+			open.addEventListener("click", () => window.open(accountOrigin()));
 		}
 		const device = this.settingField(section, "Device name", "Recorded on quiz evidence so you can tell machines apart. Leave empty to use this computer's name.");
 		const deviceInput = device.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: this.plugin.deviceName() } });
@@ -1605,62 +1605,6 @@ export class ChatView extends ItemView implements ToolUI {
 				void this.plugin.saveSettings();
 			});
 		}
-	}
-
-	private renderAnthropicSettings(parent: HTMLElement): void {
-		const s = this.plugin.settings;
-		const key = this.settingField(parent, "Anthropic API key", "Stored only on this device, never in the vault.");
-		const keyInput = key.createEl("input", { cls: "gw-lib-filter", attr: { type: "password", placeholder: "sk-ant-…" } });
-		keyInput.value = loadApiKey(this.app);
-		keyInput.addEventListener("change", () => {
-			saveApiKey(this.app, keyInput.value.trim());
-			this.plugin.resetAgent();
-		});
-		const model = this.settingField(parent, "Model", "Any Anthropic model id. Load models to pick from what your key can access.");
-		const controls = model.createDiv({ cls: "gw-field-controls" });
-		if (this.anthropicModels.length) {
-			const picked = controls.createEl("select", { cls: "gw-lib-filter" });
-			for (const item of this.anthropicModels) picked.createEl("option", { text: `${item.name} (${item.id})`, attr: { value: item.id } });
-			picked.value = s.model;
-			picked.addEventListener("change", () => {
-				s.model = picked.value;
-				void this.plugin.saveSettings();
-			});
-		} else {
-			const modelInput = controls.createEl("input", { cls: "gw-lib-filter", attr: { type: "text" } });
-			modelInput.value = s.model;
-			modelInput.addEventListener("change", () => {
-				s.model = modelInput.value.trim();
-				void this.plugin.saveSettings();
-			});
-		}
-		const load = controls.createEl("button", { cls: "gw-lib-btn", text: "Load models", attr: { type: "button" } });
-		load.addEventListener("click", () => {
-			const apiKey = loadApiKey(this.app);
-			if (!apiKey) {
-				new Notice("Add your API key first.");
-				return;
-			}
-			void listAnthropicModels(apiKey).then(
-				async (models) => {
-					this.anthropicModels = models;
-					if (!models.some((item) => item.id === s.model) && models[0]) s.model = models[0].id;
-					await this.plugin.saveSettings();
-					await this.renderSettings();
-				},
-				(err: unknown) => new Notice(err instanceof Error ? err.message : String(err)),
-			);
-		});
-		const tokens = this.settingField(parent, "Max output tokens", "How long a tutor reply can be.");
-		const tokenInput = tokens.createEl("input", { cls: "gw-lib-filter", attr: { type: "text" } });
-		tokenInput.value = String(s.maxTokens);
-		tokenInput.addEventListener("change", () => {
-			const n = Number(tokenInput.value);
-			if (Number.isFinite(n) && n >= 1024) {
-				s.maxTokens = Math.round(n);
-				void this.plugin.saveSettings();
-			}
-		});
 	}
 
 	private renderAppearance(parent: HTMLElement): void {
@@ -2315,11 +2259,21 @@ export class ChatView extends ItemView implements ToolUI {
 		await card.renderMessage("user", text);
 		const reply = card.startReply();
 
+		if (!this.plugin.signedIn()) {
+			this.asideAgents.get(thread.id)?.close?.();
+			this.asideAgents.delete(thread.id);
+		}
 		let agent = this.asideAgents.get(thread.id);
 		const fresh = !agent;
 		agent ??= (await this.makeAsideAgent(hint ? "hint" : "margin", thread.id)) ?? undefined;
 		if (!agent) {
-			reply.finish(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
+			const runtime = this.plugin.runtime();
+			const detail = runtime.detail ?? this.plugin.providerLabel().setup?.detail ?? "Sign in on the Groundwork website, then choose Open Obsidian.";
+			reply.finish(detail);
+			if (!this.plugin.signedIn()) {
+				new Notice(detail);
+				window.open(accountSignInUrl());
+			}
 			return;
 		}
 		this.asideAgents.set(thread.id, agent);
@@ -2346,7 +2300,8 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async makeAsideAgent(kind: "margin" | "hint", threadId: string): Promise<TutorSession | null> {
-		if (loadAccountToken(this.app)) await this.plugin.refreshTutorRoute();
+		await this.plugin.refreshTutorRoute();
+		if (!this.plugin.signedIn()) return null;
 		const tools = TOOLS.filter((t) => ASIDE_TOOL_NAMES.includes(t.name));
 		const access = folderAccessFrom(this.plugin.settings);
 		const system = [kind === "hint" ? HINT_PROMPT : ASIDE_PROMPT, fileAccessGuidance(access, "read")].join("\n\n");
@@ -2358,8 +2313,8 @@ export class ChatView extends ItemView implements ToolUI {
 			const cfg = this.plugin.claudeCodeConfig();
 			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session, access, grader: this.plugin.answerGrader() }) : null;
 		}
-		const p = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : runtime.runtime === "demo" ? new DemoAsideProvider() : this.plugin.makeProvider();
-		return p ? new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8, access, grader: this.plugin.answerGrader() }) : null;
+		const p = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : new DemoAsideProvider();
+		return new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8, access, grader: this.plugin.answerGrader() });
 	}
 
 	private dropAsides(): void {

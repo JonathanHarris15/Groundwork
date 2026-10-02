@@ -224,7 +224,7 @@ export class DemoProvider implements Provider {
 			return [
 				{
 					type: "text",
-					text: "Session saved. This is the end of the scripted demo. Add an Anthropic API key in **Settings → Groundwork** for a real tutor that plans any goal you give it.",
+					text: "Session saved. This is the end of the scripted demo. On the Groundwork website, choose a plan for a tutor that plans any goal you give it.",
 				},
 			];
 		}
@@ -232,7 +232,7 @@ export class DemoProvider implements Provider {
 		return [
 			{
 				type: "text",
-				text: "*(Demo mode)* The scripted tutor has finished. Add an Anthropic API key in **Settings → Groundwork** to learn anything you like, or start a new session to replay the demo.",
+				text: "*(Demo mode)* The scripted tutor has finished. Choose a plan on the Groundwork website to learn anything you like, or start a new session to replay the demo.",
 			},
 		];
 	}

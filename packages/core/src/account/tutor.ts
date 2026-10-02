@@ -10,6 +10,9 @@
  * provision: Claude Code's login on this computer is the credential, and those turns never
  * pass through Groundwork.
  *
+ * The tutor does not run until the device is signed in. A signed-out attempt is a prompt
+ * to sign in on the website and choose Open Obsidian.
+ *
  * Clients receive `tutorStatus`. It has no dollar amounts.
  */
 
@@ -58,6 +61,8 @@ export const CLAUDE_SETUP = [
 
 export const CLAUDE_SETUP_DETAIL =
 	"Install Claude Code, run `claude` in a terminal and type /login with your Claude subscription, then choose Check connection in Groundwork settings.";
+
+export const SIGN_IN_DETAIL = "Sign in on the Groundwork website, then choose Open Obsidian.";
 
 export type UpstreamKind = "anthropic" | "openai" | "google";
 
@@ -161,21 +166,13 @@ export function tutorStatus(decision: TutorDecision, view: AccountView, choice: 
 export function tutorRuntime(input: {
 	selected: "demo" | "claude" | "anthropic";
 	account: TutorStatus | null;
+	signedIn: boolean;
 	claudeReady: boolean;
-	localKey: boolean;
-}): { runtime: "demo" | "claude" | "proxy" | "local-key" | "setup"; detail: string | null; website: boolean } {
+}): { runtime: "demo" | "claude" | "proxy" | "setup"; detail: string | null; website: boolean } {
+	if (!input.signedIn) return { runtime: "setup", detail: SIGN_IN_DETAIL, website: true };
 	if (input.selected === "demo") return { runtime: "demo", detail: null, website: false };
 	const account = input.account;
-	if (!account) {
-		if (input.selected === "claude") {
-			return input.claudeReady
-				? { runtime: "claude", detail: null, website: false }
-				: { runtime: "setup", detail: CLAUDE_SETUP_DETAIL, website: false };
-		}
-		return input.localKey
-			? { runtime: "local-key", detail: null, website: false }
-			: { runtime: "setup", detail: "Add an Anthropic API key, or switch the provider to your Claude subscription.", website: false };
-	}
+	if (!account) return { runtime: "setup", detail: "On the website, choose Open Obsidian so this device can use your account.", website: true };
 	if (account.action === "hosted" || account.action === "key") return { runtime: "proxy", detail: null, website: false };
 	if (account.action === "claude") {
 		return input.claudeReady

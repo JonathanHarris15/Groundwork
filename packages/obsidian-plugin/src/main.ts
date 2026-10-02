@@ -1,11 +1,11 @@
 import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorStatus, type VaultIO } from "@groundwork/core";
+import { AccountClient, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
-import { accountOrigin, accountOriginIsLocal, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, loadApiKey, saveAccountToken, type GroundworkSettings } from "./settings";
+import { accountOrigin, accountOriginIsLocal, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
 
 type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
@@ -184,19 +184,6 @@ export default class GroundworkPlugin extends Plugin {
 	/** Last answer from the account. Null when this device is not signed in. */
 	tutorRoute: TutorStatus | null = null;
 
-	/** For the API-key and demo providers; the Claude subscription runs through {@link claudeCodeConfig}. */
-	makeProvider(): Provider | null {
-		if (this.settings.provider === "demo") return new DemoProvider();
-		const apiKey = loadApiKey(this.app) || process.env.ANTHROPIC_API_KEY || "";
-		if (!apiKey) return null;
-		return new AnthropicProvider({
-			apiKey,
-			model: this.settings.model,
-			maxTokens: this.settings.maxTokens,
-			webSearch: true,
-		});
-	}
-
 	/** Hosted plans and saved bring-your-own keys. The key stays on the server. */
 	makeGroundworkProvider(): Provider {
 		return new GroundworkProvider({
@@ -228,12 +215,16 @@ export default class GroundworkPlugin extends Plugin {
 		return `${route.action}:${route.provider ?? ""}:${route.model ?? ""}:${route.setup ?? ""}`;
 	}
 
+	signedIn(): boolean {
+		return !!loadAccountToken(this.app);
+	}
+
 	runtime(): ReturnType<typeof tutorRuntime> {
 		return tutorRuntime({
 			selected: this.settings.provider === "demo" ? "demo" : this.settings.provider === "anthropic" ? "anthropic" : "claude",
 			account: this.tutorRoute,
+			signedIn: this.signedIn(),
 			claudeReady: !!this.claudeCodeConfig(),
-			localKey: !!(loadApiKey(this.app) || process.env.ANTHROPIC_API_KEY),
 		});
 	}
 
@@ -260,20 +251,26 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 	providerLabel(): { label: string; demo: boolean; setup: { title: string; detail: string; action: string; website?: boolean } | null } {
+		if (!this.signedIn()) {
+			return {
+				label: "Sign in",
+				demo: false,
+				setup: { title: "Sign in to start.", detail: SIGN_IN_DETAIL, action: "Sign in", website: true },
+			};
+		}
 		const { provider } = this.settings;
 		if (provider === "demo") return { label: "Demo tutor (scripted)", demo: true, setup: null };
 		const runtime = this.runtime();
 		const route = this.tutorRoute;
 		if (runtime.runtime === "proxy") return { label: route?.label ?? "Groundwork", demo: false, setup: null };
-		if (runtime.runtime === "local-key") return { label: this.settings.model, demo: false, setup: null };
 		if (runtime.runtime === "setup") {
 			return {
-				label: route?.action === "blocked" ? "Tutor paused" : provider === "claude-code" ? "Claude Code not found" : "No API key",
+				label: route?.action === "blocked" ? "Tutor paused" : runtime.website ? "Account" : "Claude Code not found",
 				demo: false,
 				setup: {
-					title: runtime.website ? "Finish setup on the website." : provider === "claude-code" ? "Connect your Claude subscription to start." : "Connect a model to start.",
-					detail: runtime.detail ?? "Set up a tutor provider in Settings → Groundwork.",
-					action: runtime.website ? "Open website" : provider === "claude-code" ? "Open settings" : "Add API key",
+					title: runtime.website ? "Finish setup on the website." : "Connect your Claude subscription to start.",
+					detail: runtime.detail ?? SIGN_IN_DETAIL,
+					action: runtime.website ? "Open website" : "Open settings",
 					website: runtime.website,
 				},
 			};
@@ -291,17 +288,7 @@ export default class GroundworkPlugin extends Plugin {
 				},
 			};
 		}
-		const hasKey = !!(loadApiKey(this.app) || process.env.ANTHROPIC_API_KEY);
-		if (hasKey) return { label: this.settings.model, demo: false, setup: null };
-		return {
-			label: "No API key",
-			demo: false,
-			setup: {
-				title: "Connect a model to start.",
-				detail: "Add your Anthropic API key (kept on this device only), or switch the provider to your Claude subscription.",
-				action: "Add API key",
-			},
-		};
+		return { label: route?.label ?? "Groundwork", demo: false, setup: null };
 	}
 
 	async useDemo(): Promise<void> {

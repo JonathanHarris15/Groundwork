@@ -16,6 +16,11 @@ export function accountOrigin(): string {
 	return (override || GROUNDWORK_SITE).replace(/\/+$/, "");
 }
 
+/** Website sign-in. The plugin opens this when the tutor is used while signed out. */
+export function accountSignInUrl(): string {
+	return `${accountOrigin()}/#signin`;
+}
+
 export function accountOriginIsLocal(): boolean {
 	try {
 		const host = new URL(accountOrigin()).hostname;
