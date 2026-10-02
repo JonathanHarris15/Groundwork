@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getApps, initializeApp, applicationDefault, cert, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 
@@ -16,7 +19,7 @@ export interface Auth {
 const LOCAL_UID = "local";
 
 export function firebaseConfigured(): boolean {
-	return !!(process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim());
+	return !!(process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() || serviceAccountFile());
 }
 
 export function loadAuth(): Auth {
@@ -44,5 +47,21 @@ function ensureApp(): App {
 	if (raw) {
 		return initializeApp({ credential: cert(JSON.parse(raw) as Record<string, string>) });
 	}
+	const file = serviceAccountFile();
+	if (file && file !== process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()) {
+		return initializeApp({ credential: cert(JSON.parse(readFileSync(file, "utf8")) as Record<string, string>) });
+	}
 	return initializeApp({ credential: applicationDefault() });
+}
+
+/** A gitignored key at the repo root, used when the env vars are unset. */
+function serviceAccountFile(): string | undefined {
+	const explicit = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+	if (explicit && existsSync(explicit)) return explicit;
+	const here = path.dirname(fileURLToPath(import.meta.url));
+	const candidates = [
+		path.resolve(process.cwd(), "firebase-service-account.json"),
+		path.resolve(here, "../../../firebase-service-account.json"),
+	];
+	return candidates.find((file) => existsSync(file));
 }

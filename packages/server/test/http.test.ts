@@ -112,7 +112,7 @@ describe("account server", () => {
 
 		const server = deps();
 		const config = await route("GET", "/v1/web-config", null, server);
-		expect(config.json).toMatchObject({ firebase: null, billing: false });
+		expect(config.json).toMatchObject({ firebase: { projectId: "groundwork-6f9ca", authDomain: "groundwork-6f9ca.firebaseapp.com" }, billing: false });
 		const paid = await route("POST", "/v1/account/plan", { plan: "included" }, server);
 		expect(paid.status).toBe(503);
 
