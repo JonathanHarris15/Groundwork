@@ -1,0 +1,67 @@
+---
+description: Restyles land on the real site. A reusable design choice from that work is written into docs when the repo has a design guide. A lightweight HTML prototype is only for a brand-new feature with no page yet.
+alwaysApply: true
+---
+
+# Design changes (Groundwork)
+
+## Updating a design that already exists
+
+Change the real pages under `packages/site/public/` (and shared CSS/JS they use). Run the local account server (`npm run account`, default `http://127.0.0.1:8787`) and verify in the browser. Do not make a standalone HTML prototype for a restyle, a style sweep, or a layout change to a page that already ships.
+
+If local preview is wrong, it is not merged. Do not stop and wait for a prototype approval before editing `packages/site/public/`.
+
+## Write the convention into project docs
+
+When a page update settles a design choice another page could follow, document that convention in the repo (for example `docs/design/design-language.md` when that file exists, or a short note in the PR). A choice is a convention when a second page would otherwise invent it: spacing, a type role, how a control moves, what stays on screen, empty and error. A one-off wording change is not a convention.
+
+## A brand-new feature that needs a new design
+
+When the feature has no existing page to put the design on, a lightweight HTML prototype comes first, then implementation. Path: `docs/design/prototypes/<issue-key>-<slug>.html` (use your Jira/GitHub issue key, e.g. `GW-42-profile-cards.html`). Never under `packages/site/public/` and never deployed as production Hosting except a temporary preview link.
+
+### How prototypes are built
+
+- Link the real stylesheets by **relative path** from the prototype file, e.g. `../../../packages/site/public/site.css`.
+- Match typography to the live site: copy the font `<link>` pattern from `packages/site/public/index.html` (Fraunces + Outfit) or link those Google Fonts URLs explicitly.
+- Use the same class names and tokens as the live site where possible; prototype-only CSS goes in an inline `<style>` block.
+- **Fictional data only** — no real learner emails, vault paths, or account content.
+- Must read correctly at **390px** and **1280px** width.
+- Show **empty**, **one**, **many**, and **error** states on the same page (labelled sections).
+- When there is a real design choice, show **2–3 structurally different variants** labelled **A / B / C** (not colour-only tweaks).
+
+### Review passes (before the draft prototype PR)
+
+1. **`frontend-design`** — layout, hierarchy, copy, critique pass (Groundwork override: match the existing site voice and tokens).
+2. **`web-interface-guidelines`** — run against the prototype file per `.cursor/skills/web-interface-guidelines/SKILL.md`.
+
+### Draft prototype PR
+
+1. Commit **only** the prototype (and any docs tied to it).
+2. Open a **draft** PR titled `[Prototype] <issue-key>` (not the implementation PR).
+3. Attach screenshots at **390×844** and **1280×800**.
+4. Post a view link (primary format below) with a **3-line summary** of what changed and what you want feedback on.
+5. Open the link yourself and confirm site CSS loaded (fonts, layout, token-driven styles).
+6. **Stop** until Jonathan approves. Implementation follows in a separate branch/PR.
+
+### View links
+
+Use the commit SHA that contains the prototype file.
+
+- **Primary:** `https://htmlpreview.github.io/?https://github.com/JonathanHarris15/Groundwork/blob/<commitSHA>/docs/design/prototypes/<file>.html`
+- **Backup:** `https://raw.githack.com/JonathanHarris15/Groundwork/<commitSHA>/docs/design/prototypes/<file>.html`
+
+## When a prototype is the wrong tool
+
+- The page already exists and the task is to restyle it, clean it up, or align it with existing site patterns
+- Pure bug fix with no layout change
+- Copy-only change
+- Style fix of **10 lines or fewer** with no layout change
+- Obsidian-plugin-only UI with no website counterpart (use plugin manual testing instead)
+
+## Smoke test
+
+Prototype-only commits **skip** the jev smoke test. Any PR that changes `packages/site/public/` or other user-visible UI still runs jev in full per `.cursor/rules/smoke-test.mdc`.
+
+## Supersedes in-app `?variant=` prototypes
+
+This rule supersedes the `?variant=` on-route approach in `.cursor/skills/prototype/UI.md` and related prototype docs **unless Jonathan asks for in-app variants**. A restyle still lands on the real site. A new feature's prototype lives in `docs/design/prototypes/`.

@@ -24,7 +24,8 @@ import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
 import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
 import { isBuilt } from "./graph";
 import { buildStudyQueue, loadFlashcardLibrary, saveFlashcard } from "./flashcards";
-import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
+import { daysLeftPhrase } from "./goal-plan";
+import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalReport, type GoalStatus, type KnowledgeStore } from "./store";
 
 export type JSONSchema = Record<string, unknown>;
 
@@ -302,7 +303,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal. A goal is the list of targets: concepts the learner has not built yet. The title may name a course, exam, or document (Lecture 1 note fluency, Prepare for the midterm). targets and nodes must be abstract concepts that would still make sense in another class — never a file and never fluency on a file. Pass sources for the vault files this goal draws on. nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
+			"Save a learning goal. A goal is the list of targets: concepts the learner has not built yet. The title may name a course, exam, or document (Lecture 1 note fluency, Prepare for the midterm). targets and nodes must be abstract concepts that would still make sense in another class — never a file and never fluency on a file. Pass sources for the vault files this goal draws on. nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Pass due as YYYY-MM-DD when the learner has a deadline; omit it and a new goal is due in 14 days. Pass weights when a syllabus says how much each concept counts (percents). Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -333,6 +334,19 @@ export const TOOLS: ToolDef[] = [
 					},
 				},
 				status: { type: "string", enum: ["active", "paused", "done"] },
+				due: str("Deadline as YYYY-MM-DD, such as the exam day. Omit it and a new goal is due in 14 days."),
+				weights: {
+					type: "array",
+					description: "How much of the goal each concept is worth, as percents that add up to about 100. Leave a concept out and it shares what remains.",
+					items: {
+						type: "object",
+						properties: {
+							title: str("Concept title, one of the nodes."),
+							weight: { type: "number", exclusiveMinimum: 0, description: "Percent of the goal, e.g. 25." },
+						},
+						required: ["title", "weight"],
+					},
+				},
 				examPlan: str("Title of the exam plan note this goal was built from, if any."),
 				sources: strList("Vault paths of the source documents for this goal, e.g. resources/Lecture Note 1.pdf. Never put these on a concept."),
 			},
@@ -347,6 +361,7 @@ export const TOOLS: ToolDef[] = [
 					goal: r.goal.title,
 					note: r.goal.path,
 					status: r.goal.status,
+					...(await goalCalendarFields(store, r)),
 					progress: describeGoalProgress(r.goal),
 					targets: r.goal.targets.map(titleOf),
 					built: r.goal.built.map(titleOf),
@@ -377,6 +392,7 @@ export const TOOLS: ToolDef[] = [
 					goal: r.goal.title,
 					status: r.goal.status,
 					objective: r.goal.objective,
+					...(await goalCalendarFields(store, r)),
 					progress: describeGoalProgress(r.goal),
 					targets: r.goal.targets.map(titleOf),
 					built: r.goal.built.map(titleOf),
@@ -933,6 +949,20 @@ export const TOOLS: ToolDef[] = [
 		},
 	},
 ];
+
+async function goalCalendarFields(store: KnowledgeStore, report: GoalReport) {
+	const timing = await store.goalTiming(report);
+	const titleOf = (id: string) => report.nodes.find((node) => node.id === id)?.title ?? id;
+	return {
+		due: report.goal.due ?? null,
+		daysLeft: timing.schedule?.daysLeft ?? null,
+		dueLabel: timing.schedule ? daysLeftPhrase(timing.schedule.daysLeft) : null,
+		pace: timing.schedule?.pace ?? null,
+		readiness: Math.round(timing.readiness * 100),
+		weights: report.nodes.map((node) => ({ title: titleOf(node.id), percent: Math.round(timing.weights[node.id] ?? 0) })),
+		studiedDays: timing.schedule?.studiedDays ?? 0,
+	};
+}
 
 export function toolByName(name: string): ToolDef | undefined {
 	return TOOLS.find((t) => t.name === name);

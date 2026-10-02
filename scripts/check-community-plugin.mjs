@@ -7,7 +7,10 @@ const manifestPath = path.join(root, "packages/obsidian-plugin/manifest.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const versions = JSON.parse(readFileSync(path.join(root, "versions.json"), "utf8"));
 const styles = readFileSync(path.join(root, "packages/obsidian-plugin/styles.css"), "utf8");
-const site = readFileSync(path.join(root, "packages/site/public/site.css"), "utf8");
+const website = [
+	readFileSync(path.join(root, "packages/server/public/styles.css"), "utf8"),
+	readFileSync(path.join(root, "packages/server/public/index.html"), "utf8"),
+].join("\n");
 
 const fail = (message) => {
 	console.error(message);
@@ -28,10 +31,10 @@ if (versions[manifest.version] !== manifest.minAppVersion) {
 if (!existsSync(path.join(root, "LICENSE"))) fail("LICENSE is required for the community plugin directory");
 if (!existsSync(path.join(root, "README.md"))) fail("README.md is required");
 
-const themeTokens = ["#f3efe6", "#1c1915", "#0e6b52", "#1f8a5b", "#b8860b", "#c45c26", "#6b46c1", "#8d877e"];
+const themeTokens = ["#f0565b", "#f7a93e", "#45a9f0", "#3cc56f", "#0f1115", "jost"];
 for (const token of themeTokens) {
-	if (!site.includes(token)) fail(`site.css is missing ${token}`);
-	if (!styles.includes(token)) fail(`plugin styles.css is missing website token ${token}`);
+	if (!website.toLowerCase().includes(token)) fail(`website is missing ${token}`);
+	if (!styles.toLowerCase().includes(token)) fail(`plugin styles.css is missing website token ${token}`);
 }
 
 const distManifest = path.join(root, "packages/obsidian-plugin/dist/manifest.json");
