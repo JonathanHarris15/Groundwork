@@ -160,7 +160,7 @@ function showAccount() {
 		<section class="section">
 			<h2><span class="node orange"></span>Billing</h2>
 			<p>${account.hasBilling ? "Update the card, see invoices, or cancel in Stripe." : "A paid plan opens Stripe checkout. You can change the card later from here."}</p>
-			<div class="actions"><button class="btn ${account.hasBilling ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"}>Manage billing</button></div>
+			<div class="actions"><button class="btn ${account.hasBilling && config.billing ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"}>Manage billing</button></div>
 		</section>
 		${account.ownModel ? keysSection() : ""}
 		<div class="plan-foot">

@@ -587,7 +587,7 @@ label { font-size: 15px; font-weight: 500; }
 	animation: live 2.4s ease-out infinite;
 }
 
-.stats { display: grid; grid-template-columns: minmax(0, 420px); gap: 14px; margin-top: 22px; }
+.stats { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 22px; }
 
 .tile {
 	position: relative;
