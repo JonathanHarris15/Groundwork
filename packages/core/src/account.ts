@@ -394,6 +394,15 @@ export class AccountClient {
 		return this.request("PUT", "/api/me/memory", input);
 	}
 
+	/** Tutor memory on the Groundwork website. The plugin does not ask for a separate server. */
+	async getHostedMemory(): Promise<TutorMemory> {
+		return this.request("GET", "/v1/memory");
+	}
+
+	async putHostedMemory(input: { files: Record<string, string>; knowledge: KnowledgeSnapshot }): Promise<TutorMemory> {
+		return this.request("PUT", "/v1/memory", input);
+	}
+
 	async profile(): Promise<ProfilePayload> {
 		return this.request("GET", "/api/me/profile");
 	}
@@ -430,6 +439,33 @@ export class AccountClient {
 		}
 		return parsed as T;
 	}
+}
+
+export interface FirebaseSession {
+	idToken: string;
+	refreshToken: string;
+}
+
+/** Turn a website sign-in into an ID token. The plugin stores the refresh token, not a password. */
+export async function refreshFirebaseSession(refreshToken: string, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<FirebaseSession> {
+	let response: Response;
+	try {
+		response = await fetchImpl(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+		});
+	} catch (e) {
+		throw new AccountError(`Could not reach the website sign-in. ${(e as Error).message}`, 0);
+	}
+	const text = await response.text();
+	const parsed = text ? (JSON.parse(text) as { id_token?: unknown; refresh_token?: unknown; error?: { message?: unknown } }) : {};
+	const idToken = typeof parsed.id_token === "string" ? parsed.id_token : "";
+	if (!response.ok || !idToken) {
+		const message = typeof parsed.error?.message === "string" ? parsed.error.message : "The website session expired. Open Groundwork and connect Obsidian again.";
+		throw new AccountError(message, response.status);
+	}
+	return { idToken, refreshToken: typeof parsed.refresh_token === "string" && parsed.refresh_token ? parsed.refresh_token : refreshToken };
 }
 
 function clamp01(n: number): number {

@@ -20,7 +20,9 @@ import {
 	fileKind,
 	letter,
 	loadVaultFile,
+	listAnthropicModels,
 	normalizeTutorMarkdown,
+	normalizeVaultPath,
 	parseNote,
 	practiceTestRequest,
 	shouldAutoIngest,
@@ -55,7 +57,7 @@ import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source"
 import { AskCard, QuizCard, TestCard } from "./cards";
 import { enhanceGraphs } from "./graph-pane";
 import type GroundworkPlugin from "./main";
-import { folderAccessFrom } from "./settings";
+import { accountOrigin, folderAccessFrom, loadAccountToken, loadApiKey, saveApiKey, VaultFolderModal, type ProviderId } from "./settings";
 
 export const VIEW_TYPE = "groundwork-chat";
 
@@ -143,6 +145,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiSettingsEl!: HTMLElement;
 	private uiSettingsBtn!: HTMLElement;
 	private settingsOpen = false;
+	private anthropicModels: Array<{ id: string; name: string }> = [];
 	/** Unsaved learner file. Null means show what is saved in the vault. */
 	private learnerDraft: string | null = null;
 	private uiSendBtn!: HTMLButtonElement;
@@ -203,7 +206,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.iconButton(actions, "history", "Past sessions", (e) => this.showHistory(e));
 		this.uiLibraryBtn = this.iconButton(actions, "library", "Library", () => void this.toggleLibrary());
 		this.uiSettingsBtn = this.iconButton(actions, "settings", "Settings", () => void this.toggleSettings());
-		this.uiSyncBtn = this.iconButton(actions, "refresh-cw", "Sync with GitHub", () => this.plugin.syncNow("manual"));
+		this.uiSyncBtn = this.iconButton(actions, "refresh-cw", "Save tutor memory", () => void this.plugin.saveMemory(true));
 
 		this.uiMessagesEl = root.createDiv({ cls: "gw-messages" });
 		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
@@ -873,7 +876,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const s = this.plugin.syncStatus;
 		this.uiSyncBtn.toggleClass("is-syncing", s.state === "syncing");
 		this.uiSyncBtn.toggleClass("is-warning", s.state === "error" || s.state === "offline");
-		this.uiSyncBtn.setAttr("aria-label", `Sync with GitHub — ${s.text}`);
+		this.uiSyncBtn.setAttr("aria-label", `Tutor memory — ${s.text}`);
 	}
 
 	// ── attachments ─────────────────────────────────────────────────────
@@ -893,7 +896,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private addFiles(files: File[]): void {
 		for (const file of files) {
 			if (file.size > MAX_UPLOAD_BYTES) {
-				new Notice(`${file.name} is over ${MAX_UPLOAD_BYTES / 1024 / 1024} MB, too large to keep in the vault's git repo.`);
+				new Notice(`${file.name} is over ${MAX_UPLOAD_BYTES / 1024 / 1024} MB, too large to attach.`);
 				continue;
 			}
 			const name = /^image\.\w+$/.test(file.name) ? `Pasted image ${timestamp()}.${file.name.split(".").pop()}` : file.name;
@@ -1114,6 +1117,10 @@ export class ChatView extends ItemView implements ToolUI {
 		else await this.openSettings();
 	}
 
+	showSettings(): Promise<void> {
+		return this.openSettings();
+	}
+
 	private async openSettings(): Promise<void> {
 		this.closeLibrary();
 		this.uiInputEl?.blur();
@@ -1253,7 +1260,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const store = this.plugin.store;
 		this.uiSettingsEl.empty();
 		const top = this.uiSettingsEl.createDiv({ cls: "gw-library-top" });
-		this.panelHead(top, "Settings", "Your learner file, and a way to start the vault over.", "Close settings", () => this.closeSettings());
+		this.panelHead(top, "Settings", "Vault folders, the tutor, and your account.", "Close settings", () => this.closeSettings());
 		const scroll = this.uiSettingsEl.createDiv({ cls: "gw-library-scroll" });
 
 		let profile = "";
@@ -1290,34 +1297,248 @@ export class ChatView extends ItemView implements ToolUI {
 				(err: unknown) => new Notice(err instanceof Error ? err.message : String(err)),
 			);
 		});
-		const prefs = scroll.createDiv({ cls: "gw-lib-section" });
-		prefs.createEl("h3", { text: "Preferences" });
-		if (this.plugin.settings.provider !== "demo") {
-			this.settingToggle(
-				prefs,
-				"Web search",
-				this.plugin.settings.provider === "claude-code"
-					? "Lets the tutor look things up when it is unsure of a fact."
-					: "Lets the tutor verify facts with Anthropic's web search tool.",
-				this.plugin.settings.webSearch,
-				(on) => {
-					this.plugin.settings.webSearch = on;
-					void this.plugin.saveSettings();
-				},
-			);
+		this.renderAccountLink(scroll);
+		this.renderVaultFolders(scroll);
+		this.renderTutorSettings(scroll);
+		this.renderAppearance(scroll);
+		this.renderVaultReset(scroll);
+	}
+
+	private renderAccountLink(parent: HTMLElement): void {
+		const section = parent.createDiv({ cls: "gw-lib-section" });
+		section.createEl("h3", { text: "Account" });
+		section.createDiv({
+			cls: "gw-lib-help",
+			text: "Sign in, plans, and billing are on the Groundwork website. Tutor memory is stored with that account.",
+		});
+		const connected = !!loadAccountToken(this.app);
+		section.createDiv({
+			cls: "gw-lib-help",
+			text: connected ? "This device is connected. On the website, choose Connect Obsidian again if you switch accounts." : "Open the website, sign in, and choose Connect Obsidian.",
+		});
+		const row = section.createDiv({ cls: "gw-lib-save-row" });
+		const open = row.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Open website", attr: { type: "button" } });
+		open.addEventListener("click", () => window.open(accountOrigin()));
+	}
+
+	private renderVaultFolders(parent: HTMLElement): void {
+		const section = parent.createDiv({ cls: "gw-lib-section" });
+		section.createEl("h3", { text: "Vault folders" });
+		section.createDiv({
+			cls: "gw-lib-help",
+			text: "Optional extra context in this vault. The tutor reads only these folders, and writes a file to hand in only inside a write folder. Concepts and notes stay on your account.",
+		});
+		this.folderEditor(section, "readFolders", "Folders the tutor can read", "Chat uploads are saved in the first one. Leave this empty and the tutor does not read the vault.");
+		this.folderEditor(section, "writeFolders", "Folders the tutor can write", "A file to hand in is written here and nowhere else.");
+	}
+
+	private folderEditor(parent: HTMLElement, key: "readFolders" | "writeFolders", name: string, desc: string): void {
+		const s = this.plugin.settings;
+		const field = this.settingField(parent, name, desc);
+		if (!s[key].length) field.createDiv({ cls: "gw-setting-desc", text: "None yet." });
+		for (const folder of s[key]) {
+			const row = field.createDiv({ cls: "gw-folder-row" });
+			row.createSpan({ text: folder });
+			const remove = row.createEl("button", { cls: "gw-lib-btn", text: "Remove", attr: { type: "button" } });
+			remove.addEventListener("click", () => {
+				s[key] = s[key].filter((item) => item !== folder);
+				void this.plugin.saveSettings().then(() => this.renderSettings());
+			});
 		}
-		this.settingToggle(prefs, "Sync the vault with GitHub", "Commits files in this vault. The tutor's memory is on your account, not in the vault.", this.plugin.settings.autoSync, (on) => {
-			this.plugin.settings.autoSync = on;
+		const controls = field.createDiv({ cls: "gw-field-controls" });
+		const input = controls.createEl("input", {
+			cls: "gw-lib-filter",
+			attr: { type: "text", placeholder: key === "readFolders" ? "resources" : "submissions" },
+		});
+		const add = (path: string) => {
+			const folder = normalizeVaultPath(path);
+			if (!folder) {
+				new Notice("Groundwork: use a vault folder such as resources or submissions/homework.");
+				return;
+			}
+			if (!s[key].includes(folder)) s[key].push(folder);
+			void this.plugin.saveSettings().then(() => this.renderSettings());
+		};
+		const addBtn = controls.createEl("button", { cls: "gw-lib-btn", text: "Add", attr: { type: "button" } });
+		addBtn.addEventListener("click", () => add(input.value));
+		const choose = controls.createEl("button", { cls: "gw-lib-btn", text: "Choose…", attr: { type: "button" } });
+		choose.addEventListener("click", () => {
+			new VaultFolderModal(this.app, (picked) => add(picked.path)).open();
+		});
+	}
+
+	private renderTutorSettings(parent: HTMLElement): void {
+		const s = this.plugin.settings;
+		const section = parent.createDiv({ cls: "gw-lib-section" });
+		section.createEl("h3", { text: "Tutor" });
+		section.createDiv({
+			cls: "gw-lib-help",
+			text: "The tutor looks things up on the web when a fact is uncertain. Written answers are graded on the website.",
+		});
+		const provider = this.settingField(section, "Provider", "Claude subscription uses Claude Code. Anthropic API bills a key. Demo plays a scripted lesson.");
+		const select = provider.createEl("select", { cls: "gw-lib-filter" });
+		for (const [value, label] of [
+			["claude-code", "Claude subscription (Claude Code)"],
+			["anthropic", "Anthropic API key"],
+			["demo", "Demo (scripted)"],
+		] as const) {
+			select.createEl("option", { text: label, attr: { value } });
+		}
+		select.value = s.provider;
+		select.addEventListener("change", () => {
+			s.provider = select.value as ProviderId;
+			void this.plugin.saveSettings().then(() => this.renderSettings());
+		});
+		if (s.provider === "claude-code") this.renderClaudeSettings(section);
+		if (s.provider === "anthropic") this.renderAnthropicSettings(section);
+		const device = this.settingField(section, "Device name", "Recorded on quiz evidence so you can tell machines apart. Leave empty to use this computer's name.");
+		const deviceInput = device.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: this.plugin.deviceName() } });
+		deviceInput.value = s.deviceName;
+		deviceInput.addEventListener("change", () => {
+			s.deviceName = deviceInput.value.trim();
 			void this.plugin.saveSettings();
 		});
-		const connection = prefs.createDiv({ cls: "gw-setting-row" });
-		const connectionText = connection.createDiv();
-		connectionText.createDiv({ cls: "gw-setting-name", text: "Model and connection" });
-		connectionText.createDiv({ cls: "gw-setting-desc", text: "Provider, API key, Claude model, and git path." });
-		const openPluginSettings = connection.createEl("button", { cls: "gw-lib-btn", text: "Open", attr: { type: "button" } });
-		openPluginSettings.addEventListener("click", () => this.plugin.openSettings());
+	}
 
-		this.renderVaultReset(scroll);
+	private renderClaudeSettings(parent: HTMLElement): void {
+		const s = this.plugin.settings;
+		const detected = this.plugin.claudeExecutable();
+		const status = this.settingField(
+			parent,
+			"Connection",
+			detected ? "Uses the Claude account Claude Code is signed in with on this computer." : "Claude Code wasn't found. Install it, then run claude in a terminal and type /login.",
+		);
+		const check = status.createEl("button", { cls: "gw-lib-btn", text: "Check connection", attr: { type: "button" } });
+		check.addEventListener("click", () => {
+			check.setAttr("disabled", "true");
+			check.setText("Checking…");
+			void this.plugin.checkClaudeCode().then(
+				(r) => {
+					if (r.models?.length) this.plugin.claudeModels = r.models;
+					new Notice(r.message);
+					void this.renderSettings();
+				},
+				(err: unknown) => {
+					check.removeAttribute("disabled");
+					check.setText("Check connection");
+					new Notice(err instanceof Error ? err.message : String(err));
+				},
+			);
+		});
+		const exe = this.settingField(
+			parent,
+			"Claude Code executable",
+			detected && !s.claudePath ? `Found at ${detected}. Leave empty to auto-detect.` : "Leave empty to auto-detect claude.",
+		);
+		const exeInput = exe.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: detected ?? "claude" } });
+		exeInput.value = s.claudePath;
+		exeInput.addEventListener("change", () => {
+			s.claudePath = exeInput.value.trim();
+			void this.plugin.saveSettings();
+		});
+		const models = this.plugin.claudeModels;
+		const model = this.settingField(parent, "Model", models.length ? "Models your Claude plan can use." : "Claude Code's default, or an alias like sonnet or opus.");
+		if (models.length) {
+			const modelSelect = model.createEl("select", { cls: "gw-lib-filter" });
+			modelSelect.createEl("option", { text: "Default", attr: { value: "" } });
+			for (const item of models) {
+				const value = item.value === "default" ? "" : item.value;
+				modelSelect.createEl("option", { text: item.displayName || item.value, attr: { value } });
+			}
+			if (s.claudeModel && !models.some((item) => item.value === s.claudeModel || (item.value === "default" && !s.claudeModel))) {
+				modelSelect.createEl("option", { text: s.claudeModel, attr: { value: s.claudeModel } });
+			}
+			modelSelect.value = s.claudeModel;
+			modelSelect.addEventListener("change", () => {
+				s.claudeModel = modelSelect.value;
+				void this.plugin.saveSettings();
+			});
+		} else {
+			const modelInput = model.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: "default" } });
+			modelInput.value = s.claudeModel;
+			modelInput.addEventListener("change", () => {
+				s.claudeModel = modelInput.value.trim();
+				void this.plugin.saveSettings();
+			});
+		}
+	}
+
+	private renderAnthropicSettings(parent: HTMLElement): void {
+		const s = this.plugin.settings;
+		const key = this.settingField(parent, "Anthropic API key", "Stored only on this device, never in the vault.");
+		const keyInput = key.createEl("input", { cls: "gw-lib-filter", attr: { type: "password", placeholder: "sk-ant-…" } });
+		keyInput.value = loadApiKey(this.app);
+		keyInput.addEventListener("change", () => {
+			saveApiKey(this.app, keyInput.value.trim());
+			this.plugin.resetAgent();
+		});
+		const model = this.settingField(parent, "Model", "Any Anthropic model id. Load models to pick from what your key can access.");
+		const controls = model.createDiv({ cls: "gw-field-controls" });
+		if (this.anthropicModels.length) {
+			const picked = controls.createEl("select", { cls: "gw-lib-filter" });
+			for (const item of this.anthropicModels) picked.createEl("option", { text: `${item.name} (${item.id})`, attr: { value: item.id } });
+			picked.value = s.model;
+			picked.addEventListener("change", () => {
+				s.model = picked.value;
+				void this.plugin.saveSettings();
+			});
+		} else {
+			const modelInput = controls.createEl("input", { cls: "gw-lib-filter", attr: { type: "text" } });
+			modelInput.value = s.model;
+			modelInput.addEventListener("change", () => {
+				s.model = modelInput.value.trim();
+				void this.plugin.saveSettings();
+			});
+		}
+		const load = controls.createEl("button", { cls: "gw-lib-btn", text: "Load models", attr: { type: "button" } });
+		load.addEventListener("click", () => {
+			const apiKey = loadApiKey(this.app);
+			if (!apiKey) {
+				new Notice("Add your API key first.");
+				return;
+			}
+			void listAnthropicModels(apiKey).then(
+				async (models) => {
+					this.anthropicModels = models;
+					if (!models.some((item) => item.id === s.model) && models[0]) s.model = models[0].id;
+					await this.plugin.saveSettings();
+					await this.renderSettings();
+				},
+				(err: unknown) => new Notice(err instanceof Error ? err.message : String(err)),
+			);
+		});
+		const tokens = this.settingField(parent, "Max output tokens", "How long a tutor reply can be.");
+		const tokenInput = tokens.createEl("input", { cls: "gw-lib-filter", attr: { type: "text" } });
+		tokenInput.value = String(s.maxTokens);
+		tokenInput.addEventListener("change", () => {
+			const n = Number(tokenInput.value);
+			if (Number.isFinite(n) && n >= 1024) {
+				s.maxTokens = Math.round(n);
+				void this.plugin.saveSettings();
+			}
+		});
+	}
+
+	private renderAppearance(parent: HTMLElement): void {
+		const section = parent.createDiv({ cls: "gw-lib-section" });
+		section.createEl("h3", { text: "Appearance" });
+		this.settingToggle(
+			section,
+			"Match the Groundwork website",
+			"Use the website's paper, ink, and status colors inside this panel. The rest of Obsidian keeps its theme.",
+			this.plugin.settings.siteTheme,
+			(on) => {
+				this.plugin.settings.siteTheme = on;
+				void this.plugin.saveSettings();
+			},
+		);
+	}
+
+	private settingField(parent: HTMLElement, name: string, desc: string): HTMLElement {
+		const field = parent.createDiv({ cls: "gw-field" });
+		field.createDiv({ cls: "gw-setting-name", text: name });
+		field.createDiv({ cls: "gw-setting-desc", text: desc });
+		return field;
 	}
 
 	private settingToggle(parent: HTMLElement, name: string, desc: string, value: boolean, onChange: (on: boolean) => void): void {
@@ -1397,7 +1618,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.renderAll();
 		await this.refreshGoalSelect();
 		if (this.settingsOpen) await this.renderSettings();
-		new Notice("Learning vault reset. Files in resources/ are still there.");
+		new Notice("Learning vault reset. Files in this Obsidian vault are still there.");
 	}
 
 	private panelHead(parent: HTMLElement, title: string, subtitle: string, closeLabel: string, onClose: () => void): void {

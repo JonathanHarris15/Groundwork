@@ -5,6 +5,7 @@ import { route, type ServerDeps } from "../src/app";
 import type { Auth } from "../src/auth";
 import type { Billing } from "../src/billing";
 import { readSite } from "../src/static";
+import { MemoryDirectory } from "../src/memory";
 import { SecretDirectory } from "../src/secrets";
 
 function billing(over: Partial<Billing> = {}): Billing {
@@ -31,6 +32,7 @@ function deps(over: Partial<ServerDeps> = {}): ServerDeps {
 		secrets: new SecretDirectory(),
 		billing: billing(),
 		jev: true,
+		memory: new MemoryDirectory(),
 		async grade(items) {
 			return items.map(() => ({ outcome: "correct" as const, feedback: "Matched.", slip: false }));
 		},
@@ -108,6 +110,7 @@ describe("account server", () => {
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
+		expect(script).toContain("obsidian://groundwork?refresh=");
 		expect(readSite("/../.env")).toBeNull();
 
 		const server = deps();
@@ -131,6 +134,20 @@ describe("account server", () => {
 
 		const profile = await route("POST", "/v1/account/profile", { displayName: "Ada Lovelace" }, server);
 		expect(profile.json).toMatchObject({ displayName: "Ada Lovelace", email: "ada@example.com" });
+	});
+
+	it("keeps tutor memory on the signed-in account", async () => {
+		const server = deps();
+		const knowledge = { concepts: [], goals: [], updatedAt: "2026-10-02T00:00:00.000Z" };
+		const saved = await route("PUT", "/v1/memory", { files: { "learner.md": "Learns by examples." }, knowledge }, server);
+		expect(saved.status).toBe(200);
+		expect(saved.json).toMatchObject({ files: { "learner.md": "Learns by examples." } });
+		const loaded = await route("GET", "/v1/memory", null, server);
+		expect(loaded.json).toMatchObject({ files: { "learner.md": "Learns by examples." } });
+		const rejected = await route("PUT", "/v1/memory", { files: { "resources/secret.md": "no" }, knowledge }, server);
+		expect(rejected.status).toBe(400);
+		expect(JSON.stringify(rejected.json)).toMatch(/not tutor memory/);
+		expect((await route("GET", "/v1/memory", null, server)).json).toMatchObject({ files: { "learner.md": "Learns by examples." } });
 	});
 
 	it("reports Jev as unavailable when the server key is missing", async () => {

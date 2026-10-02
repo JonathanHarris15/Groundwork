@@ -2,6 +2,7 @@ import { isPlanId, PLANS, type AccountView, type FreeResponseJudgment, type Free
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
+import type { MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
 import { webConfig } from "./web-config";
 
@@ -11,6 +12,7 @@ export interface ServerDeps {
 	secrets: SecretDirectory;
 	billing: Billing;
 	jev: boolean;
+	memory: MemoryDirectory;
 	grade(items: FreeResponseToGrade[], signal?: AbortSignal): Promise<Array<FreeResponseJudgment | null>>;
 }
 
@@ -79,6 +81,14 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			const input = body as { provider?: unknown; apiKey?: unknown } | null;
 			const saved = deps.secrets.save(uid, String(input?.provider ?? ""), String(input?.apiKey ?? ""));
 			return { status: 200, json: { saved, providers: deps.secrets.saved(uid) } };
+		}
+		if (path === "/v1/memory" && (method === "GET" || method === "PUT")) {
+			if (method === "GET") return { status: 200, json: deps.memory.get(uid) };
+			try {
+				return { status: 200, json: deps.memory.put(uid, body) };
+			} catch (err) {
+				return { status: 400, json: { error: err instanceof Error ? err.message : "Could not store tutor memory." } };
+			}
 		}
 		if (method === "POST" && path === "/v1/grade") {
 			if (!deps.jev) return { status: 503, json: { error: "TYPESAFE_API_KEY is not set on the Groundwork server." } };

@@ -223,6 +223,29 @@
 	opacity: 0.45;
 	cursor: default;
 }
+.gw-field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+.gw-field-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+}
+.gw-field-controls .gw-lib-filter {
+	flex: 1 1 160px;
+	margin-bottom: 0;
+}
+.gw-folder-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
 .gw-setting-row {
 	display: flex;
 	align-items: center;

@@ -1,11 +1,10 @@
 import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, isTutorMemoryPath, jevClient, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, remoteAnswerGrader, replaceTutorMemoryFiles, tutorMemoryFiles, type AnswerGrader, type Provider, type VaultIO } from "@groundwork/core";
-import { GitSync } from "@groundwork/core/node";
+import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, tutorMemoryFiles, type AnswerGrader, type Provider, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
 import { ObsidianVaultIO } from "./obsidian-io";
-import { DEFAULT_SETTINGS, GroundworkSettingTab, loadAccountToken, loadApiKey, loadJevKey, type GroundworkSettings } from "./settings";
+import { accountOrigin, accountOriginIsLocal, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, loadApiKey, saveAccountToken, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
 
 type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
@@ -15,7 +14,6 @@ export default class GroundworkPlugin extends Plugin {
 	store!: KnowledgeStore;
 	private memoryIO!: MemoryVaultIO;
 	syncStatus: { state: SyncUiState; text: string } = { state: "idle", text: "not synced yet" };
-	private git: GitSync | null = null;
 	private accountTimer: number | null = null;
 	private accountPublishing = false;
 	private accountPublishAgain = false;
@@ -28,14 +26,8 @@ export default class GroundworkPlugin extends Plugin {
 		this.store = new KnowledgeStore(this.memoryIO, {
 			device: this.deviceName(),
 			onChange: () => this.onKnowledgeChanged(),
-			judgments: jevClient(loadJevKey(this.app) || process.env.TYPESAFE_API_KEY || ""),
 			context: new ObsidianVaultIO(this.app.vault.adapter),
 		});
-
-		const adapter = this.app.vault.adapter;
-		if (adapter instanceof FileSystemAdapter) {
-			this.git = new GitSync(adapter.getBasePath(), { gitPath: this.settings.gitPath, device: this.deviceName() });
-		}
 
 		this.registerView(VIEW_TYPE, (leaf) => new ChatView(leaf, this));
 		this.addRibbonIcon("graduation-cap", "Open Groundwork tutor", () => void this.activateView());
@@ -55,7 +47,6 @@ export default class GroundworkPlugin extends Plugin {
 			name: "Take a practice test",
 			callback: async () => (await this.activateView())?.startPracticeTest(),
 		});
-		this.addCommand({ id: "sync-now", name: "Sync knowledge with GitHub now", callback: () => void this.syncNow("manual") });
 		this.addCommand({
 			id: "recompute",
 			name: "Rebuild all mastery stats from evidence",
@@ -66,16 +57,19 @@ export default class GroundworkPlugin extends Plugin {
 		});
 
 		this.addSettingTab(new GroundworkSettingTab(this.app, this));
+		this.registerObsidianProtocolHandler("groundwork", (params) => {
+			const refresh = params.refresh?.trim();
+			if (!refresh) return;
+			saveAccountToken(this.app, refresh);
+			new Notice("Groundwork: this device is connected to your account.");
+			void this.connectMemory();
+		});
 
 		this.app.workspace.onLayoutReady(async () => {
 			await this.connectMemory();
 			await this.store.ensureLayout();
-			if (this.settings.autoSync) await this.syncNow("open");
 			if (!this.app.workspace.getLeavesOfType(VIEW_TYPE).length) await this.activateView(false);
 		});
-
-		// Periodic pull keeps two open machines close even without local changes.
-		this.registerInterval(window.setInterval(() => this.settings.autoSync && void this.syncNow("periodic"), 10 * 60_000));
 
 		// Obsidian keeps running the loaded bundle after `update_groundwork.py` replaces it on disk.
 		console.log(`Groundwork build ${BUILD}`);
@@ -144,7 +138,7 @@ export default class GroundworkPlugin extends Plugin {
 			apiKey,
 			model: this.settings.model,
 			maxTokens: this.settings.maxTokens,
-			webSearch: this.settings.webSearch,
+			webSearch: true,
 		});
 	}
 
@@ -152,17 +146,16 @@ export default class GroundworkPlugin extends Plugin {
 		return findClaudeExecutable(this.settings.claudePath);
 	}
 
-	/** Jev grading goes through the account server. This device never holds the Jev key. */
-	answerGrader(): AnswerGrader | undefined {
-		const url = this.settings.accountServer.trim() || process.env.GROUNDWORK_API_URL?.trim() || "";
-		return url ? remoteAnswerGrader(url) : undefined;
+	/** Jev grading goes through the website. This device never holds the Jev key. */
+	answerGrader(): AnswerGrader {
+		return remoteAnswerGrader(accountOrigin(), fetch, () => this.accountAccessToken());
 	}
 
 	claudeCodeConfig(): ClaudeCodeConfig | null {
 		const executable = this.claudeExecutable();
 		const adapter = this.app.vault.adapter;
 		if (!executable || !(adapter instanceof FileSystemAdapter)) return null;
-		return { executable, cwd: adapter.getBasePath(), model: this.settings.claudeModel, webSearch: this.settings.webSearch };
+		return { executable, cwd: adapter.getBasePath(), model: this.settings.claudeModel, webSearch: true };
 	}
 
 	async checkClaudeCode(): Promise<ClaudeCodeStatus> {
@@ -205,10 +198,6 @@ export default class GroundworkPlugin extends Plugin {
 		await this.saveSettings();
 	}
 
-	useJevKey(key: string): void {
-		this.store.useJudgments(jevClient(key || process.env.TYPESAFE_API_KEY || ""));
-	}
-
 	resetAgent(): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
 			if (leaf.view instanceof ChatView) leaf.view.resetAgent();
@@ -216,9 +205,14 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 	openSettings(): void {
-		const setting = (this.app as any).setting;
-		setting?.open();
-		setting?.openTabById(this.manifest.id);
+		void this.openGroundworkSettings();
+	}
+
+	/** The real settings live in the Groundwork panel, not Obsidian's plugin tab. */
+	async openGroundworkSettings(): Promise<void> {
+		(this.app as any).setting?.close();
+		const view = await this.activateView();
+		await view?.showSettings();
 	}
 
 	// ── view ───────────────────────────────────────────────────────────
@@ -248,59 +242,42 @@ export default class GroundworkPlugin extends Plugin {
 		this.scheduleMemorySave();
 	}
 
-	async syncNow(reason: "open" | "manual" | "changes" | "periodic"): Promise<void> {
-		if (!this.git) {
-			this.setSync("disabled", "git sync needs the desktop app");
-			return;
-		}
-		this.setSync("syncing", "syncing…");
-		try {
-			const r = await this.git.sync(undefined, async () => {
-				await this.store.recomputeAll();
-			});
-			this.lastSync = new Date();
-			if (r.incoming) this.store.invalidate();
-			switch (r.state) {
-				case "not-a-repo":
-					this.setSync("disabled", "vault is not a git repo");
-					if (reason === "manual") new Notice("Groundwork: this vault isn't a git repository yet. Run `groundwork init` or `git init` + add a GitHub remote.");
-					break;
-				case "no-remote":
-					this.setSync("offline", "no GitHub remote");
-					if (reason === "manual") new Notice(`Groundwork: ${r.message}`);
-					break;
-				case "committed-offline":
-					this.setSync("offline", r.message);
-					if (reason === "manual") new Notice(`Groundwork: ${r.message}`);
-					break;
-				case "error":
-					this.setSync("error", r.message);
-					new Notice(`Groundwork sync: ${r.message}`);
-					break;
-				default:
-					this.setSync("ok", r.incoming ? "pulled changes from another machine" : "synced");
-					if (reason === "manual") new Notice(`Groundwork: ${r.message}`);
-			}
-		} catch (e) {
-			this.setSync("error", (e as Error).message);
-		}
-	}
-
 	applySiteTheme(): void {
 		const on = this.settings.siteTheme;
 		for (const view of this.views()) view.applySiteTheme(on);
 	}
 
-	/** Load tutor memory from the account. An empty account picks up notes already in this vault, once. */
-	async connectMemory(): Promise<void> {
-		const token = loadAccountToken(this.app);
-		if (!token) {
-			this.setSync("offline", "sign in to keep tutor memory on your account");
-			return;
+	/** ID token for the website, or the stored token when talking to a local server. */
+	private async accountAccessToken(): Promise<string | null> {
+		const refresh = loadAccountToken(this.app);
+		if (!refresh) return null;
+		if (accountOriginIsLocal()) return refresh;
+		try {
+			const session = await refreshFirebaseSession(refresh, GROUNDWORK_WEB_API_KEY);
+			if (session.refreshToken !== refresh) saveAccountToken(this.app, session.refreshToken);
+			return session.idToken;
+		} catch (e) {
+			this.setSync("error", e instanceof Error ? e.message : String(e));
+			return null;
 		}
+	}
+
+	private async memoryClient(): Promise<AccountClient | null> {
+		const token = await this.accountAccessToken();
+		if (!token) {
+			if (!loadAccountToken(this.app)) this.setSync("offline", "open the website and connect Obsidian");
+			return null;
+		}
+		return new AccountClient(accountOrigin(), token);
+	}
+
+	/** Load tutor memory from the website. An empty account picks up notes already in this vault, once. */
+	async connectMemory(): Promise<void> {
+		const client = await this.memoryClient();
+		if (!client) return;
 		this.setSync("syncing", "loading tutor memory…");
 		try {
-			const remote = await new AccountClient(this.settings.accountServerUrl, token).getMemory();
+			const remote = await client.getHostedMemory();
 			if (Object.keys(remote.files).length === 0) {
 				const imported = await this.importVaultMemory();
 				const local = tutorMemoryFiles(this.memoryIO.files);
@@ -321,23 +298,21 @@ export default class GroundworkPlugin extends Plugin {
 
 	private scheduleMemorySave(): void {
 		if (!loadAccountToken(this.app)) {
-			this.setSync("offline", "sign in to keep tutor memory on your account");
+			this.setSync("offline", "open the website and connect Obsidian");
 			return;
 		}
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
-		const delay = Math.max(2, this.settings.syncDelaySeconds) * 1000;
 		this.accountTimer = window.setTimeout(() => {
 			this.accountTimer = null;
 			void this.saveMemory(false);
-		}, delay);
+		}, 2000);
 	}
 
-	/** Save concepts, notes, evidence, chats, and the learner profile to the account. */
+	/** Save concepts, notes, evidence, chats, and the learner profile to the website account. */
 	async saveMemory(manual: boolean): Promise<void> {
-		const token = loadAccountToken(this.app);
-		if (!token) {
-			this.setSync("offline", "sign in to keep tutor memory on your account");
-			if (manual) new Notice("Groundwork: sign in under Settings → Groundwork → Account. Tutor memory is kept on that account.");
+		const client = await this.memoryClient();
+		if (!client) {
+			if (manual) new Notice("Groundwork: open the website and connect Obsidian. Tutor memory is kept on that account.");
 			return;
 		}
 		if (this.accountPublishing) {
@@ -349,7 +324,7 @@ export default class GroundworkPlugin extends Plugin {
 		try {
 			const concepts = [...(await this.store.concepts()).values()];
 			const goals = await this.store.goals();
-			const saved = await new AccountClient(this.settings.accountServerUrl, token).putMemory({
+			const saved = await client.putHostedMemory({
 				files: tutorMemoryFiles(this.memoryIO.files),
 				knowledge: knowledgeSnapshot(concepts, goals, new Date().toISOString()),
 			});
@@ -426,7 +401,6 @@ export default class GroundworkPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
-		this.git = this.git ? new GitSync(this.git.dir, { gitPath: this.settings.gitPath, device: this.deviceName() }) : null;
 		this.resetAgent();
 		this.applySiteTheme();
 	}

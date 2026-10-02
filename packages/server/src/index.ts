@@ -5,6 +5,7 @@ import { loadAuth } from "./auth";
 import { loadBilling } from "./billing";
 import { gradeWithJev, jevConfigured } from "./jev";
 import { isLocalHost, listenTarget } from "./listen";
+import { MemoryDirectory } from "./memory";
 import { SecretDirectory } from "./secrets";
 import { readSite } from "./static";
 
@@ -17,6 +18,7 @@ const deps = {
 	secrets: new SecretDirectory(),
 	billing: loadBilling(accounts),
 	jev: jevConfigured(),
+	memory: new MemoryDirectory(),
 	grade: gradeWithJev,
 };
 
@@ -50,6 +52,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		return;
 	}
 	let body: unknown = null;
+	if (raw.length > 12_000_000) {
+		send(res, 413, { error: "That upload is too large." });
+		return;
+	}
 	if (raw) {
 		try {
 			body = JSON.parse(raw);
@@ -73,7 +79,7 @@ function writeHead(res: ServerResponse, status: number, type: string, length?: n
 		...(length !== undefined ? { "content-length": length } : {}),
 		"access-control-allow-origin": "*",
 		"access-control-allow-headers": "authorization, content-type, stripe-signature",
-		"access-control-allow-methods": "GET, POST, OPTIONS",
+		"access-control-allow-methods": "GET, POST, PUT, OPTIONS",
 	});
 }
 

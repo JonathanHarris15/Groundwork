@@ -159,6 +159,11 @@ function showAccount() {
 			</form>
 		</section>
 		<section class="section">
+			<h2><span class="node green"></span>Obsidian</h2>
+			<p>Tutor memory is stored with this account. Connect Obsidian on this computer and the plugin uses it. Sign-in stays on this website.</p>
+			<div class="actions"><button class="btn" id="connect-obsidian" type="button">Connect Obsidian</button></div>
+		</section>
+		<section class="section">
 			<h2><span class="node orange"></span>Billing</h2>
 			<p>${account.hasBilling ? "Update the card, see invoices, or cancel in Stripe." : "A paid plan opens Stripe checkout. You can change the card later from here."}</p>
 			<div class="actions"><button class="btn ${account.hasBilling && config.billing ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"}>Manage billing</button></div>
@@ -170,6 +175,15 @@ function showAccount() {
 		</div>
 	`);
 	document.querySelector("#profile").addEventListener("submit", saveProfile);
+	document.querySelector("#connect-obsidian").addEventListener("click", () => {
+		const refresh = user && user.refreshToken;
+		if (!refresh) {
+			actionError = "Sign in again, then connect Obsidian.";
+			paint();
+			return;
+		}
+		window.location.href = `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}`;
+	});
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#portal").addEventListener("click", openPortal);
 	document.querySelector("#change-plan").addEventListener("click", () => {

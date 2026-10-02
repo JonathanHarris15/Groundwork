@@ -169,13 +169,16 @@ export async function judgmentsFor(grader: AnswerGrader | undefined, items: Free
 }
 
 /** Calls the Groundwork server. The Jev key never leaves that server. */
-export function remoteAnswerGrader(baseUrl: string, fetchImpl: typeof fetch = fetch): AnswerGrader {
+export function remoteAnswerGrader(baseUrl: string, fetchImpl: typeof fetch = fetch, authorization?: () => Promise<string | null>): AnswerGrader {
 	const root = baseUrl.replace(/\/$/, "");
 	return {
 		async grade(items, signal) {
+			const token = await authorization?.();
+			const headers: Record<string, string> = { "content-type": "application/json" };
+			if (token) headers.authorization = `Bearer ${token}`;
 			const res = await fetchImpl(`${root}/v1/grade`, {
 				method: "POST",
-				headers: { "content-type": "application/json" },
+				headers,
 				body: JSON.stringify({ items }),
 				signal,
 			});

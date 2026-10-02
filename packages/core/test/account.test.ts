@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite } from "../src/account";
+import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite, refreshFirebaseSession } from "../src/account";
 import { isUserKeyProvider, PLANS, USER_KEY_PROVIDERS } from "../src/account/plans";
 import { choosePlan, emptyAccount, rememberProfile, setDisplayName, spendHosted, viewAccount } from "../src/account/usage";
 
@@ -84,6 +84,18 @@ describe("concept map layout", () => {
 		]);
 		expect(map.nodes).toHaveLength(2);
 		expect(map.edges).toHaveLength(2);
+	});
+});
+
+describe("website sign-in", () => {
+	it("exchanges a refresh token for an id token", async () => {
+		const fetchImpl = async () => new Response(JSON.stringify({ id_token: "id-token", refresh_token: "next" }), { status: 200 });
+		await expect(refreshFirebaseSession("old", "web-key", fetchImpl as typeof fetch)).resolves.toEqual({ idToken: "id-token", refreshToken: "next" });
+	});
+
+	it("reports an expired website session", async () => {
+		const fetchImpl = async () => new Response(JSON.stringify({ error: { message: "TOKEN_EXPIRED" } }), { status: 400 });
+		await expect(refreshFirebaseSession("old", "web-key", fetchImpl as typeof fetch)).rejects.toThrow(/TOKEN_EXPIRED/);
 	});
 });
 
