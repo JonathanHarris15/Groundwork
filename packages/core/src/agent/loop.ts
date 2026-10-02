@@ -1,7 +1,7 @@
 import type { FolderAccess } from "../access";
 import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
-import type { SessionInfo, ToolDef, ToolUI } from "../tools";
+import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
 import type { AgentEvent, ChatMessage, ContentBlock, Provider, TutorSession } from "./types";
 
 export interface AgentOptions {
@@ -15,6 +15,7 @@ export interface AgentOptions {
 	maxSteps?: number;
 	/** Read and write folders for vault file tools. Omitted uses the defaults. */
 	access?: FolderAccess;
+	grader?: ToolContext["grader"];
 }
 
 export class AgentSession implements TutorSession {
@@ -90,6 +91,7 @@ export class AgentSession implements TutorSession {
 						session: this.opts.session,
 						signal,
 						access: this.opts.access,
+						grader: this.opts.grader,
 					});
 					text = r.text;
 					isError = !!r.isError;

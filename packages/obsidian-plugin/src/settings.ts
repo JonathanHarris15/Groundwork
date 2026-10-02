@@ -14,6 +14,8 @@ export interface GroundworkSettings {
 	model: string;
 	maxTokens: number;
 	webSearch: boolean;
+	/** Groundwork account server. Empty uses the tutor model to grade written answers on this device. */
+	accountServer: string;
 	autoSync: boolean;
 	syncDelaySeconds: number;
 	gitPath: string;
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 	model: "claude-sonnet-4-5",
 	maxTokens: 8192,
 	webSearch: false,
+	accountServer: "",
 	autoSync: true,
 	syncDelaySeconds: 30,
 	gitPath: "git",
@@ -102,6 +105,9 @@ export class GroundworkSettingTab extends PluginSettingTab {
 		const save = async () => {
 			await this.plugin.saveSettings();
 		};
+
+		new Setting(containerEl).setName("Account").setHeading();
+		this.accountSettings(containerEl, save);
 
 		new Setting(containerEl).setName("Tutor").setHeading();
 
@@ -202,7 +208,7 @@ export class GroundworkSettingTab extends PluginSettingTab {
 			);
 
 		this.folderSettings(containerEl, save);
-		this.accountSettings(containerEl, save);
+		this.memorySettings(containerEl, save);
 		this.appearanceSettings(containerEl, save);
 
 		new Setting(containerEl).setName("About").setHeading();
@@ -213,6 +219,31 @@ export class GroundworkSettingTab extends PluginSettingTab {
 			version.setDesc(`${BUILD}. A newer build is installed: ${onDisk}.`);
 			version.addButton((b) => b.setButtonText("Reload Groundwork").setCta().onClick(() => void this.plugin.reloadSelf()));
 		});
+	}
+
+	private accountSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
+		const s = this.plugin.settings;
+		const server = () => s.accountServer.trim() || process.env.GROUNDWORK_API_URL?.trim() || "";
+		new Setting(containerEl)
+			.setName("Account site")
+			.setDesc("Sign in with Google, choose a plan, and manage billing on the Groundwork site. The Jev key stays on that server.")
+			.addText((t) =>
+				t.setPlaceholder("http://127.0.0.1:8787").setValue(s.accountServer).onChange(async (v) => {
+					s.accountServer = v.trim();
+					await save();
+					this.plugin.resetAgent();
+				}),
+			)
+			.addButton((b) =>
+				b.setButtonText("Open account site").setCta().onClick(() => {
+					const url = server();
+					if (!url) {
+						new Notice("Set the account site address first.");
+						return;
+					}
+					window.open(url);
+				}),
+			);
 	}
 
 	private folderSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
@@ -284,13 +315,13 @@ export class GroundworkSettingTab extends PluginSettingTab {
 			);
 	}
 
-	private accountSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
+	private memorySettings(containerEl: HTMLElement, save: () => Promise<void>): void {
 		const s = this.plugin.settings;
-		new Setting(containerEl).setName("Account").setHeading();
+		new Setting(containerEl).setName("Tutor memory").setHeading();
 
 		new Setting(containerEl)
-			.setName("Account server")
-			.setDesc("The site reads your concept map from this server. Use the address printed by `npm run account`, or a hosted account server.")
+			.setName("Memory server")
+			.setDesc("Concepts, notes, and the concept map are stored here. Use the address printed by `npm run account`, or a hosted memory server.")
 			.addText((t) =>
 				t
 					.setPlaceholder(DEFAULT_SETTINGS.accountServerUrl)

@@ -8,7 +8,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { accessFromContext, tutorMayReadPath, type FolderAccess } from "../access";
 import { basename, fileBlocks, mcpContent, userContent, type McpContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
-import type { SessionInfo, ToolDef, ToolResult, ToolUI } from "../tools";
+import type { SessionInfo, ToolContext, ToolDef, ToolResult, ToolUI } from "../tools";
 import type { AgentEvent, TutorSession } from "../agent/types";
 import { errorMessage } from "../agent/loop";
 import { guiPathDirs, withGuiPath } from "./env";
@@ -49,6 +49,7 @@ export interface ClaudeCodeSessionOptions extends ClaudeCodeConfig {
 	onSessionId?: (id: string) => void;
 	/** Read and write folders. Claude Code's Read tool is held to the same read folders. */
 	access?: FolderAccess;
+	grader?: ToolContext["grader"];
 }
 
 /**
@@ -311,7 +312,7 @@ export class ClaudeCodeSession implements TutorSession {
 			let result: ToolResult;
 			try {
 				if (!tool) throw new Error(`Unknown tool ${name}`);
-				result = await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access });
+				result = await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader });
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}

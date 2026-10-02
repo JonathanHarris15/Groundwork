@@ -8,15 +8,17 @@
     "packages/core",
     "packages/obsidian-plugin",
     "packages/cli",
+    "packages/server",
     "packages/account-server"
   ],
   "scripts": {
-    "build": "npm run build -w packages/obsidian-plugin && npm run build -w packages/cli && npm run build -w packages/account-server",
+    "build": "npm run build -w packages/obsidian-plugin && npm run build -w packages/cli && npm run build -w packages/server && npm run build -w packages/account-server",
     "account": "npm run start -w packages/account-server",
     "dev:plugin": "npm run dev -w packages/obsidian-plugin",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "groundwork": "node packages/cli/dist/groundwork.js"
+    "groundwork": "node packages/cli/dist/groundwork.js",
+    "server": "npm run start -w packages/server"
   },
   "engines": {
     "node": ">=20"

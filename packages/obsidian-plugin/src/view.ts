@@ -350,6 +350,7 @@ export class ChatView extends ItemView implements ToolUI {
 				resume: resumable ? c.sessionId : undefined,
 				history,
 				access,
+				grader: this.plugin.answerGrader(),
 			});
 			return this.agent;
 		}
@@ -365,7 +366,7 @@ export class ChatView extends ItemView implements ToolUI {
 						{ role: "assistant", content: "Got it. I'll continue from there." },
 					]
 				: [];
-		this.agent = new AgentSession({ provider, store: this.plugin.store, tools: TOOLS, system, ui: this, session: this.session, messages, access });
+		this.agent = new AgentSession({ provider, store: this.plugin.store, tools: TOOLS, system, ui: this, session: this.session, messages, access, grader: this.plugin.answerGrader() });
 		return this.agent;
 	}
 
@@ -1773,10 +1774,10 @@ export class ChatView extends ItemView implements ToolUI {
 		const { provider } = this.plugin.settings;
 		if (provider === "claude-code") {
 			const cfg = this.plugin.claudeCodeConfig();
-			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session, access }) : null;
+			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session, access, grader: this.plugin.answerGrader() }) : null;
 		}
 		const p = provider === "demo" ? new DemoAsideProvider() : this.plugin.makeProvider();
-		return p ? new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8, access }) : null;
+		return p ? new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8, access, grader: this.plugin.answerGrader() }) : null;
 	}
 
 	private dropAsides(): void {
