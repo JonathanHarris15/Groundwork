@@ -3,8 +3,12 @@
  *
  * Hosted credit is generative-model spend (OpenRouter), in dollars, reset
  * each calendar month. Jev is not part of that credit: every plan uses it,
- * the key stays on the Groundwork server, and we absorb its cost because a
- * grading call is a few hundred tokens at $0.042 per million.
+ * and the key stays on the Groundwork server.
+ *
+ * Public copy never states how many dollars of that credit a plan includes
+ * or how many dollars remain. The only prices we show are $9/month and
+ * $20/month. `hostedCreditUsd` stays on the server; `publicPlan` is what
+ * the website and any other client may receive.
  */
 
 export type PlanId = "free" | "byom" | "included";
@@ -28,7 +32,7 @@ export const PLANS: Record<PlanId, Plan> = {
 		priceUsdPerMonth: 0,
 		hostedCreditUsd: 3,
 		ownModel: false,
-		summary: "$3 of model credit a month on our smaller model. Enough to actually study.",
+		summary: "Groundwork's smaller model. Enough to actually study.",
 	},
 	byom: {
 		id: "byom",
@@ -44,7 +48,7 @@ export const PLANS: Record<PlanId, Plan> = {
 		priceUsdPerMonth: 20,
 		hostedCreditUsd: 8,
 		ownModel: false,
-		summary: "We run the models. $8 of credit a month, smaller model by default.",
+		summary: "We run the models, on the smaller model by default.",
 	},
 };
 
@@ -63,4 +67,23 @@ export type UserKeyProvider = (typeof USER_KEY_PROVIDERS)[number];
 
 export function isUserKeyProvider(value: unknown): value is UserKeyProvider {
 	return typeof value === "string" && (USER_KEY_PROVIDERS as readonly string[]).includes(value);
+}
+
+/** Plan fields a client may show. The hosted allowance is not one of them. */
+export interface PublicPlan {
+	id: PlanId;
+	name: string;
+	priceUsdPerMonth: number;
+	ownModel: boolean;
+	summary: string;
+}
+
+export function publicPlan(plan: Plan): PublicPlan {
+	return {
+		id: plan.id,
+		name: plan.name,
+		priceUsdPerMonth: plan.priceUsdPerMonth,
+		ownModel: plan.ownModel,
+		summary: plan.summary,
+	};
 }

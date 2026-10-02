@@ -1,4 +1,4 @@
-import { isPlanId, PLANS, presentGroundwork, type AccountView, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
+import { isPlanId, PLANS, presentAccount, presentGroundwork, publicPlan, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
@@ -36,7 +36,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { ok: true, jev: deps.jev, firebase: deps.auth.firebase, billing: deps.billing.configured } };
 		}
 		if (method === "GET" && path === "/v1/plans") {
-			return { status: 200, json: { plans: Object.values(PLANS) } };
+			return { status: 200, json: { plans: Object.values(PLANS).map(publicPlan) } };
 		}
 		if (method === "GET" && path === "/v1/web-config") {
 			return { status: 200, json: webConfig(deps.billing.configured) };
@@ -54,18 +54,18 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		const uid = identity.uid;
 
 		if (method === "GET" && path === "/v1/account") {
-			return { status: 200, json: view };
+			return { status: 200, json: presentAccount(view) };
 		}
 		if (method === "POST" && path === "/v1/account/profile") {
 			const displayName = (body as { displayName?: unknown } | null)?.displayName;
 			if (typeof displayName !== "string") return { status: 400, json: { error: "Send a display name." } };
-			return { status: 200, json: deps.accounts.rename(uid, displayName) };
+			return { status: 200, json: presentAccount(deps.accounts.rename(uid, displayName)) };
 		}
 		if (method === "POST" && path === "/v1/account/plan") {
 			const plan = (body as { plan?: unknown } | null)?.plan;
 			if (!isPlanId(plan)) return { status: 400, json: { error: "Choose free, byom, or included." } };
 			if (plan !== "free") return paidPlanRefused(deps);
-			return { status: 200, json: deps.accounts.setPlan(uid, plan) satisfies AccountView };
+			return { status: 200, json: presentAccount(deps.accounts.setPlan(uid, plan)) };
 		}
 		if (method === "POST" && path === "/v1/billing/checkout") {
 			const plan = (body as { plan?: unknown } | null)?.plan;
