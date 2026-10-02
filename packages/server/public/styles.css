@@ -111,14 +111,21 @@ a:hover { color: #2c2f36; }
 	font-size: 24px;
 	letter-spacing: 0.06em;
 	line-height: 1;
-	text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+	text-shadow: 0 1px 22px rgba(0, 0, 0, 0.35);
 }
 .hero .logo::before {
 	content: "";
 	position: absolute;
 	z-index: -1;
-	inset: -14px -28px;
-	background: radial-gradient(closest-side, rgba(8, 10, 14, 0.96), rgba(8, 10, 14, 0.72) 62%, transparent 100%);
+	inset: -72px -148px;
+	background: radial-gradient(
+		ellipse at center,
+		rgba(4, 6, 10, 0.62) 0%,
+		rgba(4, 6, 10, 0.2) 24%,
+		rgba(4, 6, 10, 0.06) 48%,
+		transparent 74%
+	);
+	filter: blur(16px);
 	pointer-events: none;
 }
 .hero .logo svg {
@@ -126,7 +133,7 @@ a:hover { color: #2c2f36; }
 	height: 0.9167em;
 	vertical-align: -0.1em;
 	margin-right: 0.04em;
-	filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.8));
+	filter: drop-shadow(0 1px 12px rgba(0, 0, 0, 0.3));
 }
 
 @container (max-width: 400px) {
