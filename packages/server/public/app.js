@@ -109,7 +109,7 @@ function showSignIn() {
 			</div>
 			${heroMark()}
 		</div>
-		<h2 style="margin-top: 56px"><span class="node green"></span>Plans</h2>
+		<h2 class="plans-title"><span class="node green"></span>Plans</h2>
 		${planGrid(false)}
 		<p class="fine">Unused credit expires at the end of the month.</p>
 	`);
