@@ -106,7 +106,7 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=7"');
+		expect(site?.body).toContain('src="/app.js?v=8"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
@@ -164,7 +164,7 @@ describe("account server", () => {
 	it("shows quiz-checked concepts and finished goals, and hides notes", async () => {
 		const server = deps();
 		const before = await route("GET", "/v1/groundwork", null, server);
-		expect(before.json).toEqual({ updatedAt: null, concepts: [], goals: [] });
+		expect(before.json).toEqual({ updatedAt: null, concepts: [], goals: [], graph: { width: 0, height: 0, nodes: [], edges: [], legend: [] } });
 		const saved = await route(
 			"PUT",
 			"/v1/memory",
@@ -197,9 +197,11 @@ describe("account server", () => {
 				{ id: "derivative", title: "Derivative", status: "learning" },
 				{ id: "limit", title: "Limit", status: "solid" },
 			],
-			goals: [{ title: "The derivative", status: "done" }],
+			goals: [{ title: "The derivative", status: "done", concepts: 2 }],
+			graph: { edges: [{ from: "limit", to: "derivative", bridge: false }] },
 		});
 		expect((view.json as { concepts: unknown[] }).concepts).toHaveLength(2);
+		expect((view.json as { graph: { nodes: Array<{ id: string }> } }).graph.nodes.map((n) => n.id)).not.toContain("chain");
 	});
 
 	it("keeps tutor memory on the signed-in account", async () => {

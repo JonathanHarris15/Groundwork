@@ -8,6 +8,7 @@
  * and does not receive note bodies.
  */
 
+import { EMPTY_GROUNDWORK_GRAPH, layoutGroundworkGraph, type GroundworkGraph } from "./groundwork-graph";
 import type { ConceptStatus } from "./model";
 
 export const CONCEPT_STATUSES = ["unassessed", "learning", "shaky", "solid", "rusty"] as const;
@@ -29,6 +30,8 @@ export interface SnapshotGoal {
 	status: SnapshotGoalStatus;
 	built: number;
 	open: number;
+	/** Subject shared by most concepts on this goal. */
+	domain?: string;
 }
 
 /** Private tutor memory stored on the account, as the same text files the store already uses. */
@@ -108,6 +111,7 @@ export interface SnapshotGoalInput {
 	status: SnapshotGoalStatus;
 	targets: readonly string[];
 	built: readonly string[];
+	domain?: string;
 }
 
 export interface MapNode extends SnapshotConcept {
@@ -153,12 +157,17 @@ export function knowledgeSnapshot(concepts: SnapshotConceptInput[], goals: Snaps
 	return {
 		updatedAt,
 		concepts: out,
-		goals: goals.map((g) => ({
-			title: g.title.trim() || "Untitled goal",
-			status: g.status,
-			built: g.built.length,
-			open: g.targets.length,
-		})),
+		goals: goals.map((g) => {
+			const goal: SnapshotGoal = {
+				title: g.title.trim() || "Untitled goal",
+				status: g.status,
+				built: g.built.length,
+				open: g.targets.length,
+			};
+			const domain = goalSubject(g, out);
+			if (domain) goal.domain = domain;
+			return goal;
+		}),
 		counts,
 	};
 }
@@ -193,11 +202,13 @@ export function parseKnowledgeSnapshot(value: unknown): KnowledgeSnapshot {
 		if (status !== "active" && status !== "paused" && status !== "done") throw new Error(`Goal ${i} has an unknown status.`);
 		const built = nonNegInt(g.built);
 		const open = nonNegInt(g.open);
+		const domain = typeof g.domain === "string" && g.domain.trim() ? g.domain.trim().slice(0, 80) : undefined;
 		goals.push({
 			title: requireText(g.title, 120, `Goal ${i}`),
 			status,
 			targets: Array.from({ length: open }, () => "open"),
 			built: Array.from({ length: built }, () => "built"),
+			domain,
 		});
 	}
 	const updatedAt = typeof raw.updatedAt === "string" && raw.updatedAt.trim() ? raw.updatedAt : new Date(0).toISOString();
@@ -308,11 +319,20 @@ export interface WebsiteConcept {
 	status: ConceptStatus;
 }
 
-/** Learned concepts and finished goals for the account dashboard. */
+/** A finished goal on the dashboard: a name, how many concepts it holds, and its subject. */
+export interface WebsiteGroundworkGoal {
+	title: string;
+	status: "done";
+	concepts: number;
+	domain?: string;
+}
+
+/** Learned concepts, their graph, and finished goals for the account dashboard. */
 export interface WebsiteGroundwork {
 	updatedAt: string | null;
 	concepts: WebsiteConcept[];
-	goals: WebsiteGoal[];
+	goals: WebsiteGroundworkGoal[];
+	graph: GroundworkGraph;
 }
 
 /** Drop dollar signs from anything the website will print. */
@@ -367,17 +387,53 @@ export function presentForWebsite(profile: {
  * given-versus-left quotas stay off the page.
  */
 export function presentGroundwork(snapshot: KnowledgeSnapshot | null): WebsiteGroundwork {
-	if (!snapshot) return { updatedAt: null, concepts: [], goals: [] };
+	if (!snapshot) return { updatedAt: null, concepts: [], goals: [], graph: EMPTY_GROUNDWORK_GRAPH };
+	const learned = snapshot.concepts
+		.filter((c) => c.status !== "unassessed")
+		.map((c) => {
+			const concept: SnapshotConcept = {
+				...c,
+				title: stripDollars(c.title),
+				prerequisites: c.prerequisites,
+			};
+			if (c.domain) concept.domain = stripDollars(c.domain);
+			return concept;
+		});
+	const graph = layoutGroundworkGraph(learned);
+	const order = new Map(graph.legend.map((item, i) => [item.domain, i]));
+	const goals = snapshot.goals
+		.filter((g) => g.status === "done")
+		.map((g) => {
+			const goal: WebsiteGroundworkGoal = { title: stripDollars(g.title), status: "done", concepts: g.built + g.open };
+			if (g.domain) goal.domain = stripDollars(g.domain);
+			return goal;
+		})
+		.sort((a, b) => (order.get(a.domain ?? "") ?? 99) - (order.get(b.domain ?? "") ?? 99) || a.title.localeCompare(b.title));
 	return {
 		updatedAt: snapshot.updatedAt || null,
-		concepts: snapshot.concepts
-			.filter((c) => c.status !== "unassessed")
-			.map((c) => ({ id: c.id, title: stripDollars(c.title), status: c.status })),
-		goals: snapshot.goals
-			.filter((g) => g.status === "done")
-			.map((g) => ({ title: stripDollars(g.title), status: "done" as const }))
-			.sort((a, b) => a.title.localeCompare(b.title)),
+		concepts: learned.map((c) => ({ id: c.id, title: c.title, status: c.status })),
+		goals,
+		graph,
 	};
+}
+
+function goalSubject(goal: SnapshotGoalInput, concepts: SnapshotConcept[]): string | undefined {
+	const byId = new Map(concepts.map((c) => [c.id, c]));
+	const counts = new Map<string, number>();
+	for (const id of [...goal.built, ...goal.targets]) {
+		const domain = byId.get(id)?.domain?.trim();
+		if (!domain) continue;
+		counts.set(domain, (counts.get(domain) ?? 0) + 1);
+	}
+	let best: string | undefined;
+	let bestN = 0;
+	for (const [domain, n] of [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+		if (n > bestN) {
+			best = domain;
+			bestN = n;
+		}
+	}
+	return best || goal.domain?.trim() || undefined;
 }
 
 export class AccountError extends Error {
