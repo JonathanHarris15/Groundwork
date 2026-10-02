@@ -4,11 +4,11 @@ import { route } from "./app";
 import { loadAuth } from "./auth";
 import { loadBilling } from "./billing";
 import { gradeWithJev, jevConfigured } from "./jev";
+import { isLocalHost, listenTarget } from "./listen";
 import { SecretDirectory } from "./secrets";
 import { readSite } from "./static";
 
-const port = Number(process.env.GROUNDWORK_PORT ?? 8787);
-const host = process.env.GROUNDWORK_HOST ?? "127.0.0.1";
+const { port, host } = listenTarget();
 const accounts = new AccountDirectory();
 
 const deps = {
@@ -81,6 +81,11 @@ function send(res: ServerResponse, status: number, json: unknown): void {
 	const payload = JSON.stringify(json);
 	writeHead(res, status, "application/json; charset=utf-8", Buffer.byteLength(payload));
 	res.end(payload);
+}
+
+if (!isLocalHost(host) && !deps.auth.firebase) {
+	console.error("Refusing to listen on a public address until Firebase auth is configured.");
+	process.exit(1);
 }
 
 server.listen(port, host, () => {

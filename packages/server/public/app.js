@@ -190,9 +190,7 @@ async function openPortal() {
 
 async function get(path, token) {
 	const res = await fetch(path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
-	const body = await res.json();
-	if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);
-	return body;
+	return readJson(res);
 }
 
 async function send(path, json, token) {
@@ -201,7 +199,17 @@ async function send(path, json, token) {
 		headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
 		body: JSON.stringify(json),
 	});
-	const body = await res.json();
+	return readJson(res);
+}
+
+async function readJson(res) {
+	const text = await res.text();
+	let body;
+	try {
+		body = text ? JSON.parse(text) : {};
+	} catch {
+		throw new Error("The account server did not answer.");
+	}
 	if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);
 	return body;
 }
