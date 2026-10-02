@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const manifestPath = path.join(root, "packages/obsidian-plugin/manifest.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const rootManifestPath = path.join(root, "manifest.json");
 const versions = JSON.parse(readFileSync(path.join(root, "versions.json"), "utf8"));
 const styles = readFileSync(path.join(root, "packages/obsidian-plugin/styles.css"), "utf8");
 const website = [
@@ -27,6 +28,17 @@ if (typeof manifest.description !== "string" || manifest.description.length > 25
 if (manifest.isDesktopOnly !== true) fail("isDesktopOnly must be true: the plugin shells out to git");
 if (versions[manifest.version] !== manifest.minAppVersion) {
 	fail(`versions.json must map ${manifest.version} to minAppVersion ${manifest.minAppVersion}`);
+}
+if (!existsSync(rootManifestPath)) {
+	fail("manifest.json must sit at the repository root. The community directory reads that file, not packages/obsidian-plugin/manifest.json.");
+} else {
+	const rootManifest = JSON.parse(readFileSync(rootManifestPath, "utf8"));
+	const pluginKeys = Object.keys(manifest);
+	const rootKeys = Object.keys(rootManifest);
+	const same =
+		pluginKeys.length === rootKeys.length &&
+		pluginKeys.every((key, i) => key === rootKeys[i] && manifest[key] === rootManifest[key]);
+	if (!same) fail("manifest.json at the repository root must match packages/obsidian-plugin/manifest.json");
 }
 if (!existsSync(path.join(root, "LICENSE"))) fail("LICENSE is required for the community plugin directory");
 if (!existsSync(path.join(root, "README.md"))) fail("README.md is required");
