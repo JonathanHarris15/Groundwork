@@ -162,6 +162,17 @@ Create an account on the site (or from Obsidian: **Settings → Groundwork → A
 
 `GROUNDWORK_DATA_FILE` chooses where accounts are stored (default `data/accounts.json`, gitignored). `PORT` and `GROUNDWORK_SITE_DIR` override the listen port and the site files.
 
+### Paid plans (Stripe)
+
+Paid plans stay off until the server process has four sandbox values: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_BYOM` (Bring your own model, 9 USD/month), and `STRIPE_PRICE_INCLUDED` (Groundwork, 20 USD/month). From the repo root:
+
+```bash
+./scripts/stripe-setup.sh
+npm run server
+```
+
+The script writes them to `.env` (gitignored). `npm run server` loads that file. The log line should include `billing on`. For a local checkout, leave the `stripe listen` process from the script running so Stripe can reach `POST /v1/stripe/webhook`.
+
 ## Obsidian community plugin
 
 The plugin is laid out so it can be submitted to the [Obsidian community plugin directory](https://docs.obsidian.md):

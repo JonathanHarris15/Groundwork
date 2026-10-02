@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "start": "node build.mjs && node dist/server.js",
-    "dev": "node build.mjs && node --watch dist/server.js"
+    "start": "node build.mjs && node --env-file-if-exists=../../.env dist/server.js",
+    "dev": "node build.mjs && node --watch --env-file-if-exists=../../.env dist/server.js"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"
