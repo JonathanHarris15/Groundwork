@@ -13,14 +13,14 @@ This is a **Groundwork** knowledge vault: a calibrated, persistent memory of wha
 | --- | --- |
 | \`concepts/\` | One note per reusable idea (linear functions, the chain rule). A concept never names a lecture, homework, or exam. \`prerequisites\` link to the concepts it depends on. Status is recalculated from quiz evidence. |
 | \`goals/\` | One note per goal. A goal can name a course or a file (Lecture 1 note fluency) and list those source documents. It is made of concepts, which stay useful for the next goal. |
-| \`sessions/\` | Transcripts of tutoring sessions. Manage and delete them from the Library. |
-| \`resources/\` | PDFs, slides, images, and notes I learn from. Files I attach in the tutor chat are saved here, and the tutor can open anything in it. |
+| \`sessions/\` | Transcripts of tutoring sessions. Manage and delete them from the Library, on the Chats tab. |
+| \`resources/\` | PDFs, slides, images, and notes I learn from. Files I attach in the tutor chat are saved here, and the tutor can open anything in it. Resetting the vault leaves this folder alone. |
 | \`exams/\` | Syllabi parsed from those files: topics and the level each must be learned to. |
-| \`learner.md\` | My background and how I learn best. The tutor reads it every session and may update it. |
-| \`.groundwork/tutor-context.md\` | Extra notes I write for the tutor in the Library. Separate from \`learner.md\`; the tutor reads them and does not rewrite them. |
+| \`learner.md\` | My background and how I learn best. The tutor reads it every session and may update it. Edit it from Settings in the tutor panel, or open this note. |
+| \`.groundwork/tutor-context.md\` | Extra notes I write for the tutor in Settings. Separate from \`learner.md\`; the tutor reads them and does not rewrite them. |
 | \`.groundwork/evidence/\` | Append-only quiz evidence (source of truth for all stats). |
 
-Open the **Groundwork** panel from the ribbon (graduation cap) to talk to the tutor. Goals, concepts, past conversations, and extra tutor context are managed in the Library inside that panel. The folders above are storage; the Library is how you work with them.
+Open the **Groundwork** panel from the ribbon (graduation cap) to talk to the tutor. Goals, concepts, and past chats each have a tab in the Library. Settings in that panel holds the learner file, extra notes, a few preferences, and a way to reset the learning vault. The folders above are storage.
 `,
 	[PATHS.learner]: DEFAULT_LEARNER_PROFILE,
 	[`${PATHS.concepts}/.gitkeep`]: "",

@@ -27,7 +27,7 @@ describe("AgentSession with the demo tutor", () => {
 			provider: new DemoProvider(0),
 			store,
 			tools: TOOLS,
-			system: buildSystemPrompt("obsidian"),
+			system: buildSystemPrompt(),
 			ui,
 			session: { id: "s1", notePath: "sessions/demo.md" },
 		});

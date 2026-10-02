@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 
 /** The API key lives in this device's local storage, never in the vault, so it is never pushed to GitHub. */
 const KEY_STORAGE = "groundwork-anthropic-key";
+const JEV_KEY_STORAGE = "groundwork-typesafe-key";
 
 export function loadApiKey(app: App): string {
 	return (app.loadLocalStorage(KEY_STORAGE) as string | null) ?? "";
@@ -45,6 +46,14 @@ export function loadApiKey(app: App): string {
 
 export function saveApiKey(app: App, key: string): void {
 	app.saveLocalStorage(KEY_STORAGE, key || null);
+}
+
+export function loadJevKey(app: App): string {
+	return (app.loadLocalStorage(JEV_KEY_STORAGE) as string | null) ?? "";
+}
+
+export function saveJevKey(app: App, key: string): void {
+	app.saveLocalStorage(JEV_KEY_STORAGE, key || null);
 }
 
 export class GroundworkSettingTab extends PluginSettingTab {
@@ -86,6 +95,22 @@ export class GroundworkSettingTab extends PluginSettingTab {
 
 		if (s.provider === "claude-code") this.claudeCodeSettings(containerEl, save);
 		if (s.provider === "anthropic") this.anthropicSettings(containerEl, save);
+
+		new Setting(containerEl).setName("Judgments").setHeading();
+		new Setting(containerEl)
+			.setName("TypeSafe API key")
+			.setDesc(
+				"Optional. Jev matches a question or a course-file idea to a concept already in the vault, checks whether a prerequisite link is direct, grades the understanding in a written answer, and picks among ready next steps. Mastery numbers and the map stay in the vault. The key stays on this device.",
+			)
+			.addText((t) => {
+				t.inputEl.type = "password";
+				t.setPlaceholder("TypeSafe API key")
+					.setValue(loadJevKey(this.app))
+					.onChange((v) => {
+						saveJevKey(this.app, v.trim());
+						this.plugin.useJevKey(v.trim());
+					});
+			});
 
 		if (s.provider !== "demo") {
 			new Setting(containerEl)

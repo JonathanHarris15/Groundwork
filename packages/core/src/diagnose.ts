@@ -97,19 +97,21 @@ function afterTeachingMiss(sessionKey: string, step: Rung, ctx: { prerequisites:
 	if (!seen.has(step.concept)) {
 		seen.add(step.concept);
 		lines.push(
-			`Next move — keep teaching forward; do not start a string of easier quizzes. Say in a line what went wrong, then teach this step again from a different angle (a new example, a picture, a derivation from something they hold), grounded in what they already know.${solidPrerequisites(ctx.prerequisites)} Then check it once with a fresh question at the same level.`,
+			`Next move — keep teaching forward; do not start a string of easier quizzes. Say in a line what went wrong, then teach this step again from a different angle: the other representation of the same fact (a picture or a concrete case if you used symbols, symbols if you used a picture), and say it is the same fact. A new set of numbers in the same template is the same angle. Ground it in what they already know.${solidPrerequisites(ctx.prerequisites)} Then check it once with a fresh question at the same level, on a new case.`,
 		);
 		if (step.outcome === "dont_know") {
 			const f = step.familiarity ?? 0;
 			lines.push(
 				f >= 3
-					? `They said "I don't know" but it felt very familiar (${familiarityLabel(f)}): give a short cue or the first move, then let them finish it.`
-					: `They said "I don't know" (${familiarityLabel(f)}): the step did not land. Teach it directly this time, more concretely, before asking again.`,
+					? `They said "I don't know" but it felt very familiar (${familiarityLabel(f)}): give a short cue or the first move, then let them finish the faded step.`
+					: `They said "I don't know" (${familiarityLabel(f)}): skip another attempt. Teach it directly, concrete case first, then the same fact in symbols, before asking again.`,
 			);
 		} else if (step.outcome === "partial") {
 			lines.push("Partly right: name the one piece that broke and fix it in the explanation. If the core idea of this node is there, move on instead of re-checking.");
 		} else if (step.misconception) {
-			lines.push(`Their answer points to a belief: "${step.misconception}". Address it head-on in the re-teach: show a case where it gives the wrong answer and why the right idea does not.`);
+			lines.push(
+				`Their answer points to a belief: "${step.misconception}". If that belief is a wrong claim inside the right idea, show one case where it gives the wrong answer. If it files the idea under the wrong kind (a process treated as a thing, a limit treated as plugging in), name the kind it is and the kind it is not.`,
+			);
 		}
 		lines.push("If it was really a slip (they plainly understand, only the arithmetic or a click went wrong), say so and continue with the plan instead.");
 		return lines.join("\n");
@@ -222,7 +224,7 @@ function afterCorrect(
 		climbed.length
 			? `Next move — ${slipNote}rung climbed (${rungName(step)}).`
 			: `Next move — ${slipNote}floor found: they hold ${rungName(step)}. Teach forward from here; no more descending.`,
-		`Next rung up: ${rungName(next)} — ${quoteQ(next.question)}. Teach just the step from what they showed to that rung (motivate → establish → connect), then check it with a new question at that level.`,
+		`Next rung up: ${rungName(next)} — ${quoteQ(next.question)}. Teach just the step from what they showed to that rung: one contrast, then the statement that names it, then a check on a new case at that level.`,
 		ladder.missed.length > 1 ? `Rungs left to the original question (${rungName(origin)}): ${ladder.missed.length}.` : "",
 	]
 		.filter(Boolean)

@@ -101,7 +101,7 @@ describe("orientation", () => {
 	});
 
 	it("tells the tutor the learner has not read its files", () => {
-		const prompt = buildSystemPrompt("obsidian");
+		const prompt = buildSystemPrompt();
 		expect(prompt).toContain("The learner sees only this conversation");
 		expect(prompt).toContain("Define every symbol and term the first time you use it");
 		expect(prompt).toContain("Always show where this is going");

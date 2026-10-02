@@ -15,7 +15,7 @@ export interface FreeResponseToGrade {
 }
 
 /** Choice confidence below this sends the answer back to the tutor instead of recording a guess. */
-export const GRADE_CONFIDENCE = 0.55;
+export const WRITTEN_GRADE_CONFIDENCE = 0.55;
 /** A slip has to be this clearly a careless error before we record one. */
 export const SLIP_PROBABILITY = 0.7;
 
@@ -104,7 +104,7 @@ export function judgmentFromAnswers(index: number, answers: Record<string, Grade
 	const outcome = answers[`i${index}_outcome`];
 	if (!outcome || outcome.type !== "choice") return null;
 	if (outcome.choice !== "correct" && outcome.choice !== "partial" && outcome.choice !== "incorrect") return null;
-	if (typeof outcome.confidence !== "number" || outcome.confidence < GRADE_CONFIDENCE) return null;
+	if (typeof outcome.confidence !== "number" || outcome.confidence < WRITTEN_GRADE_CONFIDENCE) return null;
 
 	const slipAnswer = answers[`i${index}_slip`];
 	const slipYes = slipAnswer?.type === "noul" && typeof slipAnswer.noul === "number" && slipAnswer.noul >= SLIP_PROBABILITY;

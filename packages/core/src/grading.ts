@@ -1,4 +1,5 @@
 import { nextMove, type PrerequisiteState } from "./diagnose";
+import { judgeUnderstanding, pickLabel } from "./judgments";
 import { describeEdge, predictCorrect, type ConceptStats } from "./model";
 import { familiarityLabel, gradeQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizGrade, type QuizResponse } from "./quiz";
 import type { KnowledgeStore } from "./store";
@@ -12,6 +13,8 @@ export interface QuizOutcome {
 	conceptTitle: string;
 	/** What to ask or teach next, from the session's diagnosis ladder. */
 	guidance?: string;
+	/** Set when a judgment labeled the written answer differently from the tutor. */
+	judgmentNote?: string;
 }
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -44,11 +47,12 @@ export function describeQuizOutcome(o: QuizOutcome): string {
 		`Recorded in vault → ${o.conceptTitle}: ${before.attempts ? pct(before.current) : "unassessed"} → ${pct(after.current)} (status ${after.status}; ${describeEdge(after)}; d${quiz.difficulty} ${quiz.kind}).`,
 	);
 	lines.push(`Predicted chance on next d${Math.min(5, quiz.difficulty + 1)}: ${pct(predictCorrect(after, quiz.difficulty + 1))}.`);
+	if (o.judgmentNote) lines.push(o.judgmentNote);
 	if (o.guidance) lines.push("", o.guidance);
 	return lines.join("\n");
 }
 
-/** Grade, record, and describe a quiz answer. Shared by the Obsidian card flow, MCP, and practice tests. */
+/** Grade, record, and describe a quiz answer. Shared by quiz cards and practice tests. */
 export async function recordQuizAnswer(
 	store: KnowledgeStore,
 	quiz: PreparedQuiz,
@@ -56,7 +60,26 @@ export async function recordQuizAnswer(
 	session?: { id: string },
 	judgment?: FreeResponseJudgment,
 ): Promise<QuizOutcome> {
-	const grade = gradeQuiz(quiz, response, judgment);
+	let applied = judgment;
+	let judgmentNote: string | undefined;
+	const client = store.judgments();
+	if (client && judgment && quiz.format === "free" && response.text?.trim()) {
+		const graded = await judgeUnderstanding(client, {
+			question: quiz.question,
+			response: response.text,
+			reference: quiz.reference,
+			rubric: quiz.rubric,
+		});
+		if (graded) {
+			const tutorSlip = judgment.slip === true;
+			const tutorOutcome = tutorSlip ? "correct" : judgment.outcome;
+			if (graded.outcome !== tutorOutcome || graded.slip !== tutorSlip) {
+				judgmentNote = `Jev graded the understanding as ${graded.slip ? "a slip" : graded.outcome}. That is what was recorded.`;
+			}
+			applied = { ...judgment, outcome: graded.outcome, slip: graded.slip };
+		}
+	}
+	const grade = gradeQuiz(quiz, response, applied);
 	const { concept, before, after } = await store.recordEvidence(quiz.concept, {
 		outcome: grade.outcome,
 		difficulty: quiz.difficulty,
@@ -76,7 +99,7 @@ export async function recordQuizAnswer(
 		.map((id) => index.get(id))
 		.filter((c): c is NonNullable<typeof c> => !!c)
 		.map((c) => ({ title: c.title, status: c.stats.status, floor: c.stats.floor }));
-	const guidance = nextMove(
+	let guidance = nextMove(
 		session?.id ?? "default",
 		{
 			concept: concept.title,
@@ -90,7 +113,17 @@ export async function recordQuizAnswer(
 		},
 		{ prerequisites, floor: after.floor, ceiling: after.ceiling },
 	);
-	return { quiz, response, grade, before, after, conceptTitle: concept.title, guidance: guidance || undefined };
+	const weak = prerequisites.filter((p) => p.status !== "solid");
+	if (client && guidance.includes("prerequisite") && weak.length >= 2 && grade.outcome !== "correct") {
+		const piece = await pickLabel(
+			client,
+			"Which prerequisite is the piece this missed question actually depends on?",
+			{ concept: concept.title, question: stripMd(quiz.question), misconception: grade.misconception ?? "" },
+			weak.map((p) => ({ id: p.title, label: p.title, detail: `${p.status}${p.floor ? `, holds d${p.floor}` : ""}` })),
+		);
+		if (piece) guidance = `${guidance}\nThe missing piece is ${piece}. Ask about that prerequisite, not the others.`;
+	}
+	return { quiz, response, grade, before, after, conceptTitle: concept.title, guidance: guidance || undefined, judgmentNote };
 }
 
 /** Free-response answers wait here until the tutor grades them with grade_answer. */

@@ -141,7 +141,7 @@ export class DemoProvider implements Provider {
 					objective: "Explain what $f'(x)$ means, and derive $\\frac{d}{dx}x^2 = 2x$ from the definition without looking it up.",
 					why: "Demo goal: the foundation for everything in calculus.",
 					approach:
-						"Start from slope (an unconditional truth: rise over run for a straight line), ask how to get a slope for a curve, discover that zooming in makes curves look straight, formalize the zoom as a limit, and arrive at the derivative.",
+						"Start from slope (an unconditional truth: rise over run, the same number for any two points on a straight line). Show that a curve has no such number — two segments of y=x^2 give two slopes — and name the secant as the line that turns the curve back into a slope. Then shrink the two points together: that is the limit, and the derivative is the slope you get when they meet.",
 					targets: ["Derivative"],
 					nodes: [
 						{ title: "Slope of a line", summary: "Rise over run: $m = \\frac{\\Delta y}{\\Delta x}$.", domain: "calculus" },
@@ -209,46 +209,15 @@ export class DemoProvider implements Provider {
 			];
 		}
 
-		if (lastToolNames.includes("quiz") && !/Secant line/.test(resultText)) {
-			const right = /CORRECTLY/.test(resultText) && !/INCORRECTLY/.test(resultText);
-			return [
-				{
-					type: "text",
-					text: right
-						? "Solid floor. Now the motivating problem: a curve like $y = x^2$ has no single rise-over-run. But pick **two points** on it and you get a line through them, the ==secant line==, which *does* have a slope.\n\n> [!tip] How could you have discovered this?\n> You only know how to measure the slope of lines, so turn the curve problem into a line problem: draw a line through two points on the curve.\n"
-						: "That's the edge, and a useful one. Slope is ==change in $y$ divided by change in $x$==, always in that order. Let's lock that in and then use it on curves.\n\n> [!note] Unconditional truth\n> For any straight line, $m = \\dfrac{y_2 - y_1}{x_2 - x_1}$, no matter which two points you pick.\n",
-				},
-				this.tool("quiz", {
-					concept: "Secant line",
-					purpose: "Checking you can turn a curve into a line problem. The next step, the limit, shrinks exactly this.",
-					question: "On the curve $y = x^2$, take the two points at $x = 1$ and $x = 1 + h$, where $h$ is the horizontal distance between them. What is the slope of the straight line (the secant line) through those two points?",
-					options: [
-						{ label: "$2 + h$", value: "2h" },
-						{ label: "$2$", value: "2", misconception: "Jumps to the tangent slope before taking any limit" },
-						{ label: "$h^2$", value: "h2", misconception: "Squares the step size instead of forming the difference quotient" },
-						{ label: "$1 + h$", value: "1h", misconception: "Uses the change in x as the slope" },
-					],
-					correctAnswer: "2h",
-					explanation: "$\\frac{(1+h)^2 - 1^2}{h} = \\frac{2h + h^2}{h} = 2 + h$. Notice what happens as $h$ shrinks: that's the next node, the limit.",
-					difficulty: 3,
-					kind: "check",
-				}),
-			];
-		}
-
 		if (lastToolNames.includes("quiz")) {
-			return [
-				{
-					type: "text",
-					text: "Look at what you just computed: the secant slope is $2 + h$, and as the two points squeeze together ($h \\to 0$) it heads to $2$. That squeezing is exactly what a ==limit== makes precise:\n\n$$\nf'(1) = \\lim_{h \\to 0} \\frac{f(1+h) - f(1)}{h} = 2\n$$\n\nI've recorded both answers in your vault. Open the goal note to see the map re-colored.\n",
-				},
-				this.tool("save_session_summary", {
-					title: "The derivative (demo)",
-					summary: "Probed slope of a line, then derived the secant slope on $y=x^2$ as the setup for limits.",
-					concepts: ["Slope of a line", "Secant line", "Limit", "Derivative"],
-					next: "Formalize the limit, then derive $\\frac{d}{dx}x^2 = 2x$.",
-				}),
-			];
+			const asks = quizConcepts(messages);
+			const right = /CORRECTLY/.test(resultText) && !/INCORRECTLY/.test(resultText);
+			const slopeAsks = asks.filter((c) => c === "Slope of a line").length;
+			const secantAsks = asks.filter((c) => c === "Secant line").length;
+			if (secantAsks === 0 && !right && slopeAsks === 1) return this.reteachSlope();
+			if (secantAsks === 0) return this.introduceSecant();
+			if (secantAsks === 1 && !right) return this.reteachSecant();
+			return this.finishLesson();
 		}
 
 		if (lastToolNames.includes("save_session_summary")) {
@@ -267,6 +236,158 @@ export class DemoProvider implements Provider {
 			},
 		];
 	}
+
+	/** A missed root: two cases, one flipped case, then the truth, then a new check. */
+	private reteachSlope(): ContentBlock[] {
+		return [
+			{
+				type: "text",
+				text: [
+					"That's the edge, and a useful one. Slope is ==change in $y$ divided by change in $x$==, always in that order.",
+					"",
+					"Two lines, same fact. Through $(0, 0)$ and $(2, 6)$ the rise is $6$ and the run is $2$, so the slope is $3$. Through $(1, 2)$ and $(3, 8)$ the rise is $6$ and the run is $2$, so the slope is $3$ again. Any two points on a straight line give that same number.",
+					"",
+					"The flipped case is a different quantity. Dividing the run by the rise gives $\\frac{2}{6}$, and dividing a $y$-value by an $x$-value gives $\\frac{8}{3}$. Neither one is the slope.",
+					"",
+					"> [!note] Unconditional truth",
+					"> For any straight line, $m = \\dfrac{y_2 - y_1}{x_2 - x_1}$, no matter which two points you pick. The two lines above and this statement are the same fact.",
+				].join("\n"),
+			},
+			this.tool("upsert_concept", {
+				title: "Slope of a line",
+				domain: "calculus",
+				summary: "For any straight line, slope is rise over run, and every pair of points gives that same number.",
+				unconditionalTruths: "For any straight line, $m = \\frac{y_2 - y_1}{x_2 - x_1}$, no matter which two points you pick.",
+				misconceptions: "Run divided by rise. A y-value divided by an x-value, instead of the differences.",
+			}),
+			this.tool("quiz", {
+				concept: "Slope of a line",
+				purpose: "Checking the same fact on a new line. The derivative is built on this, so it has to be solid before we leave it.",
+				question: "A line passes through $(0, 1)$ and $(4, 9)$. What is its slope?",
+				options: [
+					{ label: "$2$", value: "two" },
+					{ label: "$\\frac{1}{2}$", value: "half", misconception: "Divides run by rise instead of rise by run" },
+					{ label: "$8$", value: "eight", misconception: "Uses the rise alone and forgets to divide by the run" },
+					{ label: "$\\frac{9}{4}$", value: "nine-fourths", misconception: "Divides a y-value by an x-value instead of using differences" },
+				],
+				correctAnswer: "two",
+				explanation: "Rise over run: $\\frac{9-1}{4-0} = \\frac{8}{4} = 2$.",
+				difficulty: 2,
+				kind: "check",
+			}),
+		];
+	}
+
+	/** A derived node: the relation that carries, one contrast, a worked case, then a new case. */
+	private introduceSecant(): ContentBlock[] {
+		return [
+			{
+				type: "text",
+				text: [
+					"A secant does for two points on a curve what slope did for two points on a line. Slope is one number for a whole line: any two points give it. A curve has no such number, which is why the derivative needs a new idea.",
+					"",
+					"On $y = x^2$, from $x = 1$ ($y = 1$) to $x = 2$ ($y = 4$) the slope is $\\frac{4-1}{2-1} = 3$. From $x = 2$ ($y = 4$) to $x = 3$ ($y = 9$) the slope is $\\frac{9-4}{3-2} = 5$. Same curve, two slopes. A line would have given the same slope both times.",
+					"",
+					"The line through two points on a curve is the ==secant line==. It turns the curve problem back into a line problem, so it has a slope: rise over run between those two points. In symbols, with $h$ the horizontal distance between them, that slope is",
+					"",
+					"$$",
+					"\\frac{f(a+h) - f(a)}{h}",
+					"$$",
+					"",
+					"where $f(a)$ is the height of the curve at $x = a$. The $3$ and the $5$ above are this same fact with the numbers filled in. Worked at $a = 1$:",
+					"",
+					"$$",
+					"\\frac{(1+h)^2 - 1^2}{h} = \\frac{2h + h^2}{h} = 2 + h",
+					"$$",
+					"",
+					"> [!warning] What a secant is not",
+					"> It is not the slope at a single point, and it is not a formula sitting on the curve. It is the ordinary slope of the line through two points. The slope at one point comes later, when those two points meet.",
+				].join("\n"),
+			},
+			this.tool("upsert_concept", {
+				title: "Slope of a line",
+				domain: "calculus",
+				summary: "For any straight line, slope is rise over run, and every pair of points gives that same number.",
+				unconditionalTruths: "For any straight line, $m = \\frac{y_2 - y_1}{x_2 - x_1}$, no matter which two points you pick.",
+				misconceptions: "Run divided by rise. A y-value divided by an x-value, instead of the differences.",
+			}),
+			this.tool("upsert_concept", {
+				title: "Secant line",
+				domain: "calculus",
+				prerequisites: ["Slope of a line"],
+				summary: "The line through two points on a curve. Its slope is rise over run between those points.",
+				connections: "A secant does for two points on a curve what slope did for two points on a line. It is how a curve gets a slope at all.",
+				misconceptions:
+					"Dividing run by rise. Using a y-value instead of the change in y. Treating the secant as the slope at a single point — that is a later idea, the limit.",
+			}),
+			this.tool("quiz", {
+				concept: "Secant line",
+				purpose: "Checking you can read a secant as an ordinary slope between two new points on the curve. The next step, the limit, shrinks exactly this.",
+				question:
+					"On the curve $y = x^2$, what is the slope of the secant line through $x = 3$ (where $y = 9$) and $x = 4$ (where $y = 16$)?",
+				options: [
+					{ label: "$7$", value: "seven" },
+					{ label: "$\\frac{1}{7}$", value: "seventh", misconception: "Divides run by rise instead of rise by run" },
+					{ label: "$16$", value: "sixteen", misconception: "Uses a y-value instead of the change in y" },
+					{ label: "$4$", value: "four", misconception: "Uses a point's x-value as the slope" },
+				],
+				correctAnswer: "seven",
+				explanation: "Rise over run between the two points: $\\frac{16-9}{4-3} = 7$. That line is the secant.",
+				difficulty: 2,
+				kind: "check",
+			}),
+		];
+	}
+
+	/** The other representation: a picture of the same fact, then a new case. */
+	private reteachSecant(): ContentBlock[] {
+		return [
+			{
+				type: "text",
+				text: [
+					"Same fact, as a picture. Draw $y = x^2$. Push a pin in at $x = 0$ (height $0$) and another at $x = 2$ (height $4$). Lay a ruler across the two pins. The steepness of that ruler is the secant slope: rise $4$, run $2$, slope $2$.",
+					"",
+					"The fraction $\\frac{f(a+h)-f(a)}{h}$ is that ruler written down. The pins and the fraction are the same fact.",
+				].join("\n"),
+			},
+			this.tool("quiz", {
+				concept: "Secant line",
+				purpose: "Checking the picture on a new pair of pins. This is the same secant idea, not a new one.",
+				question: "On $y = x^2$, pins at $x = 1$ (height $1$) and $x = 3$ (height $9$). What is the slope of the ruler through them, the secant?",
+				options: [
+					{ label: "$4$", value: "four" },
+					{ label: "$\\frac{1}{4}$", value: "fourth", misconception: "Divides run by rise instead of rise by run" },
+					{ label: "$8$", value: "eight", misconception: "Uses the rise alone and forgets to divide by the run" },
+					{ label: "$1$", value: "one", misconception: "Uses the starting x-value as the slope" },
+				],
+				correctAnswer: "four",
+				explanation: "Rise over run: $\\frac{9-1}{3-1} = 4$.",
+				difficulty: 2,
+				kind: "check",
+			}),
+		];
+	}
+
+	private finishLesson(): ContentBlock[] {
+		return [
+			{
+				type: "text",
+				text: [
+					"You started from slope, one number for a whole line, and you now have a way to give a curve a slope: the secant through two of its points.",
+					"",
+					"Next is the ==limit==. The secant slope changes as you move the two points — $3$ on one segment of $y = x^2$, $5$ on the next. The limit is what that slope becomes when the two points meet, and that is the derivative. We'll formalize it from here.",
+					"",
+					"I've recorded both answers in your vault. Open the goal note to see the map re-colored.",
+				].join("\n"),
+			},
+			this.tool("save_session_summary", {
+				title: "The derivative (demo)",
+				summary: "Probed slope of a line, then introduced the secant as rise over run between two points on $y=x^2$.",
+				concepts: ["Slope of a line", "Secant line", "Limit", "Derivative"],
+				next: "Formalize the limit, then derive $\\frac{d}{dx}x^2 = 2x$.",
+			}),
+		];
+	}
 }
 
 function learnerText(m: ChatMessage): string {
@@ -276,6 +397,20 @@ function learnerText(m: ChatMessage): string {
 
 function isLearnerTurn(m: ChatMessage): boolean {
 	return m.role === "user" && (typeof m.content === "string" || !m.content.some((b) => b.type === "tool_result"));
+}
+
+function quizConcepts(messages: ChatMessage[]): string[] {
+	const titles: string[] = [];
+	for (const m of messages) {
+		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+		for (const b of m.content) {
+			if (b.type === "tool_use" && b.name === "quiz") {
+				const concept = (b.input as { concept?: string } | undefined)?.concept;
+				if (concept) titles.push(concept);
+			}
+		}
+	}
+	return titles;
 }
 
 function toolNameFor(messages: ChatMessage[], toolUseId: string): string | undefined {

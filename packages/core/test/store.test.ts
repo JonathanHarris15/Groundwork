@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MemoryVaultIO } from "../src/io";
 import { parseNote } from "../src/markdown";
-import { goalChoiceLabel, KnowledgeStore } from "../src/store";
+import { DEFAULT_LEARNER_PROFILE, goalChoiceLabel, KnowledgeStore } from "../src/store";
 import { workingGoalNote } from "../src/prompt";
 import { toolByName } from "../src/tools";
 
@@ -316,5 +316,49 @@ nodes:
 		const p = await store.profile();
 		expect(p).toContain("Prefers geometric intuition first.");
 		expect(p).toContain("Gets bored by long derivations.");
+	});
+
+	it("saves the learner file and resets the learning vault without touching resources", async () => {
+		const { io, store } = makeStore();
+		await store.ensureLayout();
+		await store.setProfile("# Learner profile\n\n## Background\n\nI know calculus.\n");
+		expect(await store.profile()).toContain("I know calculus.");
+		await store.setProfile("   ");
+		expect(await store.profile()).toBe(DEFAULT_LEARNER_PROFILE);
+
+		await store.setProfile("# Learner profile\n\n## Background\n\nPhysics.\n");
+		await store.setTutorContext("Exam on Friday.");
+		await store.setGoal({ title: "427 exam", targets: ["Limit"], nodes: [{ title: "Limit" }] });
+		await store.setWorkingGoal("427 exam");
+		await store.recordEvidence("Limit", { outcome: "incorrect", difficulty: 2, kind: "probe", question: "What is a limit?" });
+		await store.writeFile("concepts/.gitkeep", "");
+		await store.writeFile("exams/Midterm.md", "# Midterm\n");
+		await store.writeFile("tests/2026-09-01 Midterm.md", "# Score\n");
+		await store.writeFile(
+			".groundwork/chats/chat-1.json",
+			JSON.stringify({ id: "chat-1", title: "Limits", created: "2026-09-01T00:00:00.000Z", updated: "2026-09-02T00:00:00.000Z", notePath: "sessions/2026-09-01 Limits.md" }),
+		);
+		await store.writeFile("sessions/2026-09-01 Limits.md", "---\nchat: chat-1\n---\n# Limits\n");
+		await store.writeFile("resources/Lecture 1.pdf", "pdf");
+		await store.writeFile("README.md", "# keep\n");
+
+		await store.resetVault();
+
+		expect([...(await store.concepts()).keys()]).toEqual([]);
+		expect(await store.goals()).toEqual([]);
+		expect(await store.listChats()).toEqual([]);
+		expect(await store.workingGoal()).toBeNull();
+		expect(await store.tutorContext()).toBe("");
+		expect(await store.profile()).toBe(DEFAULT_LEARNER_PROFILE);
+		expect(await io.exists(".groundwork/evidence/limit.jsonl")).toBe(false);
+		expect(await io.exists(".groundwork/focus.json")).toBe(false);
+		expect(await io.exists(".groundwork/tutor-context.md")).toBe(false);
+		expect(await io.exists("exams/Midterm.md")).toBe(false);
+		expect(await io.exists("tests/2026-09-01 Midterm.md")).toBe(false);
+		expect(await io.exists("sessions/2026-09-01 Limits.md")).toBe(false);
+		expect(await io.exists(".groundwork/chats/chat-1.json")).toBe(false);
+		expect(await io.exists("concepts/.gitkeep")).toBe(true);
+		expect(await io.read("resources/Lecture 1.pdf")).toBe("pdf");
+		expect(await io.read("README.md")).toBe("# keep\n");
 	});
 });

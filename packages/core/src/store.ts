@@ -1,4 +1,4 @@
-import { assertAbstractConcept, assertConceptOmitsSources } from "./concept-title";
+import { assertAbstractConcept, assertConceptOmitsSources, sourceBoundConceptReason } from "./concept-title";
 import {
 	blueprintToGoalInput,
 	buildExamBlueprint,
@@ -22,6 +22,8 @@ import {
 	unwikilink,
 	wikilink,
 } from "./markdown";
+import { pickReadyStep, refineGoalInput, resolveForEvidence, type ResolvedConcept } from "./judgments";
+import { type JevClient } from "./jev";
 import { computeStats, describeEdge, emptyStats, isDue, type ConceptStats, type Evidence } from "./model";
 
 export const PATHS = {
@@ -35,7 +37,7 @@ export const PATHS = {
 	evidence: ".groundwork/evidence",
 	chats: ".groundwork/chats",
 	focus: ".groundwork/focus.json",
-	/** Notes the learner writes in the Library. Not `learner.md`. */
+	/** Notes the learner writes in Settings. Not `learner.md`. */
 	tutorContext: ".groundwork/tutor-context.md",
 } as const;
 
@@ -133,7 +135,7 @@ export interface GoalInput {
 	 */
 	targets?: string[];
 	target?: string;
-	nodes: Array<{ title: string; prerequisites?: string[]; summary?: string; domain?: string; requiredLevel?: number }>;
+	nodes: Array<{ title: string; prerequisites?: string[]; summary?: string; domain?: string; requiredLevel?: number; aliases?: string[] }>;
 	status?: GoalStatus;
 	examPlan?: string;
 	/** Vault paths of the files this goal draws on. Allowed here, never on a concept. */
@@ -166,6 +168,8 @@ export interface GoalReport {
 	mermaid: string;
 	/** Best next step on this goal, when it still has open targets. */
 	next?: StudyStep;
+	/** Concept renames and prerequisite edits from a judgment pass. Empty when none ran. */
+	judgmentNotes?: string[];
 }
 
 export interface StoreOptions {
@@ -173,6 +177,8 @@ export interface StoreOptions {
 	device?: string;
 	/** Called after any write so hosts can schedule a git sync. */
 	onChange?: (paths: string[]) => void;
+	/** Semantic judgments. Absent means the vault behaves as it does without a model. */
+	judgments?: JevClient;
 }
 
 export class KnowledgeStore {
@@ -188,6 +194,19 @@ export class KnowledgeStore {
 
 	invalidate(): void {
 		this.index = null;
+	}
+
+	judgments(): JevClient | undefined {
+		return this.opts.judgments;
+	}
+
+	useJudgments(client: JevClient | undefined): void {
+		this.opts.judgments = client;
+	}
+
+	/** Exact title or alias, otherwise a same-concept judgment against concepts already in the vault. */
+	resolveForEvidence(ref: string, text?: string): Promise<ResolvedConcept | undefined> {
+		return resolveForEvidence(this, ref, text);
 	}
 
 	private changed(...paths: string[]): void {
@@ -453,18 +472,38 @@ export class KnowledgeStore {
 		return (await this.goals()).find((g) => g.id === id);
 	}
 
-	async setGoal(input: GoalInput): Promise<GoalReport> {
+	async setGoal(input: GoalInput, opts?: { judgments?: "tutor" | "proposed" | "off" }): Promise<GoalReport> {
+		const mode = opts?.judgments ?? "tutor";
+		let notes: string[] = [];
+		if (mode !== "off") {
+			const refined = await refineGoalInput(this, input, mode);
+			input = refined.input;
+			notes = refined.notes;
+		}
 		const named = goalTargetTitles(input);
 		if (!named.length) throw new Error("A goal is made of targets: name at least one concept that has not been built yet.");
 		for (const title of [...named, ...input.nodes.flatMap((n) => [n.title, ...(n.prerequisites ?? [])])]) assertAbstractConcept(title);
 		for (const node of input.nodes) if (node.summary) assertConceptOmitsSources(node.summary);
+		const judged = mode !== "off" && !!this.judgments();
+		const inThisGoal = new Set(input.nodes.map((n) => slugify(unwikilink(n.title))));
 		const nodeTitles = new Map<string, string>();
 		for (const node of input.nodes) {
+			let prerequisites = node.prerequisites;
+			let replacePrerequisites = false;
+			if (judged) {
+				const existing = await this.resolve(node.title);
+				const index = await this.concepts();
+				const outside = (existing?.prerequisites ?? []).filter((id) => !inThisGoal.has(id)).map((id) => index.get(id)?.title ?? id);
+				prerequisites = [...outside, ...(node.prerequisites ?? [])];
+				replacePrerequisites = true;
+			}
 			await this.upsertConcept({
 				title: node.title,
-				prerequisites: node.prerequisites,
+				prerequisites,
+				replacePrerequisites,
 				summary: node.summary,
 				domain: node.domain,
+				aliases: node.aliases?.filter((alias) => !sourceBoundConceptReason(alias)),
 			});
 			const c = await this.requireConcept(node.title);
 			nodeTitles.set(c.id, c.title);
@@ -544,7 +583,8 @@ export class KnowledgeStore {
 		delete fm.built;
 		await this.io.write(path, serializeNote(fm, body));
 		this.changed(path);
-		return this.renderGoal(slugify(input.title));
+		const report = await this.renderGoal(slugify(input.title));
+		return notes.length ? { ...report, judgmentNotes: notes } : report;
 	}
 
 	async setGoalStatus(ref: string, status: GoalStatus): Promise<Goal> {
@@ -810,6 +850,31 @@ export class KnowledgeStore {
 		if (pin && (slugify(unwikilink(pin)) === goal.id || pin === goal.title)) await this.setWorkingGoal(null);
 	}
 
+	/**
+	 * Deletes goals, concepts, chats, session notes, exam plans, practice tests,
+	 * quiz evidence, the working-goal pin, and extra tutor notes, then restores
+	 * `learner.md`. Leaves `resources/` and vault config in place.
+	 */
+	async resetVault(): Promise<void> {
+		const removed: string[] = [];
+		for (const dir of [PATHS.concepts, PATHS.goals, PATHS.exams, PATHS.tests, PATHS.sessions, PATHS.evidence, PATHS.chats]) {
+			for (const file of await listAllFiles(this.io, dir)) {
+				if (file.endsWith(".gitkeep")) continue;
+				await this.io.remove(file);
+				removed.push(file);
+			}
+		}
+		for (const file of [PATHS.focus, PATHS.tutorContext]) {
+			if (!(await this.io.exists(file))) continue;
+			await this.io.remove(file);
+			removed.push(file);
+		}
+		await this.io.write(PATHS.learner, DEFAULT_LEARNER_PROFILE);
+		removed.push(PATHS.learner);
+		this.invalidate();
+		this.changed(...removed);
+	}
+
 	/** Extra notes the learner wrote for the tutor. Empty when they have not written any. */
 	async tutorContext(): Promise<string> {
 		if (!(await this.io.exists(PATHS.tutorContext))) return "";
@@ -870,7 +935,9 @@ export class KnowledgeStore {
 		if (input.createGoal !== false && blueprint.topics.length) {
 			const gi = blueprintToGoalInput(blueprint, loaded, input.why);
 			if (planPath) gi.examPlan = blueprint.title;
-			goal = await this.setGoal(gi);
+			const refined = await refineGoalInput(this, gi, "proposed");
+			goal = await this.setGoal(refined.input, { judgments: "off" });
+			if (refined.notes.length) goal = { ...goal, judgmentNotes: refined.notes };
 		}
 		return { blueprint, planPath, goal };
 	}
@@ -1041,7 +1108,17 @@ export class KnowledgeStore {
 			}
 		}
 		ranked.sort((a, b) => a.rank - b.rank);
-		return ranked[0]?.step ?? null;
+		if (!ranked.length) return null;
+		const top = ranked.filter((r) => r.rank === ranked[0].rank).map((r) => r.step);
+		return (await pickReadyStep(this.judgments(), top)) ?? ranked[0].step;
+	}
+
+	/** The ready step on this goal. When several share the top rank, a judgment may choose among them. */
+	async chooseNext(report: GoalReport): Promise<StudyStep | undefined> {
+		const ranked = rankGoalSteps(report).sort((a, b) => a.rank - b.rank);
+		if (!ranked.length) return undefined;
+		const top = ranked.filter((r) => r.rank === ranked[0].rank).map((r) => r.step);
+		return pickReadyStep(this.judgments(), top, report.goal.objective);
 	}
 
 	private async refreshGoalsContaining(id: string): Promise<void> {
@@ -1065,6 +1142,15 @@ export class KnowledgeStore {
 		await this.io.write(PATHS.learner, out);
 		this.changed(PATHS.learner);
 		return getSection(newBody, section) ?? "";
+	}
+
+	/** Replaces `learner.md`. A blank edit restores the default profile. */
+	async setProfile(text: string): Promise<string> {
+		const value = text.replace(/\s+$/, "");
+		const out = value ? `${value}\n` : DEFAULT_LEARNER_PROFILE;
+		await this.io.write(PATHS.learner, out);
+		this.changed(PATHS.learner);
+		return out;
 	}
 
 	// ── search / overview ───────────────────────────────────────────────
@@ -1226,6 +1312,15 @@ async function listMarkdown(io: VaultIO, dir: string): Promise<string[]> {
 	for (const f of files) if (f.endsWith(".md")) out.push(f);
 	for (const sub of folders) out.push(...(await listMarkdown(io, sub)));
 	return out.sort();
+}
+
+async function listAllFiles(io: VaultIO, dir: string): Promise<string[]> {
+	if (!(await io.exists(dir))) return [];
+	const out: string[] = [];
+	const { files, folders } = await io.list(dir);
+	out.push(...files);
+	for (const sub of folders) out.push(...(await listAllFiles(io, sub)));
+	return out;
 }
 
 function asStringList(v: unknown): string[] {

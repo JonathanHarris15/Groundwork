@@ -1,7 +1,7 @@
 {
   "name": "@groundwork/cli",
   "version": "0.1.0",
-  "description": "Groundwork CLI: set up and open your knowledge vault, and serve it to chat apps over MCP.",
+  "description": "Groundwork CLI: set up and open your knowledge vault in Obsidian.",
   "type": "module",
   "bin": {
     "groundwork": "dist/groundwork.js"
@@ -14,7 +14,6 @@
   },
   "devDependencies": {
     "@groundwork/core": "*",
-    "@modelcontextprotocol/sdk": "^1.31.0",
     "commander": "^15.0.0"
   }
 }

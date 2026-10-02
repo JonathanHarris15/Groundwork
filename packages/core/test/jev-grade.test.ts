@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MemoryVaultIO } from "../src/io";
-import { freeResponseRequest, GRADE_CONFIDENCE, judgmentFromAnswers, judgmentsFor, type AnswerGrader } from "../src/jev/grade";
+import { freeResponseRequest, WRITTEN_GRADE_CONFIDENCE, judgmentFromAnswers, judgmentsFor, type AnswerGrader } from "../src/jev/grade";
 import { KnowledgeStore } from "../src/store";
 import { toolByName, type ToolUI } from "../src/tools";
 import type { QuizOutcome } from "../src/grading";
@@ -37,7 +37,7 @@ describe("Jev grading request", () => {
 		expect(partial?.feedback).toMatch(/conceptual piece/);
 
 		const unsure = judgmentFromAnswers(0, {
-			i0_outcome: { type: "choice", choice: "correct", confidence: GRADE_CONFIDENCE - 0.01 },
+			i0_outcome: { type: "choice", choice: "correct", confidence: WRITTEN_GRADE_CONFIDENCE - 0.01 },
 			i0_slip: { type: "noul", noul: 0.99 },
 		});
 		expect(unsure).toBeNull();

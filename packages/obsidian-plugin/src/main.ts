@@ -1,11 +1,11 @@
 import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
-import { AnthropicProvider, DemoProvider, KnowledgeStore, remoteAnswerGrader, type AnswerGrader, type Provider } from "@groundwork/core";
+import { AnthropicProvider, DemoProvider, jevClient, KnowledgeStore, remoteAnswerGrader, type AnswerGrader, type Provider } from "@groundwork/core";
 import { GitSync } from "@groundwork/core/node";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
 import { ObsidianVaultIO } from "./obsidian-io";
-import { DEFAULT_SETTINGS, GroundworkSettingTab, loadApiKey, type GroundworkSettings } from "./settings";
+import { DEFAULT_SETTINGS, GroundworkSettingTab, loadApiKey, loadJevKey, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
 
 type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
@@ -24,6 +24,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.store = new KnowledgeStore(new ObsidianVaultIO(this.app.vault.adapter), {
 			device: this.deviceName(),
 			onChange: () => this.onKnowledgeChanged(),
+			judgments: jevClient(loadJevKey(this.app) || process.env.TYPESAFE_API_KEY || ""),
 		});
 
 		const adapter = this.app.vault.adapter;
@@ -198,6 +199,10 @@ export default class GroundworkPlugin extends Plugin {
 	async useDemo(): Promise<void> {
 		this.settings.provider = "demo";
 		await this.saveSettings();
+	}
+
+	useJevKey(key: string): void {
+		this.store.useJudgments(jevClient(key || process.env.TYPESAFE_API_KEY || ""));
 	}
 
 	resetAgent(): void {
