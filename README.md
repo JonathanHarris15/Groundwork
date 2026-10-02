@@ -13,6 +13,26 @@ Inspired by [amosblomqvist/learn](https://github.com/amosblomqvist/learn): the t
 | Tied to one project directory | A private git repo synced automatically (pull on open, debounced commit + push after changes), merge-safe across machines. |
 | pi-only | An Obsidian plugin. The chat lives in the vault. |
 
+Groundwork is [MIT licensed](LICENSE).
+
+## Payment, account, and network
+
+Payment is required for full access. The Free plan uses Groundwork's smaller model. **Bring your own model** is $9 per month and uses the Claude subscription already on this computer, or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. **Groundwork** is $20 per month and Groundwork runs the models. Paid plans are billed on the [Groundwork website](https://groundworklearn.com) through Stripe. A scripted demo lesson runs without an account or a payment.
+
+An account is required for full access. Sign in with Google on that website, or in Obsidian under **Settings → Groundwork → Account**. Tutor memory — concept notes, goals, quiz evidence, chats, and the learner profile — is stored on the account.
+
+The plugin uses the network for these services:
+
+- **Groundwork** (`https://groundworklearn.com`) stores the account, the tutor memory, and the plan, and grades written answers.
+- **Google** signs you in.
+- **Stripe** takes payment for the $9 and $20 plans.
+- **Anthropic**, through Claude Code on this computer, runs the tutor when you use your own Claude subscription. A pasted provider key is sent only to that provider: OpenRouter, Anthropic, Google, xAI, or OpenAI.
+- **GitHub**, only when the vault is synced to a private repository you connect.
+
+The plugin does not send telemetry. It does use a few paths outside the vault, because the tutor runs on the desktop: the `git` executable, to sync the vault; the Claude Code executable, to run the tutor; and `~/.config/groundwork/config.json`, which stores the vault path. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
+
+The plugin is desktop-only.
+
 ## How it works
 
 ```mermaid
@@ -167,7 +187,9 @@ Create an account on the site (or from Obsidian: **Settings → Groundwork → A
 
 ## Obsidian community plugin
 
-The plugin is laid out so it can be submitted to the [Obsidian community plugin directory](https://docs.obsidian.md):
+The disclosures above — payment for full access, a required account, network services, and files outside the vault — are what the [Obsidian community plugin directory](https://docs.obsidian.md) requires in this README. The license is MIT (`LICENSE`).
+
+The plugin is laid out so it can be submitted:
 
 | Requirement | Where |
 | --- | --- |

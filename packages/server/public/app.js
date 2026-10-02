@@ -134,13 +134,14 @@ function showPlans() {
 	dotfield.hidden = true;
 	const credit = account.needsPlan
 		? "Choose a plan to start."
-		: creditLine();
+		: account.ownModel
+			? "This plan uses your model. Groundwork does not meter it."
+			: "You can change plans below.";
 	show(`
 		${notice(true)}
 		<h1>Choose a plan.</h1>
 		<p class="credit">${escapeHtml(credit)}</p>
 		${planGrid(true)}
-		<p class="fine">Unused credit expires at the end of the month.</p>
 	`);
 	for (const button of document.querySelectorAll("[data-plan]")) {
 		button.addEventListener("click", () => choose(button.dataset.plan));
@@ -246,11 +247,6 @@ function notice(signedIn) {
 
 function banner(node, text) {
 	return `<div class="banner" role="status"><span class="node ${node}"></span>${escapeHtml(text)}</div>`;
-}
-
-function creditLine() {
-	if (account.ownModel) return "This plan uses your model. Groundwork does not meter it.";
-	return `$${account.remainingUsd.toFixed(2)} of $${account.creditUsd.toFixed(0)} model credit left this month.`;
 }
 
 function planLabel() {
@@ -376,8 +372,7 @@ function num(value) {
 }
 
 function usageTile() {
-	const credit = account.creditUsd;
-	const used = credit > 0 ? Math.min(1, account.spentUsd / credit) : 0;
+	const used = Math.min(1, Math.max(0, Number(account.budgetUsed) || 0));
 	const pct = Math.round(used * 100);
 	const radius = 54;
 	const circ = 2 * Math.PI * radius;
@@ -393,7 +388,7 @@ function usageTile() {
 					<div class="tile-label">of this month's budget used</div>
 				</div>
 			</div>
-			<p class="tile-note" style="margin-top: 10px">Unused credit expires at the end of the month.</p>`;
+			<p class="tile-note" style="margin-top: 10px">Resets at the end of the month.</p>`;
 }
 
 function keysSection() {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite, presentGroundwork, refreshFirebaseSession } from "../src/account";
 import { layoutGroundworkGraph } from "../src/groundwork-graph";
-import { isUserKeyProvider, PLANS, USER_KEY_PROVIDERS } from "../src/account/plans";
-import { choosePlan, emptyAccount, rememberProfile, setDisplayName, spendHosted, viewAccount } from "../src/account/usage";
+import { isUserKeyProvider, PLANS, publicPlan, USER_KEY_PROVIDERS } from "../src/account/plans";
+import { choosePlan, emptyAccount, presentAccount, rememberProfile, setDisplayName, spendHosted, viewAccount } from "../src/account/usage";
 
 const concepts = [
 	{ id: "limit", title: "Limit", prerequisites: [], domain: "calculus", stats: { status: "solid" as const, current: 0.91 }, body: "private note about the learner" },
@@ -162,6 +162,22 @@ describe("plans", () => {
 		expect(USER_KEY_PROVIDERS).not.toContain("typesafe");
 		expect(isUserKeyProvider("openrouter")).toBe(true);
 		expect(isUserKeyProvider("jev")).toBe(false);
+	});
+
+	it("publishes prices without the hosted allowance", () => {
+		for (const plan of Object.values(PLANS)) {
+			const shown = publicPlan(plan);
+			expect(shown).not.toHaveProperty("hostedCreditUsd");
+			expect(shown.summary).not.toMatch(/\$\d/);
+			expect(JSON.stringify(shown)).not.toMatch(/creditUsd|hostedCredit/);
+		}
+		expect(publicPlan(PLANS.byom).priceUsdPerMonth).toBe(9);
+		expect(publicPlan(PLANS.included).priceUsdPerMonth).toBe(20);
+		const shown = presentAccount(viewAccount(choosePlan(emptyAccount("u"), "free")));
+		expect(shown).not.toHaveProperty("creditUsd");
+		expect(shown).not.toHaveProperty("remainingUsd");
+		expect(shown).not.toHaveProperty("spentUsd");
+		expect(shown.budgetUsed).toBe(0);
 	});
 });
 

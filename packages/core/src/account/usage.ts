@@ -32,6 +32,20 @@ export interface AccountView {
 	hasBilling: boolean;
 }
 
+/** Account fields a client may show. Dollar credit balances are not among them. */
+export interface PublicAccount {
+	plan: PlanId | null;
+	needsPlan: boolean;
+	name: string;
+	priceUsdPerMonth: number;
+	ownModel: boolean;
+	displayName: string | null;
+	email: string | null;
+	hasBilling: boolean;
+	/** Share of this month's hosted budget already used, from 0 to 1. */
+	budgetUsed: number;
+}
+
 export function emptyAccount(uid: string, now: Date = new Date()): AccountRecord {
 	return { uid, plan: null, period: periodKey(now), spentUsd: 0 };
 }
@@ -74,6 +88,21 @@ export function viewAccount(record: AccountRecord, now: Date = new Date()): Acco
 		displayName: current.displayName ?? null,
 		email: current.email ?? null,
 		hasBilling: !!current.stripeCustomerId,
+	};
+}
+
+export function presentAccount(view: AccountView): PublicAccount {
+	const budgetUsed = view.ownModel || view.creditUsd <= 0 ? 0 : Math.min(1, view.spentUsd / view.creditUsd);
+	return {
+		plan: view.plan,
+		needsPlan: view.needsPlan,
+		name: view.name,
+		priceUsdPerMonth: view.priceUsdPerMonth,
+		ownModel: view.ownModel,
+		displayName: view.displayName,
+		email: view.email,
+		hasBilling: view.hasBilling,
+		budgetUsed,
 	};
 }
 

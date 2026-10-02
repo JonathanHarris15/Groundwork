@@ -44,16 +44,23 @@ describe("account server", () => {
 	it("serves the three plans and an empty account", async () => {
 		const server = deps();
 		const plans = await route("GET", "/v1/plans", null, server);
-		expect(JSON.stringify(plans.json)).toContain("$3 of model credit");
+		const listed = JSON.stringify(plans.json);
+		expect(listed).toContain("Bring your own model");
+		expect(listed).not.toMatch(/hostedCreditUsd|creditUsd|remainingUsd|\$3|\$8/);
 		const account = await route("GET", "/v1/account", null, server);
-		expect(account.json).toMatchObject({ needsPlan: true, remainingUsd: 0 });
+		expect(account.json).toMatchObject({ needsPlan: true, budgetUsed: 0 });
+		expect(account.json).not.toHaveProperty("creditUsd");
+		expect(account.json).not.toHaveProperty("remainingUsd");
 	});
 
 	it("saves a plan and reports the free credit", async () => {
 		const server = deps();
 		const chosen = await route("POST", "/v1/account/plan", { plan: "free" }, server);
 		expect(chosen.status).toBe(200);
-		expect(chosen.json).toMatchObject({ plan: "free", creditUsd: 3, remainingUsd: 3, ownModel: false });
+		expect(chosen.json).toMatchObject({ plan: "free", ownModel: false, budgetUsed: 0, priceUsdPerMonth: 0 });
+		expect(chosen.json).not.toHaveProperty("creditUsd");
+		expect(chosen.json).not.toHaveProperty("remainingUsd");
+		expect(chosen.json).not.toHaveProperty("spentUsd");
 		const again = await route("GET", "/v1/account", null, server);
 		expect(again.json).toMatchObject({ plan: "free" });
 	});
@@ -106,7 +113,7 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=8"');
+		expect(site?.body).toContain('src="/app.js?v=9"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
@@ -133,8 +140,10 @@ describe("account server", () => {
 		expect(signIn).toContain("Sign in with Google");
 		expect(signIn).not.toContain("planGrid");
 		const tile = script.slice(script.indexOf("function usageTile"), script.indexOf("function keysSection"));
-		expect(tile).toContain("Unused credit expires at the end of the month.");
+		expect(tile).toContain("Resets at the end of the month.");
 		expect(tile).not.toContain("remainingUsd");
+		expect(tile).not.toContain("creditUsd");
+		expect(script).not.toContain("model credit left");
 		expect(tile).not.toContain("left.");
 		expect(readSite("/../.env")).toBeNull();
 
