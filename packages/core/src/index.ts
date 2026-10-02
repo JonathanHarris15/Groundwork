@@ -2,6 +2,7 @@ export * from "./access";
 export * from "./account";
 export * from "./io";
 export * from "./files";
+export * from "./flashcards";
 export * from "./exam";
 export * from "./concept-title";
 export * from "./markdown";

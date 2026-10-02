@@ -30,6 +30,7 @@ import {
 	practiceTestRequest,
 	shouldAutoIngest,
 	pathInsideAny,
+	removeFlashcardMirrors,
 	PATHS,
 	serializeNote,
 	setSection,
@@ -62,6 +63,7 @@ import { renderMapPane } from "./map-pane";
 import { mountMark } from "./mark";
 import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source";
 import { AskCard, QuizCard, TestCard } from "./cards";
+import { FlashcardsPane } from "./flashcards-pane";
 import { enhanceGraphs } from "./graph-pane";
 import type GroundworkPlugin from "./main";
 import { accountOrigin, folderAccessFrom, loadAccountToken, loadApiKey, saveApiKey, VaultFolderModal, type ProviderId } from "./settings";
@@ -111,6 +113,8 @@ const TOOL_VERBS: Record<string, string> = {
 	get_due_reviews: "Checking due reviews",
 	update_learner_profile: "Updating your learner profile",
 	save_session_summary: "Saving the session summary",
+	save_flashcard: "Saving a flashcard",
+	list_due_flashcards: "Checking due flashcards",
 	list_vault_files: "Looking through your files",
 	read_vault_file: "Opening a file",
 	write_submission_file: "Writing a file to submit",
@@ -157,6 +161,10 @@ export class ChatView extends ItemView implements ToolUI {
 	private refreshingGoalSelect = false;
 	private uiLibraryEl!: HTMLElement;
 	private uiLibraryBtn!: HTMLElement;
+	private uiFlashEl!: HTMLElement;
+	private uiFlashBtn!: HTMLElement;
+	private flashPane!: FlashcardsPane;
+	private flashOpen = false;
 	private libraryOpen = false;
 	private libraryTab: "goals" | "concepts" | "chats" = "goals";
 	private conceptQuery = "";
@@ -227,6 +235,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.iconButton(actions, "square-pen", "New session", () => this.newSession());
 		this.iconButton(actions, "history", "Past sessions", (e) => this.showHistory(e));
 		this.uiLibraryBtn = this.iconButton(actions, "library", "Library", () => void this.toggleLibrary());
+		this.uiFlashBtn = this.iconButton(actions, "layers", "Flashcards", () => void this.toggleFlashcards());
 		this.uiSettingsBtn = this.iconButton(actions, "settings", "Settings", () => void this.toggleSettings());
 		this.uiSyncBtn = this.iconButton(actions, "refresh-cw", "Save tutor memory", () => void this.plugin.saveMemory(true));
 		const chip = actions.createDiv({ cls: "gw-goalchip" });
@@ -246,6 +255,21 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiGoalsEl = root.createDiv({ cls: "gw-screen gw-goals" });
 		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
 		this.uiLibraryEl.hide();
+		this.uiFlashEl = root.createDiv({ cls: "gw-flash" });
+		this.uiFlashEl.hide();
+		this.flashPane = new FlashcardsPane(this.uiFlashEl, {
+			app: this.app,
+			store: this.plugin.store,
+			writeFolders: () => this.plugin.settings.writeFolders,
+			goalId: () => this.uiGoalEl?.value ?? "",
+			selection: () => this.selectedQuote(),
+			renderMarkdown: (el, md) => this.renderMd(el, md),
+			onQuiz: (prompt) => {
+				this.closeFlashcards();
+				void this.submit(prompt);
+			},
+			onClose: () => this.closeFlashcards(),
+		});
 		this.uiSettingsEl = root.createDiv({ cls: "gw-settings" });
 		this.uiSettingsEl.hide();
 		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
@@ -1130,12 +1154,49 @@ export class ChatView extends ItemView implements ToolUI {
 		menu.showAtMouseEvent(evt);
 	}
 
+	showFlashcards(): Promise<void> {
+		return this.openFlashcards();
+	}
+
+	private async toggleFlashcards(): Promise<void> {
+		if (this.flashOpen) this.closeFlashcards();
+		else await this.openFlashcards();
+	}
+
+	private async openFlashcards(): Promise<void> {
+		this.closeLibrary();
+		this.closeSettings();
+		this.uiInputEl?.blur();
+		this.flashOpen = true;
+		this.contentEl.addClass("is-flashcards");
+		this.uiFlashBtn.addClass("is-active");
+		this.uiFlashEl.show();
+		await this.flashPane.show();
+	}
+
+	private closeFlashcards(): void {
+		this.flashOpen = false;
+		this.contentEl.removeClass("is-flashcards");
+		this.uiFlashBtn?.removeClass("is-active");
+		this.flashPane?.hide();
+		this.uiFlashEl?.hide();
+	}
+
+	private selectedQuote(): string {
+		const chat = this.selection?.quote?.trim();
+		if (chat) return chat;
+		const editor = this.app.workspace.activeEditor?.editor;
+		const fromNote = editor?.getSelection()?.trim();
+		return fromNote || "";
+	}
+
 	private async toggleLibrary(): Promise<void> {
 		if (this.libraryOpen) this.closeLibrary();
 		else await this.openLibrary();
 	}
 
 	private async openLibrary(): Promise<void> {
+		this.closeFlashcards();
 		this.closeSettings();
 		this.uiInputEl?.blur();
 		this.libraryOpen = true;
@@ -1163,6 +1224,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async openSettings(): Promise<void> {
+		this.closeFlashcards();
 		this.closeLibrary();
 		this.uiInputEl?.blur();
 		this.settingsOpen = true;
@@ -1367,10 +1429,10 @@ export class ChatView extends ItemView implements ToolUI {
 		section.createEl("h3", { text: "Vault folders" });
 		section.createDiv({
 			cls: "gw-lib-help",
-			text: "Optional extra context in this vault. The tutor reads only these folders, and writes a file to hand in only inside a write folder. Concepts and notes stay on your account.",
+			text: "Optional extra context in this vault. The tutor reads only these folders, and writes a file to hand in only inside a write folder. Concepts and notes stay on your account. Flashcards are saved on your account and copied into a flashcards folder inside each write folder.",
 		});
 		this.folderEditor(section, "readFolders", "Folders the tutor can read", "Chat uploads are saved in the first one. Leave this empty and the tutor does not read the vault.");
-		this.folderEditor(section, "writeFolders", "Folders the tutor can write", "A file to hand in is written here and nowhere else.");
+		this.folderEditor(section, "writeFolders", "Folders the tutor can write", "A file to hand in is written here, and flashcards are copied into flashcards/ inside each of these.");
 	}
 
 	private folderEditor(parent: HTMLElement, key: "readFolders" | "writeFolders", name: string, desc: string): void {
@@ -1813,7 +1875,7 @@ export class ChatView extends ItemView implements ToolUI {
 		section.createEl("h3", { text: "Reset learning vault" });
 		section.createDiv({
 			cls: "gw-lib-help",
-			text: "Deletes every goal, concept, chat, session, exam plan, practice test, and quiz record on your account, and restores the learner profile. Files in this Obsidian vault stay.",
+			text: "Deletes every goal, concept, chat, session, exam plan, practice test, quiz record, and flashcard on your account, and restores the learner profile. Flashcard notes in your write folders are removed. Other files in this Obsidian vault stay.",
 		});
 		const start = section.createEl("button", { cls: "gw-lib-btn is-danger", text: "Reset learning vault", attr: { type: "button" } });
 		const box = section.createDiv({ cls: "gw-reset-box" });
@@ -1861,6 +1923,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.dropAsides();
 		try {
 			await this.plugin.store.resetVault();
+			await removeFlashcardMirrors(this.plugin.store.context, this.plugin.settings.writeFolders);
 		} catch (err) {
 			new Notice(err instanceof Error ? err.message : String(err));
 			return;

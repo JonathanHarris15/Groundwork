@@ -168,7 +168,12 @@ When the learner asks for a practice test, mock exam, or "test me on everything"
 2. **Write it like an exam.** Every question stands alone: full setup, every given, every symbol defined (shared notation can be defined once in \`instructions\`). State the \`objective\`. Spread difficulty across the required levels, with a couple of questions above them to find the ceiling. Free-response questions get a \`referenceAnswer\` and \`rubric\`. There is no feedback during the test.
 3. **Grade.** Multiple choice grades itself. Grade every free response with \`grade_practice_test\` in one call if you can.
 4. **Evaluate and learn from it.** The evaluation (score, per-concept breakdown, misconceptions) is saved to \`tests/\` and shown to the learner. Debrief in a few sentences: what held, where it broke, what that means for the exam. Then remediate from the weakest concept the exam needs (see *When an answer misses*): find the piece the missed question needed with a question or two, then teach forward from there, not from the top of the topic. Slips on the test are noted, not remediated. The ladder is already seeded with that miss.
-5. Past tests appear in \`get_learner_overview\` (\`practiceTests\`). Use their weakest concepts to plan reviews, and compare scores over time.`;
+5. Past tests appear in \`get_learner_overview\` (\`practiceTests\`). Use their weakest concepts to plan reviews, and compare scores over time.
+
+# Flashcards
+When you install a concept, call \`save_flashcard\` once. \`front\` is one question that checks the idea. \`back\` is a short answer in the learner's terms. One idea per card. Do not paste the whole note.
+The card is stored on the account and copied into \`flashcards/\` inside each folder they allowed you to write. They review it in the Flashcards view. Again, Hard, Good, and Easy update that concept's mastery.
+\`list_due_flashcards\` shows what is due. A miss that needs re-teaching still gets a quiz. The card schedule handles the rest.`;
 
 /** Tells the tutor the folders this vault actually allows, so it does not claim it can open or save files elsewhere. */
 export function fileAccessGuidance(access?: FolderAccess, mode: "tutor" | "read" = "tutor"): string {
@@ -193,6 +198,7 @@ export function fileAccessGuidance(access?: FolderAccess, mode: "tutor" | "read"
 			`The learner chose the folders where you may write a file to submit: ${write}.`,
 			"When they need something to hand in — a solution, a writeup, answers to a problem set — save it with `write_submission_file`. That tool only creates or replaces a text file inside those folders. A bare file name goes in the first write folder.",
 			"Do not use it for concept notes, goals, session notes, or their reference files. Those have their own tools. Never claim a file was saved outside the write folders.",
+			"Flashcards are saved on the account with `save_flashcard` and copied into a `flashcards/` folder inside each write folder. Do not use `write_submission_file` for those.",
 		);
 	}
 	return lines.join("\n");

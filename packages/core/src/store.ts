@@ -40,6 +40,8 @@ export const PATHS = {
 	focus: ".groundwork/focus.json",
 	/** Notes the learner writes in Settings. Not `learner.md`. */
 	tutorContext: ".groundwork/tutor-context.md",
+	/** Flashcard decks and review schedule. Markdown copies live in each write folder. */
+	flashcards: ".groundwork/flashcards.json",
 } as const;
 
 export interface Concept {
@@ -988,7 +990,7 @@ export class KnowledgeStore {
 				removed.push(file);
 			}
 		}
-		for (const file of [PATHS.focus, PATHS.tutorContext]) {
+		for (const file of [PATHS.focus, PATHS.tutorContext, PATHS.flashcards]) {
 			if (!(await this.io.exists(file))) continue;
 			await this.io.remove(file);
 			removed.push(file);
