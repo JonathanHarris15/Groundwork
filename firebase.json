@@ -1,4 +1,8 @@
 {
+  "hosting": {
+    "public": "packages/server/public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+  },
   "auth": {
     "providers": {
       "googleSignIn": {
