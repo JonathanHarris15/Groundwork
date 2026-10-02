@@ -241,7 +241,7 @@ a:hover { color: #2c2f36; }
 }
 
 @container (max-width: 520px) {
-	.center { padding: 4px 22px 28px; }
+	.center { padding: 4px 20px 28px; }
 	.kicker { margin-bottom: 14px; }
 	.hero h1 { font-size: 40px; line-height: 1.08; }
 	.sub { margin-top: 14px; font-size: 17px; line-height: 1.45; }
@@ -335,10 +335,10 @@ a:hover { color: #2c2f36; }
 	text-decoration-color: #c9ccd2;
 }
 
-.site main { display: block; padding: 64px 0 120px; position: relative; z-index: 1; }
+.site main { display: block; padding-top: 64px; padding-bottom: 120px; position: relative; z-index: 1; }
 
 @container (max-width: 520px) {
-	.site main { padding: 16px 0 72px; }
+	.site main { padding-top: 16px; padding-bottom: 72px; }
 }
 
 .site h1,
