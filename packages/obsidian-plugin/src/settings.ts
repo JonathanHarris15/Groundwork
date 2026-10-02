@@ -46,8 +46,8 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 	accountEmail: "",
 	accountSync: false,
 	siteTheme: false,
-	readFolders: [...DEFAULT_READ_FOLDERS],
-	writeFolders: [...DEFAULT_WRITE_FOLDERS],
+	readFolders: [],
+	writeFolders: [],
 };
 
 export function folderAccessFrom(settings: GroundworkSettings): FolderAccess {
@@ -128,7 +128,7 @@ export class GroundworkSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("TypeSafe API key")
 			.setDesc(
-				"Optional. Jev matches a question or a course-file idea to a concept already in the vault, checks whether a prerequisite link is direct, grades the understanding in a written answer, and picks among ready next steps. Mastery numbers and the map stay in the vault. The key stays on this device.",
+				"Optional. Jev matches a question or a course-file idea to a concept already in your account, checks whether a prerequisite link is direct, grades the understanding in a written answer, and picks among ready next steps. Mastery numbers stay on the account. The key stays on this device.",
 			)
 			.addText((t) => {
 				t.inputEl.type = "password";
@@ -222,11 +222,11 @@ export class GroundworkSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Vault folders").setHeading();
 		new Setting(containerEl)
 			.setName("Folders the tutor can read")
-			.setDesc("The tutor can list and open files only inside these folders. Uploads from the chat are saved in the first one. Concept notes, goals, and session notes stay in Groundwork’s own folders.");
+			.setDesc("Optional extra context in this vault. The tutor lists and opens files only inside these folders, and chat uploads are saved in the first one. Leave this empty and it does not read the vault. Concepts, notes, and quiz evidence are kept on your account.");
 		this.folderRows(containerEl, "readFolders", save);
 		new Setting(containerEl)
 			.setName("Folders the tutor can write")
-			.setDesc("When you ask for a file to hand in, the tutor writes it here and nowhere else. It can create the folder the first time it saves a file.");
+			.setDesc("Optional. When you ask for a file to hand in, the tutor writes it inside these vault folders and nowhere else.");
 		this.folderRows(containerEl, "writeFolders", save);
 	}
 
@@ -340,7 +340,7 @@ export class GroundworkSettingTab extends PluginSettingTab {
 					: await client.login({ email: s.accountEmail, password });
 				saveAccountToken(this.app, session.token);
 				new Notice(`Groundwork: signed in as ${session.user.displayName} (@${session.user.handle}).`);
-				if (s.accountSync) await this.plugin.publishKnowledge(true);
+				await this.plugin.connectMemory();
 				this.display();
 			} catch (e) {
 				new Notice(`Groundwork: ${(e as Error).message}`);
@@ -363,33 +363,23 @@ export class GroundworkSettingTab extends PluginSettingTab {
 			b.setButtonText("Sign out").onClick(async () => {
 				const current = loadAccountToken(this.app);
 				if (current) {
+					await this.plugin.saveMemory(false);
 					try {
 						await new AccountClient(s.accountServerUrl, current).logout();
 					} catch {
-						// Drop the local token either way so this device stops publishing.
+						// Drop the local token either way so this device stops saving.
 					}
 				}
 				saveAccountToken(this.app, "");
-				new Notice("Groundwork: signed out on this device.");
+				new Notice("Groundwork: signed out on this device. Tutor memory stays on the account.");
 				this.display();
 			}),
 		);
 
 		new Setting(containerEl)
-			.setName("Publish concept map")
-			.setDesc("Sends concept titles, prerequisite links, and mastery to your account so the website can draw them. Notes, quiz text, and your learner profile stay in this vault.")
-			.addToggle((t) =>
-				t.setValue(s.accountSync).onChange(async (v) => {
-					s.accountSync = v;
-					await save();
-					if (v) await this.plugin.publishKnowledge(true);
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("Publish now")
-			.setDesc("Push the current map without waiting for the next change.")
-			.addButton((b) => b.setButtonText("Publish now").setCta().onClick(() => void this.plugin.publishKnowledge(true)));
+			.setName("Tutor memory")
+			.setDesc("Concepts, notes, quiz evidence, chats, and your learner profile are saved on this account, not in the vault. The profile page draws the concept map from that memory. Vault folders above are only extra context.")
+			.addButton((b) => b.setButtonText("Save now").setCta().onClick(() => void this.plugin.saveMemory(true)));
 	}
 
 	private appearanceSettings(containerEl: HTMLElement, save: () => Promise<void>): void {

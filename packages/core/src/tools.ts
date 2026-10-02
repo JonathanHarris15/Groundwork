@@ -1,4 +1,5 @@
 import { accessFromContext, pathInsideAny, type FolderAccess } from "./access";
+import { ensureDir } from "./io";
 import { basename, listVaultFiles, loadVaultFile, resolveSubmissionPath, resolveVaultFile, fileKind, type VaultFile } from "./files";
 import { demoteHeadings, setSection } from "./markdown";
 import { awaitJudgment, describeQuizOutcome, recordQuizAnswer, takeAwaiting, type QuizOutcome } from "./grading";
@@ -673,7 +674,7 @@ export const TOOLS: ToolDef[] = [
 			const files: string[] = [];
 			for (const file of input.files ?? []) {
 				if (!reads.length) return { text: "No folders are open for reading. The learner picks them in Settings → Groundwork.", isError: true };
-				const found = await resolveVaultFile(store.io, file, reads);
+				const found = await resolveVaultFile(store.context, file, reads);
 				if (!found) {
 					return {
 						text: `"${file}" isn't in a folder Groundwork can read (${reads.map((dir) => `${dir}/`).join(", ")}).`,
@@ -745,7 +746,7 @@ export const TOOLS: ToolDef[] = [
 			if (!requested) {
 				files = [];
 				for (const dir of reads) {
-					for (const file of await listVaultFiles(store.io, dir)) {
+					for (const file of await listVaultFiles(store.context, dir)) {
 						if (pathInsideAny(file, reads) && !files.includes(file)) files.push(file);
 					}
 				}
@@ -758,7 +759,7 @@ export const TOOLS: ToolDef[] = [
 				};
 			} else {
 				const dir = requested.replace(/^\/+|\/+$/g, "");
-				files = (await listVaultFiles(store.io, dir)).filter((file) => pathInsideAny(file, reads));
+				files = (await listVaultFiles(store.context, dir)).filter((file) => pathInsideAny(file, reads));
 				where = `${dir}/`;
 			}
 			if (!files.length) {
@@ -778,14 +779,14 @@ export const TOOLS: ToolDef[] = [
 		async run({ path }: { path: string }, ctx) {
 			const reads = accessFromContext(ctx).readFolders;
 			if (!reads.length) return { text: "No folders are open for reading. The learner picks them in Settings → Groundwork.", isError: true };
-			const found = await resolveVaultFile(ctx.store.io, path, reads);
+			const found = await resolveVaultFile(ctx.store.context, path, reads);
 			if (!found) {
 				return {
 					text: `No file matching "${path}" in ${reads.map((dir) => `${dir}/`).join(", ")}. list_vault_files shows what is there. Files outside those folders stay closed.`,
 					isError: true,
 				};
 			}
-			const file = await loadVaultFile(ctx.store.io, found);
+			const file = await loadVaultFile(ctx.store.context, found);
 			return { text: `Contents of ${found}:`, files: [file], summary: `Opened ${basename(found)}` };
 		},
 	},
@@ -808,8 +809,11 @@ export const TOOLS: ToolDef[] = [
 			const body = content ?? "";
 			if (!body.trim()) return { text: "The file is empty. Pass the text they should hand in.", isError: true };
 			if (body.length > 200_000) return { text: "That file is over 200,000 characters. Shorten it and try again.", isError: true };
-			const existed = await ctx.store.io.exists(target.path);
-			await ctx.store.writeFile(target.path, body.endsWith("\n") ? body : `${body}\n`);
+			const vault = ctx.store.context;
+			const existed = await vault.exists(target.path);
+			const dir = target.path.includes("/") ? target.path.slice(0, target.path.lastIndexOf("/")) : "";
+			if (dir) await ensureDir(vault, dir);
+			await vault.write(target.path, body.endsWith("\n") ? body : `${body}\n`);
 			const verb = existed ? "Replaced" : "Wrote";
 			return { text: `${verb} ${target.path}. The learner can open it in the vault and hand it in.`, summary: `${verb} ${target.path}` };
 		},

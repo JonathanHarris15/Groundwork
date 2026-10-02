@@ -413,7 +413,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.setBusy(true);
 		this.abort = new AbortController();
 		try {
-			const files = await Promise.all(attachments.map((p) => loadVaultFile(this.plugin.store.io, p)));
+			const files = await Promise.all(attachments.map((p) => loadVaultFile(this.plugin.store.context, p)));
 			let toSend = text;
 			if (attachments.length && shouldAutoIngest(attachments.map(basename), text)) {
 				const ingested = await this.plugin.store.ingestExamMaterials({
@@ -1267,7 +1267,7 @@ export class ChatView extends ItemView implements ToolUI {
 		learner.createEl("h3", { text: "Learner file" });
 		learner.createDiv({
 			cls: "gw-lib-help",
-			text: "This is learner.md. The tutor reads it every session and may add how you learn. Save writes the note. Open note shows it in the vault.",
+			text: "Your learner profile lives on your Groundwork account. The tutor reads it every session and may add how you learn. Save writes it there.",
 		});
 		const learnerArea = learner.createEl("textarea", {
 			cls: "gw-lib-context gw-learner",
@@ -1284,14 +1284,11 @@ export class ChatView extends ItemView implements ToolUI {
 				(saved) => {
 					this.learnerDraft = null;
 					learnerArea.value = saved;
-					new Notice("Saved learner.md.");
+					new Notice("Saved your learner profile.");
 				},
 				(err: unknown) => new Notice(err instanceof Error ? err.message : String(err)),
 			);
 		});
-		const openLearner = learnerSave.createEl("button", { cls: "gw-lib-btn", text: "Open note", attr: { type: "button" } });
-		openLearner.addEventListener("click", () => void this.openLearnerNote(learnerArea));
-
 		const prefs = scroll.createDiv({ cls: "gw-lib-section" });
 		prefs.createEl("h3", { text: "Preferences" });
 		if (this.plugin.settings.provider !== "demo") {
@@ -1308,7 +1305,7 @@ export class ChatView extends ItemView implements ToolUI {
 				},
 			);
 		}
-		this.settingToggle(prefs, "Sync with GitHub", "Pulls when Obsidian opens, and commits after the tutor changes your knowledge.", this.plugin.settings.autoSync, (on) => {
+		this.settingToggle(prefs, "Sync the vault with GitHub", "Commits files in this vault. The tutor's memory is on your account, not in the vault.", this.plugin.settings.autoSync, (on) => {
 			this.plugin.settings.autoSync = on;
 			void this.plugin.saveSettings();
 		});
@@ -1334,28 +1331,12 @@ export class ChatView extends ItemView implements ToolUI {
 		input.addEventListener("change", () => onChange(input.checked));
 	}
 
-	private async openLearnerNote(area: HTMLTextAreaElement): Promise<void> {
-		try {
-			if (this.learnerDraft !== null) {
-				const saved = await this.plugin.store.setProfile(area.value);
-				this.learnerDraft = null;
-				area.value = saved;
-			} else await this.plugin.store.ensureLayout();
-		} catch (err) {
-			new Notice(err instanceof Error ? err.message : String(err));
-			return;
-		}
-		const file = this.app.vault.getAbstractFileByPath(PATHS.learner);
-		if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
-		else new Notice("learner.md is not in the vault yet.");
-	}
-
 	private renderVaultReset(parent: HTMLElement): void {
 		const section = parent.createDiv({ cls: "gw-lib-section gw-danger" });
 		section.createEl("h3", { text: "Reset learning vault" });
 		section.createDiv({
 			cls: "gw-lib-help",
-			text: "Deletes every goal, concept, chat, session note, exam plan, practice test, and quiz record. Restores learner.md and clears extra notes. Files in resources/ stay. If sync is on, this is pushed to GitHub.",
+			text: "Deletes every goal, concept, chat, session, exam plan, practice test, and quiz record on your account, and restores the learner profile. Files in this Obsidian vault stay.",
 		});
 		const start = section.createEl("button", { cls: "gw-lib-btn is-danger", text: "Reset learning vault", attr: { type: "button" } });
 		const box = section.createDiv({ cls: "gw-reset-box" });

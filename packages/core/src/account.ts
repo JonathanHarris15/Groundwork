@@ -1,10 +1,11 @@
 /**
- * The published concept map.
+ * Tutor memory lives on the account. The Obsidian vault is only the optional
+ * folders the learner picks as extra context.
  *
- * The vault stays the tutor's source of truth (notes, evidence, chats). What
- * moves to the account server is this snapshot: concept titles, prerequisite
- * links, and mastery — enough for a profile to draw the map, and nothing the
- * learner wrote in private (note bodies, quiz text, the learner profile).
+ * `TutorMemory` is the private record: concept notes, goals, evidence, chats,
+ * and the learner profile. `KnowledgeSnapshot` is the public map derived from
+ * it (titles, prerequisite links, mastery). The profile page draws the snapshot
+ * and does not receive note bodies.
  */
 
 import type { ConceptStatus } from "./model";
@@ -28,6 +29,63 @@ export interface SnapshotGoal {
 	status: SnapshotGoalStatus;
 	built: number;
 	open: number;
+}
+
+/** Private tutor memory stored on the account, as the same text files the store already uses. */
+export interface TutorMemory {
+	updatedAt: string;
+	files: Record<string, string>;
+}
+
+const MEMORY_PATH =
+	/^(?:learner\.md|concepts\/[^/]+\.md|goals\/[^/]+\.md|sessions\/[^/]+\.md|exams\/[^/]+\.md|tests\/[^/]+\.md|\.groundwork\/focus\.json|\.groundwork\/tutor-context\.md|\.groundwork\/chats\/[^/]+\.json|\.groundwork\/evidence\/[^/]+\.jsonl)$/;
+
+export const TUTOR_MEMORY_LIMITS = { files: 4000, fileChars: 400_000, totalChars: 8_000_000 };
+
+export function isTutorMemoryPath(path: string): boolean {
+	return MEMORY_PATH.test(path);
+}
+
+export function emptyTutorMemory(): TutorMemory {
+	return { updatedAt: "", files: {} };
+}
+
+/** Keep only account-memory paths from a working file map. */
+export function tutorMemoryFiles(files: Iterable<[string, string]>): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [path, content] of files) {
+		if (isTutorMemoryPath(path)) out[path] = content;
+	}
+	return out;
+}
+
+/** Replace account-memory files in a working copy. Other files in the map are left alone. */
+export function replaceTutorMemoryFiles(files: Map<string, string>, memory: Pick<TutorMemory, "files">): void {
+	for (const path of [...files.keys()]) {
+		if (isTutorMemoryPath(path)) files.delete(path);
+	}
+	for (const [path, content] of Object.entries(memory.files)) {
+		if (isTutorMemoryPath(path)) files.set(path, content);
+	}
+}
+
+/** Accept a memory bundle from the network. Rejects vault context files and oversized notes. */
+export function parseTutorMemoryFiles(value: unknown): Record<string, string> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Tutor memory needs a files object.");
+	const raw = value as Record<string, unknown>;
+	const entries = Object.entries(raw);
+	if (entries.length > TUTOR_MEMORY_LIMITS.files) throw new Error("Too many memory files.");
+	const files: Record<string, string> = {};
+	let total = 0;
+	for (const [path, content] of entries) {
+		if (!isTutorMemoryPath(path)) throw new Error(`"${path}" is not tutor memory. Vault files stay in the folders you pick as context.`);
+		if (typeof content !== "string") throw new Error(`"${path}" is not text.`);
+		if (content.length > TUTOR_MEMORY_LIMITS.fileChars) throw new Error(`"${path}" is too large.`);
+		total += content.length;
+		if (total > TUTOR_MEMORY_LIMITS.totalChars) throw new Error("Tutor memory is too large.");
+		files[path] = content;
+	}
+	return files;
 }
 
 export interface KnowledgeSnapshot {
@@ -326,6 +384,14 @@ export class AccountClient {
 
 	async putKnowledge(snapshot: KnowledgeSnapshot): Promise<{ updatedAt: string }> {
 		return this.request("PUT", "/api/me/knowledge", snapshot);
+	}
+
+	async getMemory(): Promise<TutorMemory> {
+		return this.request("GET", "/api/me/memory");
+	}
+
+	async putMemory(input: { files: Record<string, string>; knowledge: KnowledgeSnapshot }): Promise<TutorMemory> {
+		return this.request("PUT", "/api/me/memory", input);
 	}
 
 	async profile(): Promise<ProfilePayload> {

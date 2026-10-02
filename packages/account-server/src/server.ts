@@ -2,11 +2,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import { layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite, type AccountUser, type KnowledgeSnapshot, type ProfilePayload } from "@groundwork/core/account";
+import { emptyTutorMemory, layoutConceptMap, parseKnowledgeSnapshot, parseTutorMemoryFiles, presentForWebsite, type AccountUser, type KnowledgeSnapshot, type ProfilePayload, type TutorMemory } from "@groundwork/core/account";
 import { hashPassword, hashToken, newToken, verifyPassword } from "./auth";
 import { AccountStore, httpError, type UserRecord } from "./store";
 
 const MAX_BODY = 1_000_000;
+const MAX_MEMORY = 12_000_000;
 const HANDLE = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 
 export interface AccountServerOptions {
@@ -94,6 +95,29 @@ async function api(store: AccountStore, req: IncomingMessage, res: ServerRespons
 		snapshot.updatedAt = new Date().toISOString();
 		await store.setKnowledge(user.id, snapshot);
 		sendJson(res, 200, { updatedAt: snapshot.updatedAt });
+		return;
+	}
+	if (req.method === "GET" && pathname === "/api/me/memory") {
+		const user = await requireUser(store, req);
+		sendJson(res, 200, user.memory ?? emptyTutorMemory());
+		return;
+	}
+	if (req.method === "PUT" && pathname === "/api/me/memory") {
+		const user = await requireUser(store, req);
+		const body = await readJson(req, MAX_MEMORY);
+		let files: Record<string, string>;
+		let knowledge: KnowledgeSnapshot;
+		try {
+			files = parseTutorMemoryFiles(body.files);
+			knowledge = parseKnowledgeSnapshot(body.knowledge);
+		} catch (e) {
+			throw httpError(400, (e as Error).message);
+		}
+		const updatedAt = new Date().toISOString();
+		knowledge.updatedAt = updatedAt;
+		const memory: TutorMemory = { updatedAt, files };
+		await store.setMemory(user.id, memory, knowledge);
+		sendJson(res, 200, memory);
 		return;
 	}
 	if (req.method === "GET" && pathname === "/api/me/profile") {
@@ -204,13 +228,13 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 	res.end(json);
 }
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(req: IncomingMessage, max = MAX_BODY): Promise<Record<string, unknown>> {
 	const chunks: Buffer[] = [];
 	let size = 0;
 	for await (const chunk of req) {
 		const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
 		size += buf.length;
-		if (size > MAX_BODY) throw httpError(413, "That upload is too large.");
+		if (size > max) throw httpError(413, "That upload is too large.");
 		chunks.push(buf);
 	}
 	if (!size) return {};

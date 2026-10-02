@@ -90,7 +90,7 @@ function mountAuth(joining) {
 	view.replaceChildren();
 	const form = el("form", "panel auth");
 	form.append(el("h1", null, joining ? "Create your account" : "Sign in"));
-	form.append(el("p", "lede", joining ? "The profile map appears here after Obsidian publishes it." : "Your concept map is on the account you publish from Obsidian."));
+	form.append(el("p", "lede", joining ? "The profile map appears here once Obsidian has saved tutor memory to this account." : "Your concept map is stored with your account."));
 	const fields = joining
 		? [
 				["displayName", "Name", "text"],
@@ -188,7 +188,7 @@ function mountProfile(path, mine) {
 			const profile = await api(path);
 			name.textContent = shown(profile.user.displayName) || "Profile";
 			handle.textContent = profile.user.handle ? `@${shown(profile.user.handle)}` : "";
-			when.textContent = profile.updatedAt ? ` · updated ${formatWhen(profile.updatedAt)}` : " · waiting for Obsidian to publish";
+			when.textContent = profile.updatedAt ? ` · updated ${formatWhen(profile.updatedAt)}` : " · waiting for Obsidian to save";
 			paintCounts(counts, profile.counts);
 			paintMap(frame, profile.map);
 			paintGoals(goals, profile.goals);
@@ -221,7 +221,7 @@ function paintCounts(host, counts) {
 function paintMap(host, map) {
 	host.replaceChildren();
 	if (!map?.nodes?.length) {
-		host.append(el("div", "empty-map", "No concepts published yet. In Obsidian, turn on Publish concept map in Groundwork’s settings."));
+		host.append(el("div", "empty-map", "No concepts yet. Sign in from Obsidian and study; the map is saved with your account."));
 		return;
 	}
 	const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

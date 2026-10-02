@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseTutorMemoryFiles } from "../src/account";
 import { cleanFolderList, normalizeVaultPath, pathInsideFolder, tutorMayReadPath } from "../src/access";
 import { resolveSubmissionPath } from "../src/files";
 import { MemoryVaultIO } from "../src/io";
@@ -33,6 +34,18 @@ describe("folder access", () => {
 		expect(resolveSubmissionPath("submissions/week 1/answers.md", ["submissions"])).toEqual({ path: "submissions/week 1/answers.md" });
 		expect("error" in resolveSubmissionPath("concepts/note.md", ["submissions"])).toBe(true);
 		expect("error" in resolveSubmissionPath("submissions/../../note.md", ["submissions"])).toBe(true);
+	});
+
+	it("writes a submission into the vault context and keeps it out of tutor memory", async () => {
+		const memory = new MemoryVaultIO();
+		const vault = new MemoryVaultIO();
+		const store = new KnowledgeStore(memory, { context: vault });
+		const wrote = await toolByName("write_submission_file")!.run({ path: "answers.md", content: "The limit is 2." }, { store, access: { readFolders: [], writeFolders: ["submissions"] } });
+		expect(wrote.isError).toBeFalsy();
+		expect(await vault.read("submissions/answers.md")).toContain("The limit is 2.");
+		expect(memory.files.has("submissions/answers.md")).toBe(false);
+		expect(parseTutorMemoryFiles({ "concepts/Limit.md": "private" })["concepts/Limit.md"]).toBe("private");
+		expect(() => parseTutorMemoryFiles({ "resources/secret.md": "no" })).toThrow(/not tutor memory/);
 	});
 
 	it("refuses to ingest a course file outside the read folders", async () => {

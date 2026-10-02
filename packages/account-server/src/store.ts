@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import type { KnowledgeSnapshot } from "@groundwork/core/account";
+import type { KnowledgeSnapshot, TutorMemory } from "@groundwork/core/account";
 
 export interface UserRecord {
 	id: string;
@@ -14,6 +14,8 @@ export interface UserRecord {
 	/** Every live session (the site and the Obsidian plugin can be signed in together). */
 	tokenHashes: string[];
 	knowledge: KnowledgeSnapshot | null;
+	/** Private tutor memory. The public profile uses `knowledge`, not these files. */
+	memory: TutorMemory | null;
 }
 
 interface Database {
@@ -44,6 +46,7 @@ export class AccountStore {
 				tokenHash: input.tokenHash,
 				tokenHashes: [input.tokenHash],
 				knowledge: null,
+				memory: null,
 			};
 			db.users.push(user);
 			return user;
@@ -81,6 +84,15 @@ export class AccountStore {
 			if (!user) throw httpError(404, "Account not found.");
 			user.tokenHashes = sessionHashes(user).filter((h) => h !== tokenHash);
 			user.tokenHash = user.tokenHashes.at(-1) ?? null;
+		});
+	}
+
+	async setMemory(id: string, memory: TutorMemory, knowledge: KnowledgeSnapshot): Promise<void> {
+		await this.update((db) => {
+			const user = db.users.find((u) => u.id === id);
+			if (!user) throw httpError(404, "Account not found.");
+			user.memory = memory;
+			user.knowledge = knowledge;
 		});
 	}
 

@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, jevClient, knowledgeSnapshot, KnowledgeStore, type Provider } from "@groundwork/core";
+import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, isTutorMemoryPath, jevClient, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, replaceTutorMemoryFiles, tutorMemoryFiles, type Provider, type VaultIO } from "@groundwork/core";
 import { GitSync } from "@groundwork/core/node";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
@@ -13,9 +13,9 @@ type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
 export default class GroundworkPlugin extends Plugin {
 	declare settings: GroundworkSettings;
 	store!: KnowledgeStore;
+	private memoryIO!: MemoryVaultIO;
 	syncStatus: { state: SyncUiState; text: string } = { state: "idle", text: "not synced yet" };
 	private git: GitSync | null = null;
-	private syncTimer: number | null = null;
 	private accountTimer: number | null = null;
 	private accountPublishing = false;
 	private accountPublishAgain = false;
@@ -24,10 +24,12 @@ export default class GroundworkPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-		this.store = new KnowledgeStore(new ObsidianVaultIO(this.app.vault.adapter), {
+		this.memoryIO = new MemoryVaultIO();
+		this.store = new KnowledgeStore(this.memoryIO, {
 			device: this.deviceName(),
 			onChange: () => this.onKnowledgeChanged(),
 			judgments: jevClient(loadJevKey(this.app) || process.env.TYPESAFE_API_KEY || ""),
+			context: new ObsidianVaultIO(this.app.vault.adapter),
 		});
 
 		const adapter = this.app.vault.adapter;
@@ -39,7 +41,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.addRibbonIcon("graduation-cap", "Open Groundwork tutor", () => void this.activateView());
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass("gw-statusbar");
-		this.statusEl.addEventListener("click", () => void this.syncNow("manual"));
+		this.statusEl.addEventListener("click", () => void this.saveMemory(true));
 		this.renderStatus();
 
 		this.addCommand({ id: "open-tutor", name: "Open tutor", callback: () => void this.activateView() });
@@ -66,9 +68,9 @@ export default class GroundworkPlugin extends Plugin {
 		this.addSettingTab(new GroundworkSettingTab(this.app, this));
 
 		this.app.workspace.onLayoutReady(async () => {
+			await this.connectMemory();
 			await this.store.ensureLayout();
 			if (this.settings.autoSync) await this.syncNow("open");
-			if (this.settings.accountSync) void this.publishKnowledge(false);
 			if (!this.app.workspace.getLeavesOfType(VIEW_TYPE).length) await this.activateView(false);
 		});
 
@@ -120,11 +122,8 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		if (this.syncTimer !== null) {
-			window.clearTimeout(this.syncTimer);
-			if (this.settings.autoSync) void this.git?.sync();
-		}
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
+		if (loadAccountToken(this.app)) void this.saveMemory(false);
 	}
 
 	deviceName(): string {
@@ -240,13 +239,7 @@ export default class GroundworkPlugin extends Plugin {
 	// ── sync ───────────────────────────────────────────────────────────
 
 	onKnowledgeChanged(): void {
-		this.scheduleAccountPublish();
-		if (!this.settings.autoSync || !this.git) return;
-		if (this.syncTimer !== null) window.clearTimeout(this.syncTimer);
-		this.syncTimer = window.setTimeout(() => {
-			this.syncTimer = null;
-			void this.syncNow("changes");
-		}, this.settings.syncDelaySeconds * 1000);
+		this.scheduleMemorySave();
 	}
 
 	async syncNow(reason: "open" | "manual" | "changes" | "periodic"): Promise<void> {
@@ -292,26 +285,53 @@ export default class GroundworkPlugin extends Plugin {
 		for (const view of this.views()) view.applySiteTheme(on);
 	}
 
-	private scheduleAccountPublish(): void {
-		if (!this.settings.accountSync || !loadAccountToken(this.app)) return;
+	/** Load tutor memory from the account. An empty account picks up notes already in this vault, once. */
+	async connectMemory(): Promise<void> {
+		const token = loadAccountToken(this.app);
+		if (!token) {
+			this.setSync("offline", "sign in to keep tutor memory on your account");
+			return;
+		}
+		this.setSync("syncing", "loading tutor memory…");
+		try {
+			const remote = await new AccountClient(this.settings.accountServerUrl, token).getMemory();
+			if (Object.keys(remote.files).length === 0) {
+				const imported = await this.importVaultMemory();
+				const local = tutorMemoryFiles(this.memoryIO.files);
+				if (imported || Object.keys(local).length) {
+					await this.saveMemory(false);
+					if (imported) new Notice(`Groundwork: moved ${imported} existing vault note${imported === 1 ? "" : "s"} onto your account.`);
+				} else this.setSync("ok", "tutor memory is on your account");
+			} else {
+				replaceTutorMemoryFiles(this.memoryIO.files, remote);
+				this.store.invalidate();
+				this.lastSync = remote.updatedAt ? new Date(remote.updatedAt) : new Date();
+				this.setSync("ok", "tutor memory loaded from your account");
+			}
+		} catch (e) {
+			this.setSync("error", (e as Error).message);
+		}
+	}
+
+	private scheduleMemorySave(): void {
+		if (!loadAccountToken(this.app)) {
+			this.setSync("offline", "sign in to keep tutor memory on your account");
+			return;
+		}
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
 		const delay = Math.max(2, this.settings.syncDelaySeconds) * 1000;
 		this.accountTimer = window.setTimeout(() => {
 			this.accountTimer = null;
-			void this.publishKnowledge(false);
+			void this.saveMemory(false);
 		}, delay);
 	}
 
-	/** Push the concept map to the account server. Notes and quiz text are not included. */
-	async publishKnowledge(manual: boolean): Promise<void> {
-		if (!this.settings.accountSync && !manual) return;
-		if (manual && !this.settings.accountSync) {
-			new Notice("Groundwork: turn on Publish concept map before sending it to your account.");
-			return;
-		}
+	/** Save concepts, notes, evidence, chats, and the learner profile to the account. */
+	async saveMemory(manual: boolean): Promise<void> {
 		const token = loadAccountToken(this.app);
 		if (!token) {
-			if (manual) new Notice("Groundwork: sign in under Settings → Groundwork → Account before publishing the map.");
+			this.setSync("offline", "sign in to keep tutor memory on your account");
+			if (manual) new Notice("Groundwork: sign in under Settings → Groundwork → Account. Tutor memory is kept on that account.");
 			return;
 		}
 		if (this.accountPublishing) {
@@ -319,21 +339,58 @@ export default class GroundworkPlugin extends Plugin {
 			return;
 		}
 		this.accountPublishing = true;
+		this.setSync("syncing", "saving tutor memory…");
 		try {
 			const concepts = [...(await this.store.concepts()).values()];
 			const goals = await this.store.goals();
-			const client = new AccountClient(this.settings.accountServerUrl, token);
-			await client.putKnowledge(knowledgeSnapshot(concepts, goals, new Date().toISOString()));
-			if (manual) new Notice("Groundwork: concept map published. Your profile on the site will pick it up.");
+			const saved = await new AccountClient(this.settings.accountServerUrl, token).putMemory({
+				files: tutorMemoryFiles(this.memoryIO.files),
+				knowledge: knowledgeSnapshot(concepts, goals, new Date().toISOString()),
+			});
+			this.lastSync = new Date(saved.updatedAt);
+			this.setSync("ok", "tutor memory saved to your account");
+			if (manual) new Notice("Groundwork: tutor memory saved to your account. Your profile map will follow it.");
 		} catch (e) {
-			if (manual) new Notice(`Groundwork: could not publish the map. ${(e as Error).message}`);
+			this.setSync("error", (e as Error).message);
+			if (manual) new Notice(`Groundwork: could not save tutor memory. ${(e as Error).message}`);
 		} finally {
 			this.accountPublishing = false;
 			if (this.accountPublishAgain) {
 				this.accountPublishAgain = false;
-				void this.publishKnowledge(false);
+				void this.saveMemory(false);
 			}
 		}
+	}
+
+	private async importVaultMemory(): Promise<number> {
+		const vault = this.store.context;
+		const paths: string[] = [];
+		if (await vault.exists("learner.md")) paths.push("learner.md");
+		for (const dir of ["concepts", "goals", "sessions", "exams", "tests", ".groundwork"]) await this.walkMemory(vault, dir, paths);
+		let imported = 0;
+		for (const path of paths) {
+			if (!isTutorMemoryPath(path) || this.memoryIO.files.has(path)) continue;
+			try {
+				this.memoryIO.files.set(path, await vault.read(path));
+				imported++;
+			} catch {
+				// Skip a file the vault cannot read. The account copy is what the tutor will use.
+			}
+		}
+		if (imported) this.store.invalidate();
+		return imported;
+	}
+
+	private async walkMemory(vault: VaultIO, dir: string, out: string[]): Promise<void> {
+		if (dir.split("/").includes("cache") || !(await vault.exists(dir))) return;
+		let listed: { files: string[]; folders: string[] };
+		try {
+			listed = await vault.list(dir);
+		} catch {
+			return;
+		}
+		for (const file of listed.files) if (isTutorMemoryPath(file)) out.push(file);
+		for (const folder of listed.folders) await this.walkMemory(vault, folder, out);
 	}
 
 	private setSync(state: SyncUiState, text: string): void {
@@ -348,7 +405,7 @@ export default class GroundworkPlugin extends Plugin {
 		const icon = { idle: "○", syncing: "↻", ok: "✓", offline: "⚠", error: "✕", disabled: "–" }[state];
 		const when = this.lastSync && state === "ok" ? ` ${this.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
 		this.statusEl.setText(`Groundwork ${icon}${when}`);
-		this.statusEl.setAttr("aria-label", `Knowledge sync: ${text} (click to sync)`);
+		this.statusEl.setAttr("aria-label", `Tutor memory: ${text} (click to save to your account)`);
 		this.statusEl.setAttr("data-state", state);
 	}
 

@@ -175,10 +175,15 @@ export interface GoalReport {
 export interface StoreOptions {
 	now?: () => Date;
 	device?: string;
-	/** Called after any write so hosts can schedule a git sync. */
+	/** Called after any memory write so the host can save it to the account. */
 	onChange?: (paths: string[]) => void;
 	/** Semantic judgments. Absent means the vault behaves as it does without a model. */
 	judgments?: JevClient;
+	/**
+	 * Optional Obsidian folders the learner picked as extra context.
+	 * Defaults to `io`, so a store with one filesystem keeps reading and writing there.
+	 */
+	context?: VaultIO;
 }
 
 export class KnowledgeStore {
@@ -194,6 +199,11 @@ export class KnowledgeStore {
 
 	invalidate(): void {
 		this.index = null;
+	}
+
+	/** Vault folders used as extra context. The memory itself is `io`. */
+	get context(): VaultIO {
+		return this.opts.context ?? this.io;
 	}
 
 	judgments(): JevClient | undefined {

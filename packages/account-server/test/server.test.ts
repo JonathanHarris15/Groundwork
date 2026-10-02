@@ -80,6 +80,20 @@ describe("account server", () => {
 		await expect(new AccountClient(baseUrl).register({ email: "bob@example.com", password: "short", displayName: "Bob" })).rejects.toMatchObject({ status: 400 });
 	});
 
+	it("stores tutor memory privately and still publishes only the map", async () => {
+		const client = new AccountClient(baseUrl);
+		await client.register({ email: "mem@example.com", password: "memory-pass-1", displayName: "Mem" });
+		const snap = knowledgeSnapshot([{ id: "limit", title: "Limit", prerequisites: [], stats: { status: "solid", current: 0.8 } }], [], "2020-01-01T00:00:00.000Z");
+		await expect(client.putMemory({ files: { "resources/secret.md": "no" }, knowledge: snap })).rejects.toThrow(/not tutor memory/);
+		const saved = await client.putMemory({ files: { "concepts/Limit.md": "private note body" }, knowledge: snap });
+		expect(saved.files["concepts/Limit.md"]).toBe("private note body");
+		expect((await client.getMemory()).files["concepts/Limit.md"]).toBe("private note body");
+		const pub = await new AccountClient(baseUrl).publicProfile((await client.me()).handle);
+		expect(JSON.stringify(pub)).not.toContain("private note body");
+		expect(pub.map.nodes.map((n) => n.title)).toEqual(["Limit"]);
+		await expect(new AccountClient(baseUrl).getMemory()).rejects.toMatchObject({ status: 401 });
+	});
+
 	it("serves the site with the Obsidian install link", async () => {
 		const home = await fetch(baseUrl + "/profile");
 		expect(home.status).toBe(200);

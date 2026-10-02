@@ -26,13 +26,13 @@ graph LR
   V <-->|auto git sync| G
 ```
 
-**The vault** (an Obsidian vault and a git repo):
+**Tutor memory** (stored on the account; the Obsidian vault is only optional context folders):
 
 ```
 concepts/Derivative.md          one note per concept; `prerequisites: ["[[Limit]]", …]`
 goals/The derivative.md         the concepts not built yet (the targets), plus the dependency map
 sessions/2026-09-28 ….md        transcript and summary of each session
-resources/HW2.md                files you attach: lectures, homeworks, study guides, practice exams
+resources/HW2.md                optional vault context, only if you add that folder in settings
 exams/Prepare for the midterm.md  topics + required depth parsed from those files
 learner.md                      your background and how you learn best (the tutor reads + appends)
 .groundwork/evidence/*.jsonl    append-only quiz evidence: the source of truth
@@ -120,11 +120,11 @@ This is meant for your own use with your own login. Don't ship it to other peopl
 
 Web search (optional) lets the tutor verify facts: Claude Code's WebSearch/WebFetch tools on the subscription, or Anthropic's web search tool with an API key.
 
-### Files: choose what it can read, and where it can write a file to submit
+### Files: optional vault folders for extra context
 
-In **Settings → Groundwork → Vault folders**, pick the folders the tutor may read and the folders where it may write a file for you to hand in. The defaults are `resources/` to read and `submissions/` to write. It will not list or open a file outside the read folders, and `write_submission_file` will not save outside the write folders. Concept notes, goals, session notes, and quiz evidence stay in Groundwork’s own folders.
+Tutor memory (concepts, goals, evidence, chats, learner profile) is stored on the account, not in the vault. In **Settings → Groundwork → Vault folders**, you can optionally pick vault folders the tutor may read as extra context, and folders where it may write a file for you to hand in. Both lists start empty. It will not list or open a file outside the read folders, and `write_submission_file` will not save outside the write folders.
 
-Attach files to a message with the paperclip (**Upload from this computer** or **Choose from the vault**). You can also paste an image into the message box, drag files onto the panel (from your desktop or Obsidian's file explorer), or link a vault file in your message, like `[[Lecture 3.pdf]]`. Uploads are saved into the first read folder (by default `resources/`), so they sync to your other computers and stay linked from the session note. Choosing from the vault only offers files in a read folder.
+Attach files to a message with the paperclip (**Upload from this computer** or **Choose from the vault**). You can also paste an image into the message box, drag files onto the panel (from your desktop or Obsidian's file explorer), or link a vault file in your message, like `[[Lecture 3.pdf]]`. Uploads are saved into the first read folder, so add one before attaching. Choosing from the vault only offers files in a read folder.
 
 The tutor reads images (PNG, JPEG, GIF, WebP), PDFs, and text files (markdown, code, CSV, LaTeX, …) from those folders (`list_vault_files`, `read_vault_file`): drop your lecture notes or textbook into a read folder and say "use my lecture 3 notes". Ask it to write up answers and it saves a markdown file in a write folder. With the Claude subscription, PDFs are read with Claude Code's `Read` tool, held to the same read folders. Groundwork splits PDFs longer than 10 pages or larger than 16 MB into parts under `.groundwork/cache/pdf-parts/` (ignored by git) so each part opens whole, with no need for poppler (`pdftoppm`) on the machine. Limits: 50 MB per upload (the vault is a git repo), and images must be under 5 MB and PDFs under 20 MB to be sent inline. Saved chats don't store file contents, only the paths.
 
@@ -151,14 +151,14 @@ packages/site             profile site the account server serves
 
 ## Account server and profile
 
-The vault stays the tutor's memory. What moves to the account server is a **snapshot of the concept map**: titles, prerequisite links, and mastery. Note bodies, quiz text, chats, and `learner.md` are not uploaded.
+The tutor's memory lives on the account: concept notes, goals, evidence, chats, and the learner profile. The profile page draws the concept map from that memory (titles, prerequisite links, and how solid each concept is) and does not print note bodies or quiz text. Obsidian only supplies the optional folders you pick as extra context.
 
 ```bash
 npm run build
 npm run account          # http://127.0.0.1:8787
 ```
 
-Create an account on the site (or from Obsidian: **Settings → Groundwork → Account**). Turn on **Publish concept map**. The profile at [http://127.0.0.1:8787/profile](http://127.0.0.1:8787/profile) polls the account every few seconds and redraws the node map when Obsidian publishes a new snapshot. A public page lives at `/u/<handle>`.
+Create an account on the site (or from Obsidian: **Settings → Groundwork → Account**) and sign in. The profile at [http://127.0.0.1:8787/profile](http://127.0.0.1:8787/profile) polls the account every few seconds and redraws the node map as you study. A public page lives at `/u/<handle>`. If this vault already has concept notes, the first sign-in copies them onto the account once. The tutor then uses the account copy.
 
 `GROUNDWORK_DATA_FILE` chooses where accounts are stored (default `data/accounts.json`, gitignored). `PORT` and `GROUNDWORK_SITE_DIR` override the listen port and the site files.
 
