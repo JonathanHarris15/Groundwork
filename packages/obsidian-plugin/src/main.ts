@@ -1,11 +1,11 @@
 import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
-import { AnthropicProvider, DemoProvider, jevClient, KnowledgeStore, type Provider } from "@groundwork/core";
+import { AccountClient, AnthropicProvider, DemoProvider, jevClient, knowledgeSnapshot, KnowledgeStore, type Provider } from "@groundwork/core";
 import { GitSync } from "@groundwork/core/node";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
 import { ObsidianVaultIO } from "./obsidian-io";
-import { DEFAULT_SETTINGS, GroundworkSettingTab, loadApiKey, loadJevKey, type GroundworkSettings } from "./settings";
+import { DEFAULT_SETTINGS, GroundworkSettingTab, loadAccountToken, loadApiKey, loadJevKey, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
 
 type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
@@ -16,6 +16,9 @@ export default class GroundworkPlugin extends Plugin {
 	syncStatus: { state: SyncUiState; text: string } = { state: "idle", text: "not synced yet" };
 	private git: GitSync | null = null;
 	private syncTimer: number | null = null;
+	private accountTimer: number | null = null;
+	private accountPublishing = false;
+	private accountPublishAgain = false;
 	private statusEl!: HTMLElement;
 	private lastSync: Date | null = null;
 
@@ -65,6 +68,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(async () => {
 			await this.store.ensureLayout();
 			if (this.settings.autoSync) await this.syncNow("open");
+			if (this.settings.accountSync) void this.publishKnowledge(false);
 			if (!this.app.workspace.getLeavesOfType(VIEW_TYPE).length) await this.activateView(false);
 		});
 
@@ -120,6 +124,7 @@ export default class GroundworkPlugin extends Plugin {
 			window.clearTimeout(this.syncTimer);
 			if (this.settings.autoSync) void this.git?.sync();
 		}
+		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
 	}
 
 	deviceName(): string {
@@ -235,6 +240,7 @@ export default class GroundworkPlugin extends Plugin {
 	// ── sync ───────────────────────────────────────────────────────────
 
 	onKnowledgeChanged(): void {
+		this.scheduleAccountPublish();
 		if (!this.settings.autoSync || !this.git) return;
 		if (this.syncTimer !== null) window.clearTimeout(this.syncTimer);
 		this.syncTimer = window.setTimeout(() => {
@@ -281,6 +287,55 @@ export default class GroundworkPlugin extends Plugin {
 		}
 	}
 
+	applySiteTheme(): void {
+		const on = this.settings.siteTheme;
+		for (const view of this.views()) view.applySiteTheme(on);
+	}
+
+	private scheduleAccountPublish(): void {
+		if (!this.settings.accountSync || !loadAccountToken(this.app)) return;
+		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
+		const delay = Math.max(2, this.settings.syncDelaySeconds) * 1000;
+		this.accountTimer = window.setTimeout(() => {
+			this.accountTimer = null;
+			void this.publishKnowledge(false);
+		}, delay);
+	}
+
+	/** Push the concept map to the account server. Notes and quiz text are not included. */
+	async publishKnowledge(manual: boolean): Promise<void> {
+		if (!this.settings.accountSync && !manual) return;
+		if (manual && !this.settings.accountSync) {
+			new Notice("Groundwork: turn on Publish concept map before sending it to your account.");
+			return;
+		}
+		const token = loadAccountToken(this.app);
+		if (!token) {
+			if (manual) new Notice("Groundwork: sign in under Settings → Groundwork → Account before publishing the map.");
+			return;
+		}
+		if (this.accountPublishing) {
+			this.accountPublishAgain = true;
+			return;
+		}
+		this.accountPublishing = true;
+		try {
+			const concepts = [...(await this.store.concepts()).values()];
+			const goals = await this.store.goals();
+			const client = new AccountClient(this.settings.accountServerUrl, token);
+			await client.putKnowledge(knowledgeSnapshot(concepts, goals, new Date().toISOString()));
+			if (manual) new Notice("Groundwork: concept map published. Your profile on the site will pick it up.");
+		} catch (e) {
+			if (manual) new Notice(`Groundwork: could not publish the map. ${(e as Error).message}`);
+		} finally {
+			this.accountPublishing = false;
+			if (this.accountPublishAgain) {
+				this.accountPublishAgain = false;
+				void this.publishKnowledge(false);
+			}
+		}
+	}
+
 	private setSync(state: SyncUiState, text: string): void {
 		this.syncStatus = { state, text };
 		this.renderStatus();
@@ -307,5 +362,6 @@ export default class GroundworkPlugin extends Plugin {
 		await this.saveData(this.settings);
 		this.git = this.git ? new GitSync(this.git.dir, { gitPath: this.settings.gitPath, device: this.deviceName() }) : null;
 		this.resetAgent();
+		this.applySiteTheme();
 	}
 }

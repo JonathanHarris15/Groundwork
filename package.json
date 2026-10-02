@@ -7,10 +7,12 @@
   "workspaces": [
     "packages/core",
     "packages/obsidian-plugin",
-    "packages/cli"
+    "packages/cli",
+    "packages/account-server"
   ],
   "scripts": {
-    "build": "npm run build -w packages/obsidian-plugin && npm run build -w packages/cli",
+    "build": "npm run build -w packages/obsidian-plugin && npm run build -w packages/cli && npm run build -w packages/account-server",
+    "account": "npm run start -w packages/account-server",
     "dev:plugin": "npm run dev -w packages/obsidian-plugin",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

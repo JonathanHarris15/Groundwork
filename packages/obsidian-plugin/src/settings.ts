@@ -1,5 +1,5 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
-import { listAnthropicModels } from "@groundwork/core";
+import { AccountClient, listAnthropicModels } from "@groundwork/core";
 import { BUILD } from "./build";
 import type GroundworkPlugin from "./main";
 
@@ -18,6 +18,13 @@ export interface GroundworkSettings {
 	syncDelaySeconds: number;
 	gitPath: string;
 	deviceName: string;
+	/** Account server that stores the published concept map. */
+	accountServerUrl: string;
+	accountEmail: string;
+	/** Publish the concept map to the account server for the website profile. */
+	accountSync: boolean;
+	/** Restyle the Groundwork panel with the website’s colors and type. */
+	siteTheme: boolean;
 }
 
 export const DEFAULT_SETTINGS: GroundworkSettings = {
@@ -31,11 +38,16 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 	syncDelaySeconds: 30,
 	gitPath: "git",
 	deviceName: "",
+	accountServerUrl: "http://127.0.0.1:8787",
+	accountEmail: "",
+	accountSync: false,
+	siteTheme: false,
 };
 
 /** The API key lives in this device's local storage, never in the vault, so it is never pushed to GitHub. */
 const KEY_STORAGE = "groundwork-anthropic-key";
 const JEV_KEY_STORAGE = "groundwork-typesafe-key";
+const ACCOUNT_TOKEN_STORAGE = "groundwork-account-token";
 
 export function loadApiKey(app: App): string {
 	return (app.loadLocalStorage(KEY_STORAGE) as string | null) ?? "";
@@ -51,6 +63,15 @@ export function loadJevKey(app: App): string {
 
 export function saveJevKey(app: App, key: string): void {
 	app.saveLocalStorage(JEV_KEY_STORAGE, key || null);
+}
+
+/** Session token for the account server. Local to this device, like the API key — never written into the vault. */
+export function loadAccountToken(app: App): string {
+	return (app.loadLocalStorage(ACCOUNT_TOKEN_STORAGE) as string | null) ?? "";
+}
+
+export function saveAccountToken(app: App, token: string): void {
+	app.saveLocalStorage(ACCOUNT_TOKEN_STORAGE, token || null);
 }
 
 export class GroundworkSettingTab extends PluginSettingTab {
@@ -167,6 +188,9 @@ export class GroundworkSettingTab extends PluginSettingTab {
 				}),
 			);
 
+		this.accountSettings(containerEl, save);
+		this.appearanceSettings(containerEl, save);
+
 		new Setting(containerEl).setName("About").setHeading();
 
 		const version = new Setting(containerEl).setName("Running build").setDesc(BUILD);
@@ -175,6 +199,128 @@ export class GroundworkSettingTab extends PluginSettingTab {
 			version.setDesc(`${BUILD}. A newer build is installed: ${onDisk}.`);
 			version.addButton((b) => b.setButtonText("Reload Groundwork").setCta().onClick(() => void this.plugin.reloadSelf()));
 		});
+	}
+
+	private accountSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
+		const s = this.plugin.settings;
+		new Setting(containerEl).setName("Account").setHeading();
+
+		new Setting(containerEl)
+			.setName("Account server")
+			.setDesc("The site reads your concept map from this server. Use the address printed by `npm run account`, or a hosted account server.")
+			.addText((t) =>
+				t
+					.setPlaceholder(DEFAULT_SETTINGS.accountServerUrl)
+					.setValue(s.accountServerUrl)
+					.onChange(async (v) => {
+						s.accountServerUrl = v.trim() || DEFAULT_SETTINGS.accountServerUrl;
+						await save();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Email")
+			.addText((t) =>
+				t.setPlaceholder("you@example.com").setValue(s.accountEmail).onChange(async (v) => {
+					s.accountEmail = v.trim();
+					await save();
+				}),
+			);
+
+		let password = "";
+		new Setting(containerEl)
+			.setName("Password")
+			.setDesc("Used only to sign in. It is not stored in the vault or in plugin settings.")
+			.addText((t) => {
+				t.inputEl.type = "password";
+				t.setPlaceholder("At least 8 characters").onChange((v) => {
+					password = v;
+				});
+			});
+
+		const actions = new Setting(containerEl)
+			.setName("Sign in")
+			.setDesc("Create an account or sign in. The session token stays on this device.");
+		const runAuth = async (create: boolean) => {
+			if (!s.accountEmail || password.length < 8) {
+				new Notice("Groundwork: enter your email and a password of at least 8 characters.");
+				return;
+			}
+			try {
+				const client = new AccountClient(s.accountServerUrl);
+				const session = create
+					? await client.register({
+							email: s.accountEmail,
+							password,
+							displayName: s.accountEmail.split("@")[0] || "Learner",
+						})
+					: await client.login({ email: s.accountEmail, password });
+				saveAccountToken(this.app, session.token);
+				new Notice(`Groundwork: signed in as ${session.user.displayName} (@${session.user.handle}).`);
+				if (s.accountSync) await this.plugin.publishKnowledge(true);
+				this.display();
+			} catch (e) {
+				new Notice(`Groundwork: ${(e as Error).message}`);
+			}
+		};
+		actions.addButton((b) => b.setButtonText("Sign in").setCta().onClick(() => void runAuth(false)));
+		actions.addButton((b) => b.setButtonText("Create account").onClick(() => void runAuth(true)));
+
+		const session = new Setting(containerEl).setName("Session");
+		const token = loadAccountToken(this.app);
+		if (!token) session.setDesc("Not signed in.");
+		else {
+			session.setDesc("Checking the account server…");
+			void new AccountClient(s.accountServerUrl, token).me().then(
+				(user) => session.setDesc(`Signed in as ${user.displayName} (@${user.handle}). The site shows this map on your profile.`),
+				(e) => session.setDesc((e as Error).message || "Saved sign-in was rejected. Sign in again."),
+			);
+		}
+		session.addButton((b) =>
+			b.setButtonText("Sign out").onClick(async () => {
+				const current = loadAccountToken(this.app);
+				if (current) {
+					try {
+						await new AccountClient(s.accountServerUrl, current).logout();
+					} catch {
+						// Drop the local token either way so this device stops publishing.
+					}
+				}
+				saveAccountToken(this.app, "");
+				new Notice("Groundwork: signed out on this device.");
+				this.display();
+			}),
+		);
+
+		new Setting(containerEl)
+			.setName("Publish concept map")
+			.setDesc("Sends concept titles, prerequisite links, and mastery to your account so the website can draw them. Notes, quiz text, and your learner profile stay in this vault.")
+			.addToggle((t) =>
+				t.setValue(s.accountSync).onChange(async (v) => {
+					s.accountSync = v;
+					await save();
+					if (v) await this.plugin.publishKnowledge(true);
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("Publish now")
+			.setDesc("Push the current map without waiting for the next change.")
+			.addButton((b) => b.setButtonText("Publish now").setCta().onClick(() => void this.plugin.publishKnowledge(true)));
+	}
+
+	private appearanceSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
+		const s = this.plugin.settings;
+		new Setting(containerEl).setName("Appearance").setHeading();
+		new Setting(containerEl)
+			.setName("Match the Groundwork website")
+			.setDesc("Override Obsidian’s colors and type inside this panel so Groundwork uses the website’s paper, ink, and status colors. The rest of Obsidian keeps its theme.")
+			.addToggle((t) =>
+				t.setValue(s.siteTheme).onChange(async (v) => {
+					s.siteTheme = v;
+					await save();
+				}),
+			);
 	}
 
 	private claudeCodeSettings(containerEl: HTMLElement, save: () => Promise<void>): void {

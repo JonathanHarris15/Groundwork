@@ -1,0 +1,33 @@
+name: Release Obsidian plugin
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build -w packages/obsidian-plugin
+      - run: node scripts/check-community-plugin.mjs
+      - name: Publish community plugin assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            packages/obsidian-plugin/dist/main.js \
+            packages/obsidian-plugin/dist/manifest.json \
+            packages/obsidian-plugin/dist/styles.css \
+            --title "Groundwork ${GITHUB_REF_NAME}" \
+            --notes "Obsidian community plugin release. After the plugin is listed, the website’s Add to Obsidian button opens it. The release assets are main.js, manifest.json, and styles.css."

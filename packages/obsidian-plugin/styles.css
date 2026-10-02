@@ -1652,3 +1652,116 @@
 	outline-offset: -4px;
 	background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
 }
+
+/*
+ * Optional website theme. Tokens match packages/site/public/site.css:
+ * paper #f3efe6, ink #1c1915, accent #0e6b52,
+ * solid #1f8a5b, shaky #b8860b, learning #c45c26, rusty #6b46c1, unassessed #8d877e.
+ * Scoped to the Groundwork panel so the rest of Obsidian keeps its theme.
+ */
+.theme-light .gw-root.gw-site-theme,
+.theme-dark .gw-root.gw-site-theme,
+.gw-root.gw-site-theme {
+	--paper: #f3efe6;
+	--paper-2: #fffdf8;
+	--ink: #1c1915;
+	--muted: #5e584f;
+	--line: #e3d9cc;
+	--accent: #0e6b52;
+	--accent-ink: #f4fbf8;
+	--gw-solid: #1f8a5b;
+	--gw-shaky: #b8860b;
+	--gw-learning: #c45c26;
+	--gw-rusty: #6b46c1;
+	--gw-unassessed: #8d877e;
+	--gw-radius: 16px;
+	--background-primary: #fffdf8;
+	--background-primary-alt: #f3efe6;
+	--background-secondary: #f3efe6;
+	--background-modifier-border: #e3d9cc;
+	--background-modifier-hover: #e7f3ee;
+	--background-modifier-form-field: #fffdf8;
+	--text-normal: #1c1915;
+	--text-muted: #5e584f;
+	--text-faint: #8d877e;
+	--text-accent: #0e6b52;
+	--text-on-accent: #f4fbf8;
+	--interactive-accent: #0e6b52;
+	--interactive-accent-hover: #0a4a39;
+	--font-interface: "Outfit", "Avenir Next", "Segoe UI", sans-serif;
+	--font-text: "Iowan Old Style", Palatino, Georgia, serif;
+	background: #f3efe6;
+	color: #1c1915;
+	font-family: "Outfit", "Avenir Next", "Segoe UI", sans-serif;
+}
+.theme-dark .gw-root.gw-site-theme,
+.theme-light .gw-root.gw-site-theme,
+.gw-root.gw-site-theme {
+	background: #f3efe6;
+	color: #1c1915;
+}
+.gw-root.gw-site-theme .gw-header,
+.gw-root.gw-site-theme .gw-composer,
+.gw-root.gw-site-theme .gw-library-top {
+	background: #f3efe6;
+	border-color: #e3d9cc;
+}
+.gw-root.gw-site-theme .gw-title,
+.gw-root.gw-site-theme .gw-library-title,
+.gw-root.gw-site-theme h1,
+.gw-root.gw-site-theme h2,
+.gw-root.gw-site-theme h3 {
+	font-family: "Fraunces", "Iowan Old Style", Palatino, Georgia, serif;
+	letter-spacing: -0.03em;
+	color: #1c1915;
+}
+.gw-root.gw-site-theme .gw-messages,
+.gw-root.gw-site-theme .gw-assistant,
+.gw-root.gw-site-theme .markdown-rendered,
+.theme-dark .gw-root.gw-site-theme .markdown-rendered {
+	color: #1c1915;
+	font-family: "Iowan Old Style", Palatino, Georgia, serif;
+}
+.gw-root.gw-site-theme .gw-user {
+	background: #0e6b52;
+	color: #f4fbf8;
+}
+.gw-root.gw-site-theme .mod-cta,
+.theme-dark .gw-root.gw-site-theme .mod-cta,
+.theme-light .gw-root.gw-site-theme button.mod-cta {
+	background-color: #0e6b52;
+	color: #f4fbf8;
+}
+.gw-root.gw-site-theme .gw-input,
+.gw-root.gw-site-theme .gw-goal-select,
+.gw-root.gw-site-theme textarea,
+.gw-root.gw-site-theme input[type="text"],
+.theme-dark .gw-root.gw-site-theme input,
+.theme-dark .gw-root.gw-site-theme textarea {
+	background: #fffdf8;
+	color: #1c1915;
+	border: 1px solid #e3d9cc;
+	border-radius: 12px;
+	font-family: "Outfit", "Avenir Next", "Segoe UI", sans-serif;
+}
+.gw-root.gw-site-theme .gw-lib-tab.is-active,
+.gw-root.gw-site-theme .gw-badge {
+	background: #e7f3ee;
+	color: #0a4a39;
+}
+.gw-root.gw-site-theme .gw-aside,
+.gw-root.gw-site-theme .gw-lib-row,
+.gw-root.gw-site-theme .gw-suggestion {
+	background: #fffdf8;
+	border-color: #e3d9cc;
+	color: #1c1915;
+}
+.gw-root.gw-site-theme .gw-icon-btn,
+.gw-root.gw-site-theme .clickable-icon {
+	color: #5e584f;
+}
+.gw-root.gw-site-theme .gw-icon-btn:hover,
+.gw-root.gw-site-theme .clickable-icon:hover {
+	color: #0e6b52;
+	background: #e7f3ee;
+}

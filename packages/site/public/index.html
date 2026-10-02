@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Groundwork</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,640&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+  <div id="groundwork">
+    <header class="top">
+      <a class="wordmark" href="/" data-nav>Groundwork</a>
+      <nav>
+        <a href="/" data-nav>Home</a>
+        <a href="/profile" data-nav>Your map</a>
+        <a href="/#install" data-nav>Install</a>
+        <a id="auth-link" href="/signin" data-nav>Sign in</a>
+      </nav>
+    </header>
+    <main id="view"></main>
+  </div>
+  <template id="home-template">
+    <section class="hero">
+      <p class="eyebrow">A tutor that remembers</p>
+      <h1>Your concepts, mapped.</h1>
+      <p class="lede">Groundwork lives in Obsidian. When you publish, this site reads your account and draws the concept map on your profile — the same links the tutor is building, updated as you study.</p>
+      <div class="hero-actions">
+        <a class="btn" href="obsidian://show-plugin?id=groundwork">Add Groundwork to Obsidian</a>
+        <a class="btn btn-quiet" href="/join" data-nav>Create an account</a>
+      </div>
+    </section>
+    <section class="panel" id="install">
+      <h2>Install from the community page</h2>
+      <p>The plugin is packaged the way Obsidian’s community directory expects: <code>manifest.json</code>, <code>main.js</code>, <code>styles.css</code>, and a root <code>versions.json</code>. Once the listing is accepted, the button above opens Obsidian on Groundwork.</p>
+      <ol>
+        <li>In Obsidian, open <strong>Settings → Community plugins</strong> and turn community plugins on.</li>
+        <li>Browse for <strong>Groundwork</strong>, or use <a href="obsidian://show-plugin?id=groundwork">obsidian://show-plugin?id=groundwork</a>.</li>
+        <li>Install, enable, and trust the vault.</li>
+        <li>In Groundwork’s settings, sign in to this account server and turn on <strong>Publish concept map</strong>.</li>
+      </ol>
+      <p class="note">Until the community listing is live, install the release files into <code>.obsidian/plugins/groundwork/</code>. The same three files are what the community page serves.</p>
+    </section>
+    <section class="panel">
+      <h2>What the profile shows</h2>
+      <p>The map is the published snapshot: concept titles, which idea rests on which, and how solid each one is. Notes, quiz text, and your learner profile stay in the vault.</p>
+    </section>
+  </template>
+  <script src="/app.js"></script>
+</body>
+</html>

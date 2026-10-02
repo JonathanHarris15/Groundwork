@@ -140,10 +140,44 @@ The default vault is saved in `~/.config/groundwork/config.json`; override with 
 ## Repo layout
 
 ```
-packages/core             vault store, mastery model, goal DAGs, quiz grading, tools, teaching prompt, agent loop, git sync
-packages/obsidian-plugin  chat panel, quiz/question cards, settings, auto-sync
+packages/core             vault store, mastery model, goal DAGs, quiz grading, tools, teaching prompt, agent loop, git sync, published concept-map snapshot
+packages/obsidian-plugin  chat panel, quiz/question cards, settings, auto-sync, optional website theme
 packages/cli              `groundwork` CLI (bundles the plugin)
+packages/account-server   account server: sign-in and the published concept map
+packages/site             profile site the account server serves
 ```
+
+## Account server and profile
+
+The vault stays the tutor's memory. What moves to the account server is a **snapshot of the concept map**: titles, prerequisite links, and mastery. Note bodies, quiz text, chats, and `learner.md` are not uploaded.
+
+```bash
+npm run build
+npm run account          # http://127.0.0.1:8787
+```
+
+Create an account on the site (or from Obsidian: **Settings → Groundwork → Account**). Turn on **Publish concept map**. The profile at [http://127.0.0.1:8787/profile](http://127.0.0.1:8787/profile) polls the account every few seconds and redraws the node map when Obsidian publishes a new snapshot. A public page lives at `/u/<handle>`.
+
+`GROUNDWORK_DATA_FILE` chooses where accounts are stored (default `data/accounts.json`, gitignored). `PORT` and `GROUNDWORK_SITE_DIR` override the listen port and the site files.
+
+## Obsidian community plugin
+
+The plugin is laid out so it can be submitted to the [Obsidian community plugin directory](https://docs.obsidian.md):
+
+| Requirement | Where |
+| --- | --- |
+| `manifest.json` with `id`, `name`, `version`, `minAppVersion`, `description`, `author`, `authorUrl`, `isDesktopOnly` | `packages/obsidian-plugin/manifest.json` |
+| `versions.json` at the repo root, mapping each version to its `minAppVersion` | `versions.json` |
+| An open-source license | `LICENSE` |
+| Release assets `main.js`, `manifest.json`, `styles.css` | tag `v*` runs `.github/workflows/release-plugin.yml` |
+
+`node scripts/check-community-plugin.mjs` checks that list. The plugin id is `groundwork`, which is also the community install folder.
+
+From the website, **Add Groundwork to Obsidian** opens `obsidian://show-plugin?id=groundwork`. After the community listing is accepted, that opens Obsidian's plugin browser on Groundwork. Until then, copy the three release files into `.obsidian/plugins/groundwork/`.
+
+The plugin is desktop-only because sync shells out to git. Publishing the map is off until you sign in and turn it on. That request goes only to the account server URL in settings.
+
+**Match the Groundwork website** (Settings → Groundwork → Appearance) restyles the Groundwork panel with the site's paper, ink, and status colors. It does not change the rest of Obsidian.
 
 ## Development
 

@@ -180,10 +180,16 @@ export class ChatView extends ItemView implements ToolUI {
 		return "graduation-cap";
 	}
 
+	/** When on, this panel uses the website palette instead of the active Obsidian theme. */
+	applySiteTheme(on: boolean): void {
+		this.contentEl.toggleClass("gw-site-theme", on);
+	}
+
 	async onOpen(): Promise<void> {
 		const root = this.contentEl;
 		root.empty();
 		root.addClass("gw-root");
+		this.applySiteTheme(this.plugin.settings.siteTheme);
 
 		const header = root.createDiv({ cls: "gw-header" });
 		const titles = header.createDiv({ cls: "gw-titles" });
