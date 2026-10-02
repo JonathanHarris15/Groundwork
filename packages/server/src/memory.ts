@@ -9,6 +9,11 @@ export class MemoryDirectory {
 		return this.memories.get(uid) ?? emptyTutorMemory();
 	}
 
+	/** Public map saved with tutor memory. Null until Obsidian has synced this account. */
+	knowledge(uid: string): KnowledgeSnapshot | null {
+		return this.maps.get(uid) ?? null;
+	}
+
 	put(uid: string, body: unknown): TutorMemory {
 		const record = body && typeof body === "object" ? (body as { files?: unknown; knowledge?: unknown }) : {};
 		const files = parseTutorMemoryFiles(record.files);

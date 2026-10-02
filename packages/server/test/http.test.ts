@@ -106,7 +106,7 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=6"');
+		expect(site?.body).toContain('src="/app.js?v=8"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
@@ -114,6 +114,13 @@ describe("account server", () => {
 		expect(script).toContain("https://obsidian.md/download");
 		expect(script).toContain("obsidian://show-plugin?id=groundwork");
 		expect(script).toContain("Open Obsidian");
+		expect(script).toContain("/v1/groundwork");
+		const board = script.slice(script.indexOf("function board"), script.indexOf("function usageTile"));
+		expect(board).toContain("goals.length");
+		expect(board).toContain("concepts.length");
+		expect(board).toContain("They show up here after a quiz counts them.");
+		expect(board).toContain("Goals you finish in Obsidian show up here.");
+		expect(board).not.toContain('<span class="big">0</span>');
 		expect(script).not.toContain("Connect Obsidian");
 		const account = script.slice(script.indexOf("function showAccount"), script.indexOf("function renderChip"));
 		const boardAt = account.indexOf("${board()}");
@@ -152,6 +159,49 @@ describe("account server", () => {
 
 		const profile = await route("POST", "/v1/account/profile", { displayName: "Ada Lovelace" }, server);
 		expect(profile.json).toMatchObject({ displayName: "Ada Lovelace", email: "ada@example.com" });
+	});
+
+	it("shows quiz-checked concepts and finished goals, and hides notes", async () => {
+		const server = deps();
+		const before = await route("GET", "/v1/groundwork", null, server);
+		expect(before.json).toEqual({ updatedAt: null, concepts: [], goals: [], graph: { width: 0, height: 0, nodes: [], edges: [], legend: [] } });
+		const saved = await route(
+			"PUT",
+			"/v1/memory",
+			{
+				files: { "concepts/Limit.md": "private note about the learner" },
+				knowledge: {
+					updatedAt: "2026-10-02T00:00:00.000Z",
+					concepts: [
+						{ id: "limit", title: "Limit", status: "solid", current: 0.9, prerequisites: [] },
+						{ id: "derivative", title: "Derivative $", status: "learning", current: 0.4, prerequisites: ["limit"] },
+						{ id: "chain", title: "Chain rule", status: "unassessed", current: 0, prerequisites: ["derivative"] },
+					],
+					goals: [
+						{ title: "The derivative", status: "done", built: 2, open: 0 },
+						{ title: "Integrals $", status: "active", built: 0, open: 3 },
+					],
+				},
+			},
+			server,
+		);
+		expect(saved.status).toBe(200);
+		const view = await route("GET", "/v1/groundwork", null, server);
+		expect(view.status).toBe(200);
+		const json = JSON.stringify(view.json);
+		expect(json).not.toContain("private note");
+		expect(json).not.toContain("$");
+		expect(json).not.toMatch(/"built"|"open"|"current"/);
+		expect(view.json).toMatchObject({
+			concepts: [
+				{ id: "derivative", title: "Derivative", status: "learning" },
+				{ id: "limit", title: "Limit", status: "solid" },
+			],
+			goals: [{ title: "The derivative", status: "done", concepts: 2 }],
+			graph: { edges: [{ from: "limit", to: "derivative", bridge: false }] },
+		});
+		expect((view.json as { concepts: unknown[] }).concepts).toHaveLength(2);
+		expect((view.json as { graph: { nodes: Array<{ id: string }> } }).graph.nodes.map((n) => n.id)).not.toContain("chain");
 	});
 
 	it("keeps tutor memory on the signed-in account", async () => {

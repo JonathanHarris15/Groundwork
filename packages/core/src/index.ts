@@ -1,5 +1,6 @@
 export * from "./access";
 export * from "./account";
+export * from "./groundwork-graph";
 export * from "./io";
 export * from "./files";
 export * from "./flashcards";

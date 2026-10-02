@@ -18,6 +18,8 @@ let config = { firebase: null, billing: false };
 let plans = [];
 let account = null;
 let providers = null;
+let groundwork = emptyGroundwork();
+let groundworkTimer = 0;
 let user = null;
 let auth = null;
 let firebaseAuth = null;
@@ -51,6 +53,7 @@ async function boot() {
 		if (!user) {
 			account = null;
 			providers = null;
+			groundwork = emptyGroundwork();
 			paint();
 			return;
 		}
@@ -68,11 +71,22 @@ async function boot() {
 
 async function refresh() {
 	const token = await user.getIdToken();
-	account = await get("/v1/account", token);
-	providers = (await get("/v1/secrets", token)).providers;
+	const [nextAccount, secrets, nextGroundwork] = await Promise.all([
+		get("/v1/account", token),
+		get("/v1/secrets", token),
+		get("/v1/groundwork", token).catch(() => emptyGroundwork()),
+	]);
+	account = nextAccount;
+	providers = secrets.providers;
+	groundwork = nextGroundwork;
+}
+
+function emptyGroundwork() {
+	return { updatedAt: null, concepts: [], goals: [], graph: { width: 0, height: 0, nodes: [], edges: [], legend: [] } };
 }
 
 function paint() {
+	stopGroundworkWatch();
 	if (!user || !account) {
 		chip.hidden = true;
 		if (location.hash === "#signin" || problem) showSignIn();
@@ -177,6 +191,38 @@ function showAccount() {
 	document.querySelector("#change-plan").addEventListener("click", () => {
 		location.hash = "#plans";
 	});
+	watchGroundwork();
+}
+
+function stopGroundworkWatch() {
+	if (!groundworkTimer) return;
+	window.clearInterval(groundworkTimer);
+	groundworkTimer = 0;
+}
+
+function watchGroundwork() {
+	stopGroundworkWatch();
+	groundworkTimer = window.setInterval(() => {
+		void pullGroundwork();
+	}, 5000);
+}
+
+async function pullGroundwork() {
+	if (!user || !account || account.needsPlan || location.hash === "#plans") return;
+	try {
+		const token = await user.getIdToken();
+		const next = await get("/v1/groundwork", token);
+		if (JSON.stringify(next?.concepts ?? []) === JSON.stringify(groundwork?.concepts ?? []) && JSON.stringify(next?.goals ?? []) === JSON.stringify(groundwork?.goals ?? [])) return;
+		groundwork = next;
+		const current = document.querySelector(".board");
+		if (!current) return;
+		const holder = document.createElement("div");
+		holder.innerHTML = board();
+		const nextBoard = holder.querySelector(".board");
+		if (nextBoard) current.replaceWith(nextBoard);
+	} catch {
+		// Keep the stats already on screen.
+	}
 }
 
 function renderChip() {
@@ -212,7 +258,23 @@ function planLabel() {
 	return `${account.name}, $${account.priceUsdPerMonth} / month`;
 }
 
+const GRAPH_COLORS = ["#2db560", "#2e9be6", "#f59e2b", "#e5484d"];
+
+function learnedConcepts() {
+	return Array.isArray(groundwork?.concepts) ? groundwork.concepts : [];
+}
+
+function reachedGoals() {
+	return Array.isArray(groundwork?.goals) ? groundwork.goals : [];
+}
+
+function conceptGraph() {
+	return groundwork?.graph && Array.isArray(groundwork.graph.nodes) ? groundwork.graph : emptyGroundwork().graph;
+}
+
 function board() {
+	const concepts = learnedConcepts();
+	const goals = reachedGoals();
 	const usage = account.ownModel ? `
 			<span class="big">Your model</span>
 			<span class="tile-label">Plan usage</span>
@@ -224,26 +286,93 @@ function board() {
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
 			<div class="stats">
 				<div class="tile">
-					<span class="big">0</span>
+					<span class="big">${goals.length}</span>
 					<span class="tile-label">Goals reached</span>
 					<div class="spark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
 				</div>
 				<div class="tile" style="animation-delay: .12s">
-					<span class="big">0</span>
+					<span class="big">${concepts.length}</span>
 					<span class="tile-label">Concepts learned</span>
 					<p class="tile-note">Each one checked with a quiz before it counted.</p>
 				</div>
 				<div class="tile" style="animation-delay: .24s">${usage}</div>
 			</div>
 			<div class="sky">
-				<div class="sky-head"><span class="sky-title">Concepts you have learned</span></div>
-				<p class="sky-empty">They show up here after a quiz counts them.</p>
+				<div class="sky-head">
+					<span class="sky-title">Concepts you have learned</span>
+					${graphLegend(conceptGraph())}
+				</div>
+				${conceptGraphSvg(conceptGraph())}
 			</div>
 			<div class="goals">
 				<h3 class="goals-title">Goals reached</h3>
-				<p class="sky-empty">Goals you finish in Obsidian show up here.</p>
+				${goalList(goals)}
 			</div>
 		</section>`;
+}
+
+function graphLegend(graph) {
+	const items = Array.isArray(graph?.legend) ? graph.legend : [];
+	if (!items.length) return "";
+	return `<ul class="sky-legend">${items.map((item) => `<li><i style="background:${safeColor(item.color)}"></i>${escapeHtml(item.domain)}</li>`).join("")}</ul>`;
+}
+
+function conceptGraphSvg(graph) {
+	const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+	if (!nodes.length) return `<p class="sky-empty">They show up here after a quiz counts them.</p>`;
+	const byId = new Map(nodes.map((node) => [node.id, node]));
+	const width = Number.isFinite(graph.width) ? graph.width : 640;
+	const height = Number.isFinite(graph.height) ? graph.height : 220;
+	const edges = (Array.isArray(graph.edges) ? graph.edges : []).flatMap((edge) => {
+		const from = byId.get(edge.from);
+		const to = byId.get(edge.to);
+		if (!from || !to) return [];
+		const color = edge.bridge ? "rgba(255,255,255,.38)" : safeColor(from.color);
+		const dash = edge.bridge ? ` stroke-dasharray="4 5"` : "";
+		return [`<line class="graph-edge${edge.bridge ? " is-bridge" : ""}" x1="${num(from.x)}" y1="${num(from.y)}" x2="${num(to.x)}" y2="${num(to.y)}" stroke="${color}"${dash}></line>`];
+	});
+	const dots = nodes.map((node) => {
+		const color = safeColor(node.color);
+		const anchor = node.labelAnchor === "start" || node.labelAnchor === "end" ? node.labelAnchor : "middle";
+		const label = node.label ? `<text class="graph-label" x="${num(node.labelX ?? node.x)}" y="${num(node.labelY ?? node.y + 18)}" text-anchor="${anchor}">${escapeHtml(shortTitle(node.title))}</text>` : "";
+		return `<g class="graph-node"><title>${escapeHtml(node.title)}</title><circle class="graph-halo" cx="${num(node.x)}" cy="${num(node.y)}" r="9" fill="${color}"></circle><circle class="graph-dot" cx="${num(node.x)}" cy="${num(node.y)}" r="4.5" fill="${color}"></circle>${label}</g>`;
+	});
+	return `<svg class="graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg>`;
+}
+
+function goalList(goals) {
+	if (!goals.length) return `<p class="sky-empty">Goals you finish in Obsidian show up here.</p>`;
+	const legend = new Map((conceptGraph().legend || []).map((item) => [item.domain, safeColor(item.color)]));
+	return goals.map((goal, index) => {
+		const color = legend.get(goal.domain) || GRAPH_COLORS[index % GRAPH_COLORS.length];
+		const count = conceptCount(goal.concepts);
+		return `
+				<div class="goal">
+					<span class="goal-dot" style="background:${color}" aria-hidden="true"></span>
+					<div class="goal-body"><span class="goal-name">${escapeHtml(goal.title)}</span>${count ? `<span class="goal-meta">${escapeHtml(count)}</span>` : ""}</div>
+					<span class="check">Reached</span>
+				</div>`;
+	}).join("");
+}
+
+function conceptCount(value) {
+	const n = Number(value);
+	if (!Number.isInteger(n) || n <= 0) return "";
+	return n === 1 ? "1 concept" : `${n} concepts`;
+}
+
+function shortTitle(title) {
+	const text = String(title ?? "");
+	return text.length > 28 ? `${text.slice(0, 27)}…` : text;
+}
+
+function safeColor(value) {
+	return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? value : GRAPH_COLORS[0];
+}
+
+function num(value) {
+	const n = Number(value);
+	return Number.isFinite(n) ? n : 0;
 }
 
 function usageTile() {

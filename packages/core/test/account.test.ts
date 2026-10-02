@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite, refreshFirebaseSession } from "../src/account";
+import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite, presentGroundwork, refreshFirebaseSession } from "../src/account";
+import { layoutGroundworkGraph } from "../src/groundwork-graph";
 import { isUserKeyProvider, PLANS, USER_KEY_PROVIDERS } from "../src/account/plans";
 import { choosePlan, emptyAccount, rememberProfile, setDisplayName, spendHosted, viewAccount } from "../src/account/usage";
 
@@ -19,7 +20,7 @@ describe("knowledge snapshot", () => {
 		expect(json).not.toContain("secret goal");
 		expect(snap.concepts.find((c) => c.id === "derivative")?.prerequisites).toEqual(["limit"]);
 		expect(snap.counts).toMatchObject({ solid: 1, learning: 1, unassessed: 1 });
-		expect(snap.goals[0]).toEqual({ title: "The derivative", status: "active", built: 1, open: 2 });
+		expect(snap.goals[0]).toEqual({ title: "The derivative", status: "active", built: 1, open: 2, domain: "calculus" });
 	});
 
 	it("round-trips through the parser", () => {
@@ -55,6 +56,55 @@ describe("website profile", () => {
 		expect(view.user.displayName).toBe("Ada Lovelace");
 		expect(view.goals[0]).toEqual({ title: "Budget 10", status: "active" });
 		expect(view.map.nodes.find((n) => n.id === "price")?.title).toBe("Cost 5");
+	});
+
+	it("counts a concept after a quiz and a goal after it is finished", () => {
+		const snap = knowledgeSnapshot(
+			[
+				{ id: "limit", title: "Limit", prerequisites: [], stats: { status: "solid", current: 0.9 } },
+				{ id: "derivative", title: "Cost $5", prerequisites: ["limit"], stats: { status: "learning", current: 0.4 } },
+				{ id: "chain", title: "Chain rule", prerequisites: ["derivative"], stats: { status: "unassessed", current: 0 } },
+				{ id: "integral", title: "Integral", prerequisites: [], stats: { status: "rusty", current: 0.3 } },
+			],
+			[
+				{ title: "The derivative", status: "done", targets: [], built: ["limit", "derivative"] },
+				{ title: "Budget $10", status: "active", targets: ["integral"], built: [] },
+				{ title: "Paused review", status: "paused", targets: ["chain"], built: [] },
+			],
+			"2026-10-02T00:00:00.000Z",
+		);
+		const view = presentGroundwork(snap);
+		const json = JSON.stringify(view);
+		expect(json).not.toContain("$");
+		expect(json).not.toMatch(/"built"|"open"|"current"|"body"/);
+		expect(view.concepts.map((c) => c.id)).toEqual(["derivative", "integral", "limit"]);
+		expect(view.concepts.find((c) => c.id === "derivative")).toEqual({ id: "derivative", title: "Cost 5", status: "learning" });
+		expect(view.goals).toEqual([{ title: "The derivative", status: "done", concepts: 2 }]);
+		expect(view.graph.nodes.map((n) => n.id).sort()).toEqual(["derivative", "integral", "limit"]);
+		expect(view.graph.edges).toEqual([{ from: "limit", to: "derivative", bridge: false }]);
+		expect(view.graph.nodes.every((n) => n.x >= 0 && n.x <= view.graph.width && n.y >= 0 && n.y <= view.graph.height)).toBe(true);
+		expect(presentGroundwork(null)).toEqual({ updatedAt: null, concepts: [], goals: [], graph: { width: 0, height: 0, nodes: [], edges: [], legend: [] } });
+	});
+});
+
+describe("groundwork graph", () => {
+	it("clusters subjects and dashes the links between them", () => {
+		const graph = layoutGroundworkGraph([
+			{ id: "prior", title: "Prior and posterior", prerequisites: [], domain: "Bayes" },
+			{ id: "conditional", title: "Conditional probability", prerequisites: ["prior"], domain: "Bayes" },
+			{ id: "eigen", title: "Eigenvectors", prerequisites: ["conditional"], domain: "Linear algebra" },
+			{ id: "basis", title: "Basis", prerequisites: ["eigen"], domain: "Linear algebra" },
+		]);
+		expect(graph.legend.map((item) => item.domain)).toEqual(["Bayes", "Linear algebra"]);
+		expect(graph.edges.find((e) => e.from === "prior" && e.to === "conditional")?.bridge).toBe(false);
+		expect(graph.edges.find((e) => e.from === "conditional" && e.to === "eigen")?.bridge).toBe(true);
+		const bayes = graph.nodes.filter((n) => n.domain === "Bayes");
+		const algebra = graph.nodes.filter((n) => n.domain === "Linear algebra");
+		expect(Math.max(...bayes.map((n) => n.x))).toBeLessThan(Math.min(...algebra.map((n) => n.x)));
+		expect(new Set(graph.nodes.map((n) => `${n.x},${n.y}`)).size).toBe(graph.nodes.length);
+		const labeled = graph.nodes.filter((n) => n.label).map((n) => n.id);
+		expect(labeled).toContain("conditional");
+		expect(labeled).toContain("eigen");
 	});
 });
 
