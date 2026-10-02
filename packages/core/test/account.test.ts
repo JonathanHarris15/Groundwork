@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot } from "../src/account";
+import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite } from "../src/account";
 
 const concepts = [
 	{ id: "limit", title: "Limit", prerequisites: [], domain: "calculus", stats: { status: "solid" as const, current: 0.91 }, body: "private note about the learner" },
@@ -27,6 +27,32 @@ describe("knowledge snapshot", () => {
 
 	it("rejects an unknown status", () => {
 		expect(() => parseKnowledgeSnapshot({ concepts: [{ id: "a", title: "A", status: "genius", current: 1, prerequisites: [] }] })).toThrow(/status/);
+	});
+});
+
+describe("website profile", () => {
+	it("never includes a dollar sign or a quota of given versus left", () => {
+		const snap = knowledgeSnapshot(
+			[
+				{ id: "price", title: "Cost $5", prerequisites: [], domain: "$ calc", stats: { status: "solid", current: 0.5 } },
+				{ id: "limit", title: "Limit", prerequisites: ["price"], stats: { status: "learning", current: 0.2 } },
+			],
+			[{ title: "Budget $10", status: "active", targets: ["limit"], built: ["price"] }],
+			"2026-10-02T00:00:00.000Z",
+		);
+		const view = presentForWebsite({
+			user: { id: "1", email: "ada@$example.com", handle: "ada", displayName: "Ada $ Lovelace" },
+			updatedAt: snap.updatedAt,
+			map: layoutConceptMap(snap.concepts),
+			goals: snap.goals,
+			counts: snap.counts,
+		});
+		const json = JSON.stringify(view);
+		expect(json).not.toContain("$");
+		expect(json).not.toMatch(/"built"|"open"|"current"|"quota"/);
+		expect(view.user.displayName).toBe("Ada Lovelace");
+		expect(view.goals[0]).toEqual({ title: "Budget 10", status: "active" });
+		expect(view.map.nodes.find((n) => n.id === "price")?.title).toBe("Cost 5");
 	});
 });
 

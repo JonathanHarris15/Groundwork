@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import { layoutConceptMap, parseKnowledgeSnapshot, type AccountUser, type KnowledgeSnapshot, type ProfilePayload } from "@groundwork/core/account";
+import { layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite, type AccountUser, type KnowledgeSnapshot, type ProfilePayload } from "@groundwork/core/account";
 import { hashPassword, hashToken, newToken, verifyPassword } from "./auth";
 import { AccountStore, httpError, type UserRecord } from "./store";
 
@@ -129,13 +129,13 @@ function profileOf(user: UserRecord, includeEmail: boolean): ProfilePayload {
 		counts: { unassessed: 0, learning: 0, shaky: 0, solid: 0, rusty: 0 },
 	};
 	const shown: AccountUser = includeEmail ? publicUser(user) : { id: user.id, email: "", handle: user.handle, displayName: user.displayName };
-	return {
+	return presentForWebsite({
 		user: shown,
 		updatedAt: user.knowledge?.updatedAt ?? null,
 		map: layoutConceptMap(knowledge.concepts),
 		goals: knowledge.goals,
 		counts: knowledge.counts,
-	};
+	});
 }
 
 function publicUser(user: UserRecord): AccountUser {

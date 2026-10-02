@@ -186,8 +186,8 @@ function mountProfile(path, mine) {
 		}
 		try {
 			const profile = await api(path);
-			name.textContent = profile.user.displayName || "Profile";
-			handle.textContent = profile.user.handle ? `@${profile.user.handle}` : "";
+			name.textContent = shown(profile.user.displayName) || "Profile";
+			handle.textContent = profile.user.handle ? `@${shown(profile.user.handle)}` : "";
 			when.textContent = profile.updatedAt ? ` · updated ${formatWhen(profile.updatedAt)}` : " · waiting for Obsidian to publish";
 			paintCounts(counts, profile.counts);
 			paintMap(frame, profile.map);
@@ -251,8 +251,7 @@ function paintMap(host, map) {
 		const group = document.createElementNS(svg.namespaceURI, "g");
 		group.setAttribute("class", `node is-${node.status}`);
 		const title = document.createElementNS(svg.namespaceURI, "title");
-		const pct = node.status === "unassessed" ? "not assessed" : `${Math.round(node.current * 100)}% now`;
-		title.textContent = `${node.title} · ${node.status} · ${pct}`;
+		title.textContent = `${shown(node.title)} · ${statusWord(node.status)}`;
 		const circle = document.createElementNS(svg.namespaceURI, "circle");
 		circle.setAttribute("cx", node.x);
 		circle.setAttribute("cy", node.y);
@@ -261,7 +260,8 @@ function paintMap(host, map) {
 		label.setAttribute("x", String(Number(node.x) + 26));
 		label.setAttribute("y", String(Number(node.y) + 4));
 		label.setAttribute("text-anchor", "start");
-		label.textContent = node.title.length > 28 ? `${node.title.slice(0, 27)}…` : node.title;
+		const name = shown(node.title);
+		label.textContent = name.length > 28 ? `${name.slice(0, 27)}…` : name;
 		group.append(title, circle, label);
 		svg.append(group);
 	}
@@ -276,9 +276,8 @@ function paintGoals(host, goals) {
 	}
 	for (const goal of goals) {
 		const li = document.createElement("li");
-		li.append(el("span", null, goal.title));
-		const meta = el("span", "meta", `${goal.status} · ${goal.built} built · ${goal.open} open`);
-		li.append(meta);
+		li.append(el("span", null, shown(goal.title)));
+		li.append(el("span", "meta", statusWord(goal.status)));
 		host.append(li);
 	}
 }
@@ -294,6 +293,18 @@ function link(href, text) {
 	a.href = href;
 	a.dataset.nav = "";
 	return a;
+}
+
+const GOAL_STATUS = { active: "Active", paused: "Paused", done: "Done" };
+const CONCEPT_STATUS = { solid: "Solid", shaky: "Shaky", learning: "Learning", rusty: "Rusty", unassessed: "Not assessed" };
+
+/** The page never prints a dollar sign, even when a name or title contains one. */
+function shown(text) {
+	return String(text ?? "").replaceAll("$", "").replace(/ {2,}/g, " ").trim();
+}
+
+function statusWord(status) {
+	return GOAL_STATUS[status] || CONCEPT_STATUS[status] || shown(status);
 }
 
 function el(tag, className, text) {

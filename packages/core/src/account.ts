@@ -219,12 +219,74 @@ export interface AuthSession {
 	user: AccountUser;
 }
 
+/** A goal as the website may show it: a name and a status, never a quota. */
+export interface WebsiteGoal {
+	title: string;
+	status: SnapshotGoalStatus;
+}
+
+export interface WebsiteMapNode {
+	id: string;
+	title: string;
+	prerequisites: string[];
+	status: ConceptStatus;
+	x: number;
+	y: number;
+	domain?: string;
+}
+
 export interface ProfilePayload {
+	user: AccountUser;
+	updatedAt: string | null;
+	map: { width: number; height: number; nodes: WebsiteMapNode[]; edges: Array<{ from: string; to: string }> };
+	goals: WebsiteGoal[];
+	counts: Record<ConceptStatus, number>;
+}
+
+/** Drop dollar signs from anything the website will print. */
+export function stripDollars(value: string): string {
+	return value.replaceAll("$", "").replace(/ {2,}/g, " ").trim();
+}
+
+/**
+ * The profile the site is allowed to render. No currency, and no “given vs left”
+ * counts (`built` / `open` / mastery percent).
+ */
+export function presentForWebsite(profile: {
 	user: AccountUser;
 	updatedAt: string | null;
 	map: ConceptMapLayout;
 	goals: SnapshotGoal[];
 	counts: Record<ConceptStatus, number>;
+}): ProfilePayload {
+	return {
+		user: {
+			id: profile.user.id,
+			email: stripDollars(profile.user.email),
+			handle: stripDollars(profile.user.handle),
+			displayName: stripDollars(profile.user.displayName),
+		},
+		updatedAt: profile.updatedAt,
+		counts: profile.counts,
+		goals: profile.goals.map((g) => ({ title: stripDollars(g.title), status: g.status })),
+		map: {
+			width: profile.map.width,
+			height: profile.map.height,
+			edges: profile.map.edges,
+			nodes: profile.map.nodes.map((n) => {
+				const node: WebsiteMapNode = {
+					id: n.id,
+					title: stripDollars(n.title),
+					prerequisites: n.prerequisites,
+					status: n.status,
+					x: n.x,
+					y: n.y,
+				};
+				if (n.domain) node.domain = stripDollars(n.domain);
+				return node;
+			}),
+		},
+	};
 }
 
 export class AccountError extends Error {
