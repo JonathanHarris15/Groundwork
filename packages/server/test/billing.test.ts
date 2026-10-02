@@ -37,6 +37,40 @@ describe("stripe plan updates", () => {
 		expect(accounts.get("ada").plan).toBe("byom");
 	});
 
+	it("follows a portal switch onto the subscription price", () => {
+		const accounts = new AccountDirectory();
+		accounts.attachCustomer("ada", "cus_9");
+		accounts.setPlan("ada", "included");
+		applyStripeEvent(
+			accounts,
+			event("customer.subscription.updated", {
+				customer: "cus_9",
+				metadata: { plan: "included" },
+				status: "active",
+				items: { data: [{ price: { id: "price_byom" } }] },
+			}),
+			{ byom: "price_byom", included: "price_included" },
+		);
+		expect(accounts.get("ada").plan).toBe("byom");
+	});
+
+	it("follows a portal switch back onto Groundwork", () => {
+		const accounts = new AccountDirectory();
+		accounts.attachCustomer("ada", "cus_9");
+		accounts.setPlan("ada", "byom");
+		applyStripeEvent(
+			accounts,
+			event("customer.subscription.updated", {
+				customer: "cus_9",
+				metadata: { plan: "byom" },
+				status: "active",
+				items: { data: [{ price: "price_included" }] },
+			}),
+			{ byom: "price_byom", included: "price_included" },
+		);
+		expect(accounts.get("ada").plan).toBe("included");
+	});
+
 	it("returns the account to free when the subscription ends", () => {
 		const accounts = new AccountDirectory();
 		accounts.setPlan("ada", "included");
@@ -50,5 +84,22 @@ describe("stripe plan updates", () => {
 			}),
 		);
 		expect(accounts.get("ada")).toMatchObject({ plan: "free", hasBilling: true });
+	});
+
+	it("drops a switched subscription to free once it is no longer active", () => {
+		const accounts = new AccountDirectory();
+		accounts.attachCustomer("ada", "cus_9");
+		accounts.setPlan("ada", "byom");
+		applyStripeEvent(
+			accounts,
+			event("customer.subscription.updated", {
+				customer: "cus_9",
+				metadata: { plan: "included" },
+				status: "canceled",
+				items: { data: [{ price: { id: "price_byom" } }] },
+			}),
+			{ byom: "price_byom", included: "price_included" },
+		);
+		expect(accounts.get("ada").plan).toBe("free");
 	});
 });

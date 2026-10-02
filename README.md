@@ -173,6 +173,8 @@ npm run server
 
 The script writes them to `.env` (gitignored). `npm run server` loads that file. The log line should include `billing on`. For a local checkout, the script installs the Stripe CLI into `~/.local/bin` if it is missing, and you leave `stripe listen` running so Stripe can reach `POST /v1/stripe/webhook`.
 
+Manage billing opens the Stripe customer portal. A customer switches between Bring your own model and Groundwork there, on the same subscription. The webhook sets the account plan from that subscription's price. Cancellation stays at the end of the billing period.
+
 ## Obsidian community plugin
 
 The plugin is laid out so it can be submitted to the [Obsidian community plugin directory](https://docs.obsidian.md):
