@@ -301,6 +301,20 @@ export interface ProfilePayload {
 	counts: Record<ConceptStatus, number>;
 }
 
+/** A concept the dashboard may name. Status is how the quiz left it, never a score. */
+export interface WebsiteConcept {
+	id: string;
+	title: string;
+	status: ConceptStatus;
+}
+
+/** Learned concepts and finished goals for the account dashboard. */
+export interface WebsiteGroundwork {
+	updatedAt: string | null;
+	concepts: WebsiteConcept[];
+	goals: WebsiteGoal[];
+}
+
 /** Drop dollar signs from anything the website will print. */
 export function stripDollars(value: string): string {
 	return value.replaceAll("$", "").replace(/ {2,}/g, " ").trim();
@@ -344,6 +358,25 @@ export function presentForWebsite(profile: {
 				return node;
 			}),
 		},
+	};
+}
+
+/**
+ * Stats the account dashboard may print. A concept counts once a quiz has
+ * assessed it. A goal counts once it is finished. Note text, mastery, and
+ * given-versus-left quotas stay off the page.
+ */
+export function presentGroundwork(snapshot: KnowledgeSnapshot | null): WebsiteGroundwork {
+	if (!snapshot) return { updatedAt: null, concepts: [], goals: [] };
+	return {
+		updatedAt: snapshot.updatedAt || null,
+		concepts: snapshot.concepts
+			.filter((c) => c.status !== "unassessed")
+			.map((c) => ({ id: c.id, title: stripDollars(c.title), status: c.status })),
+		goals: snapshot.goals
+			.filter((g) => g.status === "done")
+			.map((g) => ({ title: stripDollars(g.title), status: "done" as const }))
+			.sort((a, b) => a.title.localeCompare(b.title)),
 	};
 }
 

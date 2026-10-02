@@ -18,6 +18,8 @@ let config = { firebase: null, billing: false };
 let plans = [];
 let account = null;
 let providers = null;
+let groundwork = emptyGroundwork();
+let groundworkTimer = 0;
 let user = null;
 let auth = null;
 let firebaseAuth = null;
@@ -51,6 +53,7 @@ async function boot() {
 		if (!user) {
 			account = null;
 			providers = null;
+			groundwork = emptyGroundwork();
 			paint();
 			return;
 		}
@@ -68,11 +71,22 @@ async function boot() {
 
 async function refresh() {
 	const token = await user.getIdToken();
-	account = await get("/v1/account", token);
-	providers = (await get("/v1/secrets", token)).providers;
+	const [nextAccount, secrets, nextGroundwork] = await Promise.all([
+		get("/v1/account", token),
+		get("/v1/secrets", token),
+		get("/v1/groundwork", token).catch(() => emptyGroundwork()),
+	]);
+	account = nextAccount;
+	providers = secrets.providers;
+	groundwork = nextGroundwork;
+}
+
+function emptyGroundwork() {
+	return { updatedAt: null, concepts: [], goals: [] };
 }
 
 function paint() {
+	stopGroundworkWatch();
 	if (!user || !account) {
 		chip.hidden = true;
 		if (location.hash === "#signin" || problem) showSignIn();
@@ -177,6 +191,38 @@ function showAccount() {
 	document.querySelector("#change-plan").addEventListener("click", () => {
 		location.hash = "#plans";
 	});
+	watchGroundwork();
+}
+
+function stopGroundworkWatch() {
+	if (!groundworkTimer) return;
+	window.clearInterval(groundworkTimer);
+	groundworkTimer = 0;
+}
+
+function watchGroundwork() {
+	stopGroundworkWatch();
+	groundworkTimer = window.setInterval(() => {
+		void pullGroundwork();
+	}, 5000);
+}
+
+async function pullGroundwork() {
+	if (!user || !account || account.needsPlan || location.hash === "#plans") return;
+	try {
+		const token = await user.getIdToken();
+		const next = await get("/v1/groundwork", token);
+		if (JSON.stringify(next?.concepts ?? []) === JSON.stringify(groundwork?.concepts ?? []) && JSON.stringify(next?.goals ?? []) === JSON.stringify(groundwork?.goals ?? [])) return;
+		groundwork = next;
+		const current = document.querySelector(".board");
+		if (!current) return;
+		const holder = document.createElement("div");
+		holder.innerHTML = board();
+		const nextBoard = holder.querySelector(".board");
+		if (nextBoard) current.replaceWith(nextBoard);
+	} catch {
+		// Keep the stats already on screen.
+	}
 }
 
 function renderChip() {
@@ -212,7 +258,20 @@ function planLabel() {
 	return `${account.name}, $${account.priceUsdPerMonth} / month`;
 }
 
+const LEARNED_COLOR = { solid: "#2db560", learning: "#2e9be6", shaky: "#f59e2b", rusty: "#e5484d" };
+const LEARNED_WORD = { solid: "Solid", learning: "Learning", shaky: "Shaky", rusty: "Rusty" };
+
+function learnedConcepts() {
+	return Array.isArray(groundwork?.concepts) ? groundwork.concepts : [];
+}
+
+function reachedGoals() {
+	return Array.isArray(groundwork?.goals) ? groundwork.goals : [];
+}
+
 function board() {
+	const concepts = learnedConcepts();
+	const goals = reachedGoals();
 	const usage = account.ownModel ? `
 			<span class="big">Your model</span>
 			<span class="tile-label">Plan usage</span>
@@ -224,12 +283,12 @@ function board() {
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
 			<div class="stats">
 				<div class="tile">
-					<span class="big">0</span>
+					<span class="big">${goals.length}</span>
 					<span class="tile-label">Goals reached</span>
 					<div class="spark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
 				</div>
 				<div class="tile" style="animation-delay: .12s">
-					<span class="big">0</span>
+					<span class="big">${concepts.length}</span>
 					<span class="tile-label">Concepts learned</span>
 					<p class="tile-note">Each one checked with a quiz before it counted.</p>
 				</div>
@@ -237,13 +296,32 @@ function board() {
 			</div>
 			<div class="sky">
 				<div class="sky-head"><span class="sky-title">Concepts you have learned</span></div>
-				<p class="sky-empty">They show up here after a quiz counts them.</p>
+				${conceptList(concepts)}
 			</div>
 			<div class="goals">
 				<h3 class="goals-title">Goals reached</h3>
-				<p class="sky-empty">Goals you finish in Obsidian show up here.</p>
+				${goalList(goals)}
 			</div>
 		</section>`;
+}
+
+function conceptList(concepts) {
+	if (!concepts.length) return `<p class="sky-empty">They show up here after a quiz counts them.</p>`;
+	return `<ul class="concepts">${concepts.map((concept) => {
+		const color = LEARNED_COLOR[concept.status] || "#aeb3bc";
+		const word = LEARNED_WORD[concept.status] || "Learned";
+		return `<li class="concept" title="${escapeAttr(word)}"><i class="concept-dot" style="background:${color}" aria-hidden="true"></i><span>${escapeHtml(concept.title)}</span></li>`;
+	}).join("")}</ul>`;
+}
+
+function goalList(goals) {
+	if (!goals.length) return `<p class="sky-empty">Goals you finish in Obsidian show up here.</p>`;
+	return goals.map((goal) => `
+				<div class="goal">
+					<span class="goal-dot" style="background:#2db560" aria-hidden="true"></span>
+					<div class="goal-body"><span class="goal-name">${escapeHtml(goal.title)}</span></div>
+					<span class="check">Reached</span>
+				</div>`).join("");
 }
 
 function usageTile() {

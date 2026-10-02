@@ -1,4 +1,4 @@
-import { isPlanId, PLANS, type AccountView, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
+import { isPlanId, PLANS, presentGroundwork, type AccountView, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
@@ -84,6 +84,9 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			const input = body as { provider?: unknown; apiKey?: unknown } | null;
 			const saved = deps.secrets.save(uid, String(input?.provider ?? ""), String(input?.apiKey ?? ""));
 			return { status: 200, json: { saved, providers: deps.secrets.saved(uid) } };
+		}
+		if (method === "GET" && path === "/v1/groundwork") {
+			return { status: 200, json: presentGroundwork(deps.memory.knowledge(uid)) };
 		}
 		if (path === "/v1/memory" && (method === "GET" || method === "PUT")) {
 			if (method === "GET") return { status: 200, json: deps.memory.get(uid) };

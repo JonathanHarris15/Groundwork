@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite, refreshFirebaseSession } from "../src/account";
+import { knowledgeSnapshot, layoutConceptMap, parseKnowledgeSnapshot, presentForWebsite, presentGroundwork, refreshFirebaseSession } from "../src/account";
 import { isUserKeyProvider, PLANS, USER_KEY_PROVIDERS } from "../src/account/plans";
 import { choosePlan, emptyAccount, rememberProfile, setDisplayName, spendHosted, viewAccount } from "../src/account/usage";
 
@@ -55,6 +55,31 @@ describe("website profile", () => {
 		expect(view.user.displayName).toBe("Ada Lovelace");
 		expect(view.goals[0]).toEqual({ title: "Budget 10", status: "active" });
 		expect(view.map.nodes.find((n) => n.id === "price")?.title).toBe("Cost 5");
+	});
+
+	it("counts a concept after a quiz and a goal after it is finished", () => {
+		const snap = knowledgeSnapshot(
+			[
+				{ id: "limit", title: "Limit", prerequisites: [], stats: { status: "solid", current: 0.9 } },
+				{ id: "derivative", title: "Cost $5", prerequisites: ["limit"], stats: { status: "learning", current: 0.4 } },
+				{ id: "chain", title: "Chain rule", prerequisites: ["derivative"], stats: { status: "unassessed", current: 0 } },
+				{ id: "integral", title: "Integral", prerequisites: [], stats: { status: "rusty", current: 0.3 } },
+			],
+			[
+				{ title: "The derivative", status: "done", targets: [], built: ["limit", "derivative"] },
+				{ title: "Budget $10", status: "active", targets: ["integral"], built: [] },
+				{ title: "Paused review", status: "paused", targets: ["chain"], built: [] },
+			],
+			"2026-10-02T00:00:00.000Z",
+		);
+		const view = presentGroundwork(snap);
+		const json = JSON.stringify(view);
+		expect(json).not.toContain("$");
+		expect(json).not.toMatch(/"built"|"open"|"current"|"body"/);
+		expect(view.concepts.map((c) => c.id)).toEqual(["derivative", "integral", "limit"]);
+		expect(view.concepts.find((c) => c.id === "derivative")).toEqual({ id: "derivative", title: "Cost 5", status: "learning" });
+		expect(view.goals).toEqual([{ title: "The derivative", status: "done" }]);
+		expect(presentGroundwork(null)).toEqual({ updatedAt: null, concepts: [], goals: [] });
 	});
 });
 
