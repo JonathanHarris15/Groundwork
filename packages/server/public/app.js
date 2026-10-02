@@ -31,6 +31,7 @@ boot().catch((err) => {
 
 window.addEventListener("hashchange", () => paint());
 bindParallax();
+bindReveal();
 
 async function boot() {
 	const [web, planList] = await Promise.all([get("/v1/web-config"), get("/v1/plans")]);
@@ -141,7 +142,7 @@ function showAccount() {
 	show(`
 		${notice(true)}
 		<h1>Welcome back, ${escapeHtml(name)}.</h1>
-		<p class="welcome-sub">Your plan and this month's credit.</p>
+		<p class="welcome-sub">Here is everything you have built so far.</p>
 		${board()}
 		<section class="section">
 			<h2><span class="node red"></span>Profile</h2>
@@ -210,18 +211,36 @@ function planLabel() {
 }
 
 function board() {
-	const tile = account.ownModel ? `
-		<div class="tile">
+	const usage = account.ownModel ? `
 			<span class="big">Your model</span>
 			<span class="tile-label">Plan usage</span>
-			<p class="tile-note">This plan uses your model. Groundwork does not meter it.</p>
-		</div>` : usageTile();
+			<p class="tile-note">This plan uses your model. Groundwork does not meter it.</p>` : usageTile();
 	return `
 		<section class="board" aria-labelledby="board-title">
 			<div class="blobs"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
 			<div class="spot"></div>
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
-			<div class="stats">${tile}</div>
+			<div class="stats">
+				<div class="tile">
+					<span class="big">0</span>
+					<span class="tile-label">Goals reached</span>
+					<div class="spark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+				</div>
+				<div class="tile" style="animation-delay: .12s">
+					<span class="big">0</span>
+					<span class="tile-label">Concepts learned</span>
+					<p class="tile-note">Each one checked with a quiz before it counted.</p>
+				</div>
+				<div class="tile" style="animation-delay: .24s">${usage}</div>
+			</div>
+			<div class="sky">
+				<div class="sky-head"><span class="sky-title">Concepts you have learned</span></div>
+				<p class="sky-empty">They show up here after a quiz counts them.</p>
+			</div>
+			<div class="goals">
+				<h3 class="goals-title">Goals reached</h3>
+				<p class="sky-empty">Goals you finish in Obsidian show up here.</p>
+			</div>
 		</section>`;
 }
 
@@ -233,7 +252,6 @@ function usageTile() {
 	const circ = 2 * Math.PI * radius;
 	const dash = (used * circ).toFixed(1);
 	return `
-		<div class="tile">
 			<div class="usage">
 				<svg class="gauge" viewBox="0 0 120 120" aria-hidden="true">
 					<circle cx="60" cy="60" r="${radius}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="8"></circle>
@@ -244,8 +262,7 @@ function usageTile() {
 					<div class="tile-label">of this month's budget used</div>
 				</div>
 			</div>
-			<p class="tile-note" style="margin-top: 10px">$${account.remainingUsd.toFixed(2)} of $${credit.toFixed(0)} left. Unused credit expires at the end of the month.</p>
-		</div>`;
+			<p class="tile-note" style="margin-top: 10px">$${account.remainingUsd.toFixed(2)} of $${credit.toFixed(0)} left. Unused credit expires at the end of the month.</p>`;
 }
 
 function keysSection() {
@@ -427,6 +444,21 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
 	return escapeHtml(value);
+}
+
+function bindReveal() {
+	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+	const nodes = [...landing.querySelectorAll(".rv")];
+	if (!nodes.length) return;
+	landing.classList.add("reveal-ready");
+	const observer = new IntersectionObserver((entries) => {
+		for (const entry of entries) {
+			if (!entry.isIntersecting) continue;
+			entry.target.classList.add("is-in");
+			observer.unobserve(entry.target);
+		}
+	}, { threshold: 0.2, rootMargin: "0px 0px -8% 0px" });
+	for (const node of nodes) observer.observe(node);
 }
 
 function bindParallax() {
