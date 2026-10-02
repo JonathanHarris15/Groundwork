@@ -79,6 +79,7 @@ function paint() {
 		else showLanding();
 		return;
 	}
+	if (location.hash === "#signin") history.replaceState(null, "", location.pathname + location.search);
 	showApp();
 	renderChip();
 	if (account.needsPlan || location.hash === "#plans") showPlans();
@@ -110,9 +111,6 @@ function showSignIn() {
 			</div>
 			${heroMark()}
 		</div>
-		<h2 class="plans-title"><span class="node green"></span>Plans</h2>
-		${planGrid(false)}
-		<p class="fine">Unused credit expires at the end of the month.</p>
 	`);
 	document.querySelector("#google")?.addEventListener("click", () => signIn());
 }
@@ -276,7 +274,7 @@ function usageTile() {
 					<div class="tile-label">of this month's budget used</div>
 				</div>
 			</div>
-			<p class="tile-note" style="margin-top: 10px">$${account.remainingUsd.toFixed(2)} of $${credit.toFixed(0)} left. Unused credit expires at the end of the month.</p>`;
+			<p class="tile-note" style="margin-top: 10px">Unused credit expires at the end of the month.</p>`;
 }
 
 function keysSection() {

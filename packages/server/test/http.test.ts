@@ -106,11 +106,18 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js"');
+		expect(site?.body).toContain('src="/app.js?v=2"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
 		expect(script).toContain("obsidian://groundwork?refresh=");
+		const signIn = script.slice(script.indexOf("function showSignIn"), script.indexOf("function showPlans"));
+		expect(signIn).toContain("Sign in with Google");
+		expect(signIn).not.toContain("planGrid");
+		const tile = script.slice(script.indexOf("function usageTile"), script.indexOf("function keysSection"));
+		expect(tile).toContain("Unused credit expires at the end of the month.");
+		expect(tile).not.toContain("remainingUsd");
+		expect(tile).not.toContain("left.");
 		expect(readSite("/../.env")).toBeNull();
 
 		const server = deps();
