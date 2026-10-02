@@ -4,6 +4,7 @@ import type { Auth } from "./auth";
 import type { Billing } from "./billing";
 import type { MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
+import { obsidianOpen } from "./obsidian-open";
 import { webConfig } from "./web-config";
 
 export interface ServerDeps {
@@ -29,6 +30,8 @@ export interface RouteMeta {
 
 export async function route(method: string, path: string, body: unknown, deps: ServerDeps, authorization?: string, meta: RouteMeta = {}): Promise<RouteResult> {
 	try {
+		const opened = obsidianOpen(method, path);
+		if (opened) return opened;
 		if (method === "GET" && path === "/health") {
 			return { status: 200, json: { ok: true, jev: deps.jev, firebase: deps.auth.firebase, billing: deps.billing.configured } };
 		}

@@ -142,6 +142,9 @@ function showAccount() {
 		<h1>Welcome back, ${escapeHtml(name)}.</h1>
 		<p class="welcome-sub">Here is everything you have built so far.</p>
 		${board()}
+		<div class="open-obsidian">
+			<button class="btn btn-ink" id="open-obsidian" type="button">Open Obsidian</button>
+		</div>
 		<section class="section">
 			<h2><span class="node red"></span>Profile</h2>
 			<p>This name is what Groundwork shows for you. Your Google account stays the sign-in.</p>
@@ -157,11 +160,6 @@ function showAccount() {
 			</form>
 		</section>
 		<section class="section">
-			<h2><span class="node green"></span>Obsidian</h2>
-			<p>Tutor memory is stored with this account. Connect Obsidian on this computer and the plugin uses it. Sign-in stays on this website.</p>
-			<div class="actions"><button class="btn" id="connect-obsidian" type="button">Connect Obsidian</button></div>
-		</section>
-		<section class="section">
 			<h2><span class="node orange"></span>Billing</h2>
 			<p>${account.hasBilling ? "Update the card, see invoices, or cancel in Stripe." : "A paid plan opens Stripe checkout. You can change the card later from here."}</p>
 			<div class="actions"><button class="btn ${account.hasBilling && config.billing ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"}>Manage billing</button></div>
@@ -173,15 +171,7 @@ function showAccount() {
 		</div>
 	`);
 	document.querySelector("#profile").addEventListener("submit", saveProfile);
-	document.querySelector("#connect-obsidian").addEventListener("click", () => {
-		const refresh = user && user.refreshToken;
-		if (!refresh) {
-			actionError = "Sign in again, then connect Obsidian.";
-			paint();
-			return;
-		}
-		window.location.href = `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}`;
-	});
+	document.querySelector("#open-obsidian").addEventListener("click", () => openObsidian());
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#portal").addEventListener("click", openPortal);
 	document.querySelector("#change-plan").addEventListener("click", () => {
@@ -407,6 +397,82 @@ async function saveKey(event) {
 		actionError = err.message;
 		paint();
 	}
+}
+
+const OBSIDIAN_DOWNLOAD = "https://obsidian.md/download";
+const OBSIDIAN_INSTALL = "obsidian://show-plugin?id=groundwork";
+
+// The groundwork link is the fast path: an installed plugin connects, syncs, and reloads.
+// If the page never leaves, Obsidian is not installed. If Obsidian opens and the plugin never answers, open the community installer.
+function openObsidian() {
+	const refresh = user && user.refreshToken;
+	if (!refresh) {
+		actionError = "Sign in again, then open Obsidian.";
+		paint();
+		return;
+	}
+	const button = document.querySelector("#open-obsidian");
+	if (button) {
+		button.disabled = true;
+		button.textContent = "Opening Obsidian…";
+	}
+	const nonce = crypto.randomUUID();
+	const signal = `${location.origin}/v1/obsidian-opened/${nonce}/signal`;
+	const handoff = `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}&opened=${encodeURIComponent(signal)}`;
+	let sawApp = false;
+	let settled = false;
+	const mark = () => {
+		sawApp = true;
+	};
+	const onVis = () => {
+		if (document.hidden) mark();
+	};
+	window.addEventListener("blur", mark);
+	document.addEventListener("visibilitychange", onVis);
+	const started = performance.now();
+	const stop = () => {
+		if (settled) return;
+		settled = true;
+		window.clearInterval(timer);
+		window.removeEventListener("blur", mark);
+		document.removeEventListener("visibilitychange", onVis);
+	};
+	const link = document.createElement("a");
+	link.href = handoff;
+	link.hidden = true;
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
+	const timer = window.setInterval(async () => {
+		if (settled) return;
+		const elapsed = performance.now() - started;
+		if (document.hidden || document.visibilityState === "hidden") mark();
+		let opened = false;
+		try {
+			const res = await fetch(`/v1/obsidian-opened/${nonce}`, { cache: "no-store", signal: AbortSignal.timeout(800) });
+			if (res.ok) opened = Boolean((await res.json()).opened);
+		} catch {
+			opened = false;
+		}
+		if (settled) return;
+		if (opened) {
+			stop();
+			if (button && button.isConnected) {
+				button.disabled = false;
+				button.textContent = "Open Obsidian";
+			}
+			return;
+		}
+		if (!sawApp && document.hasFocus() && elapsed > 1500) {
+			stop();
+			window.location.assign(OBSIDIAN_DOWNLOAD);
+			return;
+		}
+		if (sawApp && elapsed > 6000) {
+			stop();
+			window.location.href = OBSIDIAN_INSTALL;
+		}
+	}, 400);
 }
 
 async function openPortal() {

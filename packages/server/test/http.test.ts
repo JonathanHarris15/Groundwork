@@ -106,11 +106,22 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=2"');
+		expect(site?.body).toContain('src="/app.js?v=3"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
 		expect(script).toContain("obsidian://groundwork?refresh=");
+		expect(script).toContain("https://obsidian.md/download");
+		expect(script).toContain("obsidian://show-plugin?id=groundwork");
+		expect(script).toContain("Open Obsidian");
+		expect(script).not.toContain("Connect Obsidian");
+		const account = script.slice(script.indexOf("function showAccount"), script.indexOf("function renderChip"));
+		const boardAt = account.indexOf("${board()}");
+		const openAt = account.indexOf('id="open-obsidian"');
+		const profileAt = account.indexOf(">Profile</h2>");
+		expect(boardAt).toBeGreaterThan(-1);
+		expect(openAt).toBeGreaterThan(boardAt);
+		expect(profileAt).toBeGreaterThan(openAt);
 		const signIn = script.slice(script.indexOf("function showSignIn"), script.indexOf("function showPlans"));
 		expect(signIn).toContain("Sign in with Google");
 		expect(signIn).not.toContain("planGrid");
@@ -155,6 +166,20 @@ describe("account server", () => {
 		expect(rejected.status).toBe(400);
 		expect(JSON.stringify(rejected.json)).toMatch(/not tutor memory/);
 		expect((await route("GET", "/v1/memory", null, server)).json).toMatchObject({ files: { "learner.md": "Learns by examples." } });
+	});
+
+	it("lets the plugin ack an Open Obsidian click before the page checks", async () => {
+		const server = deps();
+		const nonce = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+		const before = await route("GET", `/v1/obsidian-opened/${nonce}`, null, server);
+		expect(before.json).toEqual({ opened: false });
+		const signal = await route("GET", `/v1/obsidian-opened/${nonce}/signal`, null, server);
+		expect(signal.status).toBe(200);
+		expect(signal.json).toEqual({ ok: true });
+		const after = await route("GET", `/v1/obsidian-opened/${nonce}`, null, server);
+		expect(after.json).toEqual({ opened: true });
+		const junk = await route("GET", "/v1/obsidian-opened/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/signal", null, server);
+		expect(junk.status).toBe(400);
 	});
 
 	it("reports Jev as unavailable when the server key is missing", async () => {

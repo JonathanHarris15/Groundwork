@@ -462,7 +462,7 @@ export async function refreshFirebaseSession(refreshToken: string, apiKey: strin
 	const parsed = text ? (JSON.parse(text) as { id_token?: unknown; refresh_token?: unknown; error?: { message?: unknown } }) : {};
 	const idToken = typeof parsed.id_token === "string" ? parsed.id_token : "";
 	if (!response.ok || !idToken) {
-		const message = typeof parsed.error?.message === "string" ? parsed.error.message : "The website session expired. Open Groundwork and connect Obsidian again.";
+		const message = typeof parsed.error?.message === "string" ? parsed.error.message : "The website session expired. Open Obsidian from the Groundwork website again.";
 		throw new AccountError(message, response.status);
 	}
 	return { idToken, refreshToken: typeof parsed.refresh_token === "string" && parsed.refresh_token ? parsed.refresh_token : refreshToken };

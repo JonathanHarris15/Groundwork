@@ -1314,7 +1314,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const connected = !!loadAccountToken(this.app);
 		section.createDiv({
 			cls: "gw-lib-help",
-			text: connected ? "This device is connected. On the website, choose Connect Obsidian again if you switch accounts." : "Open the website, sign in, and choose Connect Obsidian.",
+			text: connected ? "This device is connected. On the website, choose Open Obsidian again if you switch accounts." : "Open the website, sign in, and choose Open Obsidian.",
 		});
 		const row = section.createDiv({ cls: "gw-lib-save-row" });
 		const open = row.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Open website", attr: { type: "button" } });

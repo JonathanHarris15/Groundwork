@@ -1,8 +1,9 @@
-import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
+import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
 import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, tutorMemoryFiles, type AnswerGrader, type Provider, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
+import { groundworkOpenedSignal } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { accountOrigin, accountOriginIsLocal, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, loadApiKey, saveAccountToken, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
@@ -19,6 +20,10 @@ export default class GroundworkPlugin extends Plugin {
 	private accountPublishAgain = false;
 	private statusEl!: HTMLElement;
 	private lastSync: Date | null = null;
+	private markLayoutReady: () => void = () => {};
+	private readonly layoutReady = new Promise<void>((resolve) => {
+		this.markLayoutReady = resolve;
+	});
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -58,17 +63,15 @@ export default class GroundworkPlugin extends Plugin {
 
 		this.addSettingTab(new GroundworkSettingTab(this.app, this));
 		this.registerObsidianProtocolHandler("groundwork", (params) => {
-			const refresh = params.refresh?.trim();
-			if (!refresh) return;
-			saveAccountToken(this.app, refresh);
-			new Notice("Groundwork: this device is connected to your account.");
-			void this.connectMemory();
+			void this.handleOpenLink(params);
 		});
 
 		this.app.workspace.onLayoutReady(async () => {
+			this.markLayoutReady();
 			await this.connectMemory();
 			await this.store.ensureLayout();
-			if (!this.app.workspace.getLeavesOfType(VIEW_TYPE).length) await this.activateView(false);
+			const reveal = this.takeOpenRequest();
+			if (reveal || !this.app.workspace.getLeavesOfType(VIEW_TYPE).length) await this.activateView(reveal);
 		});
 
 		// Obsidian keeps running the loaded bundle after `update_groundwork.py` replaces it on disk.
@@ -105,6 +108,49 @@ export default class GroundworkPlugin extends Plugin {
 			}),
 			0,
 		);
+	}
+
+	/** Website "Open Obsidian": connect this account, sync tutor memory, reveal the tutor, and reload a newer build already on disk. */
+	private async handleOpenLink(params: ObsidianProtocolData): Promise<void> {
+		await this.layoutReady;
+		const refresh = typeof params.refresh === "string" ? params.refresh.trim() : "";
+		if (refresh) {
+			saveAccountToken(this.app, refresh);
+			new Notice("Groundwork: this device is connected to your account.");
+		}
+		await this.signalOpened(typeof params.opened === "string" ? params.opened : undefined);
+		await this.connectMemory();
+		const onDisk = await this.installedBuild();
+		if (onDisk && onDisk !== BUILD) {
+			this.requestOpenAfterReload();
+			new Notice("Groundwork found an update and is reloading it.");
+			await this.reloadSelf();
+			return;
+		}
+		await this.activateView(true);
+	}
+
+	private async signalOpened(opened: string | undefined): Promise<void> {
+		const url = groundworkOpenedSignal(opened);
+		if (!url) return;
+		try {
+			await Promise.race([
+				fetch(url, { cache: "no-store" }),
+				new Promise((resolve) => window.setTimeout(resolve, 1500)),
+			]);
+		} catch {
+			// A missed ack sends the website on to the installer.
+		}
+	}
+
+	private requestOpenAfterReload(): void {
+		this.app.saveLocalStorage("groundwork-open-on-load", "1");
+	}
+
+	private takeOpenRequest(): boolean {
+		if (this.app.loadLocalStorage("groundwork-open-on-load") !== "1") return false;
+		this.app.saveLocalStorage("groundwork-open-on-load", null);
+		return true;
 	}
 
 	async reloadSelf(): Promise<void> {
@@ -265,7 +311,7 @@ export default class GroundworkPlugin extends Plugin {
 	private async memoryClient(): Promise<AccountClient | null> {
 		const token = await this.accountAccessToken();
 		if (!token) {
-			if (!loadAccountToken(this.app)) this.setSync("offline", "open the website and connect Obsidian");
+			if (!loadAccountToken(this.app)) this.setSync("offline", "open the website and choose Open Obsidian");
 			return null;
 		}
 		return new AccountClient(accountOrigin(), token);
@@ -298,7 +344,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	private scheduleMemorySave(): void {
 		if (!loadAccountToken(this.app)) {
-			this.setSync("offline", "open the website and connect Obsidian");
+			this.setSync("offline", "open the website and choose Open Obsidian");
 			return;
 		}
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
@@ -312,7 +358,7 @@ export default class GroundworkPlugin extends Plugin {
 	async saveMemory(manual: boolean): Promise<void> {
 		const client = await this.memoryClient();
 		if (!client) {
-			if (manual) new Notice("Groundwork: open the website and connect Obsidian. Tutor memory is kept on that account.");
+			if (manual) new Notice("Groundwork: open the website and choose Open Obsidian. Tutor memory is kept on that account.");
 			return;
 		}
 		if (this.accountPublishing) {
