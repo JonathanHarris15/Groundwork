@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, tutorMemoryFiles, type AnswerGrader, type Provider, type VaultIO } from "@groundwork/core";
+import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, syncFlashcards, tutorMemoryFiles, type AnswerGrader, type Provider, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
@@ -51,6 +51,11 @@ export default class GroundworkPlugin extends Plugin {
 			id: "practice-test",
 			name: "Take a practice test",
 			callback: async () => (await this.activateView())?.startPracticeTest(),
+		});
+		this.addCommand({
+			id: "flashcards",
+			name: "Study flashcards",
+			callback: async () => (await this.activateView())?.showFlashcards(),
 		});
 		this.addCommand({
 			id: "recompute",
@@ -337,6 +342,7 @@ export default class GroundworkPlugin extends Plugin {
 				this.lastSync = remote.updatedAt ? new Date(remote.updatedAt) : new Date();
 				this.setSync("ok", "tutor memory loaded from your account");
 			}
+			await this.syncFlashcards();
 		} catch (e) {
 			this.setSync("error", (e as Error).message);
 		}
@@ -352,6 +358,15 @@ export default class GroundworkPlugin extends Plugin {
 			this.accountTimer = null;
 			void this.saveMemory(false);
 		}, 2000);
+	}
+
+	/** Copy account flashcards into flashcards/ inside each write folder, and pull hand edits back. */
+	async syncFlashcards(): Promise<void> {
+		try {
+			await syncFlashcards(this.store, this.settings.writeFolders);
+		} catch (e) {
+			console.error("Groundwork flashcards", e);
+		}
 	}
 
 	/** Save concepts, notes, evidence, chats, and the learner profile to the website account. */

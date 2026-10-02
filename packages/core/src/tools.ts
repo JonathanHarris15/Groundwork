@@ -23,6 +23,7 @@ import {
 import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
 import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
 import { isBuilt } from "./graph";
+import { buildStudyQueue, loadFlashcardLibrary, saveFlashcard } from "./flashcards";
 import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalStatus, type KnowledgeStore } from "./store";
 
 export type JSONSchema = Record<string, unknown>;
@@ -829,6 +830,46 @@ export const TOOLS: ToolDef[] = [
 			await vault.write(target.path, body.endsWith("\n") ? body : `${body}\n`);
 			const verb = existed ? "Replaced" : "Wrote";
 			return { text: `${verb} ${target.path}. The learner can open it in the vault and hand it in.`, summary: `${verb} ${target.path}` };
+		},
+	},
+	{
+		name: "save_flashcard",
+		description:
+			"Save one flashcard on the learner's account. It is also copied to flashcards/ inside each folder they allowed you to write. One idea per card: front is the question, back is a short answer in their terms. Pass deck as a goal title when the card belongs to that goal.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				concept: str("Concept this card checks. The title of a concept you have already saved."),
+				front: str("The question on the front of the card. One checkable idea. Markdown and LaTeX allowed."),
+				back: str("The answer on the back, in the learner's terms. Short."),
+				deck: str("Goal title this card belongs to. Omit for the Library deck."),
+			},
+			required: ["concept", "front", "back"],
+		},
+		async run({ concept, front, back, deck }: { concept: string; front: string; back: string; deck?: string }, ctx) {
+			const writes = accessFromContext(ctx).writeFolders;
+			try {
+				const saved = await saveFlashcard(ctx.store, { concept, front, back, deck }, writes);
+				const where = saved.folders.length ? ` Copied into ${saved.folders.join(", ")}.` : " Add a write folder in Settings and the card will be copied into flashcards/ there.";
+				return { text: `Saved a flashcard on ${saved.card.concept}.${where}`, summary: `Saved a flashcard on ${saved.card.concept}` };
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				return { text: message, isError: true, summary: "Couldn't save the flashcard" };
+			}
+		},
+	},
+	{
+		name: "list_due_flashcards",
+		description: "Flashcards that are due now: new cards, cards in learning, and reviews whose interval has elapsed. Use this before offering a flashcard session.",
+		inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50 } } },
+		async run({ limit }: { limit?: number }, { store }) {
+			const lib = await loadFlashcardLibrary(store.io);
+			const due = buildStudyQueue(lib.cards, new Date());
+			const shown = due.slice(0, limit ?? 20);
+			if (!shown.length) return { text: "No flashcards are due.", summary: "No flashcards due" };
+			const lines = shown.map((c) => `- ${c.concept} [${c.state}] ${c.front.split("\n")[0]}`);
+			const more = due.length > shown.length ? `\n${due.length - shown.length} more due.` : "";
+			return { text: `${lines.join("\n")}${more}`, summary: `${due.length} flashcard${due.length === 1 ? "" : "s"} due` };
 		},
 	},
 	{

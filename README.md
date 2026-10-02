@@ -36,6 +36,7 @@ resources/HW2.md                optional vault context, only if you add that fol
 exams/Prepare for the midterm.md  topics + required depth parsed from those files
 learner.md                      your background and how you learn best (the tutor reads + appends)
 .groundwork/evidence/*.jsonl    append-only quiz evidence: the source of truth
+.groundwork/flashcards.json     flashcard decks and the review schedule
 .groundwork/chats/*.json        chat history, so sessions resume on any machine
 ```
 
@@ -127,6 +128,8 @@ Tutor memory (concepts, goals, evidence, chats, learner profile) is stored on th
 Attach files to a message with the paperclip (**Upload from this computer** or **Choose from the vault**). You can also paste an image into the message box, drag files onto the panel (from your desktop or Obsidian's file explorer), or link a vault file in your message, like `[[Lecture 3.pdf]]`. Uploads are saved into the first read folder, so add one before attaching. Choosing from the vault only offers files in a read folder.
 
 The tutor reads images (PNG, JPEG, GIF, WebP), PDFs, and text files (markdown, code, CSV, LaTeX, …) from those folders (`list_vault_files`, `read_vault_file`): drop your lecture notes or textbook into a read folder and say "use my lecture 3 notes". Ask it to write up answers and it saves a markdown file in a write folder. With the Claude subscription, PDFs are read with Claude Code's `Read` tool, held to the same read folders. Groundwork splits PDFs longer than 10 pages or larger than 16 MB into parts under `.groundwork/cache/pdf-parts/` (ignored by git) so each part opens whole, with no need for poppler (`pdftoppm`) on the machine. Limits: 50 MB per upload (the vault is a git repo), and images must be under 5 MB and PDFs under 20 MB to be sent inline. Saved chats don't store file contents, only the paths.
+
+**Flashcards** (the layers icon in the tutor panel) are a spaced-repetition deck. The schedule and the card text live on the account with the rest of tutor memory. Each folder the tutor can write also gets a `flashcards/` subfolder of plain Markdown — one note per card, plus a deck note — so you can edit a question or an answer in the vault. The next sync copies that edit back to the account and to every other write folder. Turning on "Add cards from new teaching notes" makes a card from each concept that has a summary. Rating Again, Hard, Good, or Easy updates that concept on the map.
 
 ## CLI reference
 
