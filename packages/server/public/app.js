@@ -420,6 +420,7 @@ function openObsidian() {
 	const signal = `${location.origin}/v1/obsidian-opened/${nonce}/signal`;
 	const handoff = `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}&opened=${encodeURIComponent(signal)}`;
 	let sawApp = false;
+	let askedInstall = false;
 	let settled = false;
 	const mark = () => {
 		sawApp = true;
@@ -437,12 +438,7 @@ function openObsidian() {
 		window.removeEventListener("blur", mark);
 		document.removeEventListener("visibilitychange", onVis);
 	};
-	const link = document.createElement("a");
-	link.href = handoff;
-	link.hidden = true;
-	document.body.appendChild(link);
-	link.click();
-	link.remove();
+	openProtocol(handoff);
 	const timer = window.setInterval(async () => {
 		if (settled) return;
 		const elapsed = performance.now() - started;
@@ -463,16 +459,26 @@ function openObsidian() {
 			}
 			return;
 		}
-		if (!sawApp && document.hasFocus() && elapsed > 1500) {
+		// Obsidian stayed in front and Groundwork never answered, so ask it to install the plugin.
+		if (sawApp && !document.hasFocus() && elapsed > 1600 && !askedInstall) {
+			askedInstall = true;
+			openProtocol(OBSIDIAN_INSTALL);
+		}
+		// The page is focused again, so the app did not stay open. A long silence means the same.
+		if ((document.hasFocus() && elapsed > 1500) || elapsed > 8000) {
 			stop();
 			window.location.assign(OBSIDIAN_DOWNLOAD);
-			return;
-		}
-		if (sawApp && elapsed > 6000) {
-			stop();
-			window.location.href = OBSIDIAN_INSTALL;
 		}
 	}, 400);
+}
+
+function openProtocol(href) {
+	const link = document.createElement("a");
+	link.href = href;
+	link.hidden = true;
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
 }
 
 async function openPortal() {
