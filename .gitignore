@@ -8,3 +8,4 @@ packages/obsidian-plugin/main.js
 /demo-vault/
 *-service-account*.json
 firebase-service-account.json
+.firebase/
