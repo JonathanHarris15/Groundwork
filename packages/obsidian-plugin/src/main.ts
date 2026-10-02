@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AnthropicProvider, DemoProvider, jevClient, knowledgeSnapshot, KnowledgeStore, type Provider } from "@groundwork/core";
+import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, jevClient, knowledgeSnapshot, KnowledgeStore, type Provider } from "@groundwork/core";
 import { GitSync } from "@groundwork/core/node";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
@@ -355,7 +355,10 @@ export default class GroundworkPlugin extends Plugin {
 	// ── settings ───────────────────────────────────────────────────────
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const data = ((await this.loadData()) ?? {}) as Partial<GroundworkSettings>;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+		this.settings.readFolders = cleanFolderList("readFolders" in data ? data.readFolders : DEFAULT_SETTINGS.readFolders);
+		this.settings.writeFolders = cleanFolderList("writeFolders" in data ? data.writeFolders : DEFAULT_SETTINGS.writeFolders);
 	}
 
 	async saveSettings(): Promise<void> {

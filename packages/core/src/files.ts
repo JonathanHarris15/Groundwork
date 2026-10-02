@@ -1,3 +1,4 @@
+import { cleanFolderList, pathInsideAny } from "./access";
 import type { ChatMessage, ContentBlock } from "./agent/types";
 import type { VaultIO } from "./io";
 
@@ -151,16 +152,46 @@ function isHidden(path: string): boolean {
 	return path.split("/").some((part) => part.startsWith("."));
 }
 
-/** Resolves what the tutor or learner called a file: a vault path, a name in resources/, or a name anywhere in the vault. */
-export async function resolveVaultFile(io: VaultIO, ref: string): Promise<string | null> {
+/**
+ * Resolves what the tutor or learner called a file.
+ * With `within`, only those folders are searched. Without it, a bare name is tried in
+ * resources/ and then anywhere in the vault (hidden paths still never match).
+ */
+export async function resolveVaultFile(io: VaultIO, ref: string, within?: readonly string[]): Promise<string | null> {
 	const clean = ref.trim().replace(/^!?\[\[|\]\]$/g, "").split("|")[0].replace(/^\/+/, "");
 	if (!clean || clean.split("/").includes("..") || isHidden(clean)) return null;
-	for (const candidate of [clean, `${RESOURCES_DIR}/${clean}`]) {
-		if (await isFile(io, candidate)) return candidate;
+	const allowed = (p: string) => (within ? pathInsideAny(p, within) : !isHidden(p));
+	const candidates = [clean, ...(within ?? [RESOURCES_DIR]).map((folder) => `${folder}/${clean}`)];
+	for (const candidate of candidates) {
+		if (allowed(candidate) && (await isFile(io, candidate))) return candidate;
 	}
 	const name = basename(clean).toLowerCase();
-	const all = await listVaultFiles(io, "", 20_000);
-	return all.find((p) => basename(p).toLowerCase() === name) ?? all.find((p) => basename(p).toLowerCase().startsWith(`${name}.`)) ?? null;
+	for (const root of within ?? [""]) {
+		const all = await listVaultFiles(io, root, 20_000);
+		const hit = all.find((p) => allowed(p) && basename(p).toLowerCase() === name) ?? all.find((p) => allowed(p) && basename(p).toLowerCase().startsWith(`${name}.`));
+		if (hit) return hit;
+	}
+	return null;
+}
+
+/** A file the learner can hand in. A bare name lands in the first write folder. */
+export function resolveSubmissionPath(raw: string, writeFolders: readonly string[]): { path: string } | { error: string } {
+	const folders = cleanFolderList(writeFolders);
+	const where = folders.length ? folders.map((folder) => `${folder}/`).join(" or ") : "a write folder";
+	if (!folders.length) return { error: `No write folders are set. Pick one in Settings → Groundwork, then save the file in ${where}.` };
+	const input = raw.trim().replace(/^!?\[\[|\]\]$/g, "").split("|")[0].trim().replace(/\\/g, "/").replace(/^\/+/, "");
+	if (!input || input.split("/").includes("..") || input.split("/").some((part) => !part || part.startsWith("."))) {
+		return { error: `"${raw}" isn't a path Groundwork can write. Put the file in ${where}.` };
+	}
+	const rooted = pathInsideAny(input, folders);
+	if (!rooted && input.includes("/")) return { error: `Write that file inside ${where}.` };
+	let path = rooted ? input.replace(/\/+$/, "") : `${folders[0]}/${input}`;
+	if (folders.includes(path)) return { error: "Name the file to submit, not only the folder." };
+	if (!extensionOf(path)) path = `${path}.md`;
+	if (!pathInsideAny(path, folders) || fileKind(path).kind !== "text") {
+		return { error: `Files to submit are text or markdown, inside ${where}.` };
+	}
+	return { path };
 }
 
 export function toBase64(buf: ArrayBuffer | Uint8Array): string {

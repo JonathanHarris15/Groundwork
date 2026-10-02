@@ -6,6 +6,7 @@
  * calibrated memory, so every session starts from what is already known.
  */
 
+import { accessFromContext, type FolderAccess } from "./access";
 import { HINT_GUIDANCE, MARGIN_GUIDANCE } from "./aside";
 
 export const TEACHING_METHOD = `# How you teach
@@ -167,15 +168,37 @@ When the learner asks for a practice test, mock exam, or "test me on everything"
 4. **Evaluate and learn from it.** The evaluation (score, per-concept breakdown, misconceptions) is saved to \`tests/\` and shown to the learner. Debrief in a few sentences: what held, where it broke, what that means for the exam. Then remediate from the weakest concept the exam needs (see *When an answer misses*): find the piece the missed question needed with a question or two, then teach forward from there, not from the top of the topic. Slips on the test are noted, not remediated. The ladder is already seeded with that miss.
 5. Past tests appear in \`get_learner_overview\` (\`practiceTests\`). Use their weakest concepts to plan reviews, and compare scores over time.`;
 
-const FILES = `# The learner's files
-The learner keeps reference material (PDFs, slides, images, problem sets, notes) in the vault's \`resources/\` folder. Files they attach arrive with their message and are saved there too. When they mention a document you haven't seen ("my lecture notes", "the textbook", "this problem"), find it with \`list_vault_files\` and open it with \`read_vault_file\` instead of guessing what it says. Teach from their material when it exists: use its notation and follow its order, but check its claims like any other source. Reading a file does not mean the learner has read it: introduce and define its notation as you use it, and restate any problem you take from it in full.
-If an \`<exam_plan>\` block is in their message, treat it as the starting syllabus and go: refine, \`set_goal\`, teach. Do not ignore attached homeworks or practice exams. When a file matters to what they are learning, reference it on the goal (\`sources\` in \`set_goal\`) or in the exam plan. Do not write the file into a concept.`;
+/** Tells the tutor the folders this vault actually allows, so it does not claim it can open or save files elsewhere. */
+export function fileAccessGuidance(access?: FolderAccess, mode: "tutor" | "read" = "tutor"): string {
+	const chosen = access ? accessFromContext({ access }) : accessFromContext(undefined);
+	const read = chosen.readFolders.length ? chosen.readFolders.map((folder) => `\`${folder}/\``).join(", ") : "none — the learner has not picked a read folder";
+	const write = chosen.writeFolders.length ? chosen.writeFolders.map((folder) => `\`${folder}/\``).join(", ") : "none — the learner has not picked a write folder";
+	const firstRead = chosen.readFolders[0];
+	const lines = [
+		"# The learner's files",
+		`The learner chose the vault folders you may read: ${read}.`,
+		"`list_vault_files` and `read_vault_file` only see those folders. A file anywhere else stays closed, even if you know its name.",
+		firstRead
+			? `Files they attach are saved in \`${firstRead}/\`. When they mention a document you haven't seen ("my lecture notes", "the textbook", "this problem"), find it with \`list_vault_files\` and open it with \`read_vault_file\` instead of guessing what it says.`
+			: "They have not opened a folder for reading, so you cannot open their files until they add one in Settings.",
+		"Teach from their material when it exists: use its notation and follow its order, but check its claims like any other source. Reading a file does not mean the learner has read it: introduce and define its notation as you use it, and restate any problem you take from it in full.",
+		"If an `<exam_plan>` block is in their message, treat it as the starting syllabus and go: refine, `set_goal`, teach. Do not ignore attached homeworks or practice exams. When a file matters to what they are learning, reference it on the goal (`sources` in `set_goal`) or in the exam plan. Do not write the file into a concept.",
+	];
+	if (mode === "tutor") {
+		lines.push(
+			`The learner chose the folders where you may write a file to submit: ${write}.`,
+			"When they need something to hand in — a solution, a writeup, answers to a problem set — save it with `write_submission_file`. That tool only creates or replaces a text file inside those folders. A bare file name goes in the first write folder.",
+			"Do not use it for concept notes, goals, session notes, or their reference files. Those have their own tools. Never claim a file was saved outside the write folders.",
+		);
+	}
+	return lines.join("\n");
+}
 
 const OBSIDIAN_FORMAT = `# Formatting (rendered live in Obsidian)
 Your replies are rendered by Obsidian, so use its full markdown:
 - Math is always LaTeX: inline $f(x)=x^2$, display math on its own lines between $$ fences. Never write plain-text math like x^2. Only the formula goes inside $...$ — never an English sentence.
 - ==Highlight== one short prose phrase, never a $math$ expression or a TeX command (Obsidian cannot highlight math; it breaks the rest of the paragraph). Use callouts for structure: > [!note], > [!tip] for intuition, > [!warning] for traps, > [!example], > [!question] for Socratic prompts.
-- Link concepts with [[Concept title]] — they open the learner's own note on that concept. Link files the same way, e.g. [[resources/Lecture 3.pdf]].
+- Link concepts with [[Concept title]] — they open the learner's own note on that concept. Link a file the same way, with a vault path inside a folder you may read.
 - Diagrams: \`\`\`mermaid blocks. Add one only when structure or flow is clearer as a picture.
 - Keep turns focused. One idea per turn beats a wall of text.`;
 
@@ -202,6 +225,6 @@ export function workingGoalNote(goal: { title: string; left: number } | null): s
 	].join("\n");
 }
 
-export function buildSystemPrompt(extra?: string): string {
-	return [TEACHING_METHOD, FILES, OBSIDIAN_FORMAT, MARGIN_GUIDANCE, HINT_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
+export function buildSystemPrompt(extra?: string, access?: FolderAccess): string {
+	return [TEACHING_METHOD, fileAccessGuidance(access), OBSIDIAN_FORMAT, MARGIN_GUIDANCE, HINT_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
 }

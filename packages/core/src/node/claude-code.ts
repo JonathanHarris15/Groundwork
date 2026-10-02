@@ -5,6 +5,7 @@ import { query, type AccountInfo, type HookCallback, type ModelInfo, type Option
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { accessFromContext, tutorMayReadPath, type FolderAccess } from "../access";
 import { basename, fileBlocks, mcpContent, userContent, type McpContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolDef, ToolResult, ToolUI } from "../tools";
@@ -46,6 +47,8 @@ export interface ClaudeCodeSessionOptions extends ClaudeCodeConfig {
 	/** Earlier conversation as text, replayed when the Claude Code session can't be resumed (e.g. it started on another computer). */
 	history?: string;
 	onSessionId?: (id: string) => void;
+	/** Read and write folders. Claude Code's Read tool is held to the same read folders. */
+	access?: FolderAccess;
 }
 
 /**
@@ -280,10 +283,11 @@ export class ClaudeCodeSession implements TutorSession {
 				systemPrompt: this.opts.system,
 				model: this.opts.model || undefined,
 				tools: [READ_TOOL, ...web],
+				// Read(./**) lets the hook run. The hook is what keeps Read inside the learner's folders.
 				allowedTools: [...toolNames, READ_RULE, ...web],
 				permissionMode: "dontAsk",
 				includePartialMessages: true,
-				hooks: { PreToolUse: [{ matcher: READ_TOOL, hooks: [this.guardPdfRead] }] },
+				hooks: { PreToolUse: [{ matcher: READ_TOOL, hooks: [this.guardVaultRead] }] },
 				resume: this.sessionId,
 				mcpServers: { [MCP_NAME]: { type: "sdk", name: MCP_NAME, instance: this.toolServer() as unknown as McpServer } },
 			},
@@ -307,7 +311,7 @@ export class ClaudeCodeSession implements TutorSession {
 			let result: ToolResult;
 			try {
 				if (!tool) throw new Error(`Unknown tool ${name}`);
-				result = await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal });
+				result = await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access });
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}
@@ -348,14 +352,26 @@ export class ClaudeCodeSession implements TutorSession {
 		].join("\n");
 	}
 
-	/** A vault PDF too long or large for Read to open whole is turned away with its split parts instead of failing. */
-	private guardPdfRead: HookCallback = async (input) => {
+	/** Read stays inside the learner's folders. A vault PDF too long for one Read is turned toward its split parts. */
+	private guardVaultRead: HookCallback = async (input) => {
 		if (input.hook_event_name !== "PreToolUse") return {};
 		const args = input.tool_input as { file_path?: unknown; pages?: unknown } | undefined;
-		if (typeof args?.file_path !== "string" || args.pages !== undefined || !/\.pdf$/i.test(args.file_path)) return {};
-		const rel = path.relative(this.opts.cwd, path.resolve(this.opts.cwd, args.file_path));
-		if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return {};
+		const filePath = typeof args?.file_path === "string" ? args.file_path : "";
+		const rel = filePath ? path.relative(this.opts.cwd, path.resolve(this.opts.cwd, filePath)) : "";
 		const vaultPath = rel.split(path.sep).join("/");
+		const outside = !filePath || !rel || rel.startsWith("..") || path.isAbsolute(rel);
+		const access = accessFromContext(this.opts);
+		if (outside || !tutorMayReadPath(vaultPath, access)) {
+			const where = access.readFolders.length ? access.readFolders.map((folder) => `${folder}/`).join(", ") : "no folders yet";
+			return {
+				hookSpecificOutput: {
+					hookEventName: "PreToolUse",
+					permissionDecision: "deny",
+					permissionDecisionReason: `Read denied. Groundwork can only open files in ${where}. Add the folder in Settings → Groundwork if this file should be readable.`,
+				},
+			};
+		}
+		if (args?.pages !== undefined || !/\.pdf$/i.test(filePath)) return {};
 		const layout = await pdfLayout(this.opts.cwd, vaultPath).catch(() => null);
 		if (!layout || (layout.parts.length === 1 && layout.parts[0].path === vaultPath)) return {};
 		return {

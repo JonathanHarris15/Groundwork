@@ -1,5 +1,5 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
-import { AccountClient, listAnthropicModels } from "@groundwork/core";
+import { App, FuzzySuggestModal, Notice, PluginSettingTab, Setting, TFolder } from "obsidian";
+import { AccountClient, cleanFolderList, DEFAULT_READ_FOLDERS, DEFAULT_WRITE_FOLDERS, listAnthropicModels, normalizeVaultPath, type FolderAccess } from "@groundwork/core";
 import { BUILD } from "./build";
 import type GroundworkPlugin from "./main";
 
@@ -25,6 +25,10 @@ export interface GroundworkSettings {
 	accountSync: boolean;
 	/** Restyle the Groundwork panel with the website’s colors and type. */
 	siteTheme: boolean;
+	/** Vault folders the tutor may list and open. */
+	readFolders: string[];
+	/** Vault folders where the tutor may write a file to hand in. */
+	writeFolders: string[];
 }
 
 export const DEFAULT_SETTINGS: GroundworkSettings = {
@@ -42,7 +46,16 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 	accountEmail: "",
 	accountSync: false,
 	siteTheme: false,
+	readFolders: [...DEFAULT_READ_FOLDERS],
+	writeFolders: [...DEFAULT_WRITE_FOLDERS],
 };
+
+export function folderAccessFrom(settings: GroundworkSettings): FolderAccess {
+	return {
+		readFolders: cleanFolderList(settings.readFolders ?? DEFAULT_READ_FOLDERS),
+		writeFolders: cleanFolderList(settings.writeFolders ?? DEFAULT_WRITE_FOLDERS),
+	};
+}
 
 /** The API key lives in this device's local storage, never in the vault, so it is never pushed to GitHub. */
 const KEY_STORAGE = "groundwork-anthropic-key";
@@ -188,6 +201,7 @@ export class GroundworkSettingTab extends PluginSettingTab {
 				}),
 			);
 
+		this.folderSettings(containerEl, save);
 		this.accountSettings(containerEl, save);
 		this.appearanceSettings(containerEl, save);
 
@@ -199,6 +213,75 @@ export class GroundworkSettingTab extends PluginSettingTab {
 			version.setDesc(`${BUILD}. A newer build is installed: ${onDisk}.`);
 			version.addButton((b) => b.setButtonText("Reload Groundwork").setCta().onClick(() => void this.plugin.reloadSelf()));
 		});
+	}
+
+	private folderSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
+		const s = this.plugin.settings;
+		s.readFolders = cleanFolderList(s.readFolders);
+		s.writeFolders = cleanFolderList(s.writeFolders);
+		new Setting(containerEl).setName("Vault folders").setHeading();
+		new Setting(containerEl)
+			.setName("Folders the tutor can read")
+			.setDesc("The tutor can list and open files only inside these folders. Uploads from the chat are saved in the first one. Concept notes, goals, and session notes stay in Groundwork’s own folders.");
+		this.folderRows(containerEl, "readFolders", save);
+		new Setting(containerEl)
+			.setName("Folders the tutor can write")
+			.setDesc("When you ask for a file to hand in, the tutor writes it here and nowhere else. It can create the folder the first time it saves a file.");
+		this.folderRows(containerEl, "writeFolders", save);
+	}
+
+	private folderRows(containerEl: HTMLElement, key: "readFolders" | "writeFolders", save: () => Promise<void>): void {
+		const s = this.plugin.settings;
+		const folders = s[key];
+		if (!folders.length) {
+			new Setting(containerEl).setName("None").setDesc("The tutor cannot use a folder until you add one.");
+		}
+		for (const folder of folders) {
+			new Setting(containerEl).setName(folder).addExtraButton((b) =>
+				b
+					.setIcon("trash")
+					.setTooltip("Remove")
+					.onClick(async () => {
+						s[key] = folders.filter((item) => item !== folder);
+						await save();
+						this.display();
+					}),
+			);
+		}
+		let typed = "";
+		new Setting(containerEl)
+			.setName("Add a folder")
+			.addText((t) =>
+				t.setPlaceholder(key === "readFolders" ? "resources" : "submissions").onChange((v) => {
+					typed = v;
+				}),
+			)
+			.addButton((b) =>
+				b.setButtonText("Add").onClick(async () => {
+					const folder = normalizeVaultPath(typed);
+					if (!folder) {
+						new Notice("Groundwork: use a vault folder such as resources or submissions/homework.");
+						return;
+					}
+					if (!s[key].includes(folder)) s[key].push(folder);
+					await save();
+					this.display();
+				}),
+			)
+			.addButton((b) =>
+				b.setButtonText("Choose…").onClick(() => {
+					new VaultFolderModal(this.app, async (picked) => {
+						const folder = normalizeVaultPath(picked.path);
+						if (!folder) {
+							new Notice("Groundwork: that folder can’t be used.");
+							return;
+						}
+						if (!s[key].includes(folder)) s[key].push(folder);
+						await save();
+						this.display();
+					}).open();
+				}),
+			);
 	}
 
 	private accountSettings(containerEl: HTMLElement, save: () => Promise<void>): void {
@@ -454,5 +537,30 @@ export class GroundworkSettingTab extends PluginSettingTab {
 				}
 			}),
 		);
+	}
+}
+
+class VaultFolderModal extends FuzzySuggestModal<TFolder> {
+	constructor(
+		app: App,
+		private readonly onPick: (folder: TFolder) => void,
+	) {
+		super(app);
+		this.setPlaceholder("Choose a vault folder");
+	}
+
+	getItems(): TFolder[] {
+		return this.app.vault
+			.getAllFolders(false)
+			.filter((folder) => !folder.path.split("/").some((part) => part.startsWith(".")))
+			.sort((a, b) => a.path.localeCompare(b.path));
+	}
+
+	getItemText(folder: TFolder): string {
+		return folder.path;
+	}
+
+	onChooseItem(folder: TFolder): void {
+		this.onPick(folder);
 	}
 }

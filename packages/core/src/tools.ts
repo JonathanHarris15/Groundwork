@@ -1,4 +1,5 @@
-import { basename, listVaultFiles, loadVaultFile, resolveVaultFile, RESOURCES_DIR, fileKind, type VaultFile } from "./files";
+import { accessFromContext, pathInsideAny, type FolderAccess } from "./access";
+import { basename, listVaultFiles, loadVaultFile, resolveSubmissionPath, resolveVaultFile, fileKind, type VaultFile } from "./files";
 import { demoteHeadings, setSection } from "./markdown";
 import { awaitJudgment, describeQuizOutcome, recordQuizAnswer, takeAwaiting, type QuizOutcome } from "./grading";
 import { describeEdge, type EvidenceKind, type Outcome } from "./model";
@@ -67,6 +68,8 @@ export interface ToolContext {
 	ui?: ToolUI;
 	session?: SessionInfo;
 	signal?: AbortSignal;
+	/** Folders the learner picked. Omitted means resources/ to read and submissions/ to write. */
+	access?: FolderAccess;
 }
 
 export interface ToolResult {
@@ -661,11 +664,26 @@ export const TOOLS: ToolDef[] = [
 				createGoal: { type: "boolean", description: "Default true. Set false to only write the exam plan." },
 			},
 		},
-		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: any; path?: string }>; createGoal?: boolean }, { store, ui }) {
+		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: any; path?: string }>; createGoal?: boolean }, ctx) {
+			const { store, ui } = ctx;
 			if (!(input.files?.length || input.materials?.length)) {
 				return { text: "Pass files (vault paths) and/or materials (extracted text).", isError: true };
 			}
-			const r = await store.ingestExamMaterials(input);
+			const reads = accessFromContext(ctx).readFolders;
+			const files: string[] = [];
+			for (const file of input.files ?? []) {
+				if (!reads.length) return { text: "No folders are open for reading. The learner picks them in Settings → Groundwork.", isError: true };
+				const found = await resolveVaultFile(store.io, file, reads);
+				if (!found) {
+					return {
+						text: `"${file}" isn't in a folder Groundwork can read (${reads.map((dir) => `${dir}/`).join(", ")}).`,
+						isError: true,
+						summary: "File is outside the read folders",
+					};
+				}
+				files.push(found);
+			}
+			const r = await store.ingestExamMaterials({ ...input, files });
 			ui?.focusGoal?.((await store.workingGoal())?.title ?? null);
 			return {
 				text: json({
@@ -712,32 +730,88 @@ export const TOOLS: ToolDef[] = [
 	},
 	{
 		name: "list_vault_files",
-		description: `List the learner's files: PDFs, slides, images, problem sets, and notes they keep in ${RESOURCES_DIR}/ (the default folder) or elsewhere in the vault. Use it when they mention a document you haven't seen.`,
-		inputSchema: { type: "object", properties: { folder: str(`Vault folder to list, recursively. Default "${RESOURCES_DIR}"; "" lists the whole vault.`) } },
-		async run({ folder }: { folder?: string }, { store }) {
-			const dir = (folder ?? RESOURCES_DIR).replace(/^\/+|\/+$/g, "");
-			const files = await listVaultFiles(store.io, dir);
-			if (!files.length) {
+		description:
+			"List files inside the folders the learner allowed (named in your instructions). Omit folder to list every allowed folder. Pass a folder only when it is one of those, or a subfolder of one. The rest of the vault stays closed.",
+		inputSchema: { type: "object", properties: { folder: str("A read folder, or a subfolder of one. Omit it to list every folder the learner allowed.") } },
+		async run({ folder }: { folder?: string }, ctx) {
+			const { store } = ctx;
+			const reads = accessFromContext(ctx).readFolders;
+			if (!reads.length) {
+				return { text: "No folders are open for reading. The learner picks them in Settings → Groundwork.", isError: true, summary: "No read folders" };
+			}
+			const requested = folder?.trim() ?? "";
+			let files: string[];
+			let where: string;
+			if (!requested) {
+				files = [];
+				for (const dir of reads) {
+					for (const file of await listVaultFiles(store.io, dir)) {
+						if (pathInsideAny(file, reads) && !files.includes(file)) files.push(file);
+					}
+				}
+				where = reads.map((dir) => `${dir}/`).join(", ");
+			} else if (!pathInsideAny(requested, reads)) {
 				return {
-					text: `No files in ${dir || "the vault"}/ yet. The learner can attach files in the chat or put them in ${RESOURCES_DIR}/.`,
-					summary: `No files in ${dir || "the vault"}`,
+					text: `Groundwork can only list ${reads.map((dir) => `${dir}/`).join(", ")}. "${requested}" is outside those folders.`,
+					isError: true,
+					summary: "Folder isn't readable",
 				};
+			} else {
+				const dir = requested.replace(/^\/+|\/+$/g, "");
+				files = (await listVaultFiles(store.io, dir)).filter((file) => pathInsideAny(file, reads));
+				where = `${dir}/`;
+			}
+			if (!files.length) {
+				return { text: `No files in ${where} yet. The learner can attach files in the chat or put them in a read folder.`, summary: `No files in ${where}` };
 			}
 			return {
 				text: files.map((f) => `- ${f} (${fileKind(f).kind})`).join("\n"),
-				summary: `Listed ${files.length} file${files.length === 1 ? "" : "s"} in ${dir || "the vault"}`,
+				summary: `Listed ${files.length} file${files.length === 1 ? "" : "s"} in ${where}`,
 			};
 		},
 	},
 	{
 		name: "read_vault_file",
-		description: "Open one of the learner's files: a PDF, image, text or markdown file. Pass a vault path, or just a file name to look it up in resources/ and then the whole vault.",
-		inputSchema: { type: "object", properties: { path: str(`e.g. "${RESOURCES_DIR}/Lecture 3.pdf" or "Lecture 3.pdf".`) }, required: ["path"] },
-		async run({ path }: { path: string }, { store }) {
-			const found = await resolveVaultFile(store.io, path);
-			if (!found) return { text: `No file matching "${path}" in the vault. Use list_vault_files to see what's there.`, isError: true };
-			const file = await loadVaultFile(store.io, found);
+		description:
+			"Open a PDF, image, text, or markdown file inside a folder the learner allowed. Pass a vault path or a file name. Files outside those folders are not opened.",
+		inputSchema: { type: "object", properties: { path: str('e.g. "resources/Lecture 3.pdf" or "Lecture 3.pdf".') }, required: ["path"] },
+		async run({ path }: { path: string }, ctx) {
+			const reads = accessFromContext(ctx).readFolders;
+			if (!reads.length) return { text: "No folders are open for reading. The learner picks them in Settings → Groundwork.", isError: true };
+			const found = await resolveVaultFile(ctx.store.io, path, reads);
+			if (!found) {
+				return {
+					text: `No file matching "${path}" in ${reads.map((dir) => `${dir}/`).join(", ")}. list_vault_files shows what is there. Files outside those folders stay closed.`,
+					isError: true,
+				};
+			}
+			const file = await loadVaultFile(ctx.store.io, found);
 			return { text: `Contents of ${found}:`, files: [file], summary: `Opened ${basename(found)}` };
+		},
+	},
+	{
+		name: "write_submission_file",
+		description:
+			"Write a text or markdown file the learner can hand in: a solution, a writeup, or answers to a problem set. The path has to be inside a write folder from your instructions. A bare file name is saved in the first write folder. This does not edit concept notes, goals, session notes, or their reference files.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				path: str('File name or vault path inside a write folder, e.g. "homework-1.md" or "submissions/homework-1.md".'),
+				content: str("The full file, markdown or plain text, ready to hand in."),
+			},
+			required: ["path", "content"],
+		},
+		async run({ path, content }: { path: string; content: string }, ctx) {
+			const writes = accessFromContext(ctx).writeFolders;
+			const target = resolveSubmissionPath(path, writes);
+			if ("error" in target) return { text: target.error, isError: true, summary: "Couldn't write the file" };
+			const body = content ?? "";
+			if (!body.trim()) return { text: "The file is empty. Pass the text they should hand in.", isError: true };
+			if (body.length > 200_000) return { text: "That file is over 200,000 characters. Shorten it and try again.", isError: true };
+			const existed = await ctx.store.io.exists(target.path);
+			await ctx.store.writeFile(target.path, body.endsWith("\n") ? body : `${body}\n`);
+			const verb = existed ? "Replaced" : "Wrote";
+			return { text: `${verb} ${target.path}. The learner can open it in the vault and hand it in.`, summary: `${verb} ${target.path}` };
 		},
 	},
 	{

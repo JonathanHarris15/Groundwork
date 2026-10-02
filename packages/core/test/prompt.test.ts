@@ -18,4 +18,10 @@ describe("teaching method", () => {
 		expect(method).toContain("Re-teach in the other representation");
 		expect(method).toContain("wrong kind of thing");
 	});
+
+	it("names the default read and write folders, including a file to submit", () => {
+		expect(method).toContain("`resources/`");
+		expect(method).toContain("`submissions/`");
+		expect(method).toContain("write_submission_file");
+	});
 });

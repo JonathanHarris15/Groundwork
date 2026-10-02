@@ -11,6 +11,7 @@ import {
 	DemoAsideProvider,
 	marginNotes,
 	buildSystemPrompt,
+	fileAccessGuidance,
 	goalChoiceLabel,
 	workingGoalNote,
 	demoteHeadings,
@@ -23,8 +24,8 @@ import {
 	parseNote,
 	practiceTestRequest,
 	shouldAutoIngest,
+	pathInsideAny,
 	PATHS,
-	RESOURCES_DIR,
 	serializeNote,
 	setSection,
 	sourceBoundConceptReason,
@@ -54,6 +55,7 @@ import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source"
 import { AskCard, QuizCard, TestCard } from "./cards";
 import { enhanceGraphs } from "./graph-pane";
 import type GroundworkPlugin from "./main";
+import { folderAccessFrom } from "./settings";
 
 export const VIEW_TYPE = "groundwork-chat";
 
@@ -102,6 +104,7 @@ const TOOL_VERBS: Record<string, string> = {
 	save_session_summary: "Saving the session summary",
 	list_vault_files: "Looking through your files",
 	read_vault_file: "Opening a file",
+	write_submission_file: "Writing a file to submit",
 	ingest_exam_materials: "Breaking the files into exam topics",
 	get_exam_plan: "Reading the exam plan",
 	grade_answer: "Grading your answer",
@@ -326,7 +329,8 @@ export class ChatView extends ItemView implements ToolUI {
 	private ensureAgent(): TutorSession | null {
 		if (this.agent) return this.agent;
 		const today = new Date().toISOString().slice(0, 10);
-		const system = buildSystemPrompt(`# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`);
+		const access = folderAccessFrom(this.plugin.settings);
+		const system = buildSystemPrompt(`# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`, access);
 		const record = this.record;
 		const history = record.items.length ? transcript(record.items, record.asides) : undefined;
 
@@ -345,6 +349,7 @@ export class ChatView extends ItemView implements ToolUI {
 				session: this.session,
 				resume: resumable ? c.sessionId : undefined,
 				history,
+				access,
 			});
 			return this.agent;
 		}
@@ -360,7 +365,7 @@ export class ChatView extends ItemView implements ToolUI {
 						{ role: "assistant", content: "Got it. I'll continue from there." },
 					]
 				: [];
-		this.agent = new AgentSession({ provider, store: this.plugin.store, tools: TOOLS, system, ui: this, session: this.session, messages });
+		this.agent = new AgentSession({ provider, store: this.plugin.store, tools: TOOLS, system, ui: this, session: this.session, messages, access });
 		return this.agent;
 	}
 
@@ -879,7 +884,7 @@ export class ChatView extends ItemView implements ToolUI {
 			i
 				.setTitle("Choose from the vault…")
 				.setIcon("folder-open")
-				.onClick(() => new VaultFileModal(this.app, (f) => this.addVaultFile(f.path)).open()),
+				.onClick(() => new VaultFileModal(this.app, folderAccessFrom(this.plugin.settings).readFolders, (f) => this.addVaultFile(f.path)).open()),
 		);
 		menu.showAtMouseEvent(evt);
 	}
@@ -910,7 +915,8 @@ export class ChatView extends ItemView implements ToolUI {
 		for (const p of this.pendingFiles) {
 			const chip = el.createDiv({ cls: "gw-file-chip" });
 			setIcon(chip.createSpan({ cls: "gw-file-icon" }), iconForFile(p.name));
-			chip.createSpan({ cls: "gw-file-name", text: p.name, attr: { title: p.path ?? `Will be saved to ${RESOURCES_DIR}/` } });
+			const readFolder = folderAccessFrom(this.plugin.settings).readFolders[0];
+			chip.createSpan({ cls: "gw-file-name", text: p.name, attr: { title: p.path ?? (readFolder ? `Will be saved to ${readFolder}/` : "Pick a read folder in settings first") } });
 			const x = chip.createEl("button", { cls: "clickable-icon gw-file-remove", attr: { "aria-label": `Remove ${p.name}` } });
 			setIcon(x, "x");
 			x.addEventListener("click", () => {
@@ -920,20 +926,34 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 	}
 
-	/** Uploads go to resources/ so they sync with the vault and the tutor can reopen them later. */
+	/** Uploads go into the first folder the tutor is allowed to read, so it can open them again later. */
 	private async saveAttachments(pending: PendingFile[]): Promise<string[]> {
+		const access = folderAccessFrom(this.plugin.settings);
 		const out: string[] = [];
 		for (const p of pending) {
 			if (p.path) {
+				if (!pathInsideAny(p.path, access.readFolders)) {
+					throw new Error(`${p.path} is outside the folders Groundwork can read. Add that folder in Settings → Groundwork.`);
+				}
 				out.push(p.path);
 				continue;
 			}
-			if (!this.app.vault.getAbstractFileByPath(RESOURCES_DIR)) await this.app.vault.createFolder(RESOURCES_DIR);
-			const path = this.availablePath(`${RESOURCES_DIR}/${safeName(p.name)}`);
+			const dir = access.readFolders[0];
+			if (!dir) throw new Error("Add a folder Groundwork can read before attaching files.");
+			await this.ensureVaultFolder(dir);
+			const path = this.availablePath(`${dir}/${safeName(p.name)}`);
 			await this.app.vault.createBinary(path, await p.file!.arrayBuffer());
 			out.push(path);
 		}
 		return out;
+	}
+
+	private async ensureVaultFolder(folder: string): Promise<void> {
+		let acc = "";
+		for (const part of folder.split("/")) {
+			acc = acc ? `${acc}/${part}` : part;
+			if (!this.app.vault.getAbstractFileByPath(acc)) await this.app.vault.createFolder(acc);
+		}
 	}
 
 	private availablePath(path: string): string {
@@ -946,10 +966,16 @@ export class ChatView extends ItemView implements ToolUI {
 
 	/** Files the learner linked in their message, like [[Lecture 3.pdf]] or ![[diagram.png]], are attached too. */
 	private linkedFiles(text: string): string[] {
+		const access = folderAccessFrom(this.plugin.settings);
 		const out: string[] = [];
 		for (const m of text.matchAll(/!?\[\[([^\]|#^]+)[^\]]*\]\]/g)) {
 			const file = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), this.record.notePath ?? "");
-			if (file && file.extension !== "md" && fileKind(file.path).kind !== "other") out.push(file.path);
+			if (!file || file.extension === "md" || fileKind(file.path).kind === "other") continue;
+			if (!pathInsideAny(file.path, access.readFolders)) {
+				new Notice(`${file.name} is outside the folders Groundwork can read. Add its folder in Settings → Groundwork.`);
+				continue;
+			}
+			out.push(file.path);
 		}
 		return out;
 	}
@@ -1759,16 +1785,17 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private makeAsideAgent(kind: "margin" | "hint", threadId: string): TutorSession | null {
 		const tools = TOOLS.filter((t) => ASIDE_TOOL_NAMES.includes(t.name));
-		const system = kind === "hint" ? HINT_PROMPT : ASIDE_PROMPT;
+		const access = folderAccessFrom(this.plugin.settings);
+		const system = [kind === "hint" ? HINT_PROMPT : ASIDE_PROMPT, fileAccessGuidance(access, "read")].join("\n\n");
 		const session: SessionInfo = { id: kind === "hint" ? `${this.record.id}-hint-${threadId}` : `${this.record.id}-margin` };
 		const store = this.plugin.store;
 		const { provider } = this.plugin.settings;
 		if (provider === "claude-code") {
 			const cfg = this.plugin.claudeCodeConfig();
-			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session }) : null;
+			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session, access }) : null;
 		}
 		const p = provider === "demo" ? new DemoAsideProvider() : this.plugin.makeProvider();
-		return p ? new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8 }) : null;
+		return p ? new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8, access }) : null;
 	}
 
 	private dropAsides(): void {
@@ -1967,17 +1994,19 @@ function timestamp(): string {
 class VaultFileModal extends FuzzySuggestModal<TFile> {
 	constructor(
 		app: App,
+		private readonly readFolders: string[],
 		private readonly onPick: (file: TFile) => void,
 	) {
 		super(app);
-		this.setPlaceholder("Attach a file from the vault");
+		this.setPlaceholder("Attach a file from a folder Groundwork can read");
 	}
 	getItems(): TFile[] {
-		const inResources = (f: TFile) => (f.path.startsWith(`${RESOURCES_DIR}/`) ? 0 : 1);
+		const first = this.readFolders[0];
+		const inFirst = (f: TFile) => (first && (f.path === first || f.path.startsWith(`${first}/`)) ? 0 : 1);
 		return this.app.vault
 			.getFiles()
-			.filter((f) => f.extension !== "md" && fileKind(f.path).kind !== "other")
-			.sort((a, b) => inResources(a) - inResources(b) || b.stat.mtime - a.stat.mtime);
+			.filter((f) => f.extension !== "md" && fileKind(f.path).kind !== "other" && pathInsideAny(f.path, this.readFolders))
+			.sort((a, b) => inFirst(a) - inFirst(b) || b.stat.mtime - a.stat.mtime);
 	}
 	getItemText(file: TFile): string {
 		return file.path;

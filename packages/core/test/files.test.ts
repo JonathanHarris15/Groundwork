@@ -86,24 +86,49 @@ describe("vault files", () => {
 });
 
 describe("file tools", () => {
-	it("list_vault_files lists resources/ by default and skips hidden folders", async () => {
+	it("list_vault_files lists read folders and skips the rest of the vault", async () => {
 		const { store } = vault();
 		const r = await toolByName("list_vault_files")!.run({}, { store });
 		expect(r.text).toContain("- resources/Lecture 3.pdf (pdf)");
 		expect(r.text).not.toContain("courses/");
+		expect(r.text).not.toContain(".groundwork");
 		const all = await toolByName("list_vault_files")!.run({ folder: "" }, { store });
-		expect(all.text).toContain("courses/calc/notes.md");
-		expect(all.text).not.toContain(".groundwork");
-		const none = await toolByName("list_vault_files")!.run({ folder: "nope" }, { store });
-		expect(none.text).toMatch(/No files in nope/);
+		expect(all.text).not.toContain("courses/calc/notes.md");
+		const denied = await toolByName("list_vault_files")!.run({ folder: "courses" }, { store });
+		expect(denied.isError).toBe(true);
+		const sibling = await toolByName("list_vault_files")!.run({ folder: "resources-evil" }, { store });
+		expect(sibling.isError).toBe(true);
+		const courses = await toolByName("list_vault_files")!.run({ folder: "courses" }, { store, access: { readFolders: ["courses"], writeFolders: ["submissions"] } });
+		expect(courses.text).toContain("courses/calc/notes.md");
+		expect(courses.text).not.toContain("resources/");
 	});
 
-	it("read_vault_file returns the file for the model", async () => {
+	it("read_vault_file returns a file in a read folder and refuses the rest", async () => {
 		const { store } = vault();
 		const r = await toolByName("read_vault_file")!.run({ path: "diagram.png" }, { store });
 		expect(r.files?.[0]).toMatchObject({ path: "resources/diagram.png", kind: "image" });
 		const missing = await toolByName("read_vault_file")!.run({ path: "nothing.pdf" }, { store });
 		expect(missing.isError).toBe(true);
+		const outside = await toolByName("read_vault_file")!.run({ path: "notes.md" }, { store });
+		expect(outside.isError).toBe(true);
+		const allowed = await toolByName("read_vault_file")!.run({ path: "notes.md" }, { store, access: { readFolders: ["courses"], writeFolders: [] } });
+		expect(allowed.files?.[0].path).toBe("courses/calc/notes.md");
+	});
+
+	it("write_submission_file writes only inside a write folder", async () => {
+		const { store } = vault();
+		const wrote = await toolByName("write_submission_file")!.run({ path: "homework-1", content: "# Answers\n\n$x^2$." }, { store });
+		expect(wrote.isError).toBeFalsy();
+		expect(await store.io.read("submissions/homework-1.md")).toContain("# Answers");
+		const replaced = await toolByName("write_submission_file")!.run({ path: "submissions/homework-1.md", content: "# Revised\n" }, { store });
+		expect(replaced.text).toMatch(/^Replaced submissions\/homework-1.md/);
+		const escape = await toolByName("write_submission_file")!.run({ path: "../concepts/secret.md", content: "no" }, { store });
+		expect(escape.isError).toBe(true);
+		expect(await store.io.exists("concepts/secret.md")).toBe(false);
+		const sibling = await toolByName("write_submission_file")!.run({ path: "submissions-evil/x.md", content: "no" }, { store });
+		expect(sibling.isError).toBe(true);
+		const pdf = await toolByName("write_submission_file")!.run({ path: "answers.pdf", content: "no" }, { store });
+		expect(pdf.isError).toBe(true);
 	});
 
 	it("AgentSession sends attachments and file tool results as content blocks", async () => {

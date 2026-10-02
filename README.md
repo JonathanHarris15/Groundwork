@@ -120,11 +120,13 @@ This is meant for your own use with your own login. Don't ship it to other peopl
 
 Web search (optional) lets the tutor verify facts: Claude Code's WebSearch/WebFetch tools on the subscription, or Anthropic's web search tool with an API key.
 
-### Files: attach them, or keep them in `resources/`
+### Files: choose what it can read, and where it can write a file to submit
 
-Attach files to a message with the paperclip (**Upload from this computer** or **Choose from the vault**). You can also paste an image into the message box, drag files onto the panel (from your desktop or Obsidian's file explorer), or link a vault file in your message, like `[[Lecture 3.pdf]]`. Uploads are saved to the vault's `resources/` folder, so they sync to your other computers and stay linked from the session note.
+In **Settings → Groundwork → Vault folders**, pick the folders the tutor may read and the folders where it may write a file for you to hand in. The defaults are `resources/` to read and `submissions/` to write. It will not list or open a file outside the read folders, and `write_submission_file` will not save outside the write folders. Concept notes, goals, session notes, and quiz evidence stay in Groundwork’s own folders.
 
-The tutor reads images (PNG, JPEG, GIF, WebP), PDFs, and text files (markdown, code, CSV, LaTeX, …). It can also look in `resources/` on its own (`list_vault_files`, `read_vault_file`): drop your lecture notes or textbook there and say "use my lecture 3 notes". With the Claude subscription, PDFs are read with Claude Code's `Read` tool, which is limited to the vault folder. Groundwork splits PDFs longer than 10 pages or larger than 16 MB into parts under `.groundwork/cache/pdf-parts/` (ignored by git) so each part opens whole, with no need for poppler (`pdftoppm`) on the machine. Limits: 50 MB per upload (the vault is a git repo), and images must be under 5 MB and PDFs under 20 MB to be sent inline. Saved chats don't store file contents, only the paths.
+Attach files to a message with the paperclip (**Upload from this computer** or **Choose from the vault**). You can also paste an image into the message box, drag files onto the panel (from your desktop or Obsidian's file explorer), or link a vault file in your message, like `[[Lecture 3.pdf]]`. Uploads are saved into the first read folder (by default `resources/`), so they sync to your other computers and stay linked from the session note. Choosing from the vault only offers files in a read folder.
+
+The tutor reads images (PNG, JPEG, GIF, WebP), PDFs, and text files (markdown, code, CSV, LaTeX, …) from those folders (`list_vault_files`, `read_vault_file`): drop your lecture notes or textbook into a read folder and say "use my lecture 3 notes". Ask it to write up answers and it saves a markdown file in a write folder. With the Claude subscription, PDFs are read with Claude Code's `Read` tool, held to the same read folders. Groundwork splits PDFs longer than 10 pages or larger than 16 MB into parts under `.groundwork/cache/pdf-parts/` (ignored by git) so each part opens whole, with no need for poppler (`pdftoppm`) on the machine. Limits: 50 MB per upload (the vault is a git repo), and images must be under 5 MB and PDFs under 20 MB to be sent inline. Saved chats don't store file contents, only the paths.
 
 ## CLI reference
 
