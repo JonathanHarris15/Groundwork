@@ -19,4 +19,4 @@ Run a **read-only review** of the files you changed (prototype HTML, `packages/s
 3. Check each rule against the markup and styles you wrote.
 4. Output findings in the concise format shown at the bottom of `command.md` (issue + location; skip preamble).
 
-Fix blocking accessibility and focus issues before asking for review. Note intentional Mosaic exceptions (e.g. existing patterns you are matching) in the PR if needed.
+Fix blocking accessibility and focus issues before asking for review. Note intentional Groundwork exceptions (e.g. existing site patterns you are matching) in the PR if needed.
