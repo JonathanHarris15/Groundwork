@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import path from "node:path";
 import { AccountDirectory } from "./accounts";
 import { route } from "./app";
 import { loadAuth } from "./auth";
@@ -6,19 +7,24 @@ import { loadBilling } from "./billing";
 import { gradeWithJev, jevConfigured } from "./jev";
 import { isLocalHost, listenTarget } from "./listen";
 import { MemoryDirectory } from "./memory";
+import { FileTutorMemoryStore } from "./memory-file";
+import { BestEffortStore, FirestoreTutorMemoryStore } from "./memory-firestore";
 import { SecretDirectory } from "./secrets";
 import { readSite } from "./static";
 
 const { port, host } = listenTarget();
 const accounts = new AccountDirectory();
+const auth = loadAuth();
+const memoryFile = process.env.GROUNDWORK_MEMORY_FILE ?? path.resolve(process.cwd(), "data/tutor-memory.json");
+const memoryStore = auth.firebase ? new BestEffortStore(new FirestoreTutorMemoryStore()) : new FileTutorMemoryStore(memoryFile);
 
 const deps = {
-	auth: loadAuth(),
+	auth,
 	accounts,
 	secrets: new SecretDirectory(),
 	billing: loadBilling(accounts),
 	jev: jevConfigured(),
-	memory: new MemoryDirectory(),
+	memory: new MemoryDirectory(memoryStore),
 	grade: gradeWithJev,
 };
 
