@@ -191,6 +191,53 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 ENV_FILE="$ROOT/.env"
 
+# Install the official Stripe CLI binary into ~/.local/bin. npm -g is the wrong
+# tool here: a global prefix of / tries to write /usr/lib/node_modules and fails
+# with EACCES. Returns 1 if the human still needs to install it themselves.
+install_stripe_cli() {
+  if command -v stripe >/dev/null 2>&1; then
+    note "Stripe CLI already on PATH: $(command -v stripe)"
+    return 0
+  fi
+  local os arch suffix sums name url tmp
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "${os}-${arch}" in
+    Linux-x86_64) suffix="linux_x86_64"; sums="stripe-linux-checksums.txt" ;;
+    Linux-aarch64|Linux-arm64) suffix="linux_arm64"; sums="stripe-linux-checksums.txt" ;;
+    Darwin-x86_64) suffix="mac-os_x86_64"; sums="stripe-mac-checksums.txt" ;;
+    Darwin-arm64) suffix="mac-os_arm64"; sums="stripe-mac-checksums.txt" ;;
+    *)
+      warn "No automatic install for ${os} ${arch}."
+      open_url "https://github.com/stripe/stripe-cli/releases/latest"
+      step "Download the archive for this computer, unpack it, and put the stripe binary on your PATH."
+      return 1
+      ;;
+  esac
+  say "Installing the Stripe CLI into ~/.local/bin. This does not use sudo or npm."
+  tmp="$(mktemp -d)"
+  url="$(curl -fsSL https://api.github.com/repos/stripe/stripe-cli/releases/latest | grep -oE "https://[^\"]+_${suffix}\\.tar\\.gz" | head -n1 || true)"
+  if [[ -z "$url" ]]; then
+    warn "Could not find a Stripe CLI download for ${suffix}."
+    rm -rf "$tmp"
+    return 1
+  fi
+  name="$(basename "$url")"
+  curl -fsSL -o "$tmp/$name" "$url"
+  curl -fsSL -o "$tmp/$sums" "https://github.com/stripe/stripe-cli/releases/download/$(basename "$(dirname "$url")")/$sums"
+  if ! (cd "$tmp" && grep -E "  ${name}$" "$sums" | sha256sum -c -); then
+    warn "Stripe CLI checksum did not match. Nothing was installed."
+    rm -rf "$tmp"
+    return 1
+  fi
+  tar -xzf "$tmp/$name" -C "$tmp"
+  mkdir -p "$HOME/.local/bin"
+  install -m 755 "$tmp/stripe" "$HOME/.local/bin/stripe"
+  rm -rf "$tmp"
+  export PATH="$HOME/.local/bin:$PATH"
+  note "Installed $($HOME/.local/bin/stripe version | head -n1) at $HOME/.local/bin/stripe"
+}
+
 # capture KEY PREFIX "Prompt" [secret]
 # Keeps asking until the value starts with PREFIX, then writes it to .env.
 # A live secret key (sk_live_) is refused unless the human confirms.
@@ -289,10 +336,11 @@ stage "Webhook signing secret"
 say "After checkout, Stripe posts checkout.session.completed, customer.subscription.updated, and customer.subscription.deleted."
 say "The server checks the raw body with a snapshot-event signing secret (whsec_). A thin event will not update the plan."
 if confirm "Forward events to this computer (local server on port 8787)?"; then
-  open_url "https://docs.stripe.com/stripe-cli#install"
-  step "Install the Stripe CLI if the stripe command is not on your PATH. Then come back to this terminal."
-  pause "Press Enter once stripe is installed."
+  if ! install_stripe_cli; then
+    pause "Press Enter once the stripe command works in a new terminal."
+  fi
   say "In a second terminal, log in and start the listener. Leave that terminal running."
+  say "  export PATH=\"\$HOME/.local/bin:\$PATH\""
   say "  stripe login"
   say "  stripe listen --events checkout.session.completed,customer.subscription.updated,customer.subscription.deleted --forward-to localhost:8787/v1/stripe/webhook"
   step "Copy the secret from: Ready! Your webhook signing secret is whsec_…"

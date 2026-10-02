@@ -171,7 +171,7 @@ Paid plans stay off until the server process has four sandbox values: `STRIPE_SE
 npm run server
 ```
 
-The script writes them to `.env` (gitignored). `npm run server` loads that file. The log line should include `billing on`. For a local checkout, leave the `stripe listen` process from the script running so Stripe can reach `POST /v1/stripe/webhook`.
+The script writes them to `.env` (gitignored). `npm run server` loads that file. The log line should include `billing on`. For a local checkout, the script installs the Stripe CLI into `~/.local/bin` if it is missing, and you leave `stripe listen` running so Stripe can reach `POST /v1/stripe/webhook`.
 
 ## Obsidian community plugin
 
