@@ -31,6 +31,18 @@ describe("knowledge snapshot", () => {
 	it("rejects an unknown status", () => {
 		expect(() => parseKnowledgeSnapshot({ concepts: [{ id: "a", title: "A", status: "genius", current: 1, prerequisites: [] }] })).toThrow(/status/);
 	});
+
+	it("keeps a long concept title the tutor can name", () => {
+		const title = "The relationship between a secant line through two points and the derivative at a single point on the curve";
+		const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+		expect(id.length).toBeGreaterThan(80);
+		const snap = parseKnowledgeSnapshot({
+			concepts: [{ id, title, status: "unassessed", current: 0, prerequisites: [] }],
+			goals: [],
+		});
+		expect(snap.concepts[0]?.id).toBe(id);
+		expect(snap.concepts[0]?.title).toBe(title);
+	});
 });
 
 describe("website profile", () => {
@@ -77,11 +89,15 @@ describe("website profile", () => {
 		const json = JSON.stringify(view);
 		expect(json).not.toContain("$");
 		expect(json).not.toMatch(/"built"|"open"|"current"|"body"/);
-		expect(view.concepts.map((c) => c.id)).toEqual(["derivative", "integral", "limit"]);
+		expect(view.concepts.map((c) => c.id)).toEqual(["chain", "derivative", "integral", "limit"]);
+		expect(view.concepts.find((c) => c.id === "chain")?.status).toBe("unassessed");
 		expect(view.concepts.find((c) => c.id === "derivative")).toEqual({ id: "derivative", title: "Cost 5", status: "learning" });
 		expect(view.goals).toEqual([{ title: "The derivative", status: "done", concepts: 2 }]);
-		expect(view.graph.nodes.map((n) => n.id).sort()).toEqual(["derivative", "integral", "limit"]);
-		expect(view.graph.edges).toEqual([{ from: "limit", to: "derivative", bridge: false }]);
+		expect(view.graph.nodes.map((n) => n.id).sort()).toEqual(["chain", "derivative", "integral", "limit"]);
+		expect(view.graph.edges).toEqual([
+			{ from: "derivative", to: "chain", bridge: false },
+			{ from: "limit", to: "derivative", bridge: false },
+		]);
 		expect(view.graph.nodes.every((n) => n.x >= 0 && n.x <= view.graph.width && n.y >= 0 && n.y <= view.graph.height)).toBe(true);
 		expect(presentGroundwork(null)).toEqual({ updatedAt: null, concepts: [], goals: [], graph: { width: 0, height: 0, nodes: [], edges: [], legend: [] } });
 	});

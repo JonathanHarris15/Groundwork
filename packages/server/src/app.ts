@@ -121,12 +121,12 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { saved, providers: deps.secrets.saved(uid) } };
 		}
 		if (method === "GET" && path === "/v1/groundwork") {
-			return { status: 200, json: presentGroundwork(deps.memory.knowledge(uid)) };
+			return { status: 200, json: presentGroundwork(await deps.memory.knowledge(uid)) };
 		}
 		if (path === "/v1/memory" && (method === "GET" || method === "PUT")) {
-			if (method === "GET") return { status: 200, json: deps.memory.get(uid) };
+			if (method === "GET") return { status: 200, json: await deps.memory.get(uid) };
 			try {
-				return { status: 200, json: deps.memory.put(uid, body) };
+				return { status: 200, json: await deps.memory.put(uid, body) };
 			} catch (err) {
 				return { status: 400, json: { error: err instanceof Error ? err.message : "Could not store tutor memory." } };
 			}

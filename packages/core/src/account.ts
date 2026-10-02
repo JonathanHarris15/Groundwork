@@ -182,7 +182,7 @@ export function parseKnowledgeSnapshot(value: unknown): KnowledgeSnapshot {
 		if (!item || typeof item !== "object") throw new Error(`Concept ${i} is not an object.`);
 		const c = item as Record<string, unknown>;
 		const id = requireSlug(c.id, `Concept ${i}`);
-		const title = requireText(c.title, 120, `Concept ${id}`);
+		const title = requireText(c.title, 300, `Concept ${id}`);
 		const status = c.status;
 		if (typeof status !== "string" || !CONCEPT_STATUSES.includes(status as ConceptStatus)) {
 			throw new Error(`Concept ${id} has an unknown status.`);
@@ -204,7 +204,7 @@ export function parseKnowledgeSnapshot(value: unknown): KnowledgeSnapshot {
 		const open = nonNegInt(g.open);
 		const domain = typeof g.domain === "string" && g.domain.trim() ? g.domain.trim().slice(0, 80) : undefined;
 		goals.push({
-			title: requireText(g.title, 120, `Goal ${i}`),
+			title: requireText(g.title, 300, `Goal ${i}`),
 			status,
 			targets: Array.from({ length: open }, () => "open"),
 			built: Array.from({ length: built }, () => "built"),
@@ -382,23 +382,22 @@ export function presentForWebsite(profile: {
 }
 
 /**
- * Stats the account dashboard may print. A concept counts once a quiz has
- * assessed it. A goal counts once it is finished. Note text, mastery, and
- * given-versus-left quotas stay off the page.
+ * Stats the account dashboard may print. Every concept the tutor has is
+ * included, quizzed or not — that is the count the tutor reports. A goal
+ * counts once it is finished. Note text, mastery, and given-versus-left
+ * quotas stay off the page.
  */
 export function presentGroundwork(snapshot: KnowledgeSnapshot | null): WebsiteGroundwork {
 	if (!snapshot) return { updatedAt: null, concepts: [], goals: [], graph: EMPTY_GROUNDWORK_GRAPH };
-	const learned = snapshot.concepts
-		.filter((c) => c.status !== "unassessed")
-		.map((c) => {
-			const concept: SnapshotConcept = {
-				...c,
-				title: stripDollars(c.title),
-				prerequisites: c.prerequisites,
-			};
-			if (c.domain) concept.domain = stripDollars(c.domain);
-			return concept;
-		});
+	const learned = snapshot.concepts.map((c) => {
+		const concept: SnapshotConcept = {
+			...c,
+			title: stripDollars(c.title),
+			prerequisites: c.prerequisites,
+		};
+		if (c.domain) concept.domain = stripDollars(c.domain);
+		return concept;
+	});
 	const graph = layoutGroundworkGraph(learned);
 	const order = new Map(graph.legend.map((item, i) => [item.domain, i]));
 	const goals = snapshot.goals
@@ -575,7 +574,7 @@ function requireText(value: unknown, max: number, label: string): string {
 function requireSlug(value: unknown, label: string): string {
 	if (typeof value !== "string" || !value.trim()) throw new Error(`${label} needs an id.`);
 	const id = value.trim();
-	if (id.length > 80) throw new Error(`${label} id is too long.`);
+	if (id.length > 240) throw new Error(`${label} id is too long.`);
 	return id;
 }
 

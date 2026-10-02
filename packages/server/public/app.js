@@ -276,6 +276,7 @@ function conceptGraph() {
 function board() {
 	const concepts = learnedConcepts();
 	const goals = reachedGoals();
+	const waiting = concepts.some((concept) => concept.status === "unassessed");
 	const usage = account.ownModel ? `
 			<span class="big">Your model</span>
 			<span class="tile-label">Plan usage</span>
@@ -293,14 +294,14 @@ function board() {
 				</div>
 				<div class="tile" style="animation-delay: .12s">
 					<span class="big">${concepts.length}</span>
-					<span class="tile-label">Concepts learned</span>
-					<p class="tile-note">Each one checked with a quiz before it counted.</p>
+					<span class="tile-label">${waiting ? "Concepts" : "Concepts learned"}</span>
+					<p class="tile-note">${escapeHtml(conceptNote(concepts))}</p>
 				</div>
 				<div class="tile" style="animation-delay: .24s">${usage}</div>
 			</div>
 			<div class="sky">
 				<div class="sky-head">
-					<span class="sky-title">Concepts you have learned</span>
+					<span class="sky-title">${waiting ? "Concepts" : "Concepts you have learned"}</span>
 					${graphLegend(conceptGraph())}
 				</div>
 				${conceptGraphSvg(conceptGraph())}
@@ -318,9 +319,17 @@ function graphLegend(graph) {
 	return `<ul class="sky-legend">${items.map((item) => `<li><i style="background:${safeColor(item.color)}"></i>${escapeHtml(item.domain)}</li>`).join("")}</ul>`;
 }
 
+function conceptNote(concepts) {
+	const checked = concepts.filter((concept) => concept.status !== "unassessed").length;
+	if (!concepts.length || checked === concepts.length) return "Each one checked with a quiz before it counted.";
+	if (!checked) return "Your tutor has these. A quiz has not counted one yet.";
+	return checked === 1 ? "1 was checked with a quiz." : `${checked} were checked with a quiz.`;
+}
+
 function conceptGraphSvg(graph) {
 	const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
 	if (!nodes.length) return `<p class="sky-empty">They show up here after a quiz counts them.</p>`;
+	const statusOf = new Map(learnedConcepts().map((concept) => [concept.id, concept.status]));
 	const byId = new Map(nodes.map((node) => [node.id, node]));
 	const width = Number.isFinite(graph.width) ? graph.width : 640;
 	const height = Number.isFinite(graph.height) ? graph.height : 220;
@@ -334,9 +343,15 @@ function conceptGraphSvg(graph) {
 	});
 	const dots = nodes.map((node) => {
 		const color = safeColor(node.color);
+		const open = statusOf.get(node.id) === "unassessed";
 		const anchor = node.labelAnchor === "start" || node.labelAnchor === "end" ? node.labelAnchor : "middle";
 		const label = node.label ? `<text class="graph-label" x="${num(node.labelX ?? node.x)}" y="${num(node.labelY ?? node.y + 18)}" text-anchor="${anchor}">${escapeHtml(shortTitle(node.title))}</text>` : "";
-		return `<g class="graph-node"><title>${escapeHtml(node.title)}</title><circle class="graph-halo" cx="${num(node.x)}" cy="${num(node.y)}" r="9" fill="${color}"></circle><circle class="graph-dot" cx="${num(node.x)}" cy="${num(node.y)}" r="4.5" fill="${color}"></circle>${label}</g>`;
+		const dot = open
+			? `fill="none" stroke="${color}" stroke-width="1.75"`
+			: `fill="${color}"`;
+		const halo = open ? `fill="none" stroke="${color}" stroke-width="1.25"` : `fill="${color}"`;
+		const name = open ? `${node.title} (not quizzed yet)` : node.title;
+		return `<g class="graph-node${open ? " is-open" : ""}"><title>${escapeHtml(name)}</title><circle class="graph-halo" cx="${num(node.x)}" cy="${num(node.y)}" r="9" ${halo}></circle><circle class="graph-dot" cx="${num(node.x)}" cy="${num(node.y)}" r="4.5" ${dot}></circle>${label}</g>`;
 	});
 	return `<svg class="graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg>`;
 }

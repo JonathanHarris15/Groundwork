@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { USER_KEY_PROVIDERS } from "@groundwork/core";
 import { AccountDirectory } from "../src/accounts";
@@ -6,6 +9,8 @@ import type { Auth } from "../src/auth";
 import type { Billing } from "../src/billing";
 import { readSite } from "../src/static";
 import { MemoryDirectory } from "../src/memory";
+import { FileTutorMemoryStore } from "../src/memory-file";
+import { splitUtf8 } from "../src/memory-firestore";
 import { SecretDirectory } from "../src/secrets";
 
 function billing(over: Partial<Billing> = {}): Billing {
@@ -206,14 +211,44 @@ describe("account server", () => {
 		expect(json).not.toMatch(/"built"|"open"|"current"/);
 		expect(view.json).toMatchObject({
 			concepts: [
+				{ id: "chain", title: "Chain rule", status: "unassessed" },
 				{ id: "derivative", title: "Derivative", status: "learning" },
 				{ id: "limit", title: "Limit", status: "solid" },
 			],
 			goals: [{ title: "The derivative", status: "done", concepts: 2 }],
-			graph: { edges: [{ from: "limit", to: "derivative", bridge: false }] },
+			graph: {
+				edges: [
+					{ from: "derivative", to: "chain", bridge: false },
+					{ from: "limit", to: "derivative", bridge: false },
+				],
+			},
 		});
-		expect((view.json as { concepts: unknown[] }).concepts).toHaveLength(2);
-		expect((view.json as { graph: { nodes: Array<{ id: string }> } }).graph.nodes.map((n) => n.id)).not.toContain("chain");
+		expect((view.json as { concepts: unknown[] }).concepts).toHaveLength(3);
+		expect((view.json as { graph: { nodes: Array<{ id: string }> } }).graph.nodes.map((n) => n.id)).toContain("chain");
+	});
+
+	it("shows the same concepts after the server process is gone", async () => {
+		const file = path.join(mkdtempSync(path.join(os.tmpdir(), "gw-memory-")), "memory.json");
+		const knowledge = {
+			concepts: [{ id: "limit", title: "Limit", status: "unassessed", current: 0, prerequisites: [] }],
+			goals: [],
+			updatedAt: "2026-10-02T00:00:00.000Z",
+		};
+		const first = deps({ memory: new MemoryDirectory(new FileTutorMemoryStore(file)) });
+		const saved = await route("PUT", "/v1/memory", { files: { "learner.md": "Learns by examples." }, knowledge }, first);
+		expect(saved.status).toBe(200);
+		const restarted = deps({ memory: new MemoryDirectory(new FileTutorMemoryStore(file)) });
+		const view = await route("GET", "/v1/groundwork", null, restarted);
+		expect(view.json).toMatchObject({ concepts: [{ id: "limit", title: "Limit", status: "unassessed" }] });
+		expect(JSON.stringify(view.json)).not.toContain("Learns by examples");
+	});
+
+	it("rejoins tutor memory split on a utf-8 boundary", () => {
+		const text = "π".repeat(50);
+		const parts = splitUtf8(text, 7);
+		expect(parts.length).toBeGreaterThan(1);
+		expect(parts.join("")).toBe(text);
+		for (const part of parts) expect(Buffer.byteLength(part)).toBeLessThanOrEqual(7);
 	});
 
 	it("keeps tutor memory on the signed-in account", async () => {
