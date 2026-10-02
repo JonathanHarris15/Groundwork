@@ -1,9 +1,10 @@
-import { isPlanId, PLANS, presentAccount, presentGroundwork, publicPlan, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
+import { isPlanId, isUserKeyProvider, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
 import type { MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
+import { completeTutor, describeTutor } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
 import { webConfig } from "./web-config";
 
@@ -15,6 +16,9 @@ export interface ServerDeps {
 	jev: boolean;
 	memory: MemoryDirectory;
 	grade(items: FreeResponseToGrade[], signal?: AbortSignal): Promise<Array<FreeResponseJudgment | null>>;
+	/** Shared key for Free and Groundwork. Absent until the server is configured. */
+	openRouterKey?: string;
+	fetchImpl?: typeof fetch;
 }
 
 export interface RouteResult {
@@ -76,6 +80,37 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		if (method === "POST" && path === "/v1/billing/portal") {
 			const url = await deps.billing.portal(uid, meta.origin || "http://127.0.0.1:8787");
 			return { status: 200, json: { url } };
+		}
+		if (method === "GET" && path === "/v1/tutor") {
+			return { status: 200, json: describeTutor({ view, choice: deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+		}
+		if (method === "POST" && path === "/v1/tutor/setup") {
+			const input = body as { via?: unknown; provider?: unknown } | null;
+			const via = input?.via;
+			if (via !== "claude" && via !== "key") return { status: 400, json: { error: "Choose Claude or a saved key." } };
+			if (!view.ownModel) return { status: 400, json: { error: "This plan uses Groundwork's model. Bring your own model is the plan for a Claude subscription or a key you paste." } };
+			if (via === "key") {
+				if (!isUserKeyProvider(input?.provider)) return { status: 400, json: { error: "Choose a provider." } };
+				if (!deps.secrets.saved(uid)[input.provider]) return { status: 400, json: { error: `Paste a ${PROVIDER_LABEL[input.provider]} key first.` } };
+				const next = deps.accounts.setTutor(uid, { via, provider: input.provider });
+				return { status: 200, json: describeTutor({ view: next, choice: deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+			}
+			const next = deps.accounts.setTutor(uid, { via: "claude" });
+			return { status: 200, json: describeTutor({ view: next, choice: deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+		}
+		if (method === "POST" && path === "/v1/tutor/complete") {
+			return completeTutor(
+				{
+					view,
+					choice: deps.accounts.choice(uid),
+					saved: deps.secrets.saved(uid),
+					userKey: (provider) => deps.secrets.get(uid, provider),
+					openRouterKey: deps.openRouterKey,
+					fetchImpl: deps.fetchImpl ?? fetch,
+					charge: (cost) => deps.accounts.charge(uid, cost),
+				},
+				body,
+			);
 		}
 		if (method === "GET" && path === "/v1/secrets") {
 			return { status: 200, json: { providers: deps.secrets.saved(uid) } };

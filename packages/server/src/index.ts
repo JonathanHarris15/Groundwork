@@ -20,6 +20,8 @@ const deps = {
 	jev: jevConfigured(),
 	memory: new MemoryDirectory(),
 	grade: gradeWithJev,
+	openRouterKey: process.env.OPENROUTER_API_KEY?.trim() || undefined,
+	fetchImpl: fetch,
 };
 
 const server = createServer((req, res) => {
@@ -97,5 +99,6 @@ if (!isLocalHost(host) && !deps.auth.firebase) {
 server.listen(port, host, () => {
 	const billing = deps.billing.configured ? "on" : "waiting for Stripe keys";
 	const firebase = deps.auth.firebase ? "on" : "waiting for a service account";
-	console.log(`Groundwork on http://${host}:${port} (jev ${deps.jev ? "on" : "off"}, firebase ${firebase}, billing ${billing})`);
+	const models = deps.openRouterKey ? "on" : "waiting for OPENROUTER_API_KEY";
+	console.log(`Groundwork on http://${host}:${port} (jev ${deps.jev ? "on" : "off"}, models ${models}, firebase ${firebase}, billing ${billing})`);
 });

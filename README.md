@@ -86,7 +86,7 @@ Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency 
 
 **Update later** with `python update.py` (or `python update_groundwork.py`). That pulls this repo, rebuilds, and refreshes the plugin in the vault you already configured. It does not ask you to create or clone a vault. The manual steps are below.
 
-Requires Node 20+, git, [Obsidian](https://obsidian.md) (desktop), and [Claude Code](https://claude.com/claude-code) signed in with your Claude subscription (see [Connect a model](#connect-a-model-your-claude-subscription-default)). `npm install` also downloads Claude Code's binary for the tests (~240 MB). The plugin uses the Claude Code you install yourself, not that copy.
+Requires Node 20+, git, [Obsidian](https://obsidian.md) (desktop), and [Claude Code](https://claude.com/claude-code) signed in with your Claude subscription (see [Connect a Claude subscription](#connect-a-claude-subscription)). `npm install` also downloads Claude Code's binary for the tests (~240 MB). The plugin uses the Claude Code you install yourself, not that copy.
 
 ```bash
 git clone <this repo> groundwork && cd groundwork
@@ -120,9 +120,16 @@ It pulls the latest knowledge, updates the plugin inside the vault, registers th
 
 The **first time** you open the vault on a machine, Obsidian asks you to *Trust author and enable plugins*, and (in Obsidian 1.13+) to *Allow* mermaid diagrams. Both are one click.
 
-### Connect a model: your Claude subscription (default)
+### Which model the tutor uses
 
-The tutor runs through [Claude Code](https://claude.com/claude-code), so it uses your Claude Pro/Max plan and needs no API key. Once per computer:
+The plan on the account decides.
+
+- **Free** and **Groundwork** ($20/month): Obsidian calls Groundwork, and Groundwork calls the smaller model through one shared key. The month's budget is the limit. You do not paste a key.
+- **Bring your own model** ($9/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. Groundwork does not meter that usage. A Claude login stays on the computer.
+
+### Connect a Claude subscription
+
+On Bring your own model, this is the simplest path. The tutor runs through [Claude Code](https://claude.com/claude-code), so it uses your Claude Pro/Max plan and needs no API key. Once per computer:
 
 ```bash
 curl -fsSL https://claude.ai/install.sh | bash     # Windows (PowerShell): irm https://claude.ai/install.ps1 | iex
@@ -135,9 +142,11 @@ How it works: the plugin starts Claude Code with the Agent SDK, replaces Claude 
 
 This is meant for your own use with your own login. Don't ship it to other people as a product that signs in with claude.ai accounts.
 
-**Alternatives** (Settings → Groundwork → Provider):
-- **Anthropic API key**: the key is stored in this device's local storage, **not** in the vault, so it is never pushed to GitHub.
+**When this computer is not signed in** (Settings → Groundwork → Provider):
+- **Anthropic API key**: stored on this device only, not in the vault, so it is never pushed to GitHub.
 - **Demo**: a scripted lesson on the derivative that exercises everything (recall, plan with a map, LaTeX, quizzes that update the vault, session summary) without calling any model.
+
+A signed-in Bring your own model account uses the choice on the website: Claude on this computer, or a key saved on the account. Free and Groundwork ignore the local provider and use Groundwork's model.
 
 Web search (optional) lets the tutor verify facts: Claude Code's WebSearch/WebFetch tools on the subscription, or Anthropic's web search tool with an API key.
 

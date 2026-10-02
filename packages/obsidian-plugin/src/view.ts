@@ -9,6 +9,7 @@ import {
 	hintOpening,
 	basename,
 	DemoAsideProvider,
+	DemoProvider,
 	marginNotes,
 	buildSystemPrompt,
 	buildConceptMap,
@@ -54,6 +55,7 @@ import {
 	type TestResponse,
 	type ToolUI,
 	type TutorSession,
+	CLAUDE_SETUP,
 } from "@groundwork/core";
 import { ClaudeCodeSession } from "@groundwork/core/claude-code";
 import { AsideCard, findQuoteRange } from "./aside";
@@ -186,6 +188,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private waitingTest: PreparedTest | null = null;
 	private asideCards = new Map<string, AsideCard>();
 	private asideAgents = new Map<string, TutorSession>();
+	private agentKey = "";
 	/** Answer keys for open hint chats. Never written onto the saved thread. */
 	private hintKeys = new Map<string, HintBrief>();
 	private hintInflight = new Map<string, Promise<void>>();
@@ -389,15 +392,24 @@ export class ChatView extends ItemView implements ToolUI {
 		this.agent = null;
 	}
 
-	private ensureAgent(): TutorSession | null {
-		if (this.agent) return this.agent;
+	private async ensureAgent(): Promise<TutorSession | null> {
+		if (this.agent?.busy) return this.agent;
+		if (loadAccountToken(this.app)) await this.plugin.refreshTutorRoute();
+		const key = this.plugin.tutorRouteKey();
+		if (this.agent && this.agentKey === key) return this.agent;
+		this.dropAgent();
+		this.dropAsides();
+		this.agentKey = key;
+
 		const today = new Date().toISOString().slice(0, 10);
 		const access = folderAccessFrom(this.plugin.settings);
 		const system = buildSystemPrompt(`# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`, access);
 		const record = this.record;
 		const history = record.items.length ? transcript(record.items, record.asides) : undefined;
+		const runtime = this.plugin.runtime();
+		if (runtime.runtime === "setup") return null;
 
-		if (this.plugin.settings.provider === "claude-code") {
+		if (runtime.runtime === "claude") {
 			const cfg = this.plugin.claudeCodeConfig();
 			if (!cfg) return null;
 			const device = this.plugin.deviceName();
@@ -418,7 +430,7 @@ export class ChatView extends ItemView implements ToolUI {
 			return this.agent;
 		}
 
-		const provider = this.plugin.makeProvider();
+		const provider = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : runtime.runtime === "demo" ? new DemoProvider() : this.plugin.makeProvider();
 		if (!provider) return null;
 		const current = record.messages.length > 0 && (record.messagesAt === undefined || record.messagesAt === record.items.length);
 		const messages: ChatMessage[] = current
@@ -447,10 +459,12 @@ export class ChatView extends ItemView implements ToolUI {
 			}
 			return;
 		}
-		const agent = this.ensureAgent();
+		const agent = await this.ensureAgent();
 		if (!agent) {
-			new Notice(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
-			this.plugin.openSettings();
+			const runtime = this.plugin.runtime();
+			new Notice(runtime.detail ?? this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
+			if (runtime.website) window.open(accountOrigin());
+			else this.plugin.openSettings();
 			return;
 		}
 		let attachments: string[];
@@ -866,7 +880,10 @@ export class ChatView extends ItemView implements ToolUI {
 			warn.createEl("strong", { text: provider.setup.title });
 			void MarkdownRenderer.render(this.app, provider.setup.detail, warn.createDiv({ cls: "gw-setup-detail" }), "", this);
 			const row = warn.createDiv({ cls: "gw-row" });
-			row.createEl("button", { cls: "mod-cta", text: provider.setup.action }).addEventListener("click", () => this.plugin.openSettings());
+			row.createEl("button", { cls: "mod-cta", text: provider.setup.action }).addEventListener("click", () => {
+				if (provider.setup?.website) window.open(accountOrigin());
+				else this.plugin.openSettings();
+			});
 			row.createEl("button", { text: "Try the demo" }).addEventListener("click", async () => {
 				await this.plugin.useDemo();
 				this.renderAll();
@@ -1227,6 +1244,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.closeFlashcards();
 		this.closeLibrary();
 		this.uiInputEl?.blur();
+		if (loadAccountToken(this.app)) await this.plugin.refreshTutorRoute();
 		this.settingsOpen = true;
 		this.contentEl.addClass("is-settings");
 		this.uiSettingsBtn.addClass("is-active");
@@ -1478,6 +1496,22 @@ export class ChatView extends ItemView implements ToolUI {
 			cls: "gw-lib-help",
 			text: "The tutor looks things up on the web when a fact is uncertain. Written answers are graded on the website.",
 		});
+		const route = this.plugin.tutorRoute;
+		if (route?.action === "hosted") {
+			const used = Math.round((route.budgetUsed || 0) * 100);
+			section.createDiv({
+				cls: "gw-lib-help",
+				text: `This account uses Groundwork's smaller model. ${used}% of this month's budget is used. A Claude subscription is the Bring your own model plan.`,
+			});
+		} else if (route?.action === "key") {
+			section.createDiv({ cls: "gw-lib-help", text: `The tutor calls ${route.label} with the key saved on your account. Change that on the website.` });
+		} else if (route?.action === "blocked") {
+			section.createDiv({ cls: "gw-lib-help", text: route.error ?? "Open the website to finish setup." });
+			const open = section.createEl("button", { cls: "gw-lib-btn", text: "Open website", attr: { type: "button" } });
+			open.addEventListener("click", () => window.open(accountOrigin()));
+		} else if (route?.action === "claude") {
+			this.renderClaudeSettings(section);
+		} else {
 		const provider = this.settingField(section, "Provider", "Claude subscription uses Claude Code. Anthropic API bills a key. Demo plays a scripted lesson.");
 		const select = provider.createEl("select", { cls: "gw-lib-filter" });
 		for (const [value, label] of [
@@ -1494,6 +1528,7 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 		if (s.provider === "claude-code") this.renderClaudeSettings(section);
 		if (s.provider === "anthropic") this.renderAnthropicSettings(section);
+		}
 		const device = this.settingField(section, "Device name", "Recorded on quiz evidence so you can tell machines apart. Leave empty to use this computer's name.");
 		const deviceInput = device.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: this.plugin.deviceName() } });
 		deviceInput.value = s.deviceName;
@@ -1505,6 +1540,12 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private renderClaudeSettings(parent: HTMLElement): void {
 		const s = this.plugin.settings;
+		const steps = parent.createEl("ol", { cls: "gw-setup-steps" });
+		for (const step of CLAUDE_SETUP) {
+			const item = steps.createEl("li");
+			item.createEl("strong", { text: `${step.title}. ` });
+			item.appendText(step.detail);
+		}
 		const detected = this.plugin.claudeExecutable();
 		const status = this.settingField(
 			parent,
@@ -2276,7 +2317,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 		let agent = this.asideAgents.get(thread.id);
 		const fresh = !agent;
-		agent ??= this.makeAsideAgent(hint ? "hint" : "margin", thread.id) ?? undefined;
+		agent ??= (await this.makeAsideAgent(hint ? "hint" : "margin", thread.id)) ?? undefined;
 		if (!agent) {
 			reply.finish(this.plugin.providerLabel().setup?.detail ?? "Set up a tutor provider in Settings → Groundwork.");
 			return;
@@ -2304,18 +2345,20 @@ export class ChatView extends ItemView implements ToolUI {
 		await this.persist();
 	}
 
-	private makeAsideAgent(kind: "margin" | "hint", threadId: string): TutorSession | null {
+	private async makeAsideAgent(kind: "margin" | "hint", threadId: string): Promise<TutorSession | null> {
+		if (loadAccountToken(this.app)) await this.plugin.refreshTutorRoute();
 		const tools = TOOLS.filter((t) => ASIDE_TOOL_NAMES.includes(t.name));
 		const access = folderAccessFrom(this.plugin.settings);
 		const system = [kind === "hint" ? HINT_PROMPT : ASIDE_PROMPT, fileAccessGuidance(access, "read")].join("\n\n");
 		const session: SessionInfo = { id: kind === "hint" ? `${this.record.id}-hint-${threadId}` : `${this.record.id}-margin` };
 		const store = this.plugin.store;
-		const { provider } = this.plugin.settings;
-		if (provider === "claude-code") {
+		const runtime = this.plugin.runtime();
+		if (runtime.runtime === "setup") return null;
+		if (runtime.runtime === "claude") {
 			const cfg = this.plugin.claudeCodeConfig();
 			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session, access, grader: this.plugin.answerGrader() }) : null;
 		}
-		const p = provider === "demo" ? new DemoAsideProvider() : this.plugin.makeProvider();
+		const p = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : runtime.runtime === "demo" ? new DemoAsideProvider() : this.plugin.makeProvider();
 		return p ? new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8, access, grader: this.plugin.answerGrader() }) : null;
 	}
 

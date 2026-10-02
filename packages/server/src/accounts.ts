@@ -4,10 +4,14 @@ import {
 	rememberProfile,
 	setDisplayName,
 	setStripeCustomer,
+	setTutorChoice,
+	settleHosted,
+	tutorChoiceFrom,
 	viewAccount,
 	type AccountRecord,
 	type AccountView,
 	type PlanId,
+	type TutorChoice,
 } from "@groundwork/core";
 
 /** In-memory accounts until the Firebase service account is attached. */
@@ -42,6 +46,23 @@ export class AccountDirectory {
 
 	attachCustomer(uid: string, customerId: string, now: Date = new Date()): void {
 		this.accounts.set(uid, setStripeCustomer(this.record(uid, now), customerId));
+	}
+
+	choice(uid: string, now: Date = new Date()): TutorChoice {
+		return tutorChoiceFrom(this.record(uid, now));
+	}
+
+	setTutor(uid: string, choice: { via: "claude" | "key"; provider?: string | null }, now: Date = new Date()): AccountView {
+		const next = setTutorChoice(this.record(uid, now), choice, now);
+		this.accounts.set(uid, next);
+		return viewAccount(next, now);
+	}
+
+	/** Apply one hosted tutor turn to the allowance. */
+	charge(uid: string, costUsd: number, now: Date = new Date()): AccountView {
+		const settled = settleHosted(this.record(uid, now), costUsd, now);
+		this.accounts.set(uid, settled.account);
+		return viewAccount(settled.account, now);
 	}
 
 	findByCustomer(customerId: string): AccountRecord | undefined {

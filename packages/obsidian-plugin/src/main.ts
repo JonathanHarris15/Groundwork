@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, syncFlashcards, tutorMemoryFiles, type AnswerGrader, type Provider, type VaultIO } from "@groundwork/core";
+import { AccountClient, AnthropicProvider, cleanFolderList, DemoProvider, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
@@ -74,6 +74,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(async () => {
 			this.markLayoutReady();
 			await this.connectMemory();
+			await this.refreshTutorRoute();
 			await this.store.ensureLayout();
 			const reveal = this.takeOpenRequest();
 			if (reveal || !this.app.workspace.getLeavesOfType(VIEW_TYPE).length) await this.activateView(reveal);
@@ -125,6 +126,7 @@ export default class GroundworkPlugin extends Plugin {
 		}
 		await this.signalOpened(typeof params.opened === "string" ? params.opened : undefined);
 		await this.connectMemory();
+		await this.refreshTutorRoute();
 		const onDisk = await this.installedBuild();
 		if (onDisk && onDisk !== BUILD) {
 			this.requestOpenAfterReload();
@@ -179,6 +181,8 @@ export default class GroundworkPlugin extends Plugin {
 
 	/** Filled by “Check connection”; the models this Claude plan can use. */
 	claudeModels: ModelInfo[] = [];
+	/** Last answer from the account. Null when this device is not signed in. */
+	tutorRoute: TutorStatus | null = null;
 
 	/** For the API-key and demo providers; the Claude subscription runs through {@link claudeCodeConfig}. */
 	makeProvider(): Provider | null {
@@ -190,6 +194,46 @@ export default class GroundworkPlugin extends Plugin {
 			model: this.settings.model,
 			maxTokens: this.settings.maxTokens,
 			webSearch: true,
+		});
+	}
+
+	/** Hosted plans and saved bring-your-own keys. The key stays on the server. */
+	makeGroundworkProvider(): Provider {
+		return new GroundworkProvider({
+			origin: accountOrigin(),
+			token: () => this.accountAccessToken(),
+			maxTokens: this.settings.maxTokens,
+		});
+	}
+
+	async refreshTutorRoute(): Promise<void> {
+		const token = await this.accountAccessToken();
+		if (!token) {
+			this.tutorRoute = null;
+			return;
+		}
+		try {
+			const res = await fetch(`${accountOrigin()}/v1/tutor`, { headers: { authorization: `Bearer ${token}` } });
+			const body = (await res.json()) as TutorStatus;
+			if (!res.ok) return;
+			this.tutorRoute = body;
+		} catch {
+			// Keep the last route. A missed refresh should not drop a lesson in progress.
+		}
+	}
+
+	tutorRouteKey(): string {
+		const route = this.tutorRoute;
+		if (!route) return `local:${this.settings.provider}`;
+		return `${route.action}:${route.provider ?? ""}:${route.model ?? ""}:${route.setup ?? ""}`;
+	}
+
+	runtime(): ReturnType<typeof tutorRuntime> {
+		return tutorRuntime({
+			selected: this.settings.provider === "demo" ? "demo" : this.settings.provider === "anthropic" ? "anthropic" : "claude",
+			account: this.tutorRoute,
+			claudeReady: !!this.claudeCodeConfig(),
+			localKey: !!(loadApiKey(this.app) || process.env.ANTHROPIC_API_KEY),
 		});
 	}
 
@@ -215,10 +259,26 @@ export default class GroundworkPlugin extends Plugin {
 		return checkClaudeCode(cfg);
 	}
 
-	providerLabel(): { label: string; demo: boolean; setup: { title: string; detail: string; action: string } | null } {
+	providerLabel(): { label: string; demo: boolean; setup: { title: string; detail: string; action: string; website?: boolean } | null } {
 		const { provider } = this.settings;
 		if (provider === "demo") return { label: "Demo tutor (scripted)", demo: true, setup: null };
-		if (provider === "claude-code") {
+		const runtime = this.runtime();
+		const route = this.tutorRoute;
+		if (runtime.runtime === "proxy") return { label: route?.label ?? "Groundwork", demo: false, setup: null };
+		if (runtime.runtime === "local-key") return { label: this.settings.model, demo: false, setup: null };
+		if (runtime.runtime === "setup") {
+			return {
+				label: route?.action === "blocked" ? "Tutor paused" : provider === "claude-code" ? "Claude Code not found" : "No API key",
+				demo: false,
+				setup: {
+					title: runtime.website ? "Finish setup on the website." : provider === "claude-code" ? "Connect your Claude subscription to start." : "Connect a model to start.",
+					detail: runtime.detail ?? "Set up a tutor provider in Settings → Groundwork.",
+					action: runtime.website ? "Open website" : provider === "claude-code" ? "Open settings" : "Add API key",
+					website: runtime.website,
+				},
+			};
+		}
+		if (provider === "claude-code" || route?.action === "claude") {
 			const model = this.claudeModels.find((m) => m.value === this.settings.claudeModel)?.displayName ?? this.settings.claudeModel;
 			if (this.claudeCodeConfig()) return { label: `Claude subscription${model ? ` · ${model}` : ""}`, demo: false, setup: null };
 			return {

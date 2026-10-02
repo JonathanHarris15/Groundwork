@@ -1,4 +1,4 @@
-import { PLANS, type PlanId } from "./plans";
+import { isUserKeyProvider, PLANS, type PlanId, type UserKeyProvider } from "./plans";
 
 /** Calendar month the credit window belongs to, UTC. */
 export function periodKey(now: Date = new Date()): string {
@@ -15,6 +15,15 @@ export interface AccountRecord {
 	displayName?: string;
 	email?: string;
 	stripeCustomerId?: string;
+	/** Bring-your-own-model only. Hosted plans ignore this and call Groundwork's model. */
+	tutorVia?: "claude" | "key";
+	tutorProvider?: UserKeyProvider;
+}
+
+/** How a bring-your-own-model account wants the tutor to run. Claude is the default. */
+export interface TutorChoice {
+	via: "claude" | "key";
+	provider: UserKeyProvider | null;
 }
 
 export interface AccountView {
@@ -30,6 +39,8 @@ export interface AccountView {
 	email: string | null;
 	/** A Stripe customer exists, so billing can be managed in the portal. */
 	hasBilling: boolean;
+	tutorVia: "claude" | "key";
+	tutorProvider: UserKeyProvider | null;
 }
 
 /** Account fields a client may show. Dollar credit balances are not among them. */
@@ -44,6 +55,8 @@ export interface PublicAccount {
 	hasBilling: boolean;
 	/** Share of this month's hosted budget already used, from 0 to 1. */
 	budgetUsed: number;
+	tutorVia: "claude" | "key";
+	tutorProvider: UserKeyProvider | null;
 }
 
 export function emptyAccount(uid: string, now: Date = new Date()): AccountRecord {
@@ -72,6 +85,7 @@ export function viewAccount(record: AccountRecord, now: Date = new Date()): Acco
 			displayName: current.displayName ?? null,
 			email: current.email ?? null,
 			hasBilling: !!current.stripeCustomerId,
+			...tutorFields(current),
 		};
 	}
 	const plan = PLANS[current.plan];
@@ -88,6 +102,19 @@ export function viewAccount(record: AccountRecord, now: Date = new Date()): Acco
 		displayName: current.displayName ?? null,
 		email: current.email ?? null,
 		hasBilling: !!current.stripeCustomerId,
+		...tutorFields(current),
+	};
+}
+
+export function tutorChoiceFrom(record: AccountRecord): TutorChoice {
+	const fields = tutorFields(record);
+	return { via: fields.tutorVia, provider: fields.tutorProvider };
+}
+
+function tutorFields(record: AccountRecord): { tutorVia: "claude" | "key"; tutorProvider: UserKeyProvider | null } {
+	return {
+		tutorVia: record.tutorVia === "key" ? "key" : "claude",
+		tutorProvider: isUserKeyProvider(record.tutorProvider) ? record.tutorProvider : null,
 	};
 }
 
@@ -103,6 +130,8 @@ export function presentAccount(view: AccountView): PublicAccount {
 		email: view.email,
 		hasBilling: view.hasBilling,
 		budgetUsed,
+		tutorVia: view.tutorVia,
+		tutorProvider: view.tutorProvider,
 	};
 }
 
@@ -124,6 +153,13 @@ export function setStripeCustomer(record: AccountRecord, customerId: string): Ac
 	return { ...record, stripeCustomerId: customerId };
 }
 
+export function setTutorChoice(record: AccountRecord, choice: { via: "claude" | "key"; provider?: string | null }, now: Date = new Date()): AccountRecord {
+	const current = currentAccount(record, now);
+	if (choice.via === "claude") return { ...current, tutorVia: "claude" };
+	const provider = isUserKeyProvider(choice.provider) ? choice.provider : isUserKeyProvider(current.tutorProvider) ? current.tutorProvider : undefined;
+	return { ...current, tutorVia: "key", tutorProvider: provider };
+}
+
 export function choosePlan(record: AccountRecord, plan: PlanId, now: Date = new Date()): AccountRecord {
 	const current = currentAccount(record, now);
 	return { ...current, plan };
@@ -141,6 +177,22 @@ export function spendHosted(record: AccountRecord, costUsd: number, now: Date = 
 	if (view.ownModel) return { ok: false, reason: "This plan uses your own model.", account: current };
 	if (costUsd > view.remainingUsd + 1e-9) return { ok: false, reason: "Monthly credit is used up.", account: current };
 	return { ok: true, account: { ...current, spentUsd: roundUsd(current.spentUsd + costUsd) } };
+}
+
+/**
+ * Record hosted spend after a tutor call.
+ * A turn that costs more than the remainder still finishes; the ledger stops at the allowance.
+ * The next turn is refused once nothing is left.
+ */
+export function settleHosted(record: AccountRecord, costUsd: number, now: Date = new Date()): { account: AccountRecord; chargedUsd: number; exhausted: boolean } {
+	const current = currentAccount(record, now);
+	const view = viewAccount(current, now);
+	const exhaustedAlready = !view.needsPlan && !view.ownModel && view.remainingUsd <= 0;
+	if (!(costUsd > 0) || !Number.isFinite(costUsd)) return { account: current, chargedUsd: 0, exhausted: exhaustedAlready };
+	if (view.needsPlan || view.ownModel || view.remainingUsd <= 0) return { account: current, chargedUsd: 0, exhausted: exhaustedAlready };
+	const charged = roundUsd(Math.min(costUsd, view.remainingUsd));
+	const account = { ...current, spentUsd: roundUsd(current.spentUsd + charged) };
+	return { account, chargedUsd: charged, exhausted: viewAccount(account, now).remainingUsd <= 0 };
 }
 
 function roundUsd(n: number): number {

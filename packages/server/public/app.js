@@ -13,11 +13,13 @@ const billingNote = billingFlag === "success"
 		: "";
 
 const NODE = { free: "green", byom: "blue", included: "orange" };
+const PROVIDER_LABEL = { anthropic: "Anthropic", openrouter: "OpenRouter", google: "Google", xai: "xAI", openai: "OpenAI" };
 
 let config = { firebase: null, billing: false };
 let plans = [];
 let account = null;
 let providers = null;
+let tutor = null;
 let groundwork = emptyGroundwork();
 let groundworkTimer = 0;
 let user = null;
@@ -71,14 +73,16 @@ async function boot() {
 
 async function refresh() {
 	const token = await user.getIdToken();
-	const [nextAccount, secrets, nextGroundwork] = await Promise.all([
+	const [nextAccount, secrets, nextGroundwork, nextTutor] = await Promise.all([
 		get("/v1/account", token),
 		get("/v1/secrets", token),
 		get("/v1/groundwork", token).catch(() => emptyGroundwork()),
+		get("/v1/tutor", token),
 	]);
 	account = nextAccount;
 	providers = secrets.providers;
 	groundwork = nextGroundwork;
+	tutor = nextTutor;
 }
 
 function emptyGroundwork() {
@@ -179,7 +183,7 @@ function showAccount() {
 			<p>${account.hasBilling ? "Update the card, see invoices, or cancel in Stripe." : "A paid plan opens Stripe checkout. You can change the card later from here."}</p>
 			<div class="actions"><button class="btn ${account.hasBilling && config.billing ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"}>Manage billing</button></div>
 		</section>
-		${account.ownModel ? keysSection() : ""}
+		${account.ownModel ? keysSection() : hostedTutorSection()}
 		<div class="plan-foot">
 			<p>Your plan: <strong>${escapeHtml(planLabel())}</strong></p>
 			<button class="btn btn-line btn-sm" id="change-plan" type="button">Change plan</button>
@@ -188,6 +192,7 @@ function showAccount() {
 	document.querySelector("#profile").addEventListener("submit", saveProfile);
 	document.querySelector("#open-obsidian").addEventListener("click", () => openObsidian());
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
+	document.querySelector("#tutor-setup")?.addEventListener("submit", saveTutor);
 	document.querySelector("#portal").addEventListener("click", openPortal);
 	document.querySelector("#change-plan").addEventListener("click", () => {
 		location.hash = "#plans";
@@ -391,23 +396,48 @@ function usageTile() {
 			<p class="tile-note" style="margin-top: 10px">Resets at the end of the month.</p>`;
 }
 
-function keysSection() {
+function hostedTutorSection() {
 	return `
 		<section class="section">
-			<h2><span class="node blue"></span>Your model keys</h2>
-			<p>Bring-your-own-model uses a key you already have. Jev stays on our server and is not a key you paste.</p>
+			<h2><span class="node green"></span>Tutor</h2>
+			<p>Obsidian calls Groundwork, and Groundwork calls the smaller model. One key covers every account on this plan. You do not paste one. This month's budget is what limits the tutor. Written answers are graded with Jev, on our key, and that does not use the tutor budget.</p>
+		</section>`;
+}
+
+function keysSection() {
+	const steps = Array.isArray(tutor?.claude) ? tutor.claude : [];
+	const savedNames = Object.entries(providers).filter(([, on]) => on).map(([name]) => name);
+	const via = account.tutorVia === "key" && savedNames.length ? "key" : "claude";
+	return `
+		<section class="section">
+			<h2><span class="node blue"></span>Your model</h2>
+			<p>This plan uses a model you already pay for. Groundwork does not meter it.</p>
+			<h3>Claude subscription</h3>
+			<p>The simplest path. The login stays on this computer. Groundwork never stores it.</p>
+			<ol class="setup-list">${steps.map((step) => `<li><strong>${escapeHtml(step.title)}</strong><p>${escapeHtml(step.detail)}</p></li>`).join("")}</ol>
+			<form id="tutor-setup">
+				<fieldset class="choices">
+					<legend>How the tutor should run</legend>
+					<label><input type="radio" name="via" value="claude" ${via === "claude" ? "checked" : ""} /> Claude subscription on this computer</label>
+					<label><input type="radio" name="via" value="key" ${via === "key" ? "checked" : ""} ${savedNames.length ? "" : "disabled"} /> A saved provider key</label>
+				</fieldset>
+				${savedNames.length ? `<div class="field tutor-provider"><label for="tutorProvider">Provider</label><select class="input" id="tutorProvider" name="provider">${savedNames.map((name) => `<option value="${escapeAttr(name)}" ${account.tutorProvider === name ? "selected" : ""}>${escapeHtml(PROVIDER_LABEL[name] || name)}</option>`).join("")}</select></div>` : `<p class="hint">Paste a key below before the tutor can use one.</p>`}
+				<div class="actions"><button class="btn btn-ink" type="submit">Save tutor</button></div>
+			</form>
+			<h3>Or paste a provider key</h3>
+			<p>The key stays on this account. The tutor calls that provider through Groundwork, so it is not written into the vault. Jev stays on our server and is not a key you paste.</p>
 			<ul class="keys" aria-label="Saved keys">${keyList()}</ul>
 			<form id="key" autocomplete="off">
 				<div class="row">
 					<div class="field narrow">
 						<label for="provider">Provider</label>
 						<select class="input" id="provider" name="provider">
-							${Object.keys(providers).map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`).join("")}
+							${Object.keys(providers).map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(PROVIDER_LABEL[name] || name)}</option>`).join("")}
 						</select>
 					</div>
 					<div class="field grow">
 						<label for="apiKey">Paste a key</label>
-						<input class="input" type="password" id="apiKey" name="apiKey" autocomplete="off" />
+						<input class="input" type="password" id="apiKey" name="apiKey" autocomplete="off" spellcheck="false" placeholder="sk-…" />
 					</div>
 					<button class="btn btn-ink" type="submit">Save key</button>
 				</div>
@@ -441,7 +471,7 @@ function planGrid(signedIn) {
 }
 
 function keyList() {
-	return Object.entries(providers).map(([name, saved]) => `<li><span>${escapeHtml(name)}</span><span class="${saved ? "status saved" : "status"}"><span class="node ${saved ? "green" : "hollow"}" style="width:10px;height:10px"></span>${saved ? "saved" : "not saved"}</span></li>`).join("");
+	return Object.entries(providers).map(([name, saved]) => `<li><span>${escapeHtml(PROVIDER_LABEL[name] || name)}</span><span class="${saved ? "status saved" : "status"}"><span class="node ${saved ? "green" : "hollow"}" style="width:10px;height:10px"></span>${saved ? "saved" : "not saved"}</span></li>`).join("");
 }
 
 function heroMark() {
@@ -500,6 +530,21 @@ async function saveProfile(event) {
 	try {
 		actionError = "";
 		await send("/v1/account/profile", { displayName: new FormData(event.target).get("displayName") }, token);
+		await refresh();
+		paint();
+	} catch (err) {
+		actionError = err.message;
+		paint();
+	}
+}
+
+async function saveTutor(event) {
+	event.preventDefault();
+	const data = new FormData(event.target);
+	const token = await user.getIdToken();
+	try {
+		actionError = "";
+		await send("/v1/tutor/setup", { via: data.get("via"), provider: data.get("provider") }, token);
 		await refresh();
 		paint();
 	} catch (err) {

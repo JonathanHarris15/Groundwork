@@ -25,6 +25,8 @@ export * from "./agent/types";
 export * from "./agent/loop";
 export * from "./agent/anthropic";
 export * from "./agent/demo";
+export * from "./agent/groundwork";
 export * from "./account/plans";
 export * from "./account/usage";
+export * from "./account/tutor";
 export * from "./jev/grade";

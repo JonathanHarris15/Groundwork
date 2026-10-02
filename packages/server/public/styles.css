@@ -745,6 +745,14 @@ a:hover { color: #2c2f36; }
 
 .section { margin-top: 64px; padding-top: 36px; border-top: 1px solid #e3e5e8; max-width: 660px; }
 .section > p { margin: 10px 0 0; color: #4a4f57; }
+.section h3 { margin: 28px 0 0; font-size: 18px; font-weight: 600; }
+.setup-list { margin: 16px 0 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 14px; }
+.setup-list p { margin: 4px 0 0; }
+.tutor-provider { margin-top: 14px; }
+.choices { border: 0; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.choices legend { font-weight: 600; padding: 0; }
+.choices label { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; }
+.choices input { margin-top: 3px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 label { font-size: 15px; font-weight: 500; }
 .hint { font-size: 14px; color: #4a4f57; }

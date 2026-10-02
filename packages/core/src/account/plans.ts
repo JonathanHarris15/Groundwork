@@ -2,8 +2,11 @@
  * What a signed-in learner can buy.
  *
  * Hosted credit is generative-model spend (OpenRouter), in dollars, reset
- * each calendar month. Jev is not part of that credit: every plan uses it,
- * and the key stays on the Groundwork server.
+ * each calendar month. Free and Groundwork share one server key. We do not
+ * mint a key per learner. Bring your own model uses a key the learner pastes,
+ * or the Claude subscription on their computer, which never comes to the server.
+ * Jev is not part of that credit: every plan uses it, and that key stays on
+ * the Groundwork server.
  *
  * Public copy never states how many dollars of that credit a plan includes
  * or how many dollars remain. The only prices we show are $9/month and

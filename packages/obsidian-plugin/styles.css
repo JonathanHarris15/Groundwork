@@ -175,6 +175,14 @@
 .gw-lib-help {
 	margin: 0 0 8px;
 }
+.gw-setup-steps {
+	margin: 8px 0 14px;
+	padding-left: 1.2em;
+	max-width: 62ch;
+}
+.gw-setup-steps li {
+	margin: 8px 0;
+}
 .gw-lib-row {
 	display: flex;
 	align-items: center;
