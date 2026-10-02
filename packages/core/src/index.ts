@@ -8,6 +8,7 @@ export * from "./markdown";
 export * from "./tutor-markdown";
 export * from "./model";
 export * from "./graph";
+export * from "./goal-plan";
 export * from "./store";
 export * from "./quiz";
 export * from "./diagnose";

@@ -182,11 +182,11 @@ export function goalMermaid(nodes: GraphNode[], openTargetIds: string[] = [], bu
 		}
 	}
 	lines.push(
-		"  classDef solid fill:#1f7a4d,stroke:#145235,color:#fff",
-		"  classDef shaky fill:#b7791f,stroke:#7c5212,color:#fff",
-		"  classDef learning fill:#c05621,stroke:#7b3514,color:#fff",
-		"  classDef rusty fill:#6b46c1,stroke:#44297f,color:#fff",
-		"  classDef unassessed fill:#4a5568,stroke:#2d3748,color:#fff",
+		"  classDef solid fill:#3CC56F,stroke:#1d6b3c,color:#102216",
+		"  classDef shaky fill:#F7A93E,stroke:#8a5a10,color:#2b1c05",
+		"  classDef learning fill:#45A9F0,stroke:#1d5f8a,color:#071820",
+		"  classDef rusty fill:#9d8cf0,stroke:#5c4e99,color:#161222",
+		"  classDef unassessed fill:#3a3d42,stroke:#6b6f76,color:#ececec",
 	);
 	for (const n of nodes) lines.push(`  class ${ids.get(n.id)} ${STATUS_CLASS[n.status]}`);
 	return lines.join("\n");

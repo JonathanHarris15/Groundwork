@@ -143,7 +143,7 @@ The default vault is saved in `~/.config/groundwork/config.json`; override with 
 
 ```
 packages/core             vault store, mastery model, goal DAGs, quiz grading, tools, teaching prompt, agent loop, git sync, published concept-map snapshot
-packages/obsidian-plugin  chat panel, quiz/question cards, settings, auto-sync, optional website theme
+packages/obsidian-plugin  chat, concept map, goals calendar, settings, auto-sync, website theme
 packages/cli              `groundwork` CLI (bundles the plugin)
 packages/account-server   account server: sign-in and the published concept map
 packages/site             profile site the account server serves
@@ -179,7 +179,7 @@ From the website, **Add Groundwork to Obsidian** opens `obsidian://show-plugin?i
 
 The plugin is desktop-only because sync shells out to git. Publishing the map is off until you sign in and turn it on. That request goes only to the account server URL in settings.
 
-**Match the Groundwork website** (Settings → Groundwork → Appearance) restyles the Groundwork panel with the site's paper, ink, and status colors. It does not change the rest of Obsidian.
+The Groundwork panel uses the website's dark look: Jost, and the red, amber, blue, and green status dots. Learn, Concept map, and Goals are three views of the same memory. A goal has a due date and a weight for each concept. The concept map is Groundwork's own map of that goal, not Obsidian's graph view. The rest of Obsidian keeps its theme.
 
 ## Development
 

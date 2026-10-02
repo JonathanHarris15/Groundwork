@@ -10,6 +10,7 @@ import {
 	type MaterialSource,
 } from "./exam";
 import { analyzeGoal, findCycle, goalMermaid, isBuilt, targetsServed, type GoalAnalysis, type GraphNode } from "./graph";
+import { buildSchedule, daysBetween, defaultDue, parseIsoDate, resolveWeights, weightedReadiness } from "./goal-plan";
 import { ensureDir, type VaultIO } from "./io";
 import {
 	demoteHeadings,
@@ -82,6 +83,10 @@ export interface WorkingGoal {
 	title: string;
 	left: number;
 	status: GoalStatus;
+	/** YYYY-MM-DD, when the goal has a deadline. */
+	due?: string;
+	/** Days from today until `due`. Negative when the deadline has passed. */
+	daysLeft?: number;
 }
 
 /** Dropdown label, e.g. "427 exam → 10 concepts left". */
@@ -113,6 +118,13 @@ export interface Goal {
 	built: string[];
 	nodes: string[];
 	created?: string;
+	/** Deadline, YYYY-MM-DD. The goals calendar is this date. */
+	due?: string;
+	/**
+	 * Explicit exam weight by concept id, as a percent.
+	 * Missing concepts share whatever is left; an empty map means an even split.
+	 */
+	weights: Record<string, number>;
 	objective?: string;
 	body: string;
 	/** Concept id → exam-required quiz difficulty (1–5). */
@@ -137,6 +149,10 @@ export interface GoalInput {
 	target?: string;
 	nodes: Array<{ title: string; prerequisites?: string[]; summary?: string; domain?: string; requiredLevel?: number; aliases?: string[] }>;
 	status?: GoalStatus;
+	/** Deadline as YYYY-MM-DD. Omit it and a new goal is due in 14 days. */
+	due?: string;
+	/** How much of the goal each concept is worth, as percents. Titles the goal does not name are ignored. */
+	weights?: Array<{ title: string; weight: number }>;
 	examPlan?: string;
 	/** Vault paths of the files this goal draws on. Allowed here, never on a concept. */
 	sources?: string[];
@@ -467,6 +483,8 @@ export class KnowledgeStore {
 				built: shape.built,
 				nodes: asStringList(fm.nodes).map((n) => slugify(unwikilink(n))),
 				created: typeof fm.created === "string" ? fm.created : undefined,
+				due: parseIsoDate(fm.due),
+				weights: readWeights(fm.weights),
 				objective: getSection(body, "Objective"),
 				body,
 				requiredLevels: shape.requiredLevels,
@@ -555,6 +573,14 @@ export class KnowledgeStore {
 		const required = Object.fromEntries(
 			[...nodeTitles.entries()].filter(([id]) => requiredLevels[id]).map(([id, title]) => [title, requiredLevels[id]]),
 		);
+		const weightByTitle: Record<string, number> = {};
+		if (input.weights?.length) {
+			for (const entry of input.weights) {
+				const concept = await this.resolve(entry.title);
+				if (!concept || !nodeTitles.has(concept.id) || !(entry.weight > 0)) continue;
+				weightByTitle[concept.title] = entry.weight;
+			}
+		}
 
 		await ensureDir(this.io, PATHS.goals);
 		const existing = await this.resolveGoal(input.title);
@@ -576,12 +602,16 @@ export class KnowledgeStore {
 		if (input.objective) body = setSection(body, "Objective", demoteHeadings(input.objective), generated);
 		if (input.why) body = setSection(body, "Why", demoteHeadings(input.why), generated);
 		if (input.approach) body = setSection(body, "Approach", demoteHeadings(input.approach), generated);
+		const created = existing?.created ?? (typeof prior.frontmatter.created === "string" ? prior.frontmatter.created : undefined) ?? this.now().toISOString().slice(0, 10);
+		const due = parseIsoDate(input.due) ?? existing?.due ?? parseIsoDate(prior.frontmatter.due) ?? defaultDue(created.slice(0, 10));
 		const fm: Record<string, unknown> = {
 			...prior.frontmatter,
 			title: input.title,
 			type: "goal",
 			status: input.status ?? existing?.status ?? "active",
-			created: existing?.created ?? this.now().toISOString().slice(0, 10),
+			created,
+			due,
+			weights: Object.keys(weightByTitle).length ? weightByTitle : prior.frontmatter.weights,
 			targets: scopeTitles.map(wikilink),
 			nodes: [...nodeTitles.values()].map(wikilink),
 			required: Object.keys(required).length ? required : undefined,
@@ -595,6 +625,77 @@ export class KnowledgeStore {
 		this.changed(path);
 		const report = await this.renderGoal(slugify(input.title));
 		return notes.length ? { ...report, judgmentNotes: notes } : report;
+	}
+
+	async setGoalDue(ref: string, due: string): Promise<Goal> {
+		const goal = await this.resolveGoal(ref);
+		if (!goal) throw new Error(`Unknown goal "${ref}".`);
+		const iso = parseIsoDate(due);
+		if (!iso) throw new Error("A due date is a calendar day, like 2026-10-14.");
+		const { frontmatter, body } = parseNote(await this.io.read(goal.path));
+		frontmatter.due = iso;
+		await this.io.write(goal.path, serializeNote(frontmatter, body));
+		this.changed(goal.path);
+		return { ...goal, due: iso };
+	}
+
+	/** Replace the explicit weights. Concepts left out go back to sharing what remains. */
+	async setGoalWeights(ref: string, weights: Array<{ title: string; weight: number }>): Promise<Goal> {
+		const goal = await this.resolveGoal(ref);
+		if (!goal) throw new Error(`Unknown goal "${ref}".`);
+		const byTitle: Record<string, number> = {};
+		for (const entry of weights) {
+			const concept = await this.resolve(entry.title);
+			if (!concept || !(entry.weight > 0)) continue;
+			if (!goal.nodes.includes(concept.id) && !goal.targets.includes(concept.id) && !goal.built.includes(concept.id)) continue;
+			byTitle[concept.title] = entry.weight;
+		}
+		const { frontmatter, body } = parseNote(await this.io.read(goal.path));
+		frontmatter.weights = Object.keys(byTitle).length ? byTitle : undefined;
+		await this.io.write(goal.path, serializeNote(frontmatter, body));
+		this.changed(goal.path);
+		return { ...goal, weights: readWeights(frontmatter.weights) };
+	}
+
+	/**
+	 * Deadline, weights, and how the calendar should read.
+	 * Weights always sum to 100. A goal with no explicit weights is split evenly.
+	 */
+	async goalTiming(report: GoalReport): Promise<{
+		weights: Record<string, number>;
+		readiness: number;
+		schedule: ReturnType<typeof buildSchedule>;
+	}> {
+		const today = this.now().toISOString().slice(0, 10);
+		const ids = report.nodes.map((node) => node.id);
+		const weights = resolveWeights(ids.length ? ids : [...report.goal.targets, ...report.goal.built], report.goal.weights, report.goal.requiredLevels);
+		const built = new Set(report.goal.built);
+		const readiness = weightedReadiness(report.nodes, weights, (id) => built.has(id));
+		const studied = await this.studyDates(ids);
+		return {
+			weights,
+			readiness,
+			schedule: buildSchedule({
+				start: report.goal.created,
+				due: report.goal.due,
+				today,
+				studied,
+				readiness,
+				status: report.goal.status,
+			}),
+		};
+	}
+
+	/** Calendar days, YYYY-MM-DD, on which any of these concepts has quiz evidence. */
+	async studyDates(conceptIds: string[]): Promise<string[]> {
+		const days = new Set<string>();
+		for (const id of conceptIds) {
+			for (const event of await this.evidenceFor(id)) {
+				const day = parseIsoDate(event.ts);
+				if (day) days.add(day);
+			}
+		}
+		return [...days].sort();
 	}
 
 	async setGoalStatus(ref: string, status: GoalStatus): Promise<Goal> {
@@ -636,7 +737,15 @@ export class KnowledgeStore {
 			await this.setWorkingGoal(null);
 			return null;
 		}
-		return { id: goal.id, title: goal.title, left: report.goal.targets.length, status: goal.status };
+		const today = this.now().toISOString().slice(0, 10);
+		return {
+			id: goal.id,
+			title: goal.title,
+			left: report.goal.targets.length,
+			status: goal.status,
+			due: goal.due,
+			daysLeft: goal.due ? daysBetween(today, goal.due) : undefined,
+		};
 	}
 
 	/** Pin a goal, or pass null / "you choose" to clear the pin. A paused goal is resumed. */
@@ -692,6 +801,9 @@ export class KnowledgeStore {
 		const targets = [...scopeIds].map((id) => index.get(id)?.title).filter((t): t is string => !!t);
 		if (!targets.length) throw new Error("Those goals have no concepts to merge.");
 		const sources = [...keep.sources, ...drops.flatMap((d) => d.sources)];
+		const weights = Object.entries(keep.weights)
+			.map(([id, weight]) => ({ title: index.get(id)?.title ?? id, weight }))
+			.filter((entry) => entry.weight > 0);
 
 		const report = await this.setGoal({
 			title: keep.title,
@@ -699,6 +811,8 @@ export class KnowledgeStore {
 			targets,
 			nodes,
 			examPlan: keep.examPlan,
+			due: keep.due,
+			...(weights.length ? { weights } : {}),
 			...(sources.length ? { sources } : {}),
 			status: keep.status === "paused" ? "paused" : "active",
 		});
@@ -1377,6 +1491,17 @@ function goalTargetTitles(input: GoalInput): string[] {
 }
 
 /** New notes store targets as a list. Older notes stored one `target` and a level map under `targets`. */
+function readWeights(value: unknown): Record<string, number> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	const out: Record<string, number> = {};
+	for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+		const weight = typeof raw === "number" ? raw : Number(raw);
+		const id = slugify(unwikilink(key));
+		if (id && Number.isFinite(weight) && weight > 0) out[id] = weight;
+	}
+	return out;
+}
+
 function readGoalShape(fm: Record<string, unknown>): { targets: string[]; built: string[]; requiredLevels: Record<string, number> } {
 	const built = asStringList(fm.built).map((n) => slugify(unwikilink(n))).filter(Boolean);
 	const field = fm.targets;
