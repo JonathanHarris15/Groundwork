@@ -25,7 +25,7 @@ for (const key of required) {
 if (manifest.id !== "groundwork") fail(`plugin id must be "groundwork" so the community folder matches (got ${manifest.id})`);
 if (!/^[a-z0-9-]+$/.test(manifest.id)) fail("plugin id must be lowercase letters, numbers, and hyphens");
 if (typeof manifest.description !== "string" || manifest.description.length > 250) fail("description must be a string of at most 250 characters");
-if (manifest.isDesktopOnly !== true) fail("isDesktopOnly must be true: the plugin shells out to git");
+if (manifest.isDesktopOnly !== true) fail("isDesktopOnly must be true: the plugin uses Node (Claude Code / Agent SDK) and is not supported on mobile");
 if (versions[manifest.version] !== manifest.minAppVersion) {
 	fail(`versions.json must map ${manifest.version} to minAppVersion ${manifest.minAppVersion}`);
 }

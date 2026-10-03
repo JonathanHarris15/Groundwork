@@ -23,13 +23,13 @@ An account is required before the tutor will run. Sign in with Google on that we
 
 The plugin uses the network for these services:
 
-- **Groundwork** (`https://groundworklearn.com`) stores the account, the tutor memory, and the plan, and grades written answers.
-- **Google** signs you in.
-- **Stripe** takes payment for the $9 and $20 plans.
-- **Anthropic**, through Claude Code on this computer, runs the tutor when you use your own Claude subscription. A pasted provider key is sent only to that provider: OpenRouter, Anthropic, Google, xAI, or OpenAI.
-- **GitHub**, only when the vault is synced to a private repository you connect.
+- **Groundwork** (`https://groundwork-6f9ca.web.app` in production builds) stores the account, tutor memory, plan routing, and grades written answers. Sign-in happens in the browser on the [Groundwork website](https://groundworklearn.com); **Open Obsidian** passes a refresh token into the plugin. After sign-in, the plugin may call an open-ack URL on that same account host (`/v1/obsidian-opened/<nonce>/signal`) so the website knows Obsidian opened.
+- **Google** (`https://securetoken.googleapis.com`) refreshes the website sign-in into an ID token the plugin sends to Groundwork.
+- **Google Fonts** (`https://fonts.googleapis.com`) loads Jost for the Groundwork panel stylesheet.
+- **Stripe** — billing for the $9 and $20 plans happens on the website, not inside the plugin.
+- **Anthropic**, through Claude Code on this computer, runs the tutor when you use your own Claude subscription. Claude Code may reach Anthropic's API and related sign-in endpoints. On hosted Groundwork plans, model calls go through your account API instead. Bring-your-own-model keys saved on the account are used only on the Groundwork server (OpenRouter, Anthropic, Google, xAI, or OpenAI), not sent from the plugin.
 
-The plugin does not send telemetry. It does use a few paths outside the vault, because the tutor runs on the desktop: the `git` executable, to sync the vault; the Claude Code executable, to run the tutor; and `~/.config/groundwork/config.json`, which stores the vault path. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
+The plugin does not send telemetry. It does use a few paths outside the vault on the desktop: the Claude Code executable to run the tutor; `~/.config/groundwork/config.json` (vault path for the `groundwork` CLI); and the computer's host name as a default device label unless you set one in the panel. The separate `groundwork` CLI (not the plugin) can run `git` to sync the vault. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
 
 The plugin is desktop-only.
 
@@ -201,13 +201,13 @@ The plugin is laid out so it can be submitted:
 | `manifest.json` with `id`, `name`, `version`, `minAppVersion`, `description`, `author`, `authorUrl`, `isDesktopOnly` | repository root, identical to `packages/obsidian-plugin/manifest.json`. The community directory reads the root file. |
 | `versions.json` at the repo root, mapping each version to its `minAppVersion` | `versions.json` |
 | An open-source license | `LICENSE` |
-| Release assets `main.js`, `manifest.json`, `styles.css` | a tag equal to the manifest `version` (`0.1.0`, no `v` prefix) runs `.github/workflows/release-plugin.yml` |
+| Release assets `main.js`, `manifest.json`, `styles.css` | a tag equal to the manifest `version` (`0.1.1`, no `v` prefix) runs `.github/workflows/release-plugin.yml` |
 
 `node scripts/check-community-plugin.mjs` checks that list. The plugin id is `groundwork`, which is also the community install folder.
 
 From the website, **Add Groundwork to Obsidian** opens `obsidian://show-plugin?id=groundwork`. After the community listing is accepted, that opens Obsidian's plugin browser on Groundwork. Until then, copy the three release files into `.obsidian/plugins/groundwork/`.
 
-The plugin is desktop-only because sync shells out to git. Publishing the map is off until you sign in and turn it on. That request goes only to the account server URL in settings.
+The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` unless you override `GROUNDWORK_API_URL` for local development).
 
 The Groundwork panel uses the website's dark look: Jost, and the red, amber, blue, and green status dots. Learn, Concept map, and Goals are three views of the same memory. A goal has a due date and a weight for each concept. The concept map is Groundwork's own map of that goal, not Obsidian's graph view. The rest of Obsidian keeps its theme.
 
