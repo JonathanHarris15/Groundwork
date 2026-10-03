@@ -35,6 +35,12 @@ export class ObsidianVaultIO implements VaultIO {
 
 	private async ensureParent(path: string) {
 		const dir = path.split("/").slice(0, -1).join("/");
-		if (dir && !(await this.adapter.exists(dir))) await this.adapter.mkdir(dir);
+		if (!dir) return;
+		const parts = dir.split("/");
+		let built = "";
+		for (const part of parts) {
+			built = built ? `${built}/${part}` : part;
+			if (!(await this.adapter.exists(built))) await this.adapter.mkdir(built);
+		}
 	}
 }

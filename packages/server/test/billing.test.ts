@@ -37,6 +37,21 @@ describe("stripe plan updates", () => {
 		expect(accounts.get("ada").plan).toBe("byom");
 	});
 
+	it("does not demote an active subscription when Stripe omits plan metadata", () => {
+		const accounts = new AccountDirectory();
+		accounts.setPlan("ada", "included");
+		accounts.attachCustomer("ada", "cus_123");
+		applyStripeEvent(
+			accounts,
+			event("customer.subscription.updated", {
+				customer: "cus_123",
+				metadata: {},
+				status: "active",
+			}),
+		);
+		expect(accounts.get("ada").plan).toBe("included");
+	});
+
 	it("returns the account to free when the subscription ends", () => {
 		const accounts = new AccountDirectory();
 		accounts.setPlan("ada", "included");
