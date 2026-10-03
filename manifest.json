@@ -2,7 +2,7 @@
 	"id": "groundwork",
 	"name": "Groundwork",
 	"version": "0.1.0",
-	"minAppVersion": "1.5.0",
+	"minAppVersion": "1.8.7",
 	"description": "A tutor that plans goals from first principles, calibrates what you know with quizzes, and keeps that memory in this vault. Optionally publishes your concept map to your Groundwork profile.",
 	"author": "Jonathan Harris",
 	"authorUrl": "https://github.com/JonathanHarris15",

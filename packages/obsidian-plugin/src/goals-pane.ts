@@ -1,5 +1,6 @@
 import { daysLeftPhrase } from "@groundwork/core";
 import { paceLabel, type GoalBoardView } from "./goal-board";
+import { appendSvgFragment } from "./svg-fragment";
 
 export interface GoalsPaneHandlers {
 	onSelect: (id: string) => void;
@@ -85,7 +86,35 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	const ring = el(hero, "div", "gw-ring");
 	const pct = Math.round(board.readiness * 100);
 	const circ = 2 * Math.PI * 52;
-	ring.innerHTML = `<svg viewBox="0 0 128 128" aria-hidden="true"><circle cx="64" cy="64" r="52" fill="none" stroke="#333" stroke-width="10"></circle><circle cx="64" cy="64" r="52" fill="none" stroke="#3CC56F" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(pct / 100) * circ} 999" transform="rotate(-90 64 64)"></circle><text x="64" y="70" text-anchor="middle">${pct}%</text></svg>`;
+	const doc = ring.ownerDocument;
+	const NS = "http://www.w3.org/2000/svg";
+	const ringSvg = doc.createElementNS(NS, "svg");
+	ringSvg.setAttribute("viewBox", "0 0 128 128");
+	ringSvg.setAttribute("aria-hidden", "true");
+	const track = doc.createElementNS(NS, "circle");
+	track.setAttribute("cx", "64");
+	track.setAttribute("cy", "64");
+	track.setAttribute("r", "52");
+	track.setAttribute("fill", "none");
+	track.setAttribute("stroke", "#333");
+	track.setAttribute("stroke-width", "10");
+	const arc = doc.createElementNS(NS, "circle");
+	arc.setAttribute("cx", "64");
+	arc.setAttribute("cy", "64");
+	arc.setAttribute("r", "52");
+	arc.setAttribute("fill", "none");
+	arc.setAttribute("stroke", "#3CC56F");
+	arc.setAttribute("stroke-width", "10");
+	arc.setAttribute("stroke-linecap", "round");
+	arc.setAttribute("stroke-dasharray", `${(pct / 100) * circ} 999`);
+	arc.setAttribute("transform", "rotate(-90 64 64)");
+	const label = doc.createElementNS(NS, "text");
+	label.setAttribute("x", "64");
+	label.setAttribute("y", "70");
+	label.setAttribute("text-anchor", "middle");
+	label.textContent = `${pct}%`;
+	ringSvg.append(track, arc, label);
+	ring.append(ringSvg);
 	el(ring, "div", "gw-ring-label", `ready, weighted by the goal\n${board.knownCount} of ${board.conceptCount} concepts known`);
 
 	const list = el(main, "div", "gw-concept-list");
@@ -180,7 +209,7 @@ function option(parent: HTMLElement, primary: boolean, title: string, detail: st
 	button.addEventListener("click", onClick);
 }
 
-function icon(parent: HTMLElement, body: string): SVGElement {
+function icon(parent: HTMLElement, fragment: string): SVGElement {
 	const svg = parent.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
 	svg.setAttribute("viewBox", "0 0 24 24");
 	svg.setAttribute("fill", "none");
@@ -189,7 +218,7 @@ function icon(parent: HTMLElement, body: string): SVGElement {
 	svg.setAttribute("stroke-linecap", "round");
 	svg.setAttribute("stroke-linejoin", "round");
 	svg.setAttribute("aria-hidden", "true");
-	svg.innerHTML = body;
+	appendSvgFragment(svg, fragment);
 	return svg;
 }
 

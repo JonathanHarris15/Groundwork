@@ -1,4 +1,5 @@
 import type { ConceptMapModel } from "@groundwork/core";
+import { appendSvgFragment } from "./svg-fragment";
 
 const NS = "http://www.w3.org/2000/svg";
 let mapSerial = 0;
@@ -101,7 +102,12 @@ function drawMap(doc: Document, model: ConceptMapModel): SVGSVGElement {
 	grad.id = gradId;
 	grad.setAttribute("x1", "0");
 	grad.setAttribute("x2", "1");
-	grad.innerHTML = `<stop offset="0" stop-color="#3CC56F"></stop><stop offset="1" stop-color="#45A9F0"></stop>`;
+	for (const [offset, color] of [["0", "#3CC56F"], ["1", "#45A9F0"]] as const) {
+		const stop = doc.createElementNS(NS, "stop");
+		stop.setAttribute("offset", offset);
+		stop.setAttribute("stop-color", color);
+		grad.append(stop);
+	}
 	defs.append(grad);
 	svg.append(defs);
 	const byId = new Map(model.nodes.map((node) => [node.id, node]));
@@ -237,7 +243,7 @@ function checkIcon(doc: Document): SVGElement {
 function arrowIcon(doc: Document): SVGElement {
 	return icon(doc, `<path d="M5 12h14M13 6l6 6-6 6"></path>`);
 }
-function icon(doc: Document, body: string): SVGElement {
+function icon(doc: Document, fragment: string): SVGElement {
 	const svg = doc.createElementNS(NS, "svg");
 	svg.setAttribute("viewBox", "0 0 24 24");
 	svg.setAttribute("fill", "none");
@@ -246,7 +252,7 @@ function icon(doc: Document, body: string): SVGElement {
 	svg.setAttribute("stroke-linecap", "round");
 	svg.setAttribute("stroke-linejoin", "round");
 	svg.setAttribute("aria-hidden", "true");
-	svg.innerHTML = body;
+	appendSvgFragment(svg, fragment);
 	return svg;
 }
 

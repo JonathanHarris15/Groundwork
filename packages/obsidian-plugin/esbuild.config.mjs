@@ -1,12 +1,13 @@
 import esbuild from "esbuild";
 import { builtinModules } from "node:module";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const prod = process.argv[2] === "production";
+const manifest = JSON.parse(readFileSync(path.join(here, "manifest.json"), "utf8"));
 
 function commit() {
 	try {
@@ -17,8 +18,10 @@ function commit() {
 		return "unknown";
 	}
 }
-// The CLI and the running plugin read this stamp from the first line of main.js to tell builds apart.
-const build = `${commit()} ${new Date().toISOString().slice(0, 19).replace("T", " ")}Z`;
+
+// Production bundles use the manifest version so community-plugin rebuild checks are deterministic.
+// Dev/watch builds still stamp git + time so local copies are easy to tell apart.
+const build = prod ? manifest.version : `${commit()} ${new Date().toISOString().slice(0, 19).replace("T", " ")}Z`;
 const outdir = path.join(here, "dist");
 mkdirSync(outdir, { recursive: true });
 

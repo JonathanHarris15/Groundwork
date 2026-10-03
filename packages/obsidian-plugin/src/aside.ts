@@ -104,8 +104,8 @@ export class AsideCard {
 	}
 
 	private grow(): void {
-		this.inputEl.style.height = "auto";
-		this.inputEl.style.height = `${Math.min(this.inputEl.scrollHeight, 160)}px`;
+		this.inputEl.setCssStyles({ height: "auto" });
+		this.inputEl.setCssStyles({ height: `${Math.min(this.inputEl.scrollHeight, 160)}px` });
 	}
 
 	async renderMessage(role: "user" | "assistant", text: string): Promise<HTMLElement> {

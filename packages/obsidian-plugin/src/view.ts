@@ -66,6 +66,7 @@ import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source"
 import { AskCard, QuizCard, TestCard } from "./cards";
 import { FlashcardsPane } from "./flashcards-pane";
 import { enhanceGraphs } from "./graph-pane";
+import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
 import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
 
@@ -947,8 +948,8 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private autoGrow(): void {
-		this.uiInputEl.style.height = "auto";
-		this.uiInputEl.style.height = `${Math.min(this.uiInputEl.scrollHeight, 220)}px`;
+		this.uiInputEl.setCssStyles({ height: "auto" });
+		this.uiInputEl.setCssStyles({ height: `${Math.min(this.uiInputEl.scrollHeight, 220)}px` });
 	}
 
 	private scrollToBottom(force = false): void {
@@ -1622,7 +1623,16 @@ export class ChatView extends ItemView implements ToolUI {
 			attr: { type: "button", role: "tab", "aria-selected": id === this.screen ? "true" : "false" },
 		});
 		const icon = button.createSpan({ cls: "gw-view-icon" });
-		icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+		const svg = icon.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
+		svg.setAttribute("viewBox", "0 0 24 24");
+		svg.setAttribute("fill", "none");
+		svg.setAttribute("stroke", "currentColor");
+		svg.setAttribute("stroke-width", "2");
+		svg.setAttribute("stroke-linecap", "round");
+		svg.setAttribute("stroke-linejoin", "round");
+		svg.setAttribute("aria-hidden", "true");
+		appendSvgFragment(svg, path);
+		icon.append(svg);
 		button.createSpan({ text: label });
 		this.registerDomEvent(button, "click", () => this.showScreen(id));
 		return button;
