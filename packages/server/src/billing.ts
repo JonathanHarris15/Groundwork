@@ -49,12 +49,12 @@ export function createBilling(stripe: Stripe, prices: { byom: string; included: 
 		async applyEvent(raw, signature) {
 			if (!signature) throw badRequest("Missing Stripe signature.");
 			const event = stripe.webhooks.constructEvent(raw, signature, webhookSecret);
-			applyStripeEvent(accounts, event);
+			applyStripeEvent(accounts, event, prices);
 		},
 	};
 }
 
-export function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event): void {
+export function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event, prices?: { byom: string; included: string }): void {
 	if (event.type === "checkout.session.completed") {
 		const session = event.data.object;
 		const uid = session.metadata?.uid || session.client_reference_id || undefined;
@@ -69,11 +69,39 @@ export function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event
 		const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
 		const uid = subscription.metadata?.uid || accounts.findByCustomer(customer)?.uid;
 		if (!uid) return;
-		const plan = subscription.metadata?.plan;
+		const plan = planOnSubscription(subscription, prices);
 		const active = event.type === "customer.subscription.updated" && (subscription.status === "active" || subscription.status === "trialing");
-		if (active && isPaid(plan)) accounts.setPlan(uid, plan);
+		if (active && plan) accounts.setPlan(uid, plan);
 		else accounts.setPlan(uid, "free");
 	}
+}
+
+/** Portal switches replace the price and leave the checkout plan name on the subscription. */
+function planOnSubscription(subscription: Stripe.Subscription, prices?: { byom: string; included: string }): "byom" | "included" | undefined {
+	const fromPrice = planFromPrice(subscription, prices);
+	if (fromPrice) return fromPrice;
+	return isPaid(subscription.metadata?.plan) ? subscription.metadata.plan : undefined;
+}
+
+function planFromPrice(subscription: Stripe.Subscription, prices?: { byom: string; included: string }): "byom" | "included" | undefined {
+	if (!prices) return undefined;
+	const ids = new Set(subscriptionPriceIds(subscription));
+	const byom = ids.has(prices.byom);
+	const included = ids.has(prices.included);
+	if (byom && !included) return "byom";
+	if (included && !byom) return "included";
+	return undefined;
+}
+
+function subscriptionPriceIds(subscription: Stripe.Subscription): string[] {
+	const items = subscription.items?.data ?? [];
+	const ids: string[] = [];
+	for (const item of items) {
+		const price = item.price;
+		if (typeof price === "string") ids.push(price);
+		else if (price?.id) ids.push(price.id);
+	}
+	return ids;
 }
 
 function unconfigured(): Billing {

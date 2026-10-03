@@ -190,6 +190,19 @@ Create an account on the site (or from Obsidian: **Settings → Groundwork → A
 
 `GROUNDWORK_DATA_FILE` chooses where accounts are stored (default `data/accounts.json`, gitignored). `PORT` and `GROUNDWORK_SITE_DIR` override the listen port and the site files.
 
+### Paid plans (Stripe)
+
+Paid plans stay off until the server process has four sandbox values: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_BYOM` (Bring your own model, 9 USD/month), and `STRIPE_PRICE_INCLUDED` (Groundwork, 20 USD/month). From the repo root:
+
+```bash
+./scripts/stripe-setup.sh
+npm run server
+```
+
+The script writes them to `.env` (gitignored). `npm run server` loads that file. The log line should include `billing on`. For a local checkout, the script installs the Stripe CLI into `~/.local/bin` if it is missing, and you leave `stripe listen` running so Stripe can reach `POST /v1/stripe/webhook`.
+
+Manage billing opens the Stripe customer portal. A customer switches between Bring your own model and Groundwork there, on the same subscription. The webhook sets the account plan from that subscription's price. Cancellation stays at the end of the billing period.
+
 ## Obsidian community plugin
 
 The disclosures above — payment for full access, a required account, network services, and files outside the vault — are what the [Obsidian community plugin directory](https://docs.obsidian.md) requires in this README. The license is MIT (`LICENSE`).
