@@ -12,7 +12,8 @@
     "packages/account-server"
   ],
   "scripts": {
-    "build": "npm run build -w packages/obsidian-plugin && npm run build -w packages/cli && npm run build -w packages/server && npm run build -w packages/account-server",
+    "build": "npm run build -w packages/obsidian-plugin",
+    "build:all": "npm run build && npm run build -w packages/cli && npm run build -w packages/server && npm run build -w packages/account-server",
     "account": "npm run start -w packages/account-server",
     "dev:plugin": "npm run dev -w packages/obsidian-plugin",
     "typecheck": "tsc -p tsconfig.json --noEmit",

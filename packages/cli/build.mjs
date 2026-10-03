@@ -23,7 +23,7 @@ chmodSync(path.join(dist, "groundwork.js"), 0o755);
 
 const pluginDist = path.resolve(here, "../obsidian-plugin/dist");
 if (!existsSync(path.join(pluginDist, "main.js"))) {
-	console.error("Build the Obsidian plugin first (npm run build at the repo root does both).");
+	console.error("Build the Obsidian plugin first (npm run build:all at the repo root builds the plugin and CLI).");
 	process.exit(1);
 }
 cpSync(pluginDist, path.join(dist, "plugin"), { recursive: true });

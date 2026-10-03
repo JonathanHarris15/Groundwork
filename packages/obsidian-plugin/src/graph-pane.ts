@@ -197,8 +197,6 @@ function sizeSvg(svg: SVGSVGElement): { w: number; h: number } {
 	const h = vb && vb.height > 1 ? vb.height : 240;
 	svg.setAttribute("width", String(w));
 	svg.setAttribute("height", String(h));
-	svg.style.setProperty("width", `${w}px`, "important");
-	svg.style.setProperty("height", `${h}px`, "important");
-	svg.style.setProperty("max-width", "none", "important");
+	svg.setCssStyles({ width: `${w}px`, height: `${h}px` });
 	return { w, h };
 }

@@ -105,8 +105,7 @@ export default class GroundworkPlugin extends Plugin {
 		const notice = new Notice(
 			createFragment((f) => {
 				f.createDiv({ text: "Groundwork was updated. Reload it to use the new version." });
-				const btn = f.createEl("button", { text: "Reload Groundwork", cls: "mod-cta" });
-				btn.style.marginTop = "8px";
+				const btn = f.createEl("button", { text: "Reload Groundwork", cls: "mod-cta gw-notice-reload-btn" });
 				btn.addEventListener("click", () => {
 					notice.hide();
 					void this.reloadSelf();
