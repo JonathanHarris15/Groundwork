@@ -70,9 +70,13 @@ export function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event
 		const uid = subscription.metadata?.uid || accounts.findByCustomer(customer)?.uid;
 		if (!uid) return;
 		const plan = subscription.metadata?.plan;
-		const active = event.type === "customer.subscription.updated" && (subscription.status === "active" || subscription.status === "trialing");
-		if (active && isPaid(plan)) accounts.setPlan(uid, plan);
-		else accounts.setPlan(uid, "free");
+		const active =
+			event.type === "customer.subscription.updated" && (subscription.status === "active" || subscription.status === "trialing");
+		if (event.type === "customer.subscription.deleted" || !active) {
+			accounts.setPlan(uid, "free");
+			return;
+		}
+		if (isPaid(plan)) accounts.setPlan(uid, plan);
 	}
 }
 
