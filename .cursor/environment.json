@@ -1,6 +1,7 @@
 {
   "name": "groundwork",
   "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
   "ports": [
     { "name": "Account server + website (packages/site)", "port": 8787 }
   ]

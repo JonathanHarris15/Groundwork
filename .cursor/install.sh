@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 
 npm ci --no-audit --no-fund
 npm run build:all
+bash .cursor/install-obsidian.sh
 
 # Optional: fastbrowse for jev-smoke-test skill (non-fatal; see .cursor/skills/jev-smoke-test/)
 export PATH="${HOME}/.local/bin:${PATH:-}"
