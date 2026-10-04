@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import subprocess
 import sys
 from pathlib import Path
 
@@ -38,6 +39,23 @@ def ensure_default_branch() -> None:
         return
     if gw.confirm(f"Switch to {default} now?"):
         gw.run([*git, "switch", default])
+
+
+def relaunch() -> None:
+    """Run this updater again and stop.
+
+    The process imported these scripts before `git pull`. The second run builds
+    and installs the scripts that just arrived.
+
+    os.execv on Windows joins the arguments with spaces and does not quote them.
+    A checkout in a folder named "Personal Projects" is then opened as the first
+    word only. subprocess quotes each argument.
+    """
+    os.environ["GROUNDWORK_UPDATE_REEXEC"] = "1"
+    cmd = [sys.executable, *sys.argv]
+    if sys.platform == "win32":
+        raise SystemExit(subprocess.run(cmd).returncode)
+    os.execv(sys.executable, cmd)
 
 
 def main() -> None:
@@ -65,8 +83,7 @@ def main() -> None:
             ensure_default_branch()
         gw.update_repo(skip=args.no_pull)
         if not args.no_pull:
-            os.environ["GROUNDWORK_UPDATE_REEXEC"] = "1"
-            os.execv(sys.executable, [sys.executable, *sys.argv])
+            relaunch()
     commit = gw.output(["git", "-C", str(gw.REPO), "log", "-1", "--format=%h %s"])
     if commit:
         gw.info(f"Building {commit}")
