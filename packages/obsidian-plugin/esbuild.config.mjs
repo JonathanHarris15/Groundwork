@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { pluginBuildStamp, refreshCliPluginSnapshot } from "./build-hooks.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const prod = process.argv[2] === "production";
@@ -20,8 +21,15 @@ function commit() {
 }
 
 // Production bundles use the manifest version so community-plugin rebuild checks are deterministic.
+// `python update.py` sets GROUNDWORK_LOCAL_BUILD so the stamp changes and Obsidian offers a reload.
 // Dev/watch builds still stamp git + time so local copies are easy to tell apart.
-const build = prod ? manifest.version : `${commit()} ${new Date().toISOString().slice(0, 19).replace("T", " ")}Z`;
+const build = pluginBuildStamp({
+	prod,
+	local: process.env.GROUNDWORK_LOCAL_BUILD === "1",
+	version: manifest.version,
+	commit: commit(),
+	time: `${new Date().toISOString().slice(0, 19).replace("T", " ")}Z`,
+});
 const outdir = path.join(here, "dist");
 mkdirSync(outdir, { recursive: true });
 
@@ -30,6 +38,7 @@ const copyAssets = {
 	setup(build) {
 		build.onEnd(() => {
 			for (const f of ["manifest.json", "styles.css"]) copyFileSync(path.join(here, f), path.join(outdir, f));
+			refreshCliPluginSnapshot(outdir, path.resolve(here, "../cli/dist/plugin"));
 		});
 	},
 };

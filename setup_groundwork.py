@@ -105,7 +105,7 @@ def which(cmd: str) -> Optional[str]:
     return shutil.which(cmd)
 
 
-def run(cmd: list[str], cwd: Optional[Path] = None, check: bool = True, capture: bool = False, quiet: bool = False) -> subprocess.CompletedProcess:
+def run(cmd: list[str], cwd: Optional[Path] = None, check: bool = True, capture: bool = False, quiet: bool = False, env: Optional[dict] = None) -> subprocess.CompletedProcess:
     exe = which(cmd[0]) or cmd[0]
     if not quiet:
         info(_c("2", "$ " + " ".join(cmd)))
@@ -117,6 +117,7 @@ def run(cmd: list[str], cwd: Optional[Path] = None, check: bool = True, capture:
             capture_output=capture,
             encoding="utf-8" if capture else None,
             errors="replace" if capture else None,
+            env=env,
         )
     except FileNotFoundError:
         if check:
@@ -404,7 +405,14 @@ def ensure_git_identity(have_gh: bool) -> None:
 
 def build() -> None:
     run(["npm", "install", "--no-fund", "--no-audit"], cwd=REPO)
-    run(["npm", "run", "build"], cwd=REPO)
+    # A local stamp changes every update, so Obsidian offers "Reload Groundwork"
+    # instead of treating every 0.1.1 bundle as the one already running.
+    local = os.environ.copy()
+    local["GROUNDWORK_LOCAL_BUILD"] = "1"
+    run(["npm", "run", "build"], cwd=REPO, env=local)
+    # groundwork.js is what install-plugin runs. Rebuild it so it prefers this
+    # plugin build over an older copy under packages/cli/dist/plugin.
+    run(["npm", "run", "build", "-w", "packages/cli"], cwd=REPO)
     ok("Built the Obsidian plugin and the groundwork command")
     if which("groundwork"):
         return ok("`groundwork` is on your PATH")
