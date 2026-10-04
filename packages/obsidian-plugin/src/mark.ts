@@ -6,7 +6,11 @@ export const MARK_SVG = `<svg viewBox="-4 0 128 110" aria-hidden="true"><polylin
 export function mountMark(parent: HTMLElement, cls = "gw-mark"): HTMLElement {
 	const hold = parent.ownerDocument.createElement("span");
 	hold.className = cls;
-	hold.appendChild(parseSvgMarkup(MARK_SVG));
+	try {
+		hold.appendChild(parseSvgMarkup(MARK_SVG, parent.ownerDocument));
+	} catch (err) {
+		console.error("Groundwork mark", err);
+	}
 	parent.appendChild(hold);
 	return hold;
 }
