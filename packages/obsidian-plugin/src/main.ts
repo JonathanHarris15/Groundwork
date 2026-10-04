@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorStatus, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
@@ -201,7 +201,11 @@ export default class GroundworkPlugin extends Plugin {
 		try {
 			const res = await fetch(`${accountOrigin()}/v1/tutor`, { headers: { authorization: `Bearer ${token}` } });
 			const body = (await res.json()) as TutorStatus;
-			if (!res.ok) return;
+			if (!res.ok) {
+				if (res.status === 401 || res.status === 403) this.disconnectAccount();
+				else this.tutorRoute = null;
+				return;
+			}
 			this.tutorRoute = body;
 		} catch {
 			// Keep the last route. A missed refresh should not drop a lesson in progress.
@@ -354,9 +358,16 @@ export default class GroundworkPlugin extends Plugin {
 			if (session.refreshToken !== refresh) saveAccountToken(this.app, session.refreshToken);
 			return session.idToken;
 		} catch (e) {
-			this.setSync("error", e instanceof Error ? e.message : String(e));
+			if (e instanceof AccountError && (e.status === 401 || e.status === 400)) this.disconnectAccount();
+			else this.setSync("error", e instanceof Error ? e.message : String(e));
 			return null;
 		}
+	}
+
+	private disconnectAccount(): void {
+		saveAccountToken(this.app, "");
+		this.tutorRoute = null;
+		this.setSync("offline", "open the website and choose Open Obsidian");
 	}
 
 	private async memoryClient(): Promise<AccountClient | null> {
