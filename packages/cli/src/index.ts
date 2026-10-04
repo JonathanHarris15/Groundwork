@@ -31,8 +31,9 @@ async function must(dir: string, args: string[]) {
 
 /** Everything `open` needs: plugin current, vault registered, Obsidian launched. */
 async function prepareAndOpen(vault: string, launch: boolean) {
-	const { changed, version } = await installPlugin(vault, bundledPluginDir(cliDir));
-	step(changed ? `Installed Groundwork plugin v${version} into the vault` : `Plugin v${version} is up to date`);
+	const pluginSrc = bundledPluginDir(cliDir);
+	const { changed, version } = await installPlugin(vault, pluginSrc);
+	step(changed ? `Installed Groundwork plugin v${version} from ${pluginSrc}` : `Plugin v${version} is up to date (${pluginSrc})`);
 	const reg = await registerVault(vault);
 	step(reg.registered ? `Registered the vault with Obsidian` : `Vault already known to Obsidian`);
 	if (changed) await new GitSync(vault).sync("groundwork: update plugin");
@@ -180,9 +181,11 @@ program
 	.option("--vault <dir>")
 	.action(async (opts: { vault?: string }) => {
 		const vault = await resolveVault(opts.vault);
-		const r = await installPlugin(vault, bundledPluginDir(cliDir));
+		const pluginSrc = bundledPluginDir(cliDir);
+		const r = await installPlugin(vault, pluginSrc);
 		const build = r.build ?? `v${r.version}`;
 		say(r.changed ? `Installed plugin build ${build}${r.previousBuild && r.previousBuild !== r.build ? ` (was ${r.previousBuild})` : ""}.` : `Plugin build ${build} already installed.`);
+		say(`  from ${pluginSrc}`);
 		say(`  into ${r.dest}`);
 	});
 

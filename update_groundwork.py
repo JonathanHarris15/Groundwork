@@ -15,6 +15,7 @@ First-time install is still `python setup_groundwork.py`.
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import sys
 from pathlib import Path
@@ -57,9 +58,15 @@ def main() -> None:
     if not gw.which("git"):
         gw.fail("git is required. Install it, or run setup_groundwork.py once.")
     gw.ok("git")
-    if not args.no_pull:
-        ensure_default_branch()
-    gw.update_repo(skip=args.no_pull)
+    # This process imported the updater before `git pull`. Restart once so the
+    # build and install steps are the scripts that just arrived.
+    if os.environ.get("GROUNDWORK_UPDATE_REEXEC") != "1":
+        if not args.no_pull:
+            ensure_default_branch()
+        gw.update_repo(skip=args.no_pull)
+        if not args.no_pull:
+            os.environ["GROUNDWORK_UPDATE_REEXEC"] = "1"
+            os.execv(sys.executable, [sys.executable, *sys.argv])
     commit = gw.output(["git", "-C", str(gw.REPO), "log", "-1", "--format=%h %s"])
     if commit:
         gw.info(f"Building {commit}")

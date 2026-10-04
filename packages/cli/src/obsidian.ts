@@ -8,8 +8,13 @@ import { PLUGIN_ID } from "@groundwork/core";
 const PLUGIN_FILES = ["main.js", "manifest.json", "styles.css"];
 
 export function bundledPluginDir(cliDir: string): string {
-	const candidates = [path.join(cliDir, "plugin"), path.resolve(cliDir, "../../obsidian-plugin/dist")];
-	const hit = candidates.find((d) => existsSync(path.join(d, "main.js")));
+	// `npm run build` writes packages/obsidian-plugin/dist and does not rebuild the CLI.
+	// The copy at cli/dist/plugin is only refreshed when the CLI itself is built, so
+	// preferring it made `python update.py` reinstall an older panel (no Learn / map / goals).
+	// A published CLI has no sibling workspace, and falls through to its own copy.
+	const workspace = path.resolve(cliDir, "../../obsidian-plugin/dist");
+	const snapshot = path.join(cliDir, "plugin");
+	const hit = [workspace, snapshot].find((d) => existsSync(path.join(d, "main.js")));
 	if (!hit) throw new Error("Bundled Obsidian plugin not found. Run `npm run build` in the Groundwork repo.");
 	return hit;
 }
