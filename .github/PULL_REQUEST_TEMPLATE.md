@@ -1,6 +1,13 @@
 ## Summary
 
-<!-- What changed and why -->
+<!-- The smallest visual that makes the change clear: a diagram, diff-sketch, call tree, or file tree (see .cursor/skills/pr/SKILL.md) -->
+
+## Evidence
+
+<!-- Before and after: screenshots for visual changes, otherwise the failing then passing test run or output. List the automated checks you ran (e.g. `npm test`). -->
+
+- **Before:**
+  **After:**
 
 ## Smoke test
 
@@ -12,6 +19,8 @@
 
 **Evidence (when run):** commands, JSON `status`, quoted visible copy from the page, approximate cost.
 
-## Test plan
+## Merge Danger
 
-- [ ] `npm test` (or other automated checks you ran)
+**Door:** <!-- one-way or two-way -->
+
+**Blast Radius:** <!-- one word, then any ramifications of merging -->

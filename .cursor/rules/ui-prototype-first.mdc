@@ -17,7 +17,7 @@ When a page update settles a design choice another page could follow, document t
 
 ## A brand-new feature that needs a new design
 
-When the feature has no existing page to put the design on, a lightweight HTML prototype comes first, then implementation. Path: `docs/design/prototypes/<issue-key>-<slug>.html` (use your Jira/GitHub issue key, e.g. `GW-42-profile-cards.html`). Never under `packages/server/public/` and never deployed as production Hosting except a temporary preview link.
+When the feature has no existing page to put the design on, a lightweight HTML prototype comes first, then implementation. Path: `docs/design/prototypes/<issue-key>-<slug>.html` (the issue key is `GH-` plus the GitHub issue number, e.g. `GH-42-profile-cards.html`). Never under `packages/server/public/` and never deployed as production Hosting except a temporary preview link.
 
 ### How prototypes are built
 
