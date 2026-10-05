@@ -47,6 +47,8 @@ test("first visit is calm with a checklist", async ({ page, request }) => {
 	await expect(page.getByRole("heading", { name: /^Welcome,/ })).toBeVisible();
 	await expect(page.getByRole("heading", { name: /First session/i })).toBeVisible();
 	await expect(page.locator(".board")).toHaveCount(0);
+	await expect(page.locator(".start-checklist #open-obsidian")).toBeVisible();
+	await expect(page.locator(".panel-cta")).toHaveCount(0);
 	await page.screenshot({ path: path.join(artifactRoot, "account-first-visit.png"), fullPage: true });
 });
 
@@ -57,7 +59,9 @@ test("local account dashboard with large study record", async ({ page, request }
 	await expect(page.getByRole("heading", { name: /Welcome back/i })).toBeVisible();
 	await expect(page.locator(".board")).toHaveCount(1);
 	await expect(page.getByRole("region", { name: /Concept graph/i })).toBeVisible();
-	await expect(page.locator(".concept-list li")).toHaveCount(48);
+	await expect(page.locator(".concept-list li")).toHaveCount(12);
+	await page.getByRole("button", { name: /Show \d+ more/i }).click();
+	expect(await page.locator(".concept-list li").count()).toBeGreaterThan(12);
 	await page.screenshot({ path: path.join(artifactRoot, "account-large-data.png"), fullPage: true });
 });
 

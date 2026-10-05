@@ -134,7 +134,8 @@ describe("account server", () => {
 		const board = script.slice(script.indexOf("function board"), script.indexOf("function usageTile"));
 		expect(board).toContain("goals.length");
 		expect(board).toContain("concepts.length");
-		expect(board).toContain("conceptList(concepts)");
+		expect(board).toContain("conceptListPanel(concepts)");
+		expect(script).toContain("concept-filter");
 		expect(board).toContain("They show up here as you study.");
 		expect(board).toContain("Goals you finish in Obsidian show up here.");
 		expect(board).not.toContain('<span class="big">0</span>');
@@ -172,6 +173,16 @@ describe("account server", () => {
 		expect(readSite("/favicon.svg")?.type).toContain("image/svg+xml");
 		const health = await route("GET", "/health", null, server);
 		expect(health).toMatchObject({ status: 200, json: { ok: true } });
+		const prodAuth = deps({
+			auth: {
+				firebase: true,
+				async uid() {
+					throw Object.assign(new Error("Sign in required."), { status: 401 });
+				},
+			},
+		});
+		const prodConfig = await route("GET", "/v1/web-config", null, prodAuth);
+		expect(prodConfig.json).toMatchObject({ localDev: false });
 		const paid = await route("POST", "/v1/account/plan", { plan: "included" }, server);
 		expect(paid.status).toBe(503);
 

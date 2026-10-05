@@ -16,7 +16,9 @@ export function webConfig(billing: boolean, firebaseAdmin: boolean): WebConfig {
 	const authDomain = process.env.FIREBASE_AUTH_DOMAIN?.trim() || file?.authDomain;
 	const projectId = process.env.FIREBASE_PROJECT_ID?.trim() || file?.projectId;
 	const firebase = apiKey && authDomain && projectId ? { apiKey, authDomain, projectId } : null;
-	return { firebase, billing, localDev: !firebaseAdmin };
+	// Two gates: no Firebase Admin (production Cloud Run always has it) and not a managed Cloud Run revision (K_SERVICE).
+	const localDev = !firebaseAdmin && !process.env.K_SERVICE?.trim();
+	return { firebase, billing, localDev };
 }
 
 function readWebConfig(): { apiKey: string; authDomain: string; projectId: string } | null {

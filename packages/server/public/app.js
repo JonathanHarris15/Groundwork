@@ -28,6 +28,17 @@ let firebaseAuth = null;
 let problem = "";
 let actionError = "";
 let billingQueryCleared = false;
+let conceptSearch = "";
+let conceptFilter = "needs-attention";
+let conceptVisible = 12;
+
+const CONCEPT_PAGE = 12;
+const CONCEPT_FILTER_LABEL = {
+	"needs-attention": "Needs attention",
+	weak: "Rusty or shaky",
+	all: "All concepts",
+	solid: "Solid only",
+};
 
 boot().catch((err) => {
 	problem = err.message;
@@ -232,15 +243,13 @@ function showAccount() {
 			? `<p class="hint">Billing portal is unavailable on this server.</p>`
 			: `<p class="hint">No active subscription. Use Change plan below to start checkout.</p>`;
 	show(`
+		<div class="account-shell">
 		${notice(true)}
 		<header class="page-head">
 			<h1>${greeting}</h1>
 			<p class="welcome-sub">${emptyRecord ? "Open Obsidian on this computer to start studying. Your record fills in after the first session." : "Goals, concepts, and plan usage from Obsidian show up here as you study."}</p>
 		</header>
-		${emptyRecord ? firstRunChecklist() : board()}
-		<div class="open-obsidian panel-cta${emptyRecord ? " is-primary" : ""}">
-			<button class="btn btn-ink" id="open-obsidian" type="button">Open Obsidian</button>
-		</div>
+		${emptyRecord ? firstRunChecklist() : `${board()}<p class="account-actions"><button class="btn btn-ink" type="button" id="open-obsidian">Open Obsidian</button></p>`}
 		<div class="settings">
 		<section class="section">
 			<h2><span class="node red"></span>Profile</h2>
@@ -270,9 +279,11 @@ function showAccount() {
 			<p>Your plan: <strong>${escapeHtml(planLabel())}</strong></p>
 			<button class="btn btn-line btn-sm" id="change-plan" type="button">Change plan</button>
 		</div>
+		</div>
 	`);
 	document.querySelector("#profile").addEventListener("submit", saveProfile);
-	document.querySelector("#open-obsidian").addEventListener("click", () => openObsidian());
+	attachOpenObsidian();
+	attachConceptListUI();
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#tutor-setup")?.addEventListener("submit", saveTutor);
 	document.querySelector("#portal").addEventListener("click", openPortal);
@@ -312,7 +323,10 @@ async function pullGroundwork() {
 		const holder = document.createElement("div");
 		holder.innerHTML = board();
 		const nextBoard = holder.querySelector(".board");
-		if (nextBoard) current.replaceWith(nextBoard);
+		if (nextBoard) {
+			current.replaceWith(nextBoard);
+			attachConceptListUI();
+		}
 	} catch {
 		// Keep the stats already on screen.
 	}
@@ -324,7 +338,7 @@ function renderChip() {
 	const email = user.email || account.email || "";
 	const letter = escapeHtml(String(name).slice(0, 1).toUpperCase() || "?");
 	const photo = user.photoURL ? `<img alt="" src="${escapeAttr(user.photoURL)}" />` : letter;
-	chip.innerHTML = `<span class="avatar">${photo}</span><span class="who"><span class="who-name">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span><button class="link-btn" id="sign-out" type="button" aria-label="Sign out">Sign out</button>`;
+	chip.innerHTML = `<span class="avatar">${photo}</span><span class="who"><span class="who-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span><button class="link-btn chip-signout" id="sign-out" type="button" aria-label="Sign out">Sign out</button>`;
 	chip.querySelector("#sign-out").addEventListener("click", () => {
 		actionError = "";
 		if (user?._local) {
@@ -346,7 +360,9 @@ function notice(signedIn) {
 	if (problem && !signedIn) bits.push(banner("red", problem));
 	if (actionError) bits.push(banner("red", actionError));
 	if (billingNote) bits.push(banner(billingFlag === "success" ? "green" : "hollow", billingNote));
-	if (signedIn && !config.billing) bits.push(banner("hollow", "Paid checkout is unavailable on this server. Free plan and account settings still work."));
+	if (signedIn && !config.billing && config.localDev) {
+		bits.push(banner("hollow", "Paid checkout is unavailable on this server. Free plan and account settings still work."));
+	}
 	if (!bits.length) return "";
 	return `<div class="notices" aria-live="polite">${bits.join("")}</div>`;
 }
@@ -379,10 +395,13 @@ function firstRunChecklist() {
 		<section class="start-checklist" aria-labelledby="start-title">
 			<h2 id="start-title" class="start-title">First session</h2>
 			<ol class="start-steps">
-				<li><span class="start-step-num" aria-hidden="true">1</span><div><strong>Open Obsidian</strong><p>Use the button below. Groundwork connects this browser sign-in to the plugin on this computer.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">1</span><div><strong>Open Obsidian</strong><p>Groundwork connects this browser sign-in to the plugin on this computer.</p></div></li>
 				<li><span class="start-step-num" aria-hidden="true">2</span><div><strong>Install the plugin if asked</strong><p>Obsidian may open the Groundwork listing in the community catalog.</p></div></li>
 				<li><span class="start-step-num" aria-hidden="true">3</span><div><strong>Study in the vault</strong><p>Choose folders, set a goal, and quiz. Concepts and goals sync back here automatically.</p></div></li>
 			</ol>
+			<div class="start-actions">
+				<button class="btn btn-ink btn-wide" type="button" id="open-obsidian">Open Obsidian</button>
+			</div>
 		</section>`;
 }
 
@@ -422,7 +441,7 @@ function board() {
 					${graphLegend(conceptGraph())}
 				</div>
 				${conceptGraphSvg(conceptGraph())}
-				${conceptList(concepts)}
+				${conceptListPanel(concepts)}
 			</div>
 			<div class="goals">
 				<h3 class="goals-title">Goals reached</h3>
@@ -476,16 +495,119 @@ function conceptGraphSvg(graph) {
 		const name = open ? `${node.title} (not quizzed yet)` : node.title;
 		return `<g class="graph-node${open ? " is-open" : ""}"><title>${escapeHtml(name)}</title><circle class="graph-halo" cx="${num(node.x)}" cy="${num(node.y)}" r="9" ${halo}></circle><circle class="graph-dot" cx="${num(node.x)}" cy="${num(node.y)}" r="4.5" ${dot}></circle>${label}</g>`;
 	});
-	return `<div class="graph-scroll" tabindex="0" role="region" aria-label="Concept graph. Scroll horizontally when the map is wider than the screen."><svg class="graph" style="min-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg></div>`;
+	const graphH = Math.min(height, 200);
+	return `<div class="graph-scroll" tabindex="0" role="region" aria-label="Concept graph. Scroll horizontally when the map is wider than the screen."><svg class="graph" viewBox="0 0 ${width} ${height}" height="${graphH}" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg></div>`;
 }
 
-function conceptList(concepts) {
-	if (!concepts.length) return "";
+function conceptPriority(status) {
+	if (status === "rusty") return 0;
+	if (status === "shaky") return 1;
+	if (status === "learning") return 2;
+	if (status === "unassessed") return 3;
+	if (status === "solid") return 4;
+	return 5;
+}
+
+function sortedConcepts(concepts) {
+	return concepts.slice().sort((a, b) => conceptPriority(a.status) - conceptPriority(b.status) || a.title.localeCompare(b.title));
+}
+
+function filteredConcepts(concepts) {
+	let list = sortedConcepts(concepts);
+	if (conceptFilter === "needs-attention") list = list.filter((c) => c.status !== "solid");
+	else if (conceptFilter === "weak") list = list.filter((c) => c.status === "rusty" || c.status === "shaky");
+	else if (conceptFilter === "solid") list = list.filter((c) => c.status === "solid");
+	const q = conceptSearch.trim().toLowerCase();
+	if (q) list = list.filter((c) => c.title.toLowerCase().includes(q));
+	return list;
+}
+
+function conceptListItems(concepts) {
+	if (!concepts.length) return `<p class="sky-empty">No concepts match this filter.</p>`;
 	const colorOf = new Map((conceptGraph().nodes || []).map((node) => [node.id, node.color]));
-	return `<div class="concept-list-scroll"><ul class="concept-list">${concepts.map((concept) => {
+	return `<ul class="concept-list">${concepts.map((concept) => {
 		const color = safeColor(colorOf.get(concept.id));
 		return `<li><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name" title="${escapeAttr(concept.title)}">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
-	}).join("")}</ul></div>`;
+	}).join("")}</ul>`;
+}
+
+function conceptListPanel(concepts) {
+	if (!concepts.length) return "";
+	const filtered = filteredConcepts(concepts);
+	const visible = filtered.slice(0, conceptVisible);
+	const options = Object.entries(CONCEPT_FILTER_LABEL).map(([value, label]) => `<option value="${escapeAttr(value)}" ${conceptFilter === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+	return `
+		<div class="concept-panel" data-concept-panel>
+			<div class="concept-toolbar">
+				<label class="field-compact grow">
+					<span class="label-text">Search</span>
+					<input class="input input-compact" type="search" id="concept-search" placeholder="Find a concept" value="${escapeAttr(conceptSearch)}" autocomplete="off" />
+				</label>
+				<label class="field-compact">
+					<span class="label-text">Show</span>
+					<select class="input input-compact" id="concept-filter">${options}</select>
+				</label>
+			</div>
+			<div class="concept-list-scroll" id="concept-list-host">${conceptListItems(visible)}</div>
+			<div class="concept-list-footer">
+				<span class="concept-count" id="concept-count" aria-live="polite">${escapeHtml(conceptCountLabel(filtered.length, visible.length, concepts.length))}</span>
+				${filtered.length > visible.length ? `<button class="btn btn-line btn-sm" type="button" id="concept-more">Show ${Math.min(CONCEPT_PAGE, filtered.length - visible.length)} more</button>` : ""}
+			</div>
+		</div>`;
+}
+
+function conceptCountLabel(filtered, shown, total) {
+	if (!total) return "No concepts yet.";
+	if (filtered === total && shown === filtered) return `${total} concept${total === 1 ? "" : "s"}.`;
+	return `Showing ${shown} of ${filtered} (${total} total).`;
+}
+
+function refreshConceptListHost() {
+	const host = document.querySelector("#concept-list-host");
+	const count = document.querySelector("#concept-count");
+	const more = document.querySelector("#concept-more");
+	if (!host) return;
+	const concepts = learnedConcepts();
+	const filtered = filteredConcepts(concepts);
+	const visible = filtered.slice(0, conceptVisible);
+	host.innerHTML = conceptListItems(visible);
+	if (count) count.textContent = conceptCountLabel(filtered.length, visible.length, concepts.length);
+	if (more) {
+		if (filtered.length > visible.length) {
+			more.hidden = false;
+			more.textContent = `Show ${Math.min(CONCEPT_PAGE, filtered.length - visible.length)} more`;
+		} else {
+			more.hidden = true;
+		}
+	}
+}
+
+function attachConceptListUI() {
+	const panel = document.querySelector("[data-concept-panel]");
+	if (!panel) return;
+	const search = panel.querySelector("#concept-search");
+	const filter = panel.querySelector("#concept-filter");
+	const more = panel.querySelector("#concept-more");
+	search?.addEventListener("input", () => {
+		conceptSearch = search.value;
+		conceptVisible = CONCEPT_PAGE;
+		refreshConceptListHost();
+	});
+	filter?.addEventListener("change", () => {
+		conceptFilter = filter.value;
+		conceptVisible = CONCEPT_PAGE;
+		refreshConceptListHost();
+	});
+	more?.addEventListener("click", () => {
+		conceptVisible += CONCEPT_PAGE;
+		refreshConceptListHost();
+	});
+}
+
+function attachOpenObsidian() {
+	for (const button of document.querySelectorAll("#open-obsidian")) {
+		button.addEventListener("click", () => openObsidian());
+	}
 }
 
 function statusLabel(status) {
