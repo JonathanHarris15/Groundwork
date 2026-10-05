@@ -1,7 +1,11 @@
 import { App, FuzzySuggestModal, PluginSettingTab, Setting, TFolder } from "obsidian";
 import { cleanFolderList, DEFAULT_READ_FOLDERS, DEFAULT_WRITE_FOLDERS, type FolderAccess } from "@groundwork/core";
+import { appearanceFrom, type GroundworkAppearance } from "./appearance";
 import { BUILD } from "./build";
 import type GroundworkPlugin from "./main";
+
+export type { GroundworkAppearance };
+export { appearanceFrom };
 
 export type ProviderId = "claude-code" | "demo";
 
@@ -39,6 +43,8 @@ export interface GroundworkSettings {
 	model: string;
 	maxTokens: number;
 	deviceName: string;
+	/** Obsidian follows the vault. Dark and Light restyle the whole panel, buttons included. */
+	appearance: GroundworkAppearance;
 	/** Vault folders the tutor may list and open. */
 	readFolders: string[];
 	/** Vault folders where the tutor may write a file to hand in. */
@@ -52,6 +58,7 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 	model: "claude-sonnet-4-5",
 	maxTokens: 8192,
 	deviceName: "",
+	appearance: "obsidian",
 	readFolders: [],
 	writeFolders: [],
 };
