@@ -9,10 +9,10 @@ Follow `.cursor/skills/jev-smoke-test/SKILL.md` for install, keys, commands, and
 
 ## When it is required
 
-Any change touching **user-visible surfaces** — `packages/site/public/`, pages and assets served by `packages/account-server`, the Obsidian plugin UI under `packages/obsidian-plugin/` when the change is visible in the plugin — **must** run the jev smoke test against the **local account server** (`http://127.0.0.1:8787` after `npm run account`) before opening or marking a PR ready, and **again** after the final fix commit.
+Any change touching **user-visible surfaces** — `packages/server/public/` (the groundworklearn.com site), or the Obsidian plugin UI under `packages/obsidian-plugin/` when the change is visible in the plugin — **must** run the jev smoke test against the **local website server** (`http://127.0.0.1:8787` after `npm run server`) before opening or marking a PR ready, and **again** after the final fix commit.
 
 - **Bug fixes:** smoke-test the repro path **before** (confirm the bug) and **after** (confirm the fix) when feasible.
-- **Backend-only** changes that change what a page shows: smoke-test the **affected page** on the account server too.
+- **Backend-only** changes that change what a page shows: smoke-test the **affected page** on the local website server too.
 
 Pure tests, docs, or infra with **no UI effect** may skip with a one-line concrete reason in the PR.
 
@@ -22,7 +22,7 @@ Pure tests, docs, or infra with **no UI effect** may skip with a one-line concre
 
 - Use fastbrowse with **`--local`**, read-only checks only.
 - Prefer `export FASTBROWSE_LLM_MODEL=openai/gpt-6-luna` (see skill).
-- **Never** log in to production Firebase Hosting, **never** submit real credentials on prod. Logged-in flows only against `http://127.0.0.1:8787` (local account server) when appropriate — still read-only, no destructive actions.
+- **Never** log in to production Firebase Hosting, **never** submit real credentials on prod. Logged-in flows only against `http://127.0.0.1:8787` (local website server) when appropriate — still read-only, no destructive actions.
 
 ## PR body — Smoke test section
 

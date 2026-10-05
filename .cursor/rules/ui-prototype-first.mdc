@@ -7,9 +7,9 @@ alwaysApply: true
 
 ## Updating a design that already exists
 
-Change the real pages under `packages/site/public/` (and shared CSS/JS they use). Run the local account server (`npm run account`, default `http://127.0.0.1:8787`) and verify in the browser. Do not make a standalone HTML prototype for a restyle, a style sweep, or a layout change to a page that already ships.
+Change the real pages under `packages/server/public/` (the groundworklearn.com site, and the CSS/JS it uses). Run the local website server (`npm run server`, default `http://127.0.0.1:8787`) and verify in the browser. Do not make a standalone HTML prototype for a restyle, a style sweep, or a layout change to a page that already ships.
 
-If local preview is wrong, it is not merged. Do not stop and wait for a prototype approval before editing `packages/site/public/`.
+If local preview is wrong, it is not merged. Do not stop and wait for a prototype approval before editing `packages/server/public/`.
 
 ## Write the convention into project docs
 
@@ -17,12 +17,12 @@ When a page update settles a design choice another page could follow, document t
 
 ## A brand-new feature that needs a new design
 
-When the feature has no existing page to put the design on, a lightweight HTML prototype comes first, then implementation. Path: `docs/design/prototypes/<issue-key>-<slug>.html` (use your Jira/GitHub issue key, e.g. `GW-42-profile-cards.html`). Never under `packages/site/public/` and never deployed as production Hosting except a temporary preview link.
+When the feature has no existing page to put the design on, a lightweight HTML prototype comes first, then implementation. Path: `docs/design/prototypes/<issue-key>-<slug>.html` (use your Jira/GitHub issue key, e.g. `GW-42-profile-cards.html`). Never under `packages/server/public/` and never deployed as production Hosting except a temporary preview link.
 
 ### How prototypes are built
 
-- Link the real stylesheets by **relative path** from the prototype file, e.g. `../../../packages/site/public/site.css`.
-- Match typography to the live site: copy the font `<link>` pattern from `packages/site/public/index.html` (Fraunces + Outfit) or link those Google Fonts URLs explicitly.
+- Link the real stylesheets by **relative path** from the prototype file, e.g. `../../../packages/server/public/styles.css`.
+- Match typography to the live site: copy the font `<link>` pattern from `packages/server/public/index.html` (Jost) or link that Google Fonts URL explicitly.
 - Use the same class names and tokens as the live site where possible; prototype-only CSS goes in an inline `<style>` block.
 - **Fictional data only** — no real learner emails, vault paths, or account content.
 - Must read correctly at **390px** and **1280px** width.
@@ -60,7 +60,7 @@ Use the commit SHA that contains the prototype file.
 
 ## Smoke test
 
-Prototype-only commits **skip** the jev smoke test. Any PR that changes `packages/site/public/` or other user-visible UI still runs jev in full per `.cursor/rules/smoke-test.mdc`.
+Prototype-only commits **skip** the jev smoke test. Any PR that changes `packages/server/public/` or other user-visible UI still runs jev in full per `.cursor/rules/smoke-test.mdc`.
 
 ## Supersedes in-app `?variant=` prototypes
 

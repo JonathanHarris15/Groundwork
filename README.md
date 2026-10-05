@@ -170,25 +170,23 @@ The default vault is saved in `~/.config/groundwork/config.json`; override with 
 ## Repo layout
 
 ```
-packages/core             vault store, mastery model, goal DAGs, quiz grading, tools, teaching prompt, agent loop, git sync, published concept-map snapshot
-packages/obsidian-plugin  chat, concept map, goals calendar, settings, auto-sync, website theme
+packages/core             vault store, mastery model, goal DAGs, quiz grading, tools, teaching prompt, agent loop, git sync
+packages/obsidian-plugin  chat, concept map, goals calendar, settings, auto-sync
 packages/cli              `groundwork` CLI (bundles the plugin)
-packages/account-server   account server: sign-in and the published concept map
-packages/site             profile site the account server serves
+packages/server           groundworklearn.com: the site, sign-in, billing, and tutor memory
 ```
 
-## Account server and profile
+## Website
 
-The tutor's memory lives on the account: concept notes, goals, evidence, chats, and the learner profile. The profile page draws the concept map from that memory (titles, prerequisite links, and how solid each concept is) and does not print note bodies or quiz text. Obsidian only supplies the optional folders you pick as extra context.
+The site lives in `packages/server/public` and is what [groundworklearn.com](https://groundworklearn.com) serves. Tutor memory — concept notes, goals, evidence, chats, and the learner profile — is stored on the account. The signed-in page draws the concept map from that memory and does not print note bodies or quiz text.
 
 ```bash
-npm run build
-npm run account          # http://127.0.0.1:8787
+npm run server           # http://127.0.0.1:8787
 ```
 
-Create an account on the site (or from Obsidian: **Settings → Groundwork → Account**) and sign in. The profile at [http://127.0.0.1:8787/profile](http://127.0.0.1:8787/profile) polls the account every few seconds and redraws the node map as you study. A public page lives at `/u/<handle>`. If this vault already has concept notes, the first sign-in copies them onto the account once. The tutor then uses the account copy.
+Sign in with Google on that site. **Open Obsidian** opens the community plugin page. If this vault already has concept notes, the first connection copies them onto the account once.
 
-`GROUNDWORK_DATA_FILE` chooses where accounts are stored (default `data/accounts.json`, gitignored). `PORT` and `GROUNDWORK_SITE_DIR` override the listen port and the site files.
+`GROUNDWORK_PORT` chooses the listen port (default `8787`). `GROUNDWORK_MEMORY_FILE` chooses the local tutor-memory file when Firebase is not configured (default `data/tutor-memory.json`, gitignored).
 
 ## Obsidian community plugin
 

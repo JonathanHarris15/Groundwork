@@ -224,7 +224,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	runtime(): ReturnType<typeof tutorRuntime> {
 		return tutorRuntime({
-			selected: this.settings.provider === "demo" ? "demo" : this.settings.provider === "anthropic" ? "anthropic" : "claude",
+			selected: this.settings.provider === "demo" ? "demo" : "claude",
 			account: this.tutorRoute,
 			signedIn: this.signedIn(),
 			claudeReady: !!this.claudeCodeConfig(),
@@ -341,11 +341,6 @@ export default class GroundworkPlugin extends Plugin {
 
 	onKnowledgeChanged(): void {
 		this.scheduleMemorySave();
-	}
-
-	applySiteTheme(): void {
-		const on = this.settings.siteTheme;
-		for (const view of this.views()) view.applySiteTheme(on);
 	}
 
 	/** ID token for the website, or the stored token when talking to a local server. */
@@ -511,7 +506,9 @@ export default class GroundworkPlugin extends Plugin {
 	// ── settings ───────────────────────────────────────────────────────
 
 	async loadSettings(): Promise<void> {
-		const data = ((await this.loadData()) ?? {}) as Partial<GroundworkSettings>;
+		const data = ((await this.loadData()) ?? {}) as Partial<GroundworkSettings> & { siteTheme?: unknown; provider?: string };
+		delete data.siteTheme;
+		if (data.provider !== "demo" && data.provider !== "claude-code") data.provider = "claude-code";
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 		this.settings.readFolders = cleanFolderList("readFolders" in data ? data.readFolders : DEFAULT_SETTINGS.readFolders);
 		this.settings.writeFolders = cleanFolderList("writeFolders" in data ? data.writeFolders : DEFAULT_SETTINGS.writeFolders);
@@ -520,6 +517,5 @@ export default class GroundworkPlugin extends Plugin {
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 		this.resetAgent();
-		this.applySiteTheme();
 	}
 }

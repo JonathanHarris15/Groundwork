@@ -5,7 +5,7 @@ description: Offline UI review pass using Vercel's Web Interface Guidelines. Use
 
 # Web Interface Guidelines (Groundwork)
 
-Run a **read-only review** of the files you changed (prototype HTML, `packages/site/public/` pages, or UI components) against the rules in [command.md](command.md). Do not use the unlicensed `vercel-labs/agent-skills` wrapper; this repo vendors only the MIT-licensed `command.md` and [LICENSE](LICENSE).
+Run a **read-only review** of the files you changed (prototype HTML, `packages/server/public/` pages, or UI components) against the rules in [command.md](command.md). Do not use the unlicensed `vercel-labs/agent-skills` wrapper; this repo vendors only the MIT-licensed `command.md` and [LICENSE](LICENSE).
 
 ## When to run
 

@@ -3,7 +3,7 @@ import { cleanFolderList, DEFAULT_READ_FOLDERS, DEFAULT_WRITE_FOLDERS, type Fold
 import { BUILD } from "./build";
 import type GroundworkPlugin from "./main";
 
-export type ProviderId = "claude-code" | "anthropic" | "demo";
+export type ProviderId = "claude-code" | "demo";
 
 /** The public Groundwork website. Account, sign-in, and tutor memory live here. */
 export const GROUNDWORK_SITE = "https://groundwork-6f9ca.web.app";
@@ -39,8 +39,6 @@ export interface GroundworkSettings {
 	model: string;
 	maxTokens: number;
 	deviceName: string;
-	/** Restyle the Groundwork panel with the website’s colors and type. */
-	siteTheme: boolean;
 	/** Vault folders the tutor may list and open. */
 	readFolders: string[];
 	/** Vault folders where the tutor may write a file to hand in. */
@@ -54,7 +52,6 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 	model: "claude-sonnet-4-5",
 	maxTokens: 8192,
 	deviceName: "",
-	siteTheme: false,
 	readFolders: [],
 	writeFolders: [],
 };
@@ -66,19 +63,8 @@ export function folderAccessFrom(settings: GroundworkSettings): FolderAccess {
 	};
 }
 
-/** The API key lives in this device's local storage, never in the vault. */
-const KEY_STORAGE = "groundwork-anthropic-key";
-const ACCOUNT_TOKEN_STORAGE = "groundwork-account-token";
-
-export function loadApiKey(app: App): string {
-	return (app.loadLocalStorage(KEY_STORAGE) as string | null) ?? "";
-}
-
-export function saveApiKey(app: App, key: string): void {
-	app.saveLocalStorage(KEY_STORAGE, key || null);
-}
-
 /** Refresh token from the website sign-in. Local to this device, never written into the vault. */
+const ACCOUNT_TOKEN_STORAGE = "groundwork-account-token";
 export function loadAccountToken(app: App): string {
 	return (app.loadLocalStorage(ACCOUNT_TOKEN_STORAGE) as string | null) ?? "";
 }

@@ -4,7 +4,7 @@ description: Guidance for distinctive, intentional visual design when building n
 license: Complete terms in LICENSE.txt
 ---
 
-> **Groundwork override:** Match the existing website (`packages/site/public/`: Fraunces + Outfit, current layout patterns). Don't reinvent the brand for small tweaks. Use this skill for layout, hierarchy, copy and the critique pass. For Obsidian plugin UI, follow existing plugin styles in `packages/obsidian-plugin/`.
+> **Groundwork override:** Match the live website (`packages/server/public/`, groundworklearn.com: Jost, dark hero, red/amber/blue/green status dots). Don't reinvent the brand for small tweaks. Use this skill for layout, hierarchy, copy and the critique pass. For Obsidian plugin UI, follow existing plugin styles in `packages/obsidian-plugin/`.
 
 # Frontend Design
 

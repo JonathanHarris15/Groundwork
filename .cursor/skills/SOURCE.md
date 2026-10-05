@@ -2,7 +2,7 @@
 
 Upstream: `https://github.com/JonathanHarris15/claude-config` `skills/` tree.
 
-**Initial Groundwork overlay** copied from `https://github.com/JonathanHarris15/mosaic-website` `main` (`.cursor/skills/`, rules, install pattern), then adapted for Groundwork paths, account server smoke on port **8787**, and generic Jira examples (no Mosaic board defaults).
+**Initial Groundwork overlay** copied from `https://github.com/JonathanHarris15/mosaic-website` `main` (`.cursor/skills/`, rules, install pattern), then adapted for Groundwork paths, website smoke on port **8787**, and generic Jira examples (no Mosaic board defaults).
 
 Cursor Cloud adaptations (from claude-config + mosaic):
 
@@ -12,8 +12,8 @@ Cursor Cloud adaptations (from claude-config + mosaic):
 
 Groundwork-specific:
 
-- [jev-smoke-test/SKILL.md](jev-smoke-test/SKILL.md) — `npm run account`, `http://127.0.0.1:8787`, not Firebase Hosting emulators.
-- [../rules/smoke-test.mdc](../rules/smoke-test.mdc), [../rules/ui-prototype-first.mdc](../rules/ui-prototype-first.mdc) — `packages/site/public/`, `docs/design/prototypes/`.
+- [jev-smoke-test/SKILL.md](jev-smoke-test/SKILL.md) — `npm run server`, `http://127.0.0.1:8787`, not Firebase Hosting emulators.
+- [../rules/smoke-test.mdc](../rules/smoke-test.mdc), [../rules/ui-prototype-first.mdc](../rules/ui-prototype-first.mdc) — `packages/server/public/`, `docs/design/prototypes/`.
 
 ## Vendored skills (not from claude-config)
 

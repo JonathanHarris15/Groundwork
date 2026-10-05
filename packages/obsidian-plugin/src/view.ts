@@ -214,16 +214,10 @@ export class ChatView extends ItemView implements ToolUI {
 		return "graduation-cap";
 	}
 
-	/** The panel always uses the website palette. Drop any older parchment override. */
-	applySiteTheme(_on: boolean): void {
-		this.contentEl.removeClass("gw-site-theme");
-	}
-
 	async onOpen(): Promise<void> {
 		const root = this.contentEl;
 		root.empty();
 		root.addClass("gw-root");
-		this.applySiteTheme(this.plugin.settings.siteTheme);
 
 		const header = root.createDiv({ cls: "gw-header" });
 		const brand = header.createDiv({ cls: "gw-brand" });
@@ -1426,7 +1420,6 @@ export class ChatView extends ItemView implements ToolUI {
 		this.renderAccountLink(scroll);
 		this.renderVaultFolders(scroll);
 		this.renderTutorSettings(scroll);
-		this.renderAppearance(scroll);
 		this.renderVaultReset(scroll);
 	}
 
@@ -1606,15 +1599,6 @@ export class ChatView extends ItemView implements ToolUI {
 				void this.plugin.saveSettings();
 			});
 		}
-	}
-
-	private renderAppearance(parent: HTMLElement): void {
-		const section = parent.createDiv({ cls: "gw-lib-section" });
-		section.createEl("h3", { text: "Appearance" });
-		section.createDiv({
-			cls: "gw-lib-help",
-			text: "This panel uses the Groundwork website: dark paper, Jost, and the red, amber, blue, and green status dots. The rest of Obsidian keeps its own theme.",
-		});
 	}
 
 	private viewTab(parent: HTMLElement, id: "learn" | "map" | "goals", label: string, path: string): HTMLElement {

@@ -1,13 +1,13 @@
 ---
 name: jev-smoke-test
-description: Required before PR for any user-visible UI change (website, account-server pages, Obsidian plugin when visible). Run fastbrowse + local Jev against the local account server (default http://127.0.0.1:8787); repeat after the final fix commit. Skip only when keys or uv are absent (exact PR line) or the change has no UI effect. See .cursor/rules/smoke-test.mdc. Not packages/core tutor grading.
+description: Required before PR for any user-visible UI change (groundworklearn.com pages, Obsidian plugin when visible). Run fastbrowse + local Jev against the local website server (default http://127.0.0.1:8787); repeat after the final fix commit. Skip only when keys or uv are absent (exact PR line) or the change has no UI effect. See .cursor/rules/smoke-test.mdc. Not packages/core tutor grading.
 ---
 
 # Jev smoke test (fastbrowse)
 
 [fastbrowse](https://github.com/agent-labs-dev/fastbrowse) (MIT, PyPI `fastbrowse`, v0.5.3+) drives a **local** headless browser with **Jev** for quick, read-only UI checks. **Required** for user-visible UI changes: run before opening or marking a PR ready, and again after the final fix commit (see `.cursor/rules/smoke-test.mdc`).
 
-**Never** smoke-test production with a real login. Use the **local account server** (`http://127.0.0.1:8787`, see `.cursor/environment.json`) only.
+**Never** smoke-test production with a real login. Use the **local website server** (`http://127.0.0.1:8787`, see `.cursor/environment.json`) only.
 
 **Do not confuse** with Groundwork's **tutor answer grading** in `packages/core` (also Jev-related). This skill is only the fastbrowse browser smoke workflow.
 
@@ -111,42 +111,41 @@ fi
 
 ## When to use (mandatory)
 
-- Any change to the **website** under `packages/site/public/` or static assets the account server serves.
-- Account-server routes or templates that alter what users see at `http://127.0.0.1:8787`.
+- Any change to the **website** under `packages/server/public/` (groundworklearn.com).
+- Server routes that alter what users see at `http://127.0.0.1:8787`.
 - Obsidian plugin UI when the change is user-visible (prefer manual Obsidian testing when fastbrowse cannot reach the plugin; document that in the PR).
 - Bug fixes: repro path before the fix and after, when feasible.
 - Write **1–3 targeted natural-language tasks** per changed screen (happy path + one edge case if useful). Do not run a single vague “check the app” task.
 
-## Local account server + site
+## Local website server
 
 From the repo root (after `npm ci` and `npm run build` — see `.cursor/install.sh`):
 
 ```bash
-npm run account
+npm run server
 ```
 
-The server prints `Groundwork account server at http://127.0.0.1:8787`. It serves `packages/site/public/` (SPA: `/`, `/profile`, `/signin`, etc.) plus account APIs.
+The server prints `Groundwork on http://127.0.0.1:8787`. It serves `packages/server/public/` (the groundworklearn.com site) plus account APIs. Do not set `PORT` for this local run: that binds a public address and the process exits until Firebase auth is configured. `GROUNDWORK_PORT` changes the port and stays on loopback.
 
-Use a fresh `data/accounts.json` or the default under `data/` for local smoke. Keep checks **read-only** on public pages (home, install section, sign-in **form visible** without submitting real credentials).
+Keep checks **read-only** on public pages (home, sign-in **form visible** without submitting real credentials).
 
 | Path | Typical smoke focus |
 | --- | --- |
-| `/` | Hero, nav, install copy |
-| `/signin` | Sign-in UI loads |
-| `/profile` | Redirect or empty state when logged out |
+| `/` | Hero: “Learn it from the ground up.” |
+| `/#signin` | Sign-in UI loads |
 
 Do **not** point smoke tests at production Firebase Hosting unless Jonathan explicitly provides a **read-only** preview URL with no login — default is always local `8787`.
 
 ## Running the smoke test
 
-1. Start `npm run account` (or ensure it is already running on port **8787**).
+1. Start `npm run server` (or ensure it is already running on port **8787**).
 2. Run headless, local, with a tight budget:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 export FASTBROWSE_LLM_MODEL=openai/gpt-6-luna
 
-fastbrowse "Confirm the Groundwork home page loads and the wordmark or hero heading is visible" \
+fastbrowse "Confirm the Groundwork home page loads and the heading Learn it from the ground up is visible" \
   --start "http://127.0.0.1:8787/" \
   --local \
   --max-steps 15 \
@@ -154,7 +153,7 @@ fastbrowse "Confirm the Groundwork home page loads and the wordmark or hero head
   --json
 ```
 
-Adjust `--start` for the route you changed (e.g. `http://127.0.0.1:8787/signin`).
+Adjust `--start` for the route you changed (e.g. `http://127.0.0.1:8787/#signin`).
 
 ### Pass / fail
 
@@ -185,6 +184,6 @@ When skipped, use the exact skip line from the sections above (`key(s) absent` o
 
 | Service | Port |
 | --- | --- |
-| Account server + website | 8787 (`PORT` env overrides) |
+| Website (groundworklearn.com) | 8787 (`GROUNDWORK_PORT` overrides; stay on loopback) |
 
 Other packages (`packages/server` for Cloud Run, Firebase emulators) are out of scope for the default jev smoke path unless a task explicitly requires them.
