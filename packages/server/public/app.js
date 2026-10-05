@@ -15,7 +15,7 @@ const billingNote = billingFlag === "success"
 const NODE = { free: "green", byom: "blue", included: "orange" };
 const PROVIDER_LABEL = { anthropic: "Anthropic", openrouter: "OpenRouter", google: "Google", xai: "xAI", openai: "OpenAI" };
 
-let config = { firebase: null, billing: false };
+let config = { firebase: null, billing: false, localDev: false };
 let plans = [];
 let account = null;
 let providers = null;
@@ -27,6 +27,7 @@ let auth = null;
 let firebaseAuth = null;
 let problem = "";
 let actionError = "";
+let billingQueryCleared = false;
 
 boot().catch((err) => {
 	problem = err.message;
@@ -38,11 +39,16 @@ bindParallax();
 bindReveal();
 
 async function boot() {
+	if (site && !site.hidden) showLoading();
 	const [web, planList] = await Promise.all([get("/v1/web-config"), get("/v1/plans")]);
 	config = web;
 	plans = planList.plans;
-	if (!config.firebase) {
+	if (!config.firebase && !config.localDev) {
 		problem = "Google sign-in needs the Firebase web config on this server (FIREBASE_WEB_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_PROJECT_ID).";
+		paint();
+		return;
+	}
+	if (!config.firebase) {
 		paint();
 		return;
 	}
@@ -51,11 +57,14 @@ async function boot() {
 	initializeApp(config.firebase);
 	auth = firebaseAuth.getAuth();
 	firebaseAuth.onAuthStateChanged(auth, async (next) => {
+		if (next?._local) return;
 		user = next;
 		if (!user) {
 			account = null;
 			providers = null;
+			tutor = null;
 			groundwork = emptyGroundwork();
+			actionError = "";
 			paint();
 			return;
 		}
@@ -71,8 +80,39 @@ async function boot() {
 	});
 }
 
-async function refresh() {
+function localDevUser() {
+	return {
+		_local: true,
+		displayName: "Local learner",
+		email: "local@groundwork.test",
+		async getIdToken() {
+			return null;
+		},
+	};
+}
+
+async function continueLocalDev() {
+	try {
+		problem = "";
+		actionError = "";
+		user = localDevUser();
+		await refresh();
+		paint();
+	} catch (err) {
+		user = null;
+		problem = err.message;
+		paint();
+	}
+}
+
+async function authToken() {
+	if (!user?.getIdToken) return undefined;
 	const token = await user.getIdToken();
+	return token || undefined;
+}
+
+async function refresh() {
+	const token = await authToken();
 	account = await get("/v1/account", token);
 	const [secrets, nextGroundwork, nextTutor] = await Promise.all([
 		get("/v1/secrets", token).catch(() => null),
@@ -80,7 +120,7 @@ async function refresh() {
 		get("/v1/tutor", token).catch(() => null),
 	]);
 	if (secrets?.providers) providers = secrets.providers;
-	if (nextGroundwork) groundwork = nextGroundwork;
+	groundwork = nextGroundwork ?? emptyGroundwork();
 	if (nextTutor) tutor = nextTutor;
 }
 
@@ -90,6 +130,7 @@ function emptyGroundwork() {
 
 function paint() {
 	stopGroundworkWatch();
+	consumeBillingQuery();
 	if (!user || !account) {
 		chip.hidden = true;
 		if (location.hash === "#signin" || problem) showSignIn();
@@ -103,7 +144,21 @@ function paint() {
 	else showAccount();
 }
 
+function setPageTitle(title) {
+	document.title = title ? `${title} · Groundwork` : "Groundwork";
+}
+
+function consumeBillingQuery() {
+	if (!billingFlag || billingQueryCleared) return;
+	billingQueryCleared = true;
+	const next = new URLSearchParams(location.search);
+	next.delete("billing");
+	const qs = next.toString();
+	history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+}
+
 function showLanding() {
+	setPageTitle("Learn from the ground up");
 	landing.hidden = false;
 	site.hidden = true;
 	site.classList.remove("is-study");
@@ -115,24 +170,32 @@ function showApp() {
 }
 
 function showSignIn() {
+	setPageTitle("Sign in");
 	showApp();
 	site.classList.add("is-study");
 	dotfield.hidden = false;
+	const localOnly = config.localDev && !config.firebase;
 	show(`
 		<div class="hero">
 			<div>
 				<h1>Sign in to study.</h1>
 				<p class="lede">Manage your plan and model keys on this site. After sign-in, open the account page and choose <strong>Open Obsidian</strong> to connect the plugin on this computer.</p>
 				${notice(false)}
-				<div class="signin"><button class="btn btn-ink" id="google" type="button" ${config.firebase ? "" : "disabled"}>Sign in with Google</button></div>
+				<div class="signin">
+					${config.firebase ? `<button class="btn btn-ink" id="google" type="button">Sign in with Google</button>` : ""}
+					${config.localDev ? `<button class="btn ${localOnly ? "btn-ink" : "btn-line"}" id="local-dev" type="button">Continue on this device</button>` : ""}
+				</div>
+				${config.localDev ? `<p class="fine">Local-only sign-in. Use Google on the live site.</p>` : ""}
 			</div>
 			${heroMark()}
 		</div>
 	`);
 	document.querySelector("#google")?.addEventListener("click", () => signIn());
+	document.querySelector("#local-dev")?.addEventListener("click", () => continueLocalDev());
 }
 
 function showPlans() {
+	setPageTitle("Choose a plan");
 	site.classList.remove("is-study");
 	dotfield.hidden = true;
 	const credit = account.needsPlan
@@ -142,27 +205,43 @@ function showPlans() {
 			: "You can switch plans below.";
 	show(`
 		${notice(true)}
+		${account.needsPlan ? "" : `<p class="page-nav"><button class="link-btn" id="back-account" type="button">Back to account</button></p>`}
 		<h1>Choose a plan.</h1>
 		<p class="credit">${escapeHtml(credit)}</p>
 		${planGrid(true)}
 	`);
+	document.querySelector("#back-account")?.addEventListener("click", () => {
+		location.hash = "";
+		paint();
+	});
 	for (const button of document.querySelectorAll("[data-plan]")) {
 		button.addEventListener("click", () => choose(button.dataset.plan));
 	}
 }
 
 function showAccount() {
+	setPageTitle("Your account");
 	site.classList.remove("is-study");
 	dotfield.hidden = true;
 	const name = account.displayName || user.displayName || "there";
+	const emptyRecord = studyRecordIsEmpty();
+	const greeting = emptyRecord ? `Welcome, ${escapeHtml(name)}.` : `Welcome back, ${escapeHtml(name)}.`;
+	const billingHint = account.hasBilling && config.billing
+		? ""
+		: account.hasBilling
+			? `<p class="hint">Billing portal is unavailable on this server.</p>`
+			: `<p class="hint">No active subscription. Use Change plan below to start checkout.</p>`;
 	show(`
 		${notice(true)}
-		<h1>Welcome back, ${escapeHtml(name)}.</h1>
-		<p class="welcome-sub">Goals, concepts, and plan usage from Obsidian show up here as you study.</p>
-		${board()}
-		<div class="open-obsidian">
+		<header class="page-head">
+			<h1>${greeting}</h1>
+			<p class="welcome-sub">${emptyRecord ? "Open Obsidian on this computer to start studying. Your record fills in after the first session." : "Goals, concepts, and plan usage from Obsidian show up here as you study."}</p>
+		</header>
+		${emptyRecord ? firstRunChecklist() : board()}
+		<div class="open-obsidian panel-cta${emptyRecord ? " is-primary" : ""}">
 			<button class="btn btn-ink" id="open-obsidian" type="button">Open Obsidian</button>
 		</div>
+		<div class="settings">
 		<section class="section">
 			<h2><span class="node red"></span>Profile</h2>
 			<p>This name is what Groundwork shows for you. Your Google account stays the sign-in.</p>
@@ -180,9 +259,13 @@ function showAccount() {
 		<section class="section">
 			<h2><span class="node orange"></span>Billing</h2>
 			<p>${account.hasBilling ? "Update the card, see invoices, or cancel in Stripe." : "A paid plan opens Stripe checkout. You can change the card later from here."}</p>
-			<div class="actions"><button class="btn ${account.hasBilling && config.billing ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"}>Manage billing</button></div>
+			<div class="actions stack">
+				<button class="btn ${account.hasBilling && config.billing ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"} aria-disabled="${account.hasBilling && config.billing ? "false" : "true"}">Manage billing in Stripe</button>
+				${billingHint}
+			</div>
 		</section>
 		${account.ownModel ? keysSection() : hostedTutorSection()}
+		</div>
 		<div class="plan-foot">
 			<p>Your plan: <strong>${escapeHtml(planLabel())}</strong></p>
 			<button class="btn btn-line btn-sm" id="change-plan" type="button">Change plan</button>
@@ -215,10 +298,15 @@ function watchGroundwork() {
 async function pullGroundwork() {
 	if (!user || !account || account.needsPlan || location.hash === "#plans") return;
 	try {
-		const token = await user.getIdToken();
+		const token = await authToken();
 		const next = await get("/v1/groundwork", token);
+		const wasEmpty = studyRecordIsEmpty();
 		if (JSON.stringify(next?.concepts ?? []) === JSON.stringify(groundwork?.concepts ?? []) && JSON.stringify(next?.goals ?? []) === JSON.stringify(groundwork?.goals ?? [])) return;
-		groundwork = next;
+		groundwork = next ?? emptyGroundwork();
+		if (wasEmpty !== studyRecordIsEmpty()) {
+			paint();
+			return;
+		}
 		const current = document.querySelector(".board");
 		if (!current) return;
 		const holder = document.createElement("div");
@@ -236,8 +324,21 @@ function renderChip() {
 	const email = user.email || account.email || "";
 	const letter = escapeHtml(String(name).slice(0, 1).toUpperCase() || "?");
 	const photo = user.photoURL ? `<img alt="" src="${escapeAttr(user.photoURL)}" />` : letter;
-	chip.innerHTML = `<span class="avatar">${photo}</span><span class="who"><span class="who-name">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span><button class="link-btn" id="sign-out" type="button">Sign out</button>`;
-	chip.querySelector("#sign-out").addEventListener("click", () => firebaseAuth.signOut(auth));
+	chip.innerHTML = `<span class="avatar">${photo}</span><span class="who"><span class="who-name">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span><button class="link-btn" id="sign-out" type="button" aria-label="Sign out">Sign out</button>`;
+	chip.querySelector("#sign-out").addEventListener("click", () => {
+		actionError = "";
+		if (user?._local) {
+			user = null;
+			account = null;
+			providers = null;
+			tutor = null;
+			groundwork = emptyGroundwork();
+			location.hash = "";
+			paint();
+			return;
+		}
+		firebaseAuth.signOut(auth);
+	});
 }
 
 function notice(signedIn) {
@@ -245,8 +346,9 @@ function notice(signedIn) {
 	if (problem && !signedIn) bits.push(banner("red", problem));
 	if (actionError) bits.push(banner("red", actionError));
 	if (billingNote) bits.push(banner(billingFlag === "success" ? "green" : "hollow", billingNote));
-	if (signedIn && !config.billing) bits.push(banner("red", "Stripe is not connected on this server yet, so a paid plan cannot be purchased."));
-	return bits.join("");
+	if (signedIn && !config.billing) bits.push(banner("hollow", "Paid checkout is unavailable on this server. Free plan and account settings still work."));
+	if (!bits.length) return "";
+	return `<div class="notices" aria-live="polite">${bits.join("")}</div>`;
 }
 
 function banner(node, text) {
@@ -268,11 +370,28 @@ function reachedGoals() {
 	return Array.isArray(groundwork?.goals) ? groundwork.goals : [];
 }
 
+function studyRecordIsEmpty() {
+	return !learnedConcepts().length && !reachedGoals().length;
+}
+
+function firstRunChecklist() {
+	return `
+		<section class="start-checklist" aria-labelledby="start-title">
+			<h2 id="start-title" class="start-title">First session</h2>
+			<ol class="start-steps">
+				<li><span class="start-step-num" aria-hidden="true">1</span><div><strong>Open Obsidian</strong><p>Use the button below. Groundwork connects this browser sign-in to the plugin on this computer.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">2</span><div><strong>Install the plugin if asked</strong><p>Obsidian may open the Groundwork listing in the community catalog.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">3</span><div><strong>Study in the vault</strong><p>Choose folders, set a goal, and quiz. Concepts and goals sync back here automatically.</p></div></li>
+			</ol>
+		</section>`;
+}
+
 function conceptGraph() {
 	return groundwork?.graph && Array.isArray(groundwork.graph.nodes) ? groundwork.graph : emptyGroundwork().graph;
 }
 
 function board() {
+	if (studyRecordIsEmpty()) return "";
 	const concepts = learnedConcepts();
 	const goals = reachedGoals();
 	const waiting = concepts.some((concept) => concept.status === "unassessed");
@@ -287,12 +406,11 @@ function board() {
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
 			<div class="stats">
 				<div class="tile">
-					<span class="big">${goals.length}</span>
+					${statBig(goals.length, "Goals reached")}
 					<span class="tile-label">Goals reached</span>
-					<div class="spark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
 				</div>
 				<div class="tile" style="animation-delay: .12s">
-					<span class="big">${concepts.length}</span>
+					${statBig(concepts.length, waiting ? "Concepts" : "Concepts learned")}
 					<span class="tile-label">${waiting ? "Concepts" : "Concepts learned"}</span>
 					<p class="tile-note">${escapeHtml(conceptNote(concepts))}</p>
 				</div>
@@ -311,6 +429,11 @@ function board() {
 				${goalList(goals)}
 			</div>
 		</section>`;
+}
+
+function statBig(value, label) {
+	if (!value) return `<span class="big is-empty" aria-label="None yet for ${escapeAttr(label)}">—</span>`;
+	return `<span class="big">${value}</span>`;
 }
 
 function graphLegend(graph) {
@@ -353,16 +476,16 @@ function conceptGraphSvg(graph) {
 		const name = open ? `${node.title} (not quizzed yet)` : node.title;
 		return `<g class="graph-node${open ? " is-open" : ""}"><title>${escapeHtml(name)}</title><circle class="graph-halo" cx="${num(node.x)}" cy="${num(node.y)}" r="9" ${halo}></circle><circle class="graph-dot" cx="${num(node.x)}" cy="${num(node.y)}" r="4.5" ${dot}></circle>${label}</g>`;
 	});
-	return `<svg class="graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg>`;
+	return `<div class="graph-scroll" tabindex="0" role="region" aria-label="Concept graph. Scroll horizontally when the map is wider than the screen."><svg class="graph" style="min-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg></div>`;
 }
 
 function conceptList(concepts) {
 	if (!concepts.length) return "";
 	const colorOf = new Map((conceptGraph().nodes || []).map((node) => [node.id, node.color]));
-	return `<ul class="concept-list">${concepts.map((concept) => {
+	return `<div class="concept-list-scroll"><ul class="concept-list">${concepts.map((concept) => {
 		const color = safeColor(colorOf.get(concept.id));
-		return `<li><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
-	}).join("")}</ul>`;
+		return `<li><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name" title="${escapeAttr(concept.title)}">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
+	}).join("")}</ul></div>`;
 }
 
 function statusLabel(status) {
@@ -538,7 +661,7 @@ async function signIn() {
 }
 
 async function choose(plan) {
-	const token = await user.getIdToken();
+	const token = await authToken();
 	try {
 		actionError = "";
 		if (plan === "free") {
@@ -558,7 +681,11 @@ async function choose(plan) {
 
 async function saveProfile(event) {
 	event.preventDefault();
-	const token = await user.getIdToken();
+	const form = event.target;
+	const submit = form.querySelector('button[type="submit"]');
+	if (submit?.disabled) return;
+	if (submit) submit.disabled = true;
+	const token = await authToken();
 	try {
 		actionError = "";
 		await send("/v1/account/profile", { displayName: new FormData(event.target).get("displayName") }, token);
@@ -567,13 +694,19 @@ async function saveProfile(event) {
 	} catch (err) {
 		actionError = err.message;
 		paint();
+	} finally {
+		if (submit) submit.disabled = false;
 	}
 }
 
 async function saveTutor(event) {
 	event.preventDefault();
-	const data = new FormData(event.target);
-	const token = await user.getIdToken();
+	const form = event.target;
+	const submit = form.querySelector('button[type="submit"]');
+	if (submit?.disabled) return;
+	if (submit) submit.disabled = true;
+	const data = new FormData(form);
+	const token = await authToken();
 	try {
 		actionError = "";
 		await send("/v1/tutor/setup", { via: data.get("via"), provider: data.get("provider") }, token);
@@ -582,13 +715,19 @@ async function saveTutor(event) {
 	} catch (err) {
 		actionError = err.message;
 		paint();
+	} finally {
+		if (submit) submit.disabled = false;
 	}
 }
 
 async function saveKey(event) {
 	event.preventDefault();
-	const data = new FormData(event.target);
-	const token = await user.getIdToken();
+	const form = event.target;
+	const submit = form.querySelector('button[type="submit"]');
+	if (submit?.disabled) return;
+	if (submit) submit.disabled = true;
+	const data = new FormData(form);
+	const token = await authToken();
 	try {
 		actionError = "";
 		providers = (await send("/v1/secrets", { provider: data.get("provider"), apiKey: data.get("apiKey") }, token)).providers;
@@ -597,6 +736,8 @@ async function saveKey(event) {
 	} catch (err) {
 		actionError = err.message;
 		paint();
+	} finally {
+		if (submit) submit.disabled = false;
 	}
 }
 
@@ -609,7 +750,9 @@ const OBSIDIAN_COMMUNITY = "https://community.obsidian.md/plugins/groundwork";
 function openObsidian() {
 	const refresh = user && user.refreshToken;
 	if (!refresh) {
-		actionError = "Your sign-in expired. Sign in again, then choose Open Obsidian.";
+		actionError = user?._local
+			? "Open Obsidian uses Google sign-in on the live site. Continue with Google here, or test layout with local sign-in only."
+			: "Your sign-in expired. Sign in again, then choose Open Obsidian.";
 		paint();
 		return;
 	}
@@ -682,7 +825,7 @@ function openProtocol(href) {
 }
 
 async function openPortal() {
-	const token = await user.getIdToken();
+	const token = await authToken();
 	try {
 		const { url } = await send("/v1/billing/portal", {}, token);
 		location.href = url;
@@ -720,6 +863,12 @@ async function readJson(res) {
 
 function show(html) {
 	app.innerHTML = html;
+	app.removeAttribute("aria-busy");
+}
+
+function showLoading() {
+	app.setAttribute("aria-busy", "true");
+	app.innerHTML = `<p class="loading" role="status">Loading…</p>`;
 }
 
 function escapeHtml(value) {
