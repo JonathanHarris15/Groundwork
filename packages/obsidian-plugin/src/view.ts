@@ -638,7 +638,7 @@ export class ChatView extends ItemView implements ToolUI {
 		seg.comp = comp;
 		seg.el.empty();
 		while (next.firstChild) seg.el.appendChild(next.firstChild);
-		enhanceGraphs(seg.el);
+		enhanceGraphs(seg.el, { onConcept: (title) => void this.studyConcept(title, "start") });
 		this.scheduleHighlights();
 		this.keepThinkingLast();
 		this.scrollToBottom();
@@ -785,7 +785,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const md = normalizeTutorMarkdown(markdown);
 		await MarkdownRenderer.render(this.app, md, el, this.record?.notePath ?? "", this);
 		tagMath(el, md);
-		enhanceGraphs(el);
+		enhanceGraphs(el, { onConcept: (title) => void this.studyConcept(title, "start") });
 		this.scheduleHighlights();
 		// Rendered options sit inside buttons; a lone paragraph adds unwanted margins.
 		const only = el.children.length === 1 ? el.firstElementChild : null;
@@ -1772,6 +1772,7 @@ export class ChatView extends ItemView implements ToolUI {
 				void this.renderMap();
 			},
 			onStart: (title: string) => void this.studyConcept(title, "start"),
+			onStudy: (title: string, action: "quiz" | "learn") => void this.studyConcept(title, action),
 		};
 	}
 

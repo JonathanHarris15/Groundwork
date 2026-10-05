@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Groundwork graph harness</title>
+		<link rel="stylesheet" href="/styles.css?v=3" />
+		<style>
+			body { margin: 0; padding: 24px; background: #16181d; color: #ececec; font-family: Jost, system-ui, sans-serif; }
+			.host { height: 420px; max-width: 960px; margin: 16px auto; }
+		</style>
+		<script type="module" src="/force-graph.js?v=1"></script>
+	</head>
+	<body>
+		<h1>Interactive concept graph (harness)</h1>
+		<p>Synthetic concepts for performance and layout checks.</p>
+		<div class="graph-host host" id="graph"></div>
+		<script type="module">
+			const host = document.querySelector("#graph");
+			const data = window.GroundworkGraph.buildSyntheticGraph(120, 2);
+			window.GroundworkGraph.mount(host, {
+				concepts: data.nodes.map((n) => ({ id: n.id, title: n.title, status: n.status ?? "learning" })),
+				graph: {
+					width: 0,
+					height: 0,
+					nodes: data.nodes.map((n) => ({ id: n.id, title: n.title, domain: n.cluster, color: n.color })),
+					edges: data.links,
+					legend: data.legend.map((l) => ({ domain: l.label, color: l.color })),
+				},
+			});
+		</script>
+	</body>
+</html>

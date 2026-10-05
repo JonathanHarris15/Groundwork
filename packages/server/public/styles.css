@@ -972,17 +972,119 @@ label { font-size: 15px; font-weight: 500; }
 .sky-legend li { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: #d3d6db; }
 .sky-legend i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .sky-empty { margin: 14px 0 0; }
-.graph-scroll {
-	max-width: 100%;
-	max-height: 200px;
-	overflow: auto;
-	margin-top: 6px;
-	-webkit-overflow-scrolling: touch;
-	overscroll-behavior: contain;
-	border-radius: 12px;
+.graph-shell {
+	margin-top: 10px;
 }
-.graph-scroll:focus-visible { outline: 2px solid #2e9be6; outline-offset: 2px; }
-.graph { display: block; width: auto; height: auto; max-height: 200px; overflow: visible; }
+.graph-toolbar {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px 16px;
+	margin-bottom: 10px;
+}
+.graph-expand {
+	flex: none;
+	white-space: nowrap;
+}
+.graph-host {
+	position: relative;
+	width: 100%;
+	height: clamp(280px, 60vh, 680px);
+	min-height: 280px;
+	border-radius: 14px;
+	background: rgba(0, 0, 0, 0.18);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	overflow: hidden;
+}
+.graph-shell.is-fullscreen {
+	position: fixed;
+	inset: 0;
+	z-index: 200;
+	margin: 0;
+	padding: 16px 18px 20px;
+	background: #16181d;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.graph-shell.is-fullscreen .graph-host {
+	flex: 1;
+	height: auto;
+	min-height: 0;
+	max-height: none;
+	border-radius: 16px;
+}
+body.graph-fullscreen-open {
+	overflow: hidden;
+}
+@media (max-width: 640px) {
+	.graph-host {
+		height: clamp(240px, 50vh, 480px);
+		min-height: 240px;
+	}
+	.graph-toolbar {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.graph-expand {
+		align-self: flex-end;
+	}
+}
+.graph-focus {
+	margin: 10px 0 0;
+	font-size: 13px;
+	color: #d8dbe0;
+}
+.graph-focus-ok {
+	color: #a8adb6;
+}
+.graph-hint {
+	margin: 0;
+	flex: 1;
+	min-width: 0;
+	font-size: 12px;
+	line-height: 1.45;
+	color: #a8adb6;
+}
+.graph-obsidian-offer {
+	margin: 10px 0 0;
+}
+.graph-obsidian-offer[hidden] {
+	display: none;
+}
+.graph-canvas,
+.gw-force-canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+	cursor: grab;
+	touch-action: none;
+}
+.graph-host.is-panning .graph-canvas,
+.graph-host.is-panning .gw-force-canvas,
+.graph-host.is-dragging-node .graph-canvas,
+.graph-host.is-dragging-node .gw-force-canvas {
+	cursor: grabbing;
+}
+.gw-force-tip {
+	position: absolute;
+	left: 12px;
+	bottom: 10px;
+	max-width: min(320px, 72%);
+	padding: 7px 11px;
+	border-radius: 10px;
+	font-size: 12px;
+	line-height: 1.35;
+	color: #e8eaee;
+	background: rgba(22, 24, 29, 0.92);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	pointer-events: none;
+	z-index: 3;
+}
+.sky-legend-status i.status-solid { background: #3cc56f; }
+.sky-legend-status i.status-learning { background: #45a9f0; }
+.sky-legend-status i.status-open { background: transparent; border: 1.5px solid #6b6f76; }
+.concept-list li.is-highlight { background: rgba(255, 255, 255, 0.06); border-radius: 10px; }
 .graph-edge { stroke-width: 1.6; stroke-linecap: round; }
 .graph-edge.is-bridge { stroke-width: 1.4; }
 .graph-halo { opacity: 0.22; }

@@ -121,6 +121,7 @@ describe("account server", () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/app.js?v=13"');
+		expect(site?.body).toContain('src="/force-graph.js?v=2"');
 		expect(site?.body).toContain('href="/styles.css?v=4"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
@@ -135,6 +136,8 @@ describe("account server", () => {
 		expect(board).toContain("goals.length");
 		expect(board).toContain("concepts.length");
 		expect(board).toContain("conceptListPanel(concepts)");
+		expect(board).toContain("conceptGraphHost(conceptGraph())");
+		expect(board).toContain("mountConceptGraph");
 		expect(script).toContain("concept-filter");
 		expect(board).toContain("They show up here as you study.");
 		expect(board).toContain("Goals you finish in Obsidian show up here.");
