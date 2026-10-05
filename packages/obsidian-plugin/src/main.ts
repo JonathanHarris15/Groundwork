@@ -17,6 +17,7 @@ import {
 	type GroundworkSettings,
 } from "./settings";
 import { closeSettings, pluginManager } from "./obsidian-host";
+import { pluginFixturePaths } from "./plugin-paths";
 import { ChatView, VIEW_TYPE } from "./view";
 
 type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
@@ -103,7 +104,10 @@ export default class GroundworkPlugin extends Plugin {
 			if (reveal || !inMain) await this.activateView(reveal);
 		});
 
-		this.registerDomEvent(window, "focus", () => void this.checkForUpdate());
+		this.registerDomEvent(window, "focus", () => {
+			void this.checkForUpdate();
+			void this.refreshAccountAfterFocus();
+		});
 		this.registerInterval(window.setInterval(() => void this.checkForUpdate(), 5 * 60_000));
 	}
 
@@ -139,14 +143,13 @@ export default class GroundworkPlugin extends Plugin {
 	/** Website "Open Obsidian": connect this account, sync tutor memory, reveal the tutor, and reload a newer build already on disk. */
 	private async handleOpenLink(params: ObsidianProtocolData): Promise<void> {
 		await this.layoutReady;
-		const refresh = typeof params.refresh === "string" ? params.refresh.trim() : "";
-		if (refresh) {
-			saveAccountToken(this.app, refresh);
+		const refresh = typeof params.refresh === "string" ? params.refresh : "";
+		if (refresh.trim()) {
+			saveAccountToken(this.app, refresh.trim());
 			new Notice("Groundwork: this device is linked to your account.");
 		}
 		await this.signalOpened(typeof params.opened === "string" ? params.opened : undefined);
-		await this.connectMemory();
-		await this.refreshTutorRoute();
+		await this.finishAccountLink();
 		const onDisk = await this.installedBuild();
 		if (onDisk && onDisk !== BUILD) {
 			this.requestOpenAfterReload();
@@ -391,6 +394,24 @@ export default class GroundworkPlugin extends Plugin {
 			.filter((v): v is ChatView => v instanceof ChatView);
 	}
 
+	/** After the website handoff saves a refresh token, sync memory and repaint signed-in UI. */
+	async finishAccountLink(): Promise<void> {
+		await this.connectMemory();
+		await this.refreshTutorRoute();
+		this.refreshAccountUi();
+	}
+
+	refreshAccountUi(): void {
+		for (const view of this.views()) view.refreshAfterAccountLink();
+	}
+
+	private async refreshAccountAfterFocus(): Promise<void> {
+		if (!loadAccountToken(this.app)) return;
+		if (this.syncStatus.state === "offline" || !this.tutorRoute) {
+			await this.finishAccountLink();
+		}
+	}
+
 	// ── sync ───────────────────────────────────────────────────────────
 
 	onKnowledgeChanged(): void {
@@ -456,10 +477,7 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 	async importE2eMemoryFixture(): Promise<void> {
-		const paths = [
-			this.manifest.dir ? `${this.manifest.dir}/e2e-memory.json` : "",
-			".obsidian/plugins/groundwork/e2e-memory.json",
-		].filter(Boolean);
+		const paths = pluginFixturePaths(this.app, this.manifest.dir, "e2e-memory.json");
 		for (const path of paths) {
 			try {
 				const parsed = JSON.parse(await this.app.vault.adapter.read(path)) as { files?: unknown };
@@ -475,10 +493,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	private async bootstrapAccountToken(): Promise<void> {
 		if (loadAccountToken(this.app)) return;
-		const paths = [
-			this.manifest.dir ? `${this.manifest.dir}/e2e-account-token` : "",
-			".obsidian/plugins/groundwork/e2e-account-token",
-		].filter(Boolean);
+		const paths = pluginFixturePaths(this.app, this.manifest.dir, "e2e-account-token");
 		for (const path of paths) {
 			try {
 				const token = (await this.app.vault.adapter.read(path)).trim();

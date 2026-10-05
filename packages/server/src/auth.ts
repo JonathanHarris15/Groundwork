@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getApps, initializeApp, applicationDefault, cert, type App } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
+import { type IdTokenDenylist, loadIdTokenDenylist, type RevokedTokenClaims } from "./id-token-denylist";
 
 export interface Identity {
 	uid: string;
@@ -13,8 +14,8 @@ export interface Identity {
 export interface Auth {
 	/** Resolves the signed-in user. Local mode, before Firebase is attached, uses one shared id. */
 	uid(authorization: string | undefined): Promise<Identity>;
-	/** Invalidates refresh tokens so Obsidian and other devices must sign in again. */
-	revokeRefreshTokens(uid: string): Promise<void>;
+	/** Invalidates refresh tokens and rejects still-valid ID tokens from that session. */
+	revokeRefreshTokens(uid: string, authorization?: string): Promise<void>;
 	readonly firebase: boolean;
 }
 
@@ -37,20 +38,38 @@ export function loadAuth(): Auth {
 		};
 	}
 	const app = ensureApp();
-	const auth = getAuth(app);
+	return createFirebaseAuth(getAuth(app), loadIdTokenDenylist());
+}
+
+export function createFirebaseAuth(auth: ReturnType<typeof getAuth>, denylist: IdTokenDenylist): Auth {
 	return {
 		firebase: true,
 		async uid(authorization) {
-			const match = authorization?.match(/^Bearer\s+(\S+)$/i);
-			if (!match) throw Object.assign(new Error("Sign in required."), { status: 401 });
-			const decoded = await auth.verifyIdToken(match[1]);
+			const decoded = await verifyBearer(auth, denylist, authorization);
 			const name = typeof decoded.name === "string" ? decoded.name : undefined;
 			return { uid: decoded.uid, email: decoded.email, name };
 		},
-		async revokeRefreshTokens(uid) {
+		async revokeRefreshTokens(uid, authorization) {
+			const claims = authorization ? await verifyBearer(auth, denylist, authorization).catch(() => null) : null;
 			await auth.revokeRefreshTokens(uid);
+			await denylist.revoke(claimsFromToken(claims ?? { uid, iat: Math.floor(Date.now() / 1000) }));
 		},
 	};
+}
+
+async function verifyBearer(auth: ReturnType<typeof getAuth>, denylist: ReturnType<typeof loadIdTokenDenylist>, authorization?: string): Promise<DecodedIdToken> {
+	const match = authorization?.match(/^Bearer\s+(\S+)$/i);
+	if (!match) throw Object.assign(new Error("Sign in required."), { status: 401 });
+	const decoded = await auth.verifyIdToken(match[1]);
+	if (await denylist.isRevoked(claimsFromToken(decoded))) {
+		throw Object.assign(new Error("Sign in required."), { status: 401 });
+	}
+	return decoded;
+}
+
+function claimsFromToken(decoded: Pick<DecodedIdToken, "uid" | "jti" | "iat" | "exp" | "auth_time">): RevokedTokenClaims {
+	const iat = typeof decoded.iat === "number" ? decoded.iat : typeof decoded.auth_time === "number" ? decoded.auth_time : Math.floor(Date.now() / 1000);
+	return { uid: decoded.uid, jti: decoded.jti, iat, exp: decoded.exp };
 }
 
 function ensureApp(): App {
