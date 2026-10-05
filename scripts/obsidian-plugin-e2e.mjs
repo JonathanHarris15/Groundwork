@@ -247,15 +247,15 @@ try {
 	console.warn("Zoom/hover/drag shots skipped:", e instanceof Error ? e.message : e);
 }
 
-await cdp.send("Runtime.evaluate", {
-	expression: `(() => {
-		const app = window.app;
-		if (!app) throw new Error('no app');
-		if (typeof app.changeTheme === 'function') app.changeTheme('moonstone');
-		else if (typeof app.setTheme === 'function') app.setTheme('moonstone');
-		else document.body.classList.remove('theme-dark');
-		document.body.classList.add('theme-light');
-	})()`,
+await page.evaluate(() => {
+	const app = window.app;
+	if (!app) throw new Error("no app");
+	if (typeof app.changeTheme === "function") app.changeTheme("moonstone");
+	else if (typeof app.setTheme === "function") app.setTheme("moonstone");
+	else {
+		document.body.classList.remove("theme-dark");
+		document.body.classList.add("theme-light");
+	}
 });
 await sleep(1200);
 await openConceptMap();

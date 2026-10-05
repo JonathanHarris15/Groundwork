@@ -137,8 +137,8 @@ describe("account server", () => {
 		expect(board).toContain("concepts.length");
 		expect(board).toContain("conceptListPanel(concepts)");
 		expect(script).toContain("concept-filter");
-		expect(board).toContain("They show up here as you study.");
-		expect(board).toContain("Goals you finish in Obsidian show up here.");
+		expect(script).toContain("They show up here as you study.");
+		expect(script).toContain("Goals you finish in Obsidian show up here.");
 		expect(board).not.toContain('<span class="big">0</span>');
 		expect(script).not.toContain("Connect Obsidian");
 		const account = script.slice(script.indexOf("function showAccount"), script.indexOf("function renderChip"));

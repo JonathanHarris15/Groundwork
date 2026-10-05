@@ -90,6 +90,7 @@ async function boot() {
 			paint();
 		}
 	});
+	paint();
 }
 
 function localDevUser() {
@@ -519,7 +520,7 @@ function obsidianStudyUrl(title) {
 function showObsidianStudyOffer(concept) {
 	const el = document.querySelector("#graph-obsidian-offer");
 	if (!el || !concept || !obsidianStudyReady()) {
-		el?.hidden = true;
+		if (el) el.hidden = true;
 		return;
 	}
 	const url = obsidianStudyUrl(concept.title);

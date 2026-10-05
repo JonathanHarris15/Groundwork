@@ -19,9 +19,17 @@ export default defineConfig({
 		{ name: "phone", use: { ...devices["Pixel 7"] } },
 	],
 	webServer: {
-		command: `npm run build -w packages/server && GROUNDWORK_PORT=${port} GROUNDWORK_ACCOUNT_FILE=${process.env.GROUNDWORK_ACCOUNT_FILE ?? "./data/e2e-accounts.json"} GROUNDWORK_MEMORY_FILE=${process.env.GROUNDWORK_MEMORY_FILE ?? "./data/e2e-memory.json"} node packages/server/dist/server.js`,
+		command: `npm run build -w packages/server && GROUNDWORK_E2E=1 GROUNDWORK_PORT=${port} GROUNDWORK_ACCOUNT_FILE=${process.env.GROUNDWORK_ACCOUNT_FILE ?? "./data/e2e-accounts.json"} GROUNDWORK_MEMORY_FILE=${process.env.GROUNDWORK_MEMORY_FILE ?? "./data/e2e-memory.json"} node packages/server/dist/server.js`,
 		url: `${baseURL}/health`,
 		reuseExistingServer: !process.env.CI,
 		timeout: 120_000,
+		env: {
+			...process.env,
+			FIREBASE_WEB_API_KEY: "",
+			FIREBASE_AUTH_DOMAIN: "",
+			FIREBASE_PROJECT_ID: "",
+			FIREBASE_SERVICE_ACCOUNT_JSON: "",
+			GOOGLE_APPLICATION_CREDENTIALS: "",
+		},
 	},
 });
