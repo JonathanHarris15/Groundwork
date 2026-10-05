@@ -1,7 +1,7 @@
 {
   "name": "groundwork",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A learning agent that plans from first principles, calibrates what you know with quizzes, and remembers it on your Groundwork account.",
   "type": "module",
   "workspaces": [
