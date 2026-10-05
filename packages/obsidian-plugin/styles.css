@@ -285,8 +285,8 @@ body.theme-light .gw-root.gw-theme-obsidian {
 	border-color: var(--interactive-accent);
 }
 .gw-chip.is-attention {
-	color: var(--text-warning);
-	border-color: color-mix(in srgb, var(--text-warning) 45%, var(--background-modifier-border));
+	color: var(--gw-tone-shaky-ink);
+	border-color: color-mix(in srgb, var(--gw-tone-shaky) 45%, var(--background-modifier-border));
 }
 .gw-lib-btn.is-primary {
 	font-weight: 600;
@@ -300,7 +300,7 @@ body.theme-light .gw-root.gw-theme-obsidian {
 	animation: gw-spin 1s linear infinite;
 }
 .gw-icon-btn.is-warning {
-	color: var(--text-warning);
+	color: var(--gw-tone-shaky-ink);
 }
 
 /* library — one tab for goals, concepts, or chats. settings — learner file and vault reset. */
@@ -3254,7 +3254,7 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 }
 .gw-fc-card-qa em {
 	font-size: 11px;
-	color: var(--text-warning);
+	color: var(--gw-tone-shaky-ink);
 	font-style: normal;
 }
 .gw-fc-card-row-tools {

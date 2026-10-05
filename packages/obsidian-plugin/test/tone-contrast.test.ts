@@ -88,4 +88,11 @@ describe("stylesheet invariants", () => {
 	it("has no overlay panel or Close button styles", () => {
 		expect(css).not.toMatch(/is-overlay|gw-panel-close/);
 	});
+
+	it("draws warning text in the shaky ink inside the panel", () => {
+		// Obsidian's --text-warning is under 3:1 on light surfaces. The status bar sits outside .gw-root, where the tone inks are not defined.
+		const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]*)\{[^{}]*var\(--text-warning\)/g)].map((m) => m[1].trim());
+		expect(rules.length).toBeGreaterThan(0);
+		for (const selector of rules) expect(selector).toMatch(/^\.gw-statusbar\b/);
+	});
 });

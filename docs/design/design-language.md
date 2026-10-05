@@ -21,6 +21,7 @@ A sixth tone, `goal`, marks the goal itself.
 - The graph canvas reads the same tokens when it paints, so a node and its list row always match.
 - Never color a concept by its subject. Subject colors collide with the mastery greens, blues, and oranges.
 - Contrast: pill text is at least 4.5:1 on its pill over every surface it sits on, and fills are at least 3:1. The checks are `packages/obsidian-plugin/test/tone-contrast.test.ts` (four themes) and `packages/server/test/site-mastery.test.ts`. The site uses the plugin's dark palette, and that test keeps the two equal.
+- Warning text inside the plugin panel uses `--gw-tone-shaky-ink`, not Obsidian's `--text-warning`, which is under 3:1 on light surfaces. Only the status bar, which sits outside `.gw-root`, keeps `--text-warning`.
 
 ## What a click on a concept does
 
