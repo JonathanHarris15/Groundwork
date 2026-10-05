@@ -166,8 +166,6 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiMapEl!: HTMLElement;
 	private uiGoalsEl!: HTMLElement;
 	private pane: PaneLayoutState = { screen: "learn", overlay: null };
-	private mapScope: "path" | "all" = "path";
-	private showGhosts = true;
 	private selectedGoalId: string | null = null;
 	private uiMessagesEl!: HTMLElement;
 	private uiInputEl!: HTMLTextAreaElement;
@@ -2061,8 +2059,6 @@ export class ChatView extends ItemView implements ToolUI {
 					...outside,
 				],
 				weights: timing.weights,
-				scope: this.mapScope,
-				showGhosts: this.showGhosts,
 				nextId,
 				builtIds: report.goal.built,
 			});
@@ -2077,17 +2073,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private mapOptions(goalTitle?: string) {
 		return {
-			scope: this.mapScope,
-			showGhosts: this.showGhosts,
 			goalTitle,
-			onScope: (scope: "path" | "all") => {
-				this.mapScope = scope;
-				void this.renderMap();
-			},
-			onGhosts: (on: boolean) => {
-				this.showGhosts = on;
-				void this.renderMap();
-			},
 			onStart: (title: string) => void this.studyConcept(title, "start"),
 			onStudy: (title: string, action: "quiz" | "learn") => void this.studyConcept(title, action),
 			onOpenGoals: () => this.showScreen("goals"),

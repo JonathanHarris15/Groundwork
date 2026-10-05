@@ -180,7 +180,7 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 		option(work, false, "Study the heaviest topic", `${board.heaviest.title} is ${board.heaviest.weight}% of this goal`, "35m", () => handlers.onOpen(board.heaviest!.title, "learn"));
 	}
 	option(work, false, "Practice exam", "Questions weighted like this goal", "45m", handlers.onPractice);
-	option(work, false, "View on the concept map", "Switches to Concept map, filtered to this goal", "", handlers.onMap);
+	option(work, false, "View on the concept map", "Opens the map with your goal on top and every concept visible", "", handlers.onMap);
 	option(work, false, "Add prep docs", "Drop in a study guide to reweight the list", "", handlers.onDocs);
 	el(work, "p", "gw-path-why", "Weights come from the goal. Leave them even and every concept counts the same. As the date gets close, the last two days are for the heaviest concepts.");
 	const remove = el(work, "button", "gw-text-btn");

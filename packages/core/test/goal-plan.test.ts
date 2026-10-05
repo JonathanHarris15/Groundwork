@@ -163,29 +163,22 @@ describe("concept map", () => {
 		expect(map.nodes.find((node) => node.id === "bayes")?.subtitle).toContain("Exam 2");
 		expect(map.nodes.find((node) => node.id === "total")?.step).toBe(1);
 		expect(map.nodes.find((node) => node.id === "total")?.next).toBe(true);
-		expect(map.nodes.find((node) => node.id === "testing")?.visual).toBe("beyond");
-		expect(map.nodes.some((node) => node.id === "counting")).toBe(false);
+		expect(map.nodes.some((node) => node.id === "counting")).toBe(true);
+		expect(map.nodes.find((node) => node.id === "counting")?.visual).toBe("dim");
 		expect(map.steps.at(-1)?.id).toBe("bayes");
 		expect(map.edges.every((edge) => map.nodes.some((node) => node.id === edge.from) && map.nodes.some((node) => node.id === edge.to))).toBe(true);
 	});
 
-	it("hides ghosts and can show the rest of the vault dimmed", () => {
-		const hidden = buildConceptMap({
+	it("keeps off-goal vault concepts on the map, dimmed", () => {
+		const map = buildConceptMap({
 			goalTitle: "Exam 2",
 			nodes,
-			scope: "path",
-			showGhosts: false,
 			builtIds: ["spaces", "conditional"],
 		});
-		expect(hidden.nodes.some((node) => node.visual === "ghost")).toBe(false);
-		expect(hidden.nodes.some((node) => node.id === "bayes")).toBe(true);
-		const all = buildConceptMap({
-			goalTitle: "Exam 2",
-			nodes,
-			scope: "all",
-			showGhosts: true,
-			builtIds: ["spaces", "conditional"],
-		});
-		expect(all.nodes.find((node) => node.id === "counting")?.visual).toBe("dim");
+		expect(map.nodes.some((node) => node.visual === "ghost")).toBe(true);
+		expect(map.nodes.find((node) => node.id === "counting")?.visual).toBe("dim");
+		const goal = map.nodes.find((node) => node.id === "bayes")!;
+		const base = map.nodes.find((node) => node.id === "spaces")!;
+		expect(goal.y).toBeLessThan(base.y);
 	});
 });

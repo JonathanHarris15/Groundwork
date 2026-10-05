@@ -1,5 +1,6 @@
 export interface GraphPaintTheme {
 	label: string;
+	labelHalo: string;
 	labelMuted: string;
 	link: string;
 	linkBridge: string;
@@ -13,6 +14,7 @@ export interface GraphPaintTheme {
 
 const FALLBACK: GraphPaintTheme = {
 	label: "rgba(230, 232, 236, 0.96)",
+	labelHalo: "rgba(22, 24, 29, 0.82)",
 	labelMuted: "rgba(168, 173, 182, 0.9)",
 	link: "rgba(127, 132, 142, 0.72)",
 	linkBridge: "rgba(127, 132, 142, 0.4)",
@@ -31,23 +33,29 @@ function pick(cs: CSSStyleDeclaration, name: string, fallback: string): string {
 
 /** Read Obsidian (or site) CSS variables at paint time. */
 export function readGraphTheme(host: HTMLElement): GraphPaintTheme {
+	const mapHost = host.closest(".gw-mapwrap") ?? host.closest(".graph-host") ?? host.closest(".graph-shell");
 	const root =
+		mapHost ??
 		host.closest(".app-container") ??
 		host.closest(".theme-dark") ??
 		host.closest(".theme-light") ??
 		document.body;
 	const cs = getComputedStyle(root);
-	const text = pick(cs, "--text-normal", "#e6e8ec");
+	const text = pick(cs, "--gw-map-label", pick(cs, "--text-normal", "#e6e8ec"));
 	const muted = pick(cs, "--text-muted", "#8b909a");
 	const faint = pick(cs, "--text-faint", muted);
 	const border = pick(cs, "--background-modifier-border", "rgba(127, 132, 142, 0.45)");
 	const accent = pick(cs, "--interactive-accent", "#45a9f0");
 	const orange = pick(cs, "--color-orange", "#f7a93e");
-	const paper = pick(cs, "--background-primary", "#16181d");
+	const paper = pick(cs, "--gw-map", pick(cs, "--background-primary", "#16181d"));
 	const onPaper = pick(cs, "--text-on-accent", text);
+	const lightPaper = paper.toLowerCase().includes("#efe") || paper.toLowerCase().includes("#f5") || paper.toLowerCase().includes("#fff");
+	const label = lightPaper ? pick(cs, "--gw-map-label", "#1c1c1c") : text;
+	const labelHalo = lightPaper ? "rgba(255, 255, 255, 0.92)" : "rgba(22, 24, 29, 0.82)";
 
 	return {
-		label: text,
+		label,
+		labelHalo,
 		labelMuted: muted,
 		link: faint || border,
 		linkBridge: border,

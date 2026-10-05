@@ -47,6 +47,8 @@ export interface ForceGraphData {
 	nodes: ForceGraphNode[];
 	links: ForceGraphLink[];
 	legend: ForceGraphLegendItem[];
+	/** Layered maps keep server-side positions; force maps run the sim. */
+	layout?: "force" | "layered";
 }
 
 export interface ForceSimulationOptions {

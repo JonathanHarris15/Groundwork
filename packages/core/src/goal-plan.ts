@@ -1,4 +1,5 @@
 import type { ConceptStatus } from "./model";
+import { conceptLayerRanks, placePyramidLayout } from "./force-graph/pyramid-layout";
 
 /** A goal's deadline, stored as YYYY-MM-DD. */
 export function parseIsoDate(value: unknown): string | undefined {
@@ -244,64 +245,21 @@ function visualFor(status: ConceptStatus, built: boolean): MapVisual {
 	return "learning";
 }
 
-function ranksOf(nodes: Array<{ id: string; prerequisites: string[] }>): Map<string, number> {
-	const ids = new Set(nodes.map((node) => node.id));
-	const byId = new Map(nodes.map((node) => [node.id, node]));
-	const memo = new Map<string, number>();
-	const visiting = new Set<string>();
-	const rank = (id: string): number => {
-		const cached = memo.get(id);
-		if (cached != null) return cached;
-		if (visiting.has(id)) return 0;
-		visiting.add(id);
-		const node = byId.get(id);
-		const priors = (node?.prerequisites ?? []).filter((id) => ids.has(id));
-		const value = priors.length ? 1 + Math.max(...priors.map(rank)) : 0;
-		visiting.delete(id);
-		memo.set(id, value);
-		return value;
-	};
-	for (const node of nodes) rank(node.id);
-	return memo;
-}
-
-function place(
-	nodes: Array<{ id: string; title: string }>,
-	rank: Map<string, number>,
-	originY: number,
-	row: number,
-): Map<string, { x: number; y: number }> {
-	const columns = new Map<number, Array<{ id: string; title: string }>>();
-	for (const node of nodes) {
-		const key = rank.get(node.id) ?? 0;
-		const list = columns.get(key) ?? [];
-		list.push(node);
-		columns.set(key, list);
-	}
-	const out = new Map<string, { x: number; y: number }>();
-	for (const [key, list] of columns) {
-		list.sort((a, b) => a.title.localeCompare(b.title));
-		const x = 88 + key * 168;
-		const top = originY - ((list.length - 1) * row) / 2;
-		list.forEach((node, index) => out.set(node.id, { x, y: top + index * row }));
-	}
-	return out;
-}
-
 export function buildConceptMap(input: {
 	goalTitle: string;
 	dueLabel?: string;
 	nodes: MapSourceNode[];
 	weights?: Record<string, number>;
-	scope: "path" | "all";
-	showGhosts: boolean;
+	/** @deprecated Always shows every concept; kept for callers that still pass it. */
+	scope?: "path" | "all";
+	/** @deprecated Every concept is always drawn. */
+	showGhosts?: boolean;
 	nextId?: string;
 	builtIds?: Iterable<string>;
 }): ConceptMapModel {
 	const weights = input.weights ?? {};
 	const built = new Set(input.builtIds ?? []);
 	const inGoal = input.nodes.filter((node) => node.inGoal);
-	const goalIds = new Set(inGoal.map((node) => node.id));
 	const openTargets = inGoal.filter((node) => node.role === "target" && !built.has(node.id));
 	const targetPool = openTargets.length ? openTargets : inGoal.filter((node) => node.role === "target");
 	const pool = targetPool.length ? targetPool : inGoal;
@@ -309,46 +267,37 @@ export function buildConceptMap(input: {
 		.slice()
 		.sort((a, b) => (weights[b.id] ?? 0) - (weights[a.id] ?? 0) || a.title.localeCompare(b.title))[0]?.id;
 
-	const beyond = input.nodes
-		.filter((node) => !node.inGoal && node.prerequisites.some((id) => id === goalNodeId || goalIds.has(id)))
-		.sort((a, b) => Number(b.prerequisites.includes(goalNodeId ?? "")) - Number(a.prerequisites.includes(goalNodeId ?? "")) || a.title.localeCompare(b.title))
-		.slice(0, 3);
-	const beyondIds = new Set(beyond.map((node) => node.id));
-	const dim =
-		input.scope === "all"
-			? input.nodes
-					.filter((node) => !node.inGoal && !beyondIds.has(node.id))
-					.sort((a, b) => a.title.localeCompare(b.title))
-					.slice(0, 12)
-			: [];
-
-	const chosen = [...inGoal, ...beyond, ...dim].filter((node) => input.showGhosts || node.id === goalNodeId || visualFor(node.status, built.has(node.id)) !== "ghost");
+	const chosen = input.nodes.slice();
 	const visible = new Map(chosen.map((node) => [node.id, node]));
-	const main = chosen.filter((node) => node.inGoal || beyondIds.has(node.id));
-	const mainRanks = ranksOf(main.map((node) => ({ id: node.id, prerequisites: node.prerequisites.filter((id) => visible.has(id) && (goalIds.has(id) || beyondIds.has(id))) })));
-	const mainPos = place(main, mainRanks, 250, 112);
-	const dimRanks = ranksOf(dim.filter((node) => visible.has(node.id)).map((node) => ({ id: node.id, prerequisites: node.prerequisites.filter((id) => visible.has(id)) })));
-	const dimPos = place(
-		dim.filter((node) => visible.has(node.id)),
-		dimRanks,
-		460,
-		78,
+	const layerRanks = conceptLayerRanks(
+		chosen.map((node) => ({ id: node.id, title: node.title, prerequisites: node.prerequisites })),
+		goalNodeId,
+	);
+	const maxLayer = Math.max(0, ...layerRanks.values());
+	const perLayer = new Map<number, number>();
+	for (const layer of layerRanks.values()) perLayer.set(layer, (perLayer.get(layer) ?? 0) + 1);
+	const widest = Math.max(1, ...perLayer.values());
+	const layoutWidth = Math.max(520, 112 + widest * 96);
+	const layoutHeight = Math.max(360, 104 + maxLayer * 96);
+	const positions = placePyramidLayout(
+		chosen.map((node) => ({ id: node.id, title: node.title })),
+		layerRanks,
+		{ width: layoutWidth, height: layoutHeight, rowGap: 96 },
 	);
 
 	let ghost = 0;
 	const ghostOrder = inGoal
 		.filter((node) => visible.has(node.id) && node.id !== goalNodeId && visualFor(node.status, built.has(node.id)) === "ghost")
-		.sort((a, b) => (mainRanks.get(a.id) ?? 0) - (mainRanks.get(b.id) ?? 0) || a.title.localeCompare(b.title));
+		.sort((a, b) => (layerRanks.get(a.id) ?? 0) - (layerRanks.get(b.id) ?? 0) || a.title.localeCompare(b.title));
 	const ghostStep = new Map(ghostOrder.map((node) => [node.id, ++ghost]));
 
 	const nodes: ConceptMapNode[] = [];
 	for (const node of chosen) {
-		const pos = mainPos.get(node.id) ?? dimPos.get(node.id);
+		const pos = positions.get(node.id);
 		if (!pos) continue;
 		const base = visualFor(node.status, built.has(node.id));
 		let visual: MapVisual = base;
 		if (node.id === goalNodeId) visual = "goal";
-		else if (beyondIds.has(node.id)) visual = "beyond";
 		else if (!node.inGoal) visual = "dim";
 		const subtitle = visual === "goal" ? `Goal · ${input.goalTitle}${input.dueLabel ? `, ${input.dueLabel}` : ""}` : undefined;
 		nodes.push({
@@ -356,12 +305,11 @@ export function buildConceptMap(input: {
 			title: node.title,
 			x: pos.x,
 			y: pos.y,
-			r: visual === "goal" ? 22 : visual === "dim" || visual === "beyond" ? 8 : visual === "ghost" ? 12 : 11,
+			r: visual === "goal" ? 22 : visual === "dim" ? 9 : visual === "ghost" ? 12 : 11,
 			visual,
 			step: ghostStep.get(node.id),
 			next: node.id === input.nextId && visual !== "goal",
 			subtitle,
-			caption: visual === "beyond" ? "unlocks after goal" : undefined,
 		});
 	}
 
@@ -375,7 +323,6 @@ export function buildConceptMap(input: {
 			const to = byId.get(node.id)!;
 			let kind: ConceptMapEdge["kind"] = "ahead";
 			if (from.visual === "dim" || to.visual === "dim") kind = "dim";
-			else if (from.visual === "beyond" || to.visual === "beyond") kind = "faint";
 			else if (from.visual === "known" && (to.visual === "known" || to.visual === "shaky" || to.visual === "learning" || to.visual === "rusty")) kind = "built";
 			edges.push({ from: prior, to: node.id, kind });
 		}
@@ -395,7 +342,7 @@ export function buildConceptMap(input: {
 							: drawn.visual === "ghost"
 								? "ghost"
 								: drawn.visual;
-			return { id: node.id, title: node.title, visual: drawn.visual, meta, step: drawn.step, rank: mainRanks.get(node.id) ?? 0 };
+			return { id: node.id, title: node.title, visual: drawn.visual, meta, step: drawn.step, rank: layerRanks.get(node.id) ?? 0 };
 		})
 		.sort((a, b) => a.rank - b.rank || Number(a.visual === "goal") - Number(b.visual === "goal") || a.title.localeCompare(b.title));
 

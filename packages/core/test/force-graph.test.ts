@@ -52,6 +52,8 @@ describe("force graph", () => {
 			graph,
 		);
 		expect(data.links.length).toBe(1);
+		expect(data.layout).toBe("layered");
 		expect(data.nodes.every((n) => n.radius > 0)).toBe(true);
+		expect(data.nodes.find((n) => n.id === "b")!.y).toBeLessThan(data.nodes.find((n) => n.id === "a")!.y);
 	});
 });
