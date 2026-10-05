@@ -195,7 +195,67 @@
 }
 .gw-actions {
 	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+.gw-session-title {
+	flex: 1;
+	min-width: 48px;
+	max-width: 200px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.gw-session-title.is-empty {
+	display: none;
+}
+.gw-actions-tools {
+	display: flex;
+	align-items: center;
 	gap: 2px;
+	flex: none;
+	border-left: 1px solid var(--background-modifier-border);
+	padding-left: 6px;
+}
+.gw-panel-close-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex: none;
+}
+.gw-panel-close {
+	font-size: var(--font-ui-small);
+	padding: 4px 10px;
+	border-radius: var(--radius-s);
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+	cursor: pointer;
+}
+.gw-panel-close:hover {
+	background: var(--background-modifier-border);
+}
+.gw-library-titles {
+	flex: 1;
+	min-width: 0;
+}
+.gw-chip.is-clickable {
+	cursor: pointer;
+}
+.gw-chip.is-clickable:hover {
+	border-color: var(--interactive-accent);
+}
+.gw-chip.is-attention {
+	color: var(--text-warning);
+	border-color: color-mix(in srgb, var(--text-warning) 45%, var(--background-modifier-border));
+}
+.gw-lib-btn.is-primary {
+	font-weight: 600;
+	border-color: var(--interactive-accent);
 }
 .gw-icon-btn.is-active {
 	color: var(--text-accent);
@@ -1884,7 +1944,6 @@
 	box-shadow: none;
 }
 .gw-goalchip-days { font-size: 13px; white-space: nowrap; }
-.gw-session { display: none; }
 .gw-root.is-map .gw-messages,
 .gw-root.is-map .gw-composer,
 .gw-root.is-goals .gw-messages,
@@ -2179,6 +2238,8 @@
 	.gw-view { padding: 0 10px; }
 	.gw-goalchip-days { display: none; }
 	.gw-brand-name { display: none; }
+	.gw-session-title { display: none; }
+	.gw-panel-close { display: none; }
 	.gw-messages.has-margin {
 		--gw-margin: 0px;
 		padding-right: max(14px, calc((100% - var(--gw-column)) / 2));

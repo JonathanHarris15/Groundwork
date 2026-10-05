@@ -226,7 +226,10 @@ export class FlashcardsPane {
 			meta.createSpan({ cls: "gw-fc-chip", text: `Weighted for ${this.deckTitle()}` });
 			meta.createSpan({ cls: "gw-fc-chip", text: "All concepts in goal" });
 		}
-		const close = top.createEl("button", { cls: "clickable-icon gw-icon-btn gw-fc-close", attr: { "aria-label": "Close flashcards", type: "button" } });
+		const close = top.createEl("button", {
+			cls: "clickable-icon gw-icon-btn gw-fc-close",
+			attr: { "aria-label": "Close flashcards", title: "Close flashcards", type: "button" },
+		});
 		setIcon(close, "x");
 		close.addEventListener("click", () => this.host.onClose());
 	}
