@@ -3,7 +3,7 @@
  * Real Obsidian (AppImage extract + xvfb): screenshots via CDP.
  */
 import { spawn, execSync } from "node:child_process";
-import { mkdirSync, copyFileSync, appendFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, copyFileSync, appendFileSync, writeFileSync, cpSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,9 +19,32 @@ const obsidianConfig = "/home/ubuntu/.config/obsidian/obsidian.json";
 
 mkdirSync(outDir, { recursive: true });
 mkdirSync(path.dirname(obsidianConfig), { recursive: true });
+if (existsSync(vault)) {
+	execSync(`rm -rf ${JSON.stringify(vault)}`);
+}
+cpSync(vaultTemplate, vault, { recursive: true });
+mkdirSync(pluginVault, { recursive: true });
 for (const file of ["main.js", "styles.css", "manifest.json"]) {
 	copyFileSync(path.join(pluginDist, file), path.join(pluginVault, file));
 }
+writeFileSync(
+	path.join(vault, ".obsidian/plugins/groundwork/data.json"),
+	JSON.stringify(
+		{
+			provider: "demo",
+			claudePath: "",
+			claudeModel: "",
+			model: "claude-sonnet-4-5",
+			maxTokens: 8192,
+			deviceName: "cloud-test",
+			appearance: "obsidian",
+			readFolders: [],
+			writeFolders: [],
+		},
+		null,
+		2,
+	),
+);
 
 writeFileSync(
 	obsidianConfig,
