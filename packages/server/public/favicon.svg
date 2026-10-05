@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 0 128 110" role="img" aria-label="Groundwork">
+	<polyline points="10,14 36,98 60,38 84,98 110,14" fill="none" stroke="#16181D" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+	<circle cx="10" cy="14" r="10" fill="#E5484D"/>
+	<circle cx="60" cy="38" r="10" fill="#F59E2B"/>
+	<circle cx="110" cy="14" r="10" fill="#2E9BE6"/>
+	<circle cx="36" cy="98" r="10" fill="#2DB560"/>
+	<circle cx="84" cy="98" r="10" fill="#2DB560"/>
+</svg>
