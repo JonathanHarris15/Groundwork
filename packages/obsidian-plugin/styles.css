@@ -2235,7 +2235,8 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-root.is-goals .gw-goals,
 .gw-root.is-flashcards .gw-flash { display: flex; }
 
-.gw-messages { gap: 22px; padding: 22px 22px 10px; min-width: 0; }
+/* Side padding is the column margin. Message rows also cap themselves at --gw-column; pills do not, so the padding is what keeps them in the column. */
+.gw-messages { gap: 22px; padding: 22px max(22px, calc((100% - var(--gw-column)) / 2)) 10px; min-width: 0; }
 .gw-msg-row { display: flex; gap: 14px; max-width: var(--gw-column); width: 100%; margin: 0 auto; }
 .gw-msg-row.is-me { flex-direction: row; }
 .gw-avatar {

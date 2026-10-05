@@ -126,7 +126,9 @@ function fill(cfg) {
   if (body === "chat") {
     messages.innerHTML = `
       <div class="gw-msg-row is-me"><div class="gw-avatar is-me">J</div><div class="gw-msg-body"><div class="gw-msg gw-user">Explain eigenvalues with a short example and a code snippet.</div></div></div>
-      <div class="gw-msg-row"><div class="gw-avatar"></div><div class="gw-msg-body gw-assistant markdown-rendered"><p>An eigenvalue λ satisfies Av = λv.</p><pre><code>import numpy as np\nprint(np.linalg.eig([[2,1],[1,2]]))</code></pre><p>See <a href="#">linear maps</a> for intuition.</p></div></div>`;
+      <div class="gw-tool"><span class="gw-tool-icon" aria-hidden="true">✓</span><span>Loaded memory: 45 concepts, 0 active goals, 10 due reviews</span></div>
+      <div class="gw-msg-row"><div class="gw-avatar"></div><div class="gw-msg-body gw-assistant markdown-rendered"><p>An eigenvalue λ satisfies Av = λv.</p><pre><code>import numpy as np\nprint(np.linalg.eig([[2,1],[1,2]]))</code></pre><p>See <a href="#">linear maps</a> for intuition.</p></div></div>
+      <div class="gw-tool"><span class="gw-tool-icon" aria-hidden="true">✓</span><span>Saved a flashcard on Eigenvalues and eigenvectors</span></div>`;
   }
   if (body === "tones") messages.innerHTML = tones();
   if (body === "map") {
