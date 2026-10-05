@@ -52,6 +52,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 			res.end(site.body);
 			return;
 		}
+		if (!url.pathname.startsWith("/v1/") && url.pathname !== "/health") {
+			const notFound = readSite("/404.html");
+			if (notFound) {
+				writeHead(res, 404, notFound.type);
+				res.end(notFound.body);
+				return;
+			}
+		}
 	}
 	const chunks: Buffer[] = [];
 	for await (const chunk of req) chunks.push(chunk as Buffer);

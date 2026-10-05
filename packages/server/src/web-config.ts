@@ -6,15 +6,17 @@ import { fileURLToPath } from "node:url";
 export interface WebConfig {
 	firebase: { apiKey: string; authDomain: string; projectId: string } | null;
 	billing: boolean;
+	/** True when the API accepts requests without Firebase. Never set on production Cloud Run. */
+	localDev: boolean;
 }
 
-export function webConfig(billing: boolean): WebConfig {
+export function webConfig(billing: boolean, firebaseAdmin: boolean): WebConfig {
 	const file = readWebConfig();
 	const apiKey = process.env.FIREBASE_WEB_API_KEY?.trim() || file?.apiKey;
 	const authDomain = process.env.FIREBASE_AUTH_DOMAIN?.trim() || file?.authDomain;
 	const projectId = process.env.FIREBASE_PROJECT_ID?.trim() || file?.projectId;
 	const firebase = apiKey && authDomain && projectId ? { apiKey, authDomain, projectId } : null;
-	return { firebase, billing };
+	return { firebase, billing, localDev: !firebaseAdmin };
 }
 
 function readWebConfig(): { apiKey: string; authDomain: string; projectId: string } | null {

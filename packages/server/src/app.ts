@@ -43,7 +43,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { plans: Object.values(PLANS).map(publicPlan) } };
 		}
 		if (method === "GET" && path === "/v1/web-config") {
-			return { status: 200, json: webConfig(deps.billing.configured) };
+			return { status: 200, json: webConfig(deps.billing.configured, deps.auth.firebase) };
 		}
 		if (method === "POST" && path === "/v1/stripe/webhook") {
 			await deps.billing.applyEvent(meta.rawBody ?? "", meta.stripeSignature);

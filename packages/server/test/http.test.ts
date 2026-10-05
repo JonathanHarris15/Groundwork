@@ -121,7 +121,7 @@ describe("account server", () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/app.js?v=13"');
-		expect(site?.body).toContain('href="/styles.css?v=3"');
+		expect(site?.body).toContain('href="/styles.css?v=4"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
@@ -140,14 +140,15 @@ describe("account server", () => {
 		expect(board).not.toContain('<span class="big">0</span>');
 		expect(script).not.toContain("Connect Obsidian");
 		const account = script.slice(script.indexOf("function showAccount"), script.indexOf("function renderChip"));
-		const boardAt = account.indexOf("${board()}");
-		const openAt = account.indexOf('id="open-obsidian"');
-		const profileAt = account.indexOf(">Profile</h2>");
-		expect(boardAt).toBeGreaterThan(-1);
-		expect(openAt).toBeGreaterThan(boardAt);
-		expect(profileAt).toBeGreaterThan(openAt);
+		expect(account).toContain("firstRunChecklist");
+		expect(account).toContain("studyRecordIsEmpty");
+		expect(account).toContain('id="open-obsidian"');
+		expect(account.indexOf(">Profile</h2>")).toBeGreaterThan(account.indexOf('id="open-obsidian"'));
 		const signIn = script.slice(script.indexOf("function showSignIn"), script.indexOf("function showPlans"));
 		expect(signIn).toContain("Sign in with Google");
+		expect(signIn).toContain("Continue on this device");
+		expect(script).toContain("graph-scroll");
+		expect(script).toContain("is-empty");
 		expect(signIn).not.toContain("planGrid");
 		expect(script).toContain("Claude subscription on this computer");
 		expect(script).toContain("One shared key on our side");
@@ -162,7 +163,15 @@ describe("account server", () => {
 
 		const server = deps();
 		const config = await route("GET", "/v1/web-config", null, server);
-		expect(config.json).toMatchObject({ firebase: { projectId: "groundwork-6f9ca", authDomain: "groundwork-6f9ca.firebaseapp.com" }, billing: false });
+		expect(config.json).toMatchObject({
+			firebase: { projectId: "groundwork-6f9ca", authDomain: "groundwork-6f9ca.firebaseapp.com" },
+			billing: false,
+			localDev: true,
+		});
+		expect(readSite("/404.html")?.body).toContain("Page not found");
+		expect(readSite("/favicon.svg")?.type).toContain("image/svg+xml");
+		const health = await route("GET", "/health", null, server);
+		expect(health).toMatchObject({ status: 200, json: { ok: true } });
 		const paid = await route("POST", "/v1/account/plan", { plan: "included" }, server);
 		expect(paid.status).toBe(503);
 
