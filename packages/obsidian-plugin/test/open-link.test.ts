@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { groundworkOpenedSignal, parseGroundworkConcept } from "../src/open-link";
+import { groundworkOpenedSignal, parseGroundworkConcept, parseGroundworkRefresh } from "../src/open-link";
 
 describe("groundwork open link", () => {
+	it("accepts refresh tokens from website handoff links", () => {
+		expect(parseGroundworkRefresh("e2e-local-token")).toBe("e2e-local-token");
+		expect(parseGroundworkRefresh("  token-with-spaces  ")).toBe("token-with-spaces");
+		expect(parseGroundworkRefresh("")).toBeNull();
+		expect(parseGroundworkRefresh(undefined)).toBeNull();
+	});
+
 	it("accepts safe concept titles for deep links", () => {
 		expect(parseGroundworkConcept("Chain rule")).toBe("Chain rule");
 		expect(parseGroundworkConcept("  Bayes' rule  ")).toBe("Bayes' rule");

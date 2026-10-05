@@ -1,5 +1,12 @@
 const SIGNAL_PATH = /^\/v1\/obsidian-opened\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/signal$/i;
 
+/** Refresh token from obsidian://groundwork?refresh=… after website sign-in + Open Obsidian. */
+export function parseGroundworkRefresh(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const refresh = value.trim();
+	return refresh.length > 0 ? refresh : null;
+}
+
 /** Safe concept title from an obsidian://groundwork?concept=… deep link. */
 export function parseGroundworkConcept(value: unknown): string | null {
 	if (typeof value !== "string") return null;

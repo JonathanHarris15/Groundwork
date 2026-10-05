@@ -38,10 +38,17 @@ async function seedMemory(request: APIRequestContext, count: number) {
 	});
 }
 
-async function signInLocal(page: Page) {
+async function signInLocal(page: Page, record: "empty" | "returning") {
 	await page.goto("/#signin");
 	await page.getByRole("button", { name: "Continue on this device" }).click();
-	await expect(page.getByRole("heading", { name: /^Welcome,/ })).toBeVisible();
+	const heading = record === "empty" ? /^Welcome,/ : /^Welcome back,/;
+	await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+	if (record === "empty") {
+		await expect(page.getByRole("heading", { name: /First session/i })).toBeVisible();
+		await expect(page.locator(".board")).toHaveCount(0);
+	} else {
+		await expect(page.locator(".board")).toHaveCount(1);
+	}
 }
 
 for (const vp of viewports) {
@@ -56,19 +63,19 @@ for (const vp of viewports) {
 
 		test("account empty", async ({ page, request }) => {
 			await seedMemory(request, 0);
-			await signInLocal(page);
+			await signInLocal(page, "empty");
 			await page.screenshot({ path: path.join(outDir, `account-empty-${vp.tag}.png`), fullPage: true });
 		});
 
 		test("account typical", async ({ page, request }) => {
 			await seedMemory(request, 15);
-			await signInLocal(page);
+			await signInLocal(page, "returning");
 			await page.screenshot({ path: path.join(outDir, `account-typical-${vp.tag}.png`), fullPage: true });
 		});
 
 		test("account large", async ({ page, request }) => {
 			await seedMemory(request, 200);
-			await signInLocal(page);
+			await signInLocal(page, "returning");
 			await page.screenshot({ path: path.join(outDir, `account-large-${vp.tag}.png`), fullPage: true });
 		});
 	});

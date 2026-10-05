@@ -2,7 +2,7 @@ import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type Work
 import { AccountClient, AccountError, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import { BUILD, readBuildStamp } from "./build";
-import { groundworkOpenedSignal, parseGroundworkConcept } from "./open-link";
+import { groundworkOpenedSignal, parseGroundworkConcept, parseGroundworkRefresh } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
 import {
@@ -143,9 +143,9 @@ export default class GroundworkPlugin extends Plugin {
 	/** Website "Open Obsidian": connect this account, sync tutor memory, reveal the tutor, and reload a newer build already on disk. */
 	private async handleOpenLink(params: ObsidianProtocolData): Promise<void> {
 		await this.layoutReady;
-		const refresh = typeof params.refresh === "string" ? params.refresh : "";
-		if (refresh.trim()) {
-			saveAccountToken(this.app, refresh.trim());
+		const refresh = parseGroundworkRefresh(params.refresh) ?? "";
+		if (refresh) {
+			saveAccountToken(this.app, refresh);
 			new Notice("Groundwork: this device is linked to your account.");
 		}
 		await this.signalOpened(typeof params.opened === "string" ? params.opened : undefined);

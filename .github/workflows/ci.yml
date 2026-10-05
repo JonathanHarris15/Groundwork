@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w packages/obsidian-plugin
+      - run: npm test
+
+  website-e2e:
+    name: Website Playwright e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:website
+        env:
+          CI: "1"
+
+  obsidian-appimage-e2e:
+    name: Obsidian AppImage plugin e2e
+    runs-on: ubuntu-latest
+    # Heavy (~130MB download + headless GUI). Every push to main; PRs when the plugin or this job changes.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Obsidian e2e path filter (pull requests)
+        id: paths
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            obsidian:
+              - 'packages/obsidian-plugin/**'
+              - 'packages/core/**'
+              - 'packages/server/**'
+              - 'scripts/obsidian-plugin-e2e.mjs'
+              - 'scripts/install-obsidian-appimage.sh'
+              - 'scripts/seed-e2e-tutor-memory.mjs'
+              - 'scripts/seed-obsidian-graph-vault.mjs'
+              - 'scripts/fixtures/obsidian-test-vault/**'
+              - '.github/workflows/ci.yml'
+      - name: Skip Obsidian e2e (unchanged paths on PR)
+        if: github.event_name == 'pull_request' && steps.paths.outputs.obsidian != 'true'
+        run: echo "Skipping Obsidian AppImage e2e — no matching paths in this PR."
+      - name: Install system deps (xvfb)
+        if: github.event_name == 'push' || steps.paths.outputs.obsidian == 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libnss3 libgbm1 libasound2t64 || sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libnss3 libgbm1 libasound2
+      - name: Install npm deps
+        if: github.event_name == 'push' || steps.paths.outputs.obsidian == 'true'
+        run: npm ci
+      - name: Cache Obsidian AppImage
+        if: github.event_name == 'push' || steps.paths.outputs.obsidian == 'true'
+        uses: actions/cache@v4
+        with:
+          path: tmp/obsidian-install
+          key: obsidian-appimage-${{ runner.os }}-1.13.7
+          restore-keys: |
+            obsidian-appimage-${{ runner.os }}-
+      - name: Install Obsidian AppImage
+        if: github.event_name == 'push' || steps.paths.outputs.obsidian == 'true'
+        run: |
+          set -euo pipefail
+          OBSIDIAN_BIN="$(bash scripts/install-obsidian-appimage.sh)"
+          echo "OBSIDIAN_BIN=$OBSIDIAN_BIN" >> "$GITHUB_ENV"
+      - name: Real Obsidian plugin e2e (signed-in)
+        if: github.event_name == 'push' || steps.paths.outputs.obsidian == 'true'
+        run: node scripts/obsidian-plugin-e2e.mjs --scenario=signed-in
+        env:
+          CI: "1"
+          OBSIDIAN_BIN: ${{ env.OBSIDIAN_BIN }}
+          GROUNDWORK_OBSIDIAN_E2E_OUT: ${{ github.workspace }}/artifacts/obsidian-real
+      - name: Upload Obsidian e2e screenshots
+        if: (github.event_name == 'push' || steps.paths.outputs.obsidian == 'true') && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: obsidian-appimage-e2e
+          path: artifacts/obsidian-real/
+          if-no-files-found: ignore
