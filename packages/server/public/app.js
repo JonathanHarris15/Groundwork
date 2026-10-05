@@ -190,7 +190,7 @@ function showSignIn() {
 		<div class="hero">
 			<div>
 				<h1>Sign in to study.</h1>
-				<p class="lede">Manage your plan and model keys on this site. After sign-in, open the account page and choose <strong>Open Obsidian</strong> to connect the plugin on this computer.</p>
+				<p class="lede">Sign in to manage your plan. Then choose <strong>Open Obsidian</strong> on the account page to link the plugin on this computer.</p>
 				${notice(false)}
 				<div class="signin">
 					${config.firebase ? `<button class="btn btn-ink" id="google" type="button">Sign in with Google</button>` : ""}
@@ -237,47 +237,34 @@ function showAccount() {
 	const name = account.displayName || user.displayName || "there";
 	const emptyRecord = studyRecordIsEmpty();
 	const greeting = emptyRecord ? `Welcome, ${escapeHtml(name)}.` : `Welcome back, ${escapeHtml(name)}.`;
-	const billingHint = account.hasBilling && config.billing
-		? ""
-		: account.hasBilling
-			? `<p class="hint">Billing portal is unavailable on this server.</p>`
-			: `<p class="hint">No paid subscription yet. Choose <strong>Change plan</strong> below to start checkout.</p>`;
 	show(`
 		<div class="account-shell">
 		${notice(true)}
 		<header class="page-head">
-			<h1>${greeting}</h1>
-			<p class="welcome-sub">${emptyRecord ? "Choose <strong>Open Obsidian</strong> below to link the plugin on this computer. Goals and concepts appear here after you study." : "Goals, concepts, and plan usage from Obsidian show up here as you study."}</p>
+			<div class="page-head-row">
+				<div class="page-head-copy">
+					<h1>${greeting}</h1>
+					<p class="welcome-sub">${emptyRecord ? "Choose <strong>Open Obsidian</strong> below to link the plugin on this computer. Goals and concepts appear here after you study." : "Goals and concepts from Obsidian sync here as you study."}</p>
+				</div>
+				${emptyRecord ? "" : `<div class="page-head-actions"><button class="btn btn-ink" type="button" id="open-obsidian">Open Obsidian</button></div>`}
+			</div>
 		</header>
-		${emptyRecord ? firstRunChecklist() : `${board()}<p class="account-actions"><button class="btn btn-ink" type="button" id="open-obsidian">Open Obsidian</button></p>`}
+		${emptyRecord ? firstRunChecklist() : board()}
 		<div class="settings">
 		<section class="section">
-			<h2><span class="node red"></span>Profile</h2>
-			<p>This name is what Groundwork shows for you. Your Google account stays the sign-in.</p>
+			<h2>Profile</h2>
 			<form id="profile">
 				<div class="row">
 					<div class="field grow">
 						<label for="displayName">Display name</label>
 						<input class="input" type="text" id="displayName" name="displayName" maxlength="80" value="${escapeAttr(account.displayName || user.displayName || "")}" />
-						<span class="hint">Up to 80 characters.</span>
 					</div>
 					<button class="btn btn-ink" type="submit">Save</button>
 				</div>
 			</form>
 		</section>
-		<section class="section">
-			<h2><span class="node orange"></span>Billing</h2>
-			<p>${account.hasBilling ? "Update the card, see invoices, or cancel in Stripe." : "A paid plan opens Stripe checkout. You can change the card later from here."}</p>
-			<div class="actions stack">
-				<button class="btn ${account.hasBilling && config.billing ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"} aria-disabled="${account.hasBilling && config.billing ? "false" : "true"}">Manage billing in Stripe</button>
-				${billingHint}
-			</div>
-		</section>
-		${account.ownModel ? keysSection() : hostedTutorSection()}
-		</div>
-		<div class="plan-foot">
-			<p>Your plan: <strong>${escapeHtml(planLabel())}</strong></p>
-			<button class="btn btn-line btn-sm" id="change-plan" type="button">Change plan</button>
+		${planSection()}
+		${account.ownModel ? keysSection() : ""}
 		</div>
 		</div>
 	`);
@@ -286,8 +273,8 @@ function showAccount() {
 	attachConceptListUI();
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#tutor-setup")?.addEventListener("submit", saveTutor);
-	document.querySelector("#portal").addEventListener("click", openPortal);
-	document.querySelector("#change-plan").addEventListener("click", () => {
+	document.querySelector("#portal")?.addEventListener("click", openPortal);
+	document.querySelector("#change-plan")?.addEventListener("click", () => {
 		location.hash = "#plans";
 	});
 	watchGroundwork();
@@ -414,26 +401,21 @@ function board() {
 	const concepts = learnedConcepts();
 	const goals = reachedGoals();
 	const waiting = concepts.some((concept) => concept.status === "unassessed");
-	const usage = account.ownModel ? `
-			<span class="big">Your model</span>
-			<span class="tile-label">Plan usage</span>
-			<p class="tile-note">This plan uses your Claude subscription or a saved provider key. Groundwork does not track that usage.</p>` : usageTile();
 	return `
 		<section class="board" aria-labelledby="board-title">
 			<div class="blobs"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
 			<div class="spot"></div>
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
-			<div class="stats">
+			<div class="stats stats-pair">
 				<div class="tile">
-					${statBig(goals.length, "Goals reached")}
-					<span class="tile-label">Goals reached</span>
+					${statBig(goals.length, "Goals")}
+					<span class="tile-label">Goals</span>
 				</div>
 				<div class="tile" style="animation-delay: .12s">
-					${statBig(concepts.length, waiting ? "Concepts" : "Concepts learned")}
-					<span class="tile-label">${waiting ? "Concepts" : "Concepts learned"}</span>
+					${statBig(concepts.length, "Concepts")}
+					<span class="tile-label">Concepts</span>
 					<p class="tile-note">${escapeHtml(conceptNote(concepts))}</p>
 				</div>
-				<div class="tile" style="animation-delay: .24s">${usage}</div>
 			</div>
 			<div class="sky">
 				<div class="sky-head">
@@ -444,7 +426,7 @@ function board() {
 				${conceptListPanel(concepts)}
 			</div>
 			<div class="goals">
-				<h3 class="goals-title">Goals reached</h3>
+				<h3 class="goals-title">Goals</h3>
 				${goalList(goals)}
 			</div>
 		</section>`;
@@ -463,9 +445,9 @@ function graphLegend(graph) {
 
 function conceptNote(concepts) {
 	const checked = concepts.filter((concept) => concept.status !== "unassessed").length;
-	if (!concepts.length || checked === concepts.length) return "Each one checked with a quiz before it counted.";
-	if (!checked) return "Your tutor has these. A quiz has not counted one yet.";
-	return checked === 1 ? "1 was checked with a quiz." : `${checked} were checked with a quiz.`;
+	if (!concepts.length || checked === concepts.length) return "Counted after a quiz.";
+	if (!checked) return "Waiting on a quiz.";
+	return checked === 1 ? "1 quizzed so far." : `${checked} quizzed so far.`;
 }
 
 function conceptGraphSvg(graph) {
@@ -667,18 +649,32 @@ function usageTile() {
 				</svg>
 				<div>
 					<div class="usage-amt">${pct}%</div>
-					<div class="tile-label">of this month's budget used</div>
+					<div class="tile-label usage-label">Tutor usage this month</div>
 				</div>
 			</div>
-			<p class="tile-note" style="margin-top: 10px">Resets at the end of the month.</p>`;
+			<p class="tile-note usage-reset">Resets at the end of the month.</p>`;
 }
 
-function hostedTutorSection() {
+function planSection() {
+	const usage = account.ownModel
+		? `<p class="plan-note">You bring the tutor model. Usage is not metered here.</p>`
+		: `<div class="plan-usage">${usageTile()}<p class="plan-note">Written quiz answers are graded on the server and do not count toward tutor usage.</p></div>`;
+	const action = planPrimaryAction();
 	return `
-		<section class="section">
-			<h2><span class="node green"></span>Tutor</h2>
-			<p>On Free and Groundwork plans, Groundwork runs the tutor model for you. You do not paste an API key. The monthly usage bar on this page is the tutor limit. Written quiz answers are graded on our servers and do not use that bar.</p>
+		<section class="section plan-section">
+			<h2>Plan</h2>
+			<p class="plan-current"><strong>${escapeHtml(planLabel())}</strong></p>
+			${usage}
+			<div class="plan-actions">${action}</div>
 		</section>`;
+}
+
+function planPrimaryAction() {
+	if (account.hasBilling && config.billing) {
+		return `<button class="btn btn-ink" type="button" id="portal">Manage billing</button>`;
+	}
+	const label = account.priceUsdPerMonth === 0 ? "Upgrade" : "Change plan";
+	return `<button class="btn btn-ink" type="button" id="change-plan">${label}</button>`;
 }
 
 function keysSection() {
@@ -687,8 +683,8 @@ function keysSection() {
 	const via = account.tutorVia === "key" && savedNames.length ? "key" : "claude";
 	return `
 		<section class="section">
-			<h2><span class="node blue"></span>Your model</h2>
-			<p>This plan uses your Claude subscription or a provider key you save on the website. Groundwork does not track that usage.</p>
+			<h2>Your model</h2>
+			<p>Claude on this computer or a provider key you save below.</p>
 			<h3>Claude subscription</h3>
 			<p>The simplest path. The login stays on this computer. Groundwork never stores it.</p>
 			<ol class="setup-list">${steps.map((step) => `<li><strong>${escapeHtml(step.title)}</strong><p>${escapeHtml(step.detail)}</p></li>`).join("")}</ol>
