@@ -235,7 +235,7 @@ const ROW_ACTION: Record<StudyMove, { label: string; title: (concept: string) =>
 
 function rowAction(line: HTMLElement, concept: GoalConceptRow, handlers: GoalsPaneHandlers): void {
 	const move = concept.action;
-	const action = el(line, "button", `gw-row-action${move === "start" ? " is-primary" : ""}${move === "review" ? " is-known" : ""}`);
+	const action = el(line, "button", `gw-row-action${concept.next ? " is-primary" : ""}${move === "review" ? " is-known" : ""}`);
 	action.type = "button";
 	action.title = ROW_ACTION[move].title(concept.title);
 	action.setAttribute("aria-label", ROW_ACTION[move].title(concept.title));

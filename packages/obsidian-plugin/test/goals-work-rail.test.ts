@@ -106,6 +106,16 @@ describe("goals concept table", () => {
 		expect(onOpen).toHaveBeenLastCalledWith("Determinants", "learn");
 	});
 
+	it("fills only the next concept's action, however many are unstarted", () => {
+		const parent = document.createElement("div");
+		const unstarted = { state: "Not started", tone: "unstarted", action: "start", complete: 0 } as const;
+		const concepts = [row("Limit", unstarted), row("Slope", { ...unstarted, state: "Next", next: true }), row("Secant line", unstarted)];
+		renderGoalsPane(parent, [board({ concepts })], "exam", handlers());
+		const actions = [...parent.querySelectorAll<HTMLButtonElement>(".gw-row-action")];
+		expect(actions.map((b) => b.textContent)).toEqual(["Start", "Start", "Start"]);
+		expect(actions.map((b) => b.classList.contains("is-primary"))).toEqual([false, true, false]);
+	});
+
 	it("draws the state as a toned pill and the dot in the same tone", () => {
 		const parent = document.createElement("div");
 		renderGoalsPane(parent, [board({ concepts: [row("Eigenvalues", { state: "Rusty", tone: "rusty", action: "quiz" })] })], "exam", handlers());
