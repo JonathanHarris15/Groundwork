@@ -199,7 +199,7 @@ The plugin is laid out so it can be submitted:
 | `manifest.json` with `id`, `name`, `version`, `minAppVersion`, `description`, `author`, `authorUrl`, `isDesktopOnly` | repository root, identical to `packages/obsidian-plugin/manifest.json`. The community directory reads the root file. |
 | `versions.json` at the repo root, mapping each version to its `minAppVersion` | `versions.json` |
 | An open-source license | `LICENSE` |
-| Release assets `main.js`, `manifest.json`, `styles.css` | a tag equal to the manifest `version` (`0.1.1`, no `v` prefix) runs `.github/workflows/release-plugin.yml` |
+| Release assets `main.js`, `manifest.json`, `styles.css` | a tag equal to the manifest `version` (`0.1.2`, no `v` prefix) runs `.github/workflows/release-plugin.yml` |
 
 `node scripts/check-community-plugin.mjs` checks that list. The plugin id is `groundwork`, which is also the community install folder.
 
