@@ -1,4 +1,10 @@
+import { TONE_FALLBACK_COLORS } from "./colors";
+
 export interface GraphPaintTheme {
+	/** Fill per mastery tone, from the host's `--gw-tone-<tone>` tokens. */
+	tones: Record<string, string>;
+	/** Ring around the recommended next node, the same token as the path panel's next marker. */
+	next: string;
 	label: string;
 	labelHalo: string;
 	labelMuted: string;
@@ -13,6 +19,8 @@ export interface GraphPaintTheme {
 }
 
 const FALLBACK: GraphPaintTheme = {
+	tones: { ...TONE_FALLBACK_COLORS },
+	next: "#8cc6f4",
 	label: "rgba(230, 232, 236, 0.96)",
 	labelHalo: "rgba(22, 24, 29, 0.82)",
 	labelMuted: "rgba(168, 173, 182, 0.9)",
@@ -53,7 +61,12 @@ export function readGraphTheme(host: HTMLElement): GraphPaintTheme {
 	const label = lightPaper ? pick(cs, "--gw-map-label", "#1c1c1c") : text;
 	const labelHalo = lightPaper ? "rgba(255, 255, 255, 0.92)" : "rgba(22, 24, 29, 0.82)";
 
+	const tones: Record<string, string> = {};
+	for (const [tone, fallback] of Object.entries(TONE_FALLBACK_COLORS)) tones[tone] = pick(cs, `--gw-tone-${tone}`, fallback);
+
 	return {
+		tones,
+		next: pick(cs, "--gw-next", accent),
 		label,
 		labelHalo,
 		labelMuted: muted,

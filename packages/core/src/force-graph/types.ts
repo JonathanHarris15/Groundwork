@@ -12,10 +12,14 @@ export interface ForceGraphNode {
 	color: string;
 	cluster: string;
 	status?: ConceptStatus;
-	/** Ring-only node (not yet quizzed on the website). */
+	/** Ring-only node: not started yet. Dashed, like the legend and path-panel marker. */
 	open?: boolean;
 	/** Goal-map semantics. */
 	visual?: string;
+	/** Mastery tone; the host's `--gw-tone-<tone>` token overrides `color` at paint time. */
+	tone?: string;
+	/** Off the path to the working goal: painted at reduced strength. */
+	faded?: boolean;
 	isTarget?: boolean;
 	isBuiltTarget?: boolean;
 	/** Shown when zoom is high enough. */
