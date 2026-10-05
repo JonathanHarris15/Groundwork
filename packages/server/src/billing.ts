@@ -41,7 +41,7 @@ export function createBilling(stripe: Stripe, prices: { byom: string; included: 
 			return session.url;
 		},
 		async portal(uid, origin) {
-			const customer = accounts.customerId(uid);
+			const customer = await accounts.customerId(uid);
 			if (!customer) throw badRequest("No billing account yet. Choose a paid plan first.");
 			const session = await stripe.billingPortal.sessions.create({ customer, return_url: `${origin}/` });
 			return session.url;
@@ -49,34 +49,34 @@ export function createBilling(stripe: Stripe, prices: { byom: string; included: 
 		async applyEvent(raw, signature) {
 			if (!signature) throw badRequest("Missing Stripe signature.");
 			const event = stripe.webhooks.constructEvent(raw, signature, webhookSecret);
-			applyStripeEvent(accounts, event);
+			await applyStripeEvent(accounts, event);
 		},
 	};
 }
 
-export function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event): void {
+export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event): Promise<void> {
 	if (event.type === "checkout.session.completed") {
 		const session = event.data.object;
 		const uid = session.metadata?.uid || session.client_reference_id || undefined;
 		const plan = session.metadata?.plan;
 		const customer = typeof session.customer === "string" ? session.customer : session.customer?.id;
-		if (uid && customer) accounts.attachCustomer(uid, customer);
-		if (uid && isPaid(plan)) accounts.setPlan(uid, plan);
+		if (uid && customer) await accounts.attachCustomer(uid, customer);
+		if (uid && isPaid(plan)) await accounts.setPlan(uid, plan);
 		return;
 	}
 	if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
 		const subscription = event.data.object;
 		const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-		const uid = subscription.metadata?.uid || accounts.findByCustomer(customer)?.uid;
+		const uid = subscription.metadata?.uid || (await accounts.findByCustomer(customer))?.uid;
 		if (!uid) return;
 		const plan = subscription.metadata?.plan;
 		const active =
 			event.type === "customer.subscription.updated" && (subscription.status === "active" || subscription.status === "trialing");
 		if (event.type === "customer.subscription.deleted" || !active) {
-			accounts.setPlan(uid, "free");
+			await accounts.setPlan(uid, "free");
 			return;
 		}
-		if (isPaid(plan)) accounts.setPlan(uid, plan);
+		if (isPaid(plan)) await accounts.setPlan(uid, plan);
 	}
 }
 
@@ -97,10 +97,10 @@ function unconfigured(): Billing {
 }
 
 async function customerFor(stripe: Stripe, accounts: AccountDirectory, uid: string, email: string | undefined): Promise<string> {
-	const existing = accounts.customerId(uid);
+	const existing = await accounts.customerId(uid);
 	if (existing) return existing;
 	const customer = await stripe.customers.create({ email, metadata: { uid } });
-	accounts.attachCustomer(uid, customer.id);
+	await accounts.attachCustomer(uid, customer.id);
 	return customer.id;
 }
 

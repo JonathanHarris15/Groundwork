@@ -67,8 +67,7 @@ describe("tutor API", () => {
 		expect(JSON.stringify(result.json)).not.toContain("sk-or-groundwork");
 		expect(JSON.stringify(result.json)).not.toMatch(/\$\d|creditUsd|remainingUsd|hostedCredit/);
 		expect(result.json).toMatchObject({ route: { action: "hosted", provider: "openrouter" }, budgetUsed: expect.any(Number) });
-		expect(server.accounts.get("local").spentUsd).toBe(0.0045);
-		expect(server.accounts.get("local").remainingUsd).toBe(2.9955);
+		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0.0045, remainingUsd: 2.9955 });
 
 		const described = await route("GET", "/v1/tutor", null, server);
 		expect(described.json).toMatchObject({ action: "hosted", label: "Groundwork small" });
@@ -79,8 +78,8 @@ describe("tutor API", () => {
 	it("does not call a provider once the budget is gone", async () => {
 		const { fetchImpl, calls } = capture({});
 		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
-		server.accounts.setPlan("local", "free");
-		server.accounts.charge("local", 3);
+		await server.accounts.setPlan("local", "free");
+		await server.accounts.charge("local", 3);
 		const result = await route("POST", "/v1/tutor/complete", turn, server);
 		expect(result.status).toBe(402);
 		expect(JSON.stringify(result.json)).toMatch(/budget is used up/);
@@ -103,7 +102,7 @@ describe("tutor API", () => {
 			usage: { prompt_tokens: 20, completion_tokens: 8 },
 		});
 		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
-		server.accounts.setPlan("local", "byom");
+		await server.accounts.setPlan("local", "byom");
 		await route("POST", "/v1/secrets", { provider: "openai", apiKey: "sk-openai-user" }, server);
 		const setup = await route("POST", "/v1/tutor/setup", { via: "key", provider: "openai" }, server);
 		expect(setup.status).toBe(200);
@@ -115,14 +114,14 @@ describe("tutor API", () => {
 		expect(calls[0].url).toBe("https://api.openai.com/v1/chat/completions");
 		expect(calls[0].headers.get("authorization")).toBe("Bearer sk-openai-user");
 		expect(calls[0].headers.get("authorization")).not.toContain("sk-or-groundwork");
-		expect(server.accounts.get("local").spentUsd).toBe(0);
+		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0 });
 		expect(result.json).toMatchObject({ content: [{ type: "text", text: "A derivative measures change." }], route: { action: "key" } });
 	});
 
 	it("keeps the Claude subscription off the server", async () => {
 		const { fetchImpl, calls } = capture({});
 		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
-		server.accounts.setPlan("local", "byom");
+		await server.accounts.setPlan("local", "byom");
 		const described = await route("GET", "/v1/tutor", null, server);
 		expect(described.json).toMatchObject({ action: "claude", label: "Claude subscription" });
 		expect(JSON.stringify(described.json)).toContain("Check connection");
@@ -134,7 +133,7 @@ describe("tutor API", () => {
 	it("strips a provider key out of an upstream error", async () => {
 		const { fetchImpl } = capture({ error: { message: "bad key sk-ant-user" } }, 401);
 		const server = deps({ fetchImpl });
-		server.accounts.setPlan("local", "byom");
+		await server.accounts.setPlan("local", "byom");
 		server.secrets.save("local", "anthropic", "sk-ant-user");
 		await route("POST", "/v1/tutor/setup", { via: "key", provider: "anthropic" }, server);
 		const result = await route("POST", "/v1/tutor/complete", turn, server);
@@ -154,7 +153,7 @@ describe("tutor API", () => {
 				choices: [{ finish_reason: "stop", message: { content: "ok" } }],
 			});
 			const server = deps({ fetchImpl });
-			server.accounts.setPlan("local", "byom");
+			await server.accounts.setPlan("local", "byom");
 			server.secrets.save("local", provider, `${provider}-secret`);
 			await route("POST", "/v1/tutor/setup", { via: "key", provider }, server);
 			const result = await route("POST", "/v1/tutor/complete", turn, server);

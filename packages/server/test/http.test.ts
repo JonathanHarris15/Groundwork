@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { USER_KEY_PROVIDERS } from "@groundwork/core";
 import { AccountDirectory } from "../src/accounts";
+import { FileAccountStore } from "../src/account-store";
 import { route, type ServerDeps } from "../src/app";
 import type { Auth } from "../src/auth";
 import type { Billing } from "../src/billing";
@@ -118,8 +119,8 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=11"');
-		expect(site?.body).toContain('href="/styles.css?v=2"');
+		expect(site?.body).toContain('src="/app.js?v=12"');
+		expect(site?.body).toContain('href="/styles.css?v=3"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
@@ -131,7 +132,8 @@ describe("account server", () => {
 		const board = script.slice(script.indexOf("function board"), script.indexOf("function usageTile"));
 		expect(board).toContain("goals.length");
 		expect(board).toContain("concepts.length");
-		expect(board).toContain("They show up here after a quiz counts them.");
+		expect(board).toContain("conceptList(concepts)");
+		expect(board).toContain("They show up here as you study.");
 		expect(board).toContain("Goals you finish in Obsidian show up here.");
 		expect(board).not.toContain('<span class="big">0</span>');
 		expect(script).not.toContain("Connect Obsidian");
@@ -226,6 +228,51 @@ describe("account server", () => {
 		});
 		expect((view.json as { concepts: unknown[] }).concepts).toHaveLength(3);
 		expect((view.json as { graph: { nodes: Array<{ id: string }> } }).graph.nodes.map((n) => n.id)).toContain("chain");
+	});
+
+	it("remembers the plan after the server process is gone", async () => {
+		const file = path.join(mkdtempSync(path.join(os.tmpdir(), "gw-accounts-")), "accounts.json");
+		const first = deps({ accounts: new AccountDirectory(new FileAccountStore(file)) });
+		const chosen = await route("POST", "/v1/account/plan", { plan: "free" }, first);
+		expect(chosen.json).toMatchObject({ plan: "free", needsPlan: false });
+		const named = await route("POST", "/v1/account/profile", { displayName: "Ada Lovelace" }, first);
+		expect(named.json).toMatchObject({ displayName: "Ada Lovelace", plan: "free" });
+		const restarted = deps({ accounts: new AccountDirectory(new FileAccountStore(file)) });
+		const again = await route("GET", "/v1/account", null, restarted);
+		expect(again.json).toMatchObject({ plan: "free", needsPlan: false, displayName: "Ada Lovelace", email: "ada@example.com" });
+	});
+
+	it("lists every concept note stored on the account, not only the saved snapshot", async () => {
+		const server = deps();
+		const saved = await route(
+			"PUT",
+			"/v1/memory",
+			{
+				files: {
+					"concepts/Limit.md": "---\ntitle: Limit\n---\nprivate note about limits",
+					"concepts/Derivative.md": "---\ntitle: Derivative\nprerequisites:\n  - \"[[Limit]]\"\n---\nprivate note about derivatives",
+					"concepts/Integral.md": "---\ntitle: Integral\n---\nprivate note about integrals",
+				},
+				knowledge: {
+					updatedAt: "2026-10-02T00:00:00.000Z",
+					concepts: [{ id: "limit", title: "Limit", status: "solid", current: 0.9, prerequisites: [] }],
+					goals: [],
+				},
+			},
+			server,
+		);
+		expect(saved.status).toBe(200);
+		const view = await route("GET", "/v1/groundwork", null, server);
+		expect(view.status).toBe(200);
+		const concepts = (view.json as { concepts: Array<{ id: string; title: string; status: string }> }).concepts;
+		expect(concepts).toEqual([
+			{ id: "derivative", title: "Derivative", status: "unassessed" },
+			{ id: "integral", title: "Integral", status: "unassessed" },
+			{ id: "limit", title: "Limit", status: "solid" },
+		]);
+		const json = JSON.stringify(view.json);
+		expect(json).not.toContain("private note");
+		expect((view.json as { graph: { nodes: Array<{ id: string }> } }).graph.nodes.map((node) => node.id).sort()).toEqual(["derivative", "integral", "limit"]);
 	});
 
 	it("shows the same concepts after the server process is gone", async () => {

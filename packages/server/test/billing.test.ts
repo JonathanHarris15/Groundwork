@@ -8,10 +8,10 @@ function event(type: Stripe.Event["type"], object: object): Stripe.Event {
 }
 
 describe("stripe plan updates", () => {
-	it("starts the paid plan when checkout completes", () => {
+	it("starts the paid plan when checkout completes", async () => {
 		const accounts = new AccountDirectory();
-		accounts.seen("ada", { email: "ada@example.com", name: "Ada" });
-		applyStripeEvent(
+		await accounts.seen("ada", { email: "ada@example.com", name: "Ada" });
+		await applyStripeEvent(
 			accounts,
 			event("checkout.session.completed", {
 				metadata: { uid: "ada", plan: "included" },
@@ -19,14 +19,14 @@ describe("stripe plan updates", () => {
 				customer: "cus_123",
 			}),
 		);
-		expect(accounts.get("ada")).toMatchObject({ plan: "included", hasBilling: true, email: "ada@example.com", displayName: "Ada" });
-		expect(accounts.customerId("ada")).toBe("cus_123");
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included", hasBilling: true, email: "ada@example.com", displayName: "Ada" });
+		await expect(accounts.customerId("ada")).resolves.toBe("cus_123");
 	});
 
-	it("keeps a paid plan while the subscription is active", () => {
+	it("keeps a paid plan while the subscription is active", async () => {
 		const accounts = new AccountDirectory();
-		accounts.attachCustomer("ada", "cus_9");
-		applyStripeEvent(
+		await accounts.attachCustomer("ada", "cus_9");
+		await applyStripeEvent(
 			accounts,
 			event("customer.subscription.updated", {
 				customer: "cus_9",
@@ -34,14 +34,14 @@ describe("stripe plan updates", () => {
 				status: "active",
 			}),
 		);
-		expect(accounts.get("ada").plan).toBe("byom");
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "byom" });
 	});
 
-	it("does not demote an active subscription when Stripe omits plan metadata", () => {
+	it("does not demote an active subscription when Stripe omits plan metadata", async () => {
 		const accounts = new AccountDirectory();
-		accounts.setPlan("ada", "included");
-		accounts.attachCustomer("ada", "cus_123");
-		applyStripeEvent(
+		await accounts.setPlan("ada", "included");
+		await accounts.attachCustomer("ada", "cus_123");
+		await applyStripeEvent(
 			accounts,
 			event("customer.subscription.updated", {
 				customer: "cus_123",
@@ -49,14 +49,14 @@ describe("stripe plan updates", () => {
 				status: "active",
 			}),
 		);
-		expect(accounts.get("ada").plan).toBe("included");
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
 	});
 
-	it("returns the account to free when the subscription ends", () => {
+	it("returns the account to free when the subscription ends", async () => {
 		const accounts = new AccountDirectory();
-		accounts.setPlan("ada", "included");
-		accounts.attachCustomer("ada", "cus_123");
-		applyStripeEvent(
+		await accounts.setPlan("ada", "included");
+		await accounts.attachCustomer("ada", "cus_123");
+		await applyStripeEvent(
 			accounts,
 			event("customer.subscription.deleted", {
 				customer: "cus_123",
@@ -64,6 +64,6 @@ describe("stripe plan updates", () => {
 				status: "canceled",
 			}),
 		);
-		expect(accounts.get("ada")).toMatchObject({ plan: "free", hasBilling: true });
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "free", hasBilling: true });
 	});
 });

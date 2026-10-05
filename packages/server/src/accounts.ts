@@ -1,5 +1,6 @@
 import {
 	choosePlan,
+	currentAccount,
 	emptyAccount,
 	rememberProfile,
 	setDisplayName,
@@ -13,66 +14,104 @@ import {
 	type PlanId,
 	type TutorChoice,
 } from "@groundwork/core";
+import type { AccountStore } from "./account-store";
 
-/** In-memory accounts until the Firebase service account is attached. */
+/**
+ * Accounts for signed-in learners.
+ * With a store, the plan, name, billing customer, tutor choice, and monthly spend
+ * survive a restart and are visible to every server process.
+ */
 export class AccountDirectory {
 	private readonly accounts = new Map<string, AccountRecord>();
 
-	get(uid: string, now: Date = new Date()): AccountView {
-		return viewAccount(this.record(uid, now), now);
+	constructor(private readonly store?: AccountStore) {}
+
+	async get(uid: string, now: Date = new Date()): Promise<AccountView> {
+		return viewAccount(await this.record(uid, now), now);
 	}
 
-	seen(uid: string, profile: { email?: string; name?: string }, now: Date = new Date()): AccountView {
-		const next = rememberProfile(this.record(uid, now), profile);
-		this.accounts.set(uid, next);
-		return viewAccount(next, now);
+	async seen(uid: string, profile: { email?: string; name?: string }, now: Date = new Date()): Promise<AccountView> {
+		return this.commit(uid, now, (record) => rememberProfile(currentAccount(record, now), profile));
 	}
 
-	setPlan(uid: string, plan: PlanId, now: Date = new Date()): AccountView {
-		const next = choosePlan(this.record(uid, now), plan, now);
-		this.accounts.set(uid, next);
-		return viewAccount(next, now);
+	async setPlan(uid: string, plan: PlanId, now: Date = new Date()): Promise<AccountView> {
+		return this.commit(uid, now, (record) => choosePlan(record, plan, now));
 	}
 
-	rename(uid: string, name: string, now: Date = new Date()): AccountView {
-		const next = setDisplayName(this.record(uid, now), name);
-		this.accounts.set(uid, next);
-		return viewAccount(next, now);
+	async rename(uid: string, name: string, now: Date = new Date()): Promise<AccountView> {
+		return this.commit(uid, now, (record) => setDisplayName(record, name));
 	}
 
-	customerId(uid: string, now: Date = new Date()): string | undefined {
-		return this.record(uid, now).stripeCustomerId;
+	async customerId(uid: string, now: Date = new Date()): Promise<string | undefined> {
+		return (await this.record(uid, now)).stripeCustomerId;
 	}
 
-	attachCustomer(uid: string, customerId: string, now: Date = new Date()): void {
-		this.accounts.set(uid, setStripeCustomer(this.record(uid, now), customerId));
+	async attachCustomer(uid: string, customerId: string, now: Date = new Date()): Promise<void> {
+		await this.commit(uid, now, (record) => setStripeCustomer(record, customerId));
 	}
 
-	choice(uid: string, now: Date = new Date()): TutorChoice {
-		return tutorChoiceFrom(this.record(uid, now));
+	async choice(uid: string, now: Date = new Date()): Promise<TutorChoice> {
+		return tutorChoiceFrom(await this.record(uid, now));
 	}
 
-	setTutor(uid: string, choice: { via: "claude" | "key"; provider?: string | null }, now: Date = new Date()): AccountView {
-		const next = setTutorChoice(this.record(uid, now), choice, now);
-		this.accounts.set(uid, next);
-		return viewAccount(next, now);
+	async setTutor(uid: string, choice: { via: "claude" | "key"; provider?: string | null }, now: Date = new Date()): Promise<AccountView> {
+		return this.commit(uid, now, (record) => setTutorChoice(record, choice, now));
 	}
 
 	/** Apply one hosted tutor turn to the allowance. */
-	charge(uid: string, costUsd: number, now: Date = new Date()): AccountView {
-		const settled = settleHosted(this.record(uid, now), costUsd, now);
-		this.accounts.set(uid, settled.account);
-		return viewAccount(settled.account, now);
+	async charge(uid: string, costUsd: number, now: Date = new Date()): Promise<AccountView> {
+		return this.commit(uid, now, (record) => settleHosted(record, costUsd, now).account);
 	}
 
-	findByCustomer(customerId: string): AccountRecord | undefined {
+	async findByCustomer(customerId: string): Promise<AccountRecord | undefined> {
+		if (this.store) {
+			const uid = await this.store.findByCustomer(customerId);
+			if (!uid) return undefined;
+			return (await this.store.read(uid)) ?? undefined;
+		}
 		for (const record of this.accounts.values()) {
 			if (record.stripeCustomerId === customerId) return record;
 		}
 		return undefined;
 	}
 
-	private record(uid: string, now: Date): AccountRecord {
-		return this.accounts.get(uid) ?? emptyAccount(uid, now);
+	private async record(uid: string, now: Date): Promise<AccountRecord> {
+		if (!this.store) return this.accounts.get(uid) ?? emptyAccount(uid, now);
+		return (await this.store.read(uid)) ?? emptyAccount(uid, now);
 	}
+
+	/**
+	 * Apply `change` to the stored account.
+	 * A read that already matches is not written again, so a page view does not
+	 * stamp the database. Real edits are applied inside the store so two
+	 * processes cannot drop each other's plan.
+	 */
+	private async commit(uid: string, now: Date, change: (record: AccountRecord) => AccountRecord): Promise<AccountView> {
+		if (!this.store) {
+			const next = change(this.accounts.get(uid) ?? emptyAccount(uid, now));
+			this.accounts.set(uid, next);
+			return viewAccount(next, now);
+		}
+		const existing = await this.store.read(uid);
+		const base = existing ?? emptyAccount(uid, now);
+		const preview = change(base);
+		if (existing && sameAccount(existing, preview)) return viewAccount(preview, now);
+		if (!existing && sameAccount(preview, emptyAccount(uid, now))) return viewAccount(preview, now);
+		const saved = await this.store.update(uid, (record) => change(record ?? emptyAccount(uid, now)));
+		return viewAccount(saved, now);
+	}
+}
+
+function sameAccount(a: AccountRecord, b: AccountRecord): boolean {
+	return (
+		a.uid === b.uid &&
+		a.plan === b.plan &&
+		a.period === b.period &&
+		a.spentUsd === b.spentUsd &&
+		a.displayName === b.displayName &&
+		a.email === b.email &&
+		a.stripeCustomerId === b.stripeCustomerId &&
+		a.tutorVia === b.tutorVia &&
+		a.tutorProvider === b.tutorProvider
+	);
 }

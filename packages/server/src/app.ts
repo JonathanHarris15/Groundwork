@@ -54,7 +54,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 
 		const identity = await deps.auth.uid(authorization);
-		const view = deps.accounts.seen(identity.uid, { email: identity.email, name: identity.name });
+		const view = await deps.accounts.seen(identity.uid, { email: identity.email, name: identity.name });
 		const uid = identity.uid;
 
 		if (method === "GET" && path === "/v1/account") {
@@ -63,13 +63,13 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		if (method === "POST" && path === "/v1/account/profile") {
 			const displayName = (body as { displayName?: unknown } | null)?.displayName;
 			if (typeof displayName !== "string") return { status: 400, json: { error: "Send a display name." } };
-			return { status: 200, json: presentAccount(deps.accounts.rename(uid, displayName)) };
+			return { status: 200, json: presentAccount(await deps.accounts.rename(uid, displayName)) };
 		}
 		if (method === "POST" && path === "/v1/account/plan") {
 			const plan = (body as { plan?: unknown } | null)?.plan;
 			if (!isPlanId(plan)) return { status: 400, json: { error: "Choose free, byom, or included." } };
 			if (plan !== "free") return paidPlanRefused(deps);
-			return { status: 200, json: presentAccount(deps.accounts.setPlan(uid, plan)) };
+			return { status: 200, json: presentAccount(await deps.accounts.setPlan(uid, plan)) };
 		}
 		if (method === "POST" && path === "/v1/billing/checkout") {
 			const plan = (body as { plan?: unknown } | null)?.plan;
@@ -82,7 +82,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { url } };
 		}
 		if (method === "GET" && path === "/v1/tutor") {
-			return { status: 200, json: describeTutor({ view, choice: deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+			return { status: 200, json: describeTutor({ view, choice: await deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
 		}
 		if (method === "POST" && path === "/v1/tutor/setup") {
 			const input = body as { via?: unknown; provider?: unknown } | null;
@@ -92,17 +92,17 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			if (via === "key") {
 				if (!isUserKeyProvider(input?.provider)) return { status: 400, json: { error: "Choose a provider." } };
 				if (!deps.secrets.saved(uid)[input.provider]) return { status: 400, json: { error: `Paste a ${PROVIDER_LABEL[input.provider]} key first.` } };
-				const next = deps.accounts.setTutor(uid, { via, provider: input.provider });
-				return { status: 200, json: describeTutor({ view: next, choice: deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+				const next = await deps.accounts.setTutor(uid, { via, provider: input.provider });
+				return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
 			}
-			const next = deps.accounts.setTutor(uid, { via: "claude" });
-			return { status: 200, json: describeTutor({ view: next, choice: deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+			const next = await deps.accounts.setTutor(uid, { via: "claude" });
+			return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
 		}
 		if (method === "POST" && path === "/v1/tutor/complete") {
 			return completeTutor(
 				{
 					view,
-					choice: deps.accounts.choice(uid),
+					choice: await deps.accounts.choice(uid),
 					saved: deps.secrets.saved(uid),
 					userKey: (provider) => deps.secrets.get(uid, provider),
 					openRouterKey: deps.openRouterKey,

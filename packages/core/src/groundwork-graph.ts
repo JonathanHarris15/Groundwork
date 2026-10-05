@@ -326,7 +326,7 @@ function separate(pos: Map<string, Point>, minDist: number): void {
 	}
 }
 
-/** A few names per subject, the ones with the most links first. Small subjects name every concept. */
+/** Every concept, busiest first. Overlapping names are dropped later so the dots stay readable. */
 function labelIds(concepts: GraphConcept[], edges: GroundworkGraphEdge[], domainOf: Map<string, string>): string[] {
 	const degree = new Map<string, number>();
 	for (const c of concepts) degree.set(c.id, 0);
@@ -334,20 +334,10 @@ function labelIds(concepts: GraphConcept[], edges: GroundworkGraphEdge[], domain
 		degree.set(e.from, (degree.get(e.from) ?? 0) + 1);
 		degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
 	}
-	const byDomain = new Map<string, GraphConcept[]>();
-	for (const c of concepts) {
-		const domain = domainOf.get(c.id) ?? c.title;
-		const row = byDomain.get(domain) ?? [];
-		row.push(c);
-		byDomain.set(domain, row);
-	}
-	const labeled: string[] = [];
-	for (const members of byDomain.values()) {
-		const ranked = members.slice().sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.title.localeCompare(b.title));
-		const keep = members.length <= 3 ? members.length : 2;
-		for (const c of ranked.slice(0, keep)) labeled.push(c.id);
-	}
-	return labeled;
+	return concepts
+		.slice()
+		.sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || (domainOf.get(a.id) ?? "").localeCompare(domainOf.get(b.id) ?? "") || a.title.localeCompare(b.title))
+		.map((concept) => concept.id);
 }
 
 function hash(value: string): number {

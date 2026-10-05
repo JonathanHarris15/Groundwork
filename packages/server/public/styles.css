@@ -906,6 +906,11 @@ label { font-size: 15px; font-weight: 500; }
 .graph-label { fill: #d5d8de; font-size: 12px; font-family: inherit; }
 .graph-node { cursor: default; }
 .graph-node:hover .graph-halo { opacity: 0.45; }
+.concept-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.concept-list li { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.concept-list li:first-child { border-top: 0; }
+.concept-name { flex: 1; min-width: 0; font-size: 16px; }
+.concept-status { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: #aeb3bc; white-space: nowrap; }
 .goals { margin-top: 30px; }
 .goals-title { margin: 0 0 6px; }
 .goal { display: flex; align-items: center; gap: 16px; padding: 16px 4px; border-top: 1px solid rgba(255, 255, 255, 0.08); }

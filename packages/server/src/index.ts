@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { AccountDirectory } from "./accounts";
+import { FileAccountStore, FirestoreAccountStore } from "./account-store";
 import { route } from "./app";
 import { loadAuth } from "./auth";
 import { loadBilling } from "./billing";
@@ -13,8 +14,9 @@ import { SecretDirectory } from "./secrets";
 import { readSite } from "./static";
 
 const { port, host } = listenTarget();
-const accounts = new AccountDirectory();
 const auth = loadAuth();
+const accountFile = process.env.GROUNDWORK_ACCOUNT_FILE ?? path.resolve(process.cwd(), "data/accounts.json");
+const accounts = new AccountDirectory(auth.firebase ? new FirestoreAccountStore() : new FileAccountStore(accountFile));
 const memoryFile = process.env.GROUNDWORK_MEMORY_FILE ?? path.resolve(process.cwd(), "data/tutor-memory.json");
 const memoryStore = auth.firebase ? new BestEffortStore(new FirestoreTutorMemoryStore()) : new FileTutorMemoryStore(memoryFile);
 

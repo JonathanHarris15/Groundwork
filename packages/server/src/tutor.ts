@@ -20,7 +20,7 @@ export interface TutorCallContext {
 	userKey(provider: UserKeyProvider): string | undefined;
 	openRouterKey: string | undefined;
 	fetchImpl: typeof fetch;
-	charge(costUsd: number): AccountView;
+	charge(costUsd: number): Promise<AccountView>;
 }
 
 export function describeTutor(ctx: Pick<TutorCallContext, "view" | "choice" | "saved">): TutorStatus {
@@ -72,7 +72,7 @@ export async function completeTutor(ctx: TutorCallContext, body: unknown): Promi
 	if (!read.ok) return { status: 502, json: { error: upstreamErrorMessage({ error: read.error }, [apiKey]) } };
 
 	let view = ctx.view;
-	if (decision.action === "hosted") view = ctx.charge(hostedCostUsd(read.result.usage));
+	if (decision.action === "hosted") view = await ctx.charge(hostedCostUsd(read.result.usage));
 	const shown = presentAccount(view);
 	return {
 		status: 200,

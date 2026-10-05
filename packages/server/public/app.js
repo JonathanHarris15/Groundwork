@@ -304,6 +304,7 @@ function board() {
 					${graphLegend(conceptGraph())}
 				</div>
 				${conceptGraphSvg(conceptGraph())}
+				${conceptList(concepts)}
 			</div>
 			<div class="goals">
 				<h3 class="goals-title">Goals reached</h3>
@@ -327,7 +328,7 @@ function conceptNote(concepts) {
 
 function conceptGraphSvg(graph) {
 	const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
-	if (!nodes.length) return `<p class="sky-empty">They show up here after a quiz counts them.</p>`;
+	if (!nodes.length) return `<p class="sky-empty">They show up here as you study.</p>`;
 	const statusOf = new Map(learnedConcepts().map((concept) => [concept.id, concept.status]));
 	const byId = new Map(nodes.map((node) => [node.id, node]));
 	const width = Number.isFinite(graph.width) ? graph.width : 640;
@@ -353,6 +354,23 @@ function conceptGraphSvg(graph) {
 		return `<g class="graph-node${open ? " is-open" : ""}"><title>${escapeHtml(name)}</title><circle class="graph-halo" cx="${num(node.x)}" cy="${num(node.y)}" r="9" ${halo}></circle><circle class="graph-dot" cx="${num(node.x)}" cy="${num(node.y)}" r="4.5" ${dot}></circle>${label}</g>`;
 	});
 	return `<svg class="graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg>`;
+}
+
+function conceptList(concepts) {
+	if (!concepts.length) return "";
+	const colorOf = new Map((conceptGraph().nodes || []).map((node) => [node.id, node.color]));
+	return `<ul class="concept-list">${concepts.map((concept) => {
+		const color = safeColor(colorOf.get(concept.id));
+		return `<li><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
+	}).join("")}</ul>`;
+}
+
+function statusLabel(status) {
+	if (status === "learning") return "Learning";
+	if (status === "shaky") return "Shaky";
+	if (status === "solid") return "Solid";
+	if (status === "rusty") return "Rusty";
+	return "Not quizzed";
 }
 
 function goalList(goals) {
