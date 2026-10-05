@@ -239,6 +239,7 @@ export default class GroundworkPlugin extends Plugin {
 				return;
 			}
 			this.tutorRoute = body;
+			this.refreshAccountUi();
 		} catch {
 			// Keep the last route. A missed refresh should not drop a lesson in progress.
 		}
@@ -346,7 +347,8 @@ export default class GroundworkPlugin extends Plugin {
 		const provider = this.providerLabel();
 		if (!provider.label.trim()) return false;
 		if (provider.setup) return true;
-		if (this.tutorRoute?.action === "hosted") return false;
+		const route = this.tutorRoute;
+		if (route && !route.ownModel && (route.action === "hosted" || route.via === "hosted")) return false;
 		return true;
 	}
 

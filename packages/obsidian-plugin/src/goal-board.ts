@@ -2,6 +2,7 @@ import {
 	buildConceptMap,
 	conceptCompletion,
 	formatDue,
+	masteryVisual,
 	sessionEstimate,
 	type ConceptMapModel,
 	type GoalSchedule,
@@ -90,15 +91,30 @@ export function toBoard(
 	const drawn = new Map(map.nodes.map((node) => [node.id, node]));
 	const concepts: GoalConceptRow[] = report.nodes
 		.map((node) => {
-			const visual = drawn.get(node.id)?.visual ?? (built.has(node.id) ? "known" : node.status === "unassessed" ? "ghost" : "learning");
+			const builtInGoal = built.has(node.id);
+			const visual = masteryVisual(node.status, builtInGoal);
 			const isNext = node.id === nextNode?.id && visual !== "known";
 			const known = visual === "known";
-			const ghost = visual === "ghost" || (visual === "goal" && node.status === "unassessed");
+			const ghost = visual === "ghost";
 			let action: GoalConceptRow["action"] = "learn";
 			if (known) action = "known";
 			else if (isNext) action = "start";
 			else if (visual === "shaky" || visual === "rusty") action = "quiz";
-			const state = known ? "known" : isNext && ghost ? "ghost · next" : isNext ? "next" : ghost ? "ghost" : visual === "goal" ? node.status : visual;
+			const state = known
+				? "Solid"
+				: isNext && ghost
+					? "Ghost · next"
+					: isNext
+						? "Next"
+						: ghost
+							? "Ghost"
+							: visual === "shaky"
+								? "Shaky"
+								: visual === "rusty"
+									? "Rusty"
+									: visual === "learning"
+										? "Learning"
+										: node.status;
 			return {
 				id: node.id,
 				title: node.title,

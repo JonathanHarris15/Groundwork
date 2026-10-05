@@ -18,7 +18,6 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	parent.replaceChildren();
 	const row = el(parent, "div", "gw-goals-row");
 	const main = el(row, "div", "gw-goals");
-	const tabs = el(main, "div", "gw-goal-tabs");
 	if (!boards.length) {
 		const empty = el(main, "div", "gw-map-empty");
 		empty.append("No goals yet. A goal is the concepts you have not built, plus the day you want them built by.");
@@ -28,19 +27,22 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 		create.addEventListener("click", handlers.onCreate);
 		return;
 	}
-	for (const board of boards) {
-		const tab = el(tabs, "button", `gw-goal-tab${board.id === selectedId ? " is-on" : ""}`);
-		tab.type = "button";
-		const dot = el(tab, "i", "gw-dot");
-		dot.style.background = board.status === "done" ? "#3CC56F" : board.status === "paused" ? "#F7A93E" : "#F0565B";
-		tab.append(board.title);
-		if (board.daysLeft != null) el(tab, "span", "gw-goal-count", daysLeftPhrase(board.daysLeft).replace(" days", "d").replace(" day", "d"));
-		tab.addEventListener("click", () => handlers.onSelect(board.id));
+	if (boards.length > 1) {
+		const tabs = el(main, "div", "gw-goal-tabs");
+		for (const board of boards) {
+			const tab = el(tabs, "button", `gw-goal-tab${board.id === selectedId ? " is-on" : ""}`);
+			tab.type = "button";
+			const dot = el(tab, "i", "gw-dot");
+			dot.style.background = board.status === "done" ? "#3CC56F" : board.status === "paused" ? "#F7A93E" : "#F0565B";
+			tab.append(board.title);
+			if (board.daysLeft != null) el(tab, "span", "gw-goal-count", daysLeftPhrase(board.daysLeft).replace(" days", "d").replace(" day", "d"));
+			tab.addEventListener("click", () => handlers.onSelect(board.id));
+		}
+		const create = el(tabs, "button", "gw-goal-tab is-new");
+		create.type = "button";
+		create.append(icon(create, `<path d="M12 5v14M5 12h14"></path>`), "New goal");
+		create.addEventListener("click", handlers.onCreate);
 	}
-	const create = el(tabs, "button", "gw-goal-tab is-new");
-	create.type = "button";
-	create.append(icon(create, `<path d="M12 5v14M5 12h14"></path>`), "New goal");
-	create.addEventListener("click", handlers.onCreate);
 
 	const board = boards.find((item) => item.id === selectedId) ?? boards[0];
 	const hero = el(main, "div", "gw-goal-hero");
@@ -68,6 +70,12 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	date.addEventListener("change", () => {
 		if (date.value) handlers.onDue(board.id, date.value);
 	});
+	if (boards.length === 1) {
+		const soloNew = el(copy, "button", "gw-text-btn gw-goal-solo-new");
+		soloNew.type = "button";
+		soloNew.textContent = "New goal";
+		soloNew.addEventListener("click", handlers.onCreate);
+	}
 	if (board.days.length) {
 		const track = el(copy, "div", "gw-track");
 		for (const day of board.days) {

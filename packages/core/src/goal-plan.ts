@@ -237,12 +237,16 @@ export interface ConceptMapModel {
 	total: number;
 }
 
-function visualFor(status: ConceptStatus, built: boolean): MapVisual {
-	if (built) return "known";
+export function masteryVisual(status: ConceptStatus, built: boolean): MapVisual {
+	if (built || status === "solid") return "known";
 	if (status === "unassessed") return "ghost";
 	if (status === "shaky") return "shaky";
 	if (status === "rusty") return "rusty";
 	return "learning";
+}
+
+function visualFor(status: ConceptStatus, built: boolean): MapVisual {
+	return masteryVisual(status, built);
 }
 
 export function buildConceptMap(input: {
