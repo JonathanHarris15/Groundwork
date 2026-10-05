@@ -442,7 +442,7 @@ export class KnowledgeStore {
 		const stats = computeStats(evidence, this.now());
 		const { frontmatter, body } = parseNote(await this.io.read(concept.path));
 		Object.assign(frontmatter, statsFrontmatter(stats));
-		const newBody = evidence.length ? setSection(body, "Quiz history", historyTable(evidence)) : body;
+		const newBody = evidence.some((e) => e.source !== "flashcard") ? setSection(body, "Quiz history", historyTable(evidence)) : body;
 		await this.io.write(concept.path, serializeNote(frontmatter, newBody));
 		this.invalidate();
 		this.changed(concept.path, this.evidencePath(concept.id));
@@ -1421,7 +1421,8 @@ function applySections(body: string, input: ConceptInput): string {
 
 function historyTable(evidence: Evidence[]): string {
 	const icon = { correct: "✅", partial: "🟡", incorrect: "❌", dont_know: "❔" } as const;
-	const rows = [...evidence]
+	const rows = evidence
+		.filter((e) => e.source !== "flashcard")
 		.sort((a, b) => b.ts.localeCompare(a.ts))
 		.slice(0, 15)
 		.map((e) => {

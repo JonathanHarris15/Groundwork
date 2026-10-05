@@ -47,7 +47,21 @@ export interface Evidence {
 	note?: string;
 	session?: string;
 	device?: string;
+	/** A flashcard rating rather than a graded quiz answer. See FLASHCARD_CREDIT. */
+	source?: "flashcard";
 }
+
+/**
+ * Flashcard ratings are self-reported recall, so they only ever nudge ability up a little:
+ * a fraction of a quiz answer's pull, at most `windowCap` logits in any rolling 4-hour
+ * window, and never past the solid line. They are not attempts, so they cannot make a
+ * concept solid, cannot assess an unquizzed concept, and do not refresh retention.
+ */
+export const FLASHCARD_CREDIT = {
+	weight: 0.15,
+	windowCap: 0.2,
+	windowMs: 4 * 3_600_000,
+} as const;
 
 export type ConceptStatus = "unassessed" | "learning" | "shaky" | "solid" | "rusty";
 
@@ -76,6 +90,8 @@ const DAY_MS = 86_400_000;
 const REVIEW_AT_RETENTION = 0.7;
 const SOLID = 0.8;
 const SHAKY = 0.6;
+/** Just under the ability where mastery reaches SOLID. Flashcard credit stops here. */
+const SOLID_ABILITY = Math.log(SOLID / (1 - SOLID)) - 0.01;
 /** A slip is noted, not held against them: nearly full credit, and it still counts as a success for memory and the edge. */
 export const SLIP_CREDIT = 0.9;
 
@@ -110,6 +126,7 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 	let floor: number | undefined;
 	let ceiling: number | undefined;
 	const misconceptions = new Map<string, number>();
+	const cardCredits: Array<{ t: number; gain: number }> = [];
 
 	for (const ev of events) {
 		const t = Date.parse(ev.ts);
@@ -123,6 +140,16 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 		// but unlike a wrong guess it never flags a misconception. A familiar
 		// "almost have it" is a weaker miss than "never seen this".
 		const k = 1.8 / (1 + 0.3 * attempts);
+		if (ev.source === "flashcard") {
+			if (attempts === 0) continue;
+			const recent = cardCredits.filter((c) => c.t > t - FLASHCARD_CREDIT.windowMs).reduce((sum, c) => sum + c.gain, 0);
+			const room = Math.max(0, FLASHCARD_CREDIT.windowCap - recent);
+			const belowSolid = Math.max(0, SOLID_ABILITY - ability);
+			const gain = Math.min(Math.max(0, FLASHCARD_CREDIT.weight * Math.max(0.25, k) * (y - p)), room, belowSolid);
+			ability += gain;
+			cardCredits.push({ t, gain });
+			continue;
+		}
 		ability = clamp(ability + Math.max(0.25, k) * (y - p), -4, 4);
 
 		const gapDays = last === undefined ? 0 : (t - last) / DAY_MS;

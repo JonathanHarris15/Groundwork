@@ -9,14 +9,8 @@
 import { cleanFolderList } from "./access";
 import { ensureDir, type VaultIO } from "./io";
 import { getSection, parseNote, safeFileName, serializeNote, slugify } from "./markdown";
-import type { Evidence, Outcome } from "./model";
+import type { Outcome } from "./model";
 import { PATHS, type Concept, type Goal, type KnowledgeStore } from "./store";
-
-/** Rolling window for tiny mastery credit from flashcard reviews (not full quiz weight). */
-export const FLASHCARD_MASTERY_WINDOW_MS = 4 * 60 * 60 * 1000;
-/** Max flashcard evidence events per concept within the window — blocks spam-studying to completion. */
-export const FLASHCARD_MASTERY_CAP = 8;
-export const FLASHCARD_EVIDENCE_NOTE = "flashcard";
 
 export const FLASHCARDS_DIR = "flashcards";
 
@@ -66,6 +60,8 @@ export interface FlashcardLibrary {
 const RATINGS: CardRating[] = ["again", "hard", "good", "easy"];
 const DAY_MINUTES = 24 * 60;
 const EASE_START = 2.5;
+/** Compounding easy ratings would otherwise overflow a Date. */
+const MAX_INTERVAL_MINUTES = 36_500 * DAY_MINUTES;
 
 export function flashcardsDir(writeFolder: string): string {
 	return `${writeFolder}/${FLASHCARDS_DIR}`;
@@ -111,6 +107,10 @@ function clampEase(ease: number): number {
 }
 
 export function scheduledMinutes(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">, rating: CardRating): number {
+	return Math.min(MAX_INTERVAL_MINUTES, rawMinutes(card, rating));
+}
+
+function rawMinutes(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">, rating: CardRating): number {
 	const ease = card.ease || EASE_START;
 	if (rating === "again") return 1;
 	if (rating === "hard") {
@@ -183,24 +183,9 @@ export function applyRating(card: Flashcard, rating: CardRating, now: Date): Fla
 
 export function ratingOutcome(rating: CardRating): { outcome: Outcome; difficulty: number } {
 	if (rating === "again") return { outcome: "incorrect", difficulty: 2 };
-	if (rating === "hard") return { outcome: "partial", difficulty: 2 };
-	if (rating === "good") return { outcome: "correct", difficulty: 2 };
-	return { outcome: "correct", difficulty: 3 };
-}
-
-export function flashcardMasteryEventsInWindow(evidence: Evidence[], now: Date, windowMs = FLASHCARD_MASTERY_WINDOW_MS): number {
-	const cutoff = now.getTime() - windowMs;
-	let n = 0;
-	for (const ev of evidence) {
-		if (ev.note !== FLASHCARD_EVIDENCE_NOTE) continue;
-		const t = Date.parse(ev.ts);
-		if (!Number.isNaN(t) && t >= cutoff) n++;
-	}
-	return n;
-}
-
-export function canApplyFlashcardMastery(evidence: Evidence[], now: Date): boolean {
-	return flashcardMasteryEventsInWindow(evidence, now) < FLASHCARD_MASTERY_CAP;
+	if (rating === "hard") return { outcome: "partial", difficulty: 3 };
+	if (rating === "good") return { outcome: "correct", difficulty: 3 };
+	return { outcome: "correct", difficulty: 4 };
 }
 
 export function auditFlashcardLibrary(lib: FlashcardLibrary): boolean {
@@ -728,25 +713,43 @@ export async function rateFlashcard(store: KnowledgeStore, id: string, rating: C
 	const card = applyRating(lib.cards[index], rating, now);
 	lib.cards[index] = card;
 	await persist(store, lib, now);
-	const conceptRef = card.concept.trim();
-	if (conceptRef && rating !== "again") {
-		try {
-			const conceptId = slugify(conceptRef);
-			const prior = await store.evidenceFor(conceptId);
-			if (canApplyFlashcardMastery(prior, now)) {
-				const { outcome, difficulty } = ratingOutcome(rating);
-				await store.recordEvidence(conceptRef, {
-					kind: "check",
-					outcome,
-					difficulty,
-					note: FLASHCARD_EVIDENCE_NOTE,
-					question: card.front.slice(0, 240),
-				});
-			}
-		} catch {
-			// Concept may not exist yet; scheduling still applies.
-		}
+	// Recall is credit only: "Again" reschedules the card and leaves mastery alone.
+	if (rating !== "again" && (await store.resolve(card.concept))) {
+		const { outcome, difficulty } = ratingOutcome(rating);
+		await store.recordEvidence(card.concept, {
+			ts: now.toISOString(),
+			kind: "review",
+			source: "flashcard",
+			outcome,
+			difficulty,
+			question: card.front.slice(0, 240),
+		});
 	}
+	return card;
+}
+
+/** Edit a card's wording in place. Its schedule and review history stay. */
+export async function updateFlashcard(
+	store: KnowledgeStore,
+	id: string,
+	input: { concept: string; front: string; back: string },
+	now = new Date(),
+): Promise<Flashcard> {
+	const concept = input.concept.trim();
+	const front = input.front.trim();
+	const back = input.back.trim();
+	if (!concept || !front || !back) throw new Error("A card needs a concept, a front, and a back.");
+	const issue = flashcardQualityIssue(front, back);
+	if (issue) throw new Error(issue);
+	const lib = await loadFlashcardLibrary(store.io);
+	const card = lib.cards.find((c) => c.id === id);
+	if (!card) throw new Error("That card is already gone.");
+	card.concept = concept;
+	card.front = front;
+	card.back = back;
+	card.updatedAt = now.toISOString();
+	delete card.qualityIssue;
+	await persist(store, lib, now);
 	return card;
 }
 
