@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const harnessDir = path.join(root, "packages/obsidian-plugin/test/ui-harness");
+const stylesheet = path.join(root, "packages/obsidian-plugin/styles.css");
 const outDir = "/opt/cursor/artifacts/obsidian-plugin-ui";
 mkdirSync(outDir, { recursive: true });
 
@@ -24,8 +25,9 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   let file = url.pathname === "/" ? "/index.html" : url.pathname;
   file = path.normalize(file).replace(/^(\.\.[/\\])+/, "");
-  const target = path.join(harnessDir, file);
-  if (!target.startsWith(harnessDir)) {
+  // index.html links ../../styles.css, which an HTTP root resolves to /styles.css.
+  const target = file === "/styles.css" ? stylesheet : path.join(harnessDir, file);
+  if (target !== stylesheet && !target.startsWith(harnessDir)) {
     res.writeHead(403);
     res.end();
     return;
