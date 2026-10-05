@@ -11,3 +11,5 @@ The prices that may be shown are **$9 per month** (Bring your own model) and **$
 ## Deploy
 
 When the user asks to deploy, run `scripts/deploy.sh` and wait for it to finish. That publishes this repo to the live site. Do not use a different command, and do not set or replace Cloud Run environment variables.
+
+On Cloud Run, Firestore uses the runtime service account. The Firebase key in `FIREBASE_SERVICE_ACCOUNT_JSON` verifies sign-in and is not allowed to read the database. Do not point Firestore back at that key.

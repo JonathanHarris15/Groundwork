@@ -158,10 +158,21 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		return { status: 404, json: { error: "Not found." } };
 	} catch (err) {
 		if (err instanceof SecretError) return { status: 400, json: { error: err.message } };
+		if (isPermissionDenied(err)) {
+			console.error("Groundwork could not use the account database.", err);
+			return { status: 503, json: { error: "Your account could not be opened. Try signing in again." } };
+		}
 		const status = typeof (err as { status?: unknown }).status === "number" ? (err as { status: number }).status : 500;
 		const message = err instanceof Error ? err.message : "Request failed.";
 		return { status, json: { error: message } };
 	}
+}
+
+function isPermissionDenied(err: unknown): boolean {
+	const code = (err as { code?: unknown }).code;
+	if (code === 7 || code === "7" || code === "PERMISSION_DENIED") return true;
+	const message = err instanceof Error ? err.message : "";
+	return message.includes("PERMISSION_DENIED");
 }
 
 function paidPlanRefused(deps: ServerDeps): RouteResult {

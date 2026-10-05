@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { type Firestore } from "firebase-admin/firestore";
+import { openFirestore } from "./firestore";
 import { isUserKeyProvider, USER_KEY_PROVIDERS, type UserKeyProvider } from "@groundwork/core";
 
 /** Provider keys for one account. The browser never receives the values. */
@@ -92,7 +93,7 @@ export class FileSecretStore implements SecretStore {
  * Admin SDK only. Responses still report which providers are saved, never the key.
  */
 export class FirestoreSecretStore implements SecretStore {
-	constructor(private readonly firestore: () => Firestore = () => getFirestore()) {}
+	constructor(private readonly firestore: () => Firestore = openFirestore) {}
 
 	async read(uid: string): Promise<SecretRecord | null> {
 		const snap = await this.firestore().collection("secrets").doc(uid).get();

@@ -1,4 +1,5 @@
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { type Firestore } from "firebase-admin/firestore";
+import { openFirestore } from "./firestore";
 import { parseKnowledgeSnapshot, parseTutorMemoryFiles } from "@groundwork/core";
 import type { TutorMemoryRecord, TutorMemoryStore } from "./memory";
 
@@ -27,7 +28,7 @@ export function splitUtf8(text: string, maxBytes: number): string[] {
  * Admin SDK only. The browser never reads this collection.
  */
 export class FirestoreTutorMemoryStore implements TutorMemoryStore {
-	constructor(private readonly firestore: () => Firestore = () => getFirestore()) {}
+	constructor(private readonly firestore: () => Firestore = openFirestore) {}
 
 	async read(uid: string): Promise<TutorMemoryRecord | null> {
 		const ref = this.firestore().collection("tutorMemory").doc(uid);

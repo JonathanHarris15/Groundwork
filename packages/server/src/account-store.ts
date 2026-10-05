@@ -1,7 +1,8 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { type Firestore } from "firebase-admin/firestore";
 import { isPlanId, isUserKeyProvider, type AccountRecord } from "@groundwork/core";
+import { openFirestore } from "./firestore";
 
 /** Saved account so any server process can remember the plan and the profile. */
 export interface AccountStore {
@@ -115,7 +116,7 @@ export class FileAccountStore implements AccountStore {
  * Admin SDK only. The browser never reads this collection.
  */
 export class FirestoreAccountStore implements AccountStore {
-	constructor(private readonly firestore: () => Firestore = () => getFirestore()) {}
+	constructor(private readonly firestore: () => Firestore = openFirestore) {}
 
 	async read(uid: string): Promise<AccountRecord | null> {
 		const snap = await this.firestore().collection("accounts").doc(uid).get();

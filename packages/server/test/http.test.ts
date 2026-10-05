@@ -427,6 +427,19 @@ describe("account server", () => {
 		expect((kept.json as { files: Record<string, string> }).files["concepts/Limit.md"]).toContain("Limit");
 	});
 
+	it("hides a database permission error from the sign-in page", async () => {
+		const accounts = {
+			async seen() {
+				throw new Error("7 PERMISSION_DENIED: Missing or insufficient permissions.");
+			},
+		} as unknown as AccountDirectory;
+		const result = await route("GET", "/v1/account", null, deps({ accounts }));
+		expect(result.status).toBe(503);
+		expect(JSON.stringify(result.json)).not.toContain("PERMISSION_DENIED");
+		expect(JSON.stringify(result.json)).not.toContain("insufficient");
+		expect((result.json as { error: string }).error).toContain("account");
+	});
+
 	it("reports Jev as unavailable when the server key is missing", async () => {
 		const server = deps({ jev: false });
 		const health = await route("GET", "/health", null, server);
