@@ -8,6 +8,7 @@
 	height: 100%;
 	padding: 0 !important;
 	container-type: inline-size;
+	--gw-overlay-top: 48px;
 	--gw-solid: #3cc56f;
 	--gw-shaky: #f7a93e;
 	--gw-learning: #45a9f0;
@@ -159,6 +160,8 @@
 	align-items: center;
 	gap: 8px;
 	min-height: 48px;
+	position: relative;
+	z-index: 5;
 	padding: 8px 12px;
 	border-bottom: 1px solid var(--background-modifier-border);
 	flex-wrap: wrap;
@@ -281,6 +284,10 @@
 .gw-root.is-library .gw-library,
 .gw-root.is-settings .gw-settings {
 	display: flex;
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: hidden;
+	background: var(--background-primary, var(--gw-paper));
 }
 .gw-root.is-library .gw-messages,
 .gw-root.is-settings .gw-messages,
@@ -312,6 +319,7 @@
 .gw-library-title {
 	font-weight: 600;
 	font-size: var(--font-ui-medium);
+	color: var(--text-normal, var(--gw-ink));
 }
 .gw-library-sub,
 .gw-lib-help,
@@ -1968,8 +1976,37 @@
 	font-size: 13px;
 	cursor: pointer;
 }
-.gw-view svg { width: 13px; height: 13px; }
-.gw-view.is-on { background: var(--gw-pill-on); color: var(--gw-ink-strong); }
+.gw-view svg { width: 13px; height: 13px; flex: none; }
+.gw-view.is-on {
+	background: var(--gw-pill-on);
+	color: var(--gw-ink-strong);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gw-ink-strong, var(--text-normal)) 18%, transparent);
+	font-weight: 600;
+}
+.gw-icon-label {
+	font-size: 11px;
+	font-weight: 500;
+	margin-left: 2px;
+	max-width: 72px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.gw-lib-empty-block {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 12px 14px;
+	border-radius: var(--gw-radius, 12px);
+	border: 1px dashed var(--background-modifier-border, var(--gw-line));
+	background: var(--background-secondary, var(--gw-raised));
+}
+.gw-map-empty,
+.gw-lib-empty-block .gw-lib-empty {
+	max-width: 42ch;
+	line-height: 1.45;
+}
 .gw-root.gw-theme-dark .gw-brand,
 .gw-root.gw-theme-light .gw-brand,
 .gw-root.gw-theme-dark .gw-actions,
@@ -1983,15 +2020,26 @@
 .gw-goalchip {
 	display: inline-flex;
 	align-items: center;
-	gap: 8px;
+	gap: 6px;
 	height: 30px;
-	padding: 0 10px 0 12px;
+	padding: 0 10px 0 10px;
 	border-radius: 999px;
-	background: var(--gw-goal-bg);
-	border: 1px solid var(--gw-goal-line);
-	color: var(--gw-goal-ink);
+	background: var(--gw-chip, var(--gw-goal-bg));
+	border: 1px solid var(--background-modifier-border, var(--gw-goal-line));
+	color: var(--text-normal, var(--gw-goal-ink));
 	flex: none;
-	max-width: 240px;
+	max-width: min(280px, 100%);
+}
+.gw-goalchip-label {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-muted, var(--gw-goal-ink));
+	flex: none;
+}
+.gw-goalchip-icon {
+	color: var(--gw-goal-ink);
 }
 .gw-goalchip-icon { display: inline-flex; width: 13px; height: 13px; }
 .gw-goalchip-icon svg { width: 13px; height: 13px; }
@@ -2284,6 +2332,10 @@
 	overflow-x: auto;
 }
 
+@container (max-width: 340px) {
+	.gw-view-label { display: none; }
+	.gw-goalchip { max-width: 120px; }
+}
 @container (max-width: 860px) {
 	.gw-header { height: auto; min-height: 48px; flex-wrap: wrap; padding: 8px 12px; }
 	.gw-views { order: 3; width: 100%; }
@@ -2296,8 +2348,10 @@
 	.gw-days b { font-size: 42px; }
 }
 @container (max-width: 520px) {
-	.gw-view-label { display: none; }
-	.gw-view { padding: 0 10px; }
+	.gw-view { padding: 0 8px; gap: 4px; }
+	.gw-view-label { font-size: 11px; }
+	.gw-icon-label { display: none; }
+	.gw-goalchip-label { display: none; }
 	.gw-goalchip-days { display: none; }
 	.gw-brand-name { display: none; }
 	.gw-session-title { display: none; }

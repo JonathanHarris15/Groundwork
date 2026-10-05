@@ -236,6 +236,7 @@ export class ChatView extends ItemView implements ToolUI {
 	async onOpen(): Promise<void> {
 		const root = this.contentEl;
 		root.empty();
+		root.removeAttribute("data-gw-ready");
 		root.addClass("gw-root");
 		this.applyAppearance(this.plugin.settings.appearance);
 
@@ -245,19 +246,35 @@ export class ChatView extends ItemView implements ToolUI {
 		brand.createSpan({ cls: "gw-brand-name", text: "GROUNDWORK" });
 		this.uiSessionEl = header.createDiv({ cls: "gw-session-title is-empty", attr: { "aria-hidden": "true" } });
 		const views = header.createDiv({ cls: "gw-views", attr: { role: "tablist", "aria-label": "Groundwork" } });
-		this.uiLearnBtn = this.viewTab(views, "learn", "Learn", `<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"></path><path d="M4 19V5"></path>`);
-		this.uiMapBtn = this.viewTab(views, "map", "Concept map", `<circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><circle cx="10" cy="18" r="2.5"></circle><path d="M8 7l7.5 1M7 8l2.3 7.6M16.5 10l-5 6"></path>`);
-		this.uiGoalsBtn = this.viewTab(views, "goals", "Goals", `<path d="M5 21V4M5 4h11l-2 4 2 4H5"></path>`);
+		this.uiLearnBtn = this.viewTab(views, "learn", "Learn", `<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"></path><path d="M4 19V5"></path>`, "Learn");
+		this.uiMapBtn = this.viewTab(
+			views,
+			"map",
+			"Concept map",
+			`<circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><circle cx="10" cy="18" r="2.5"></circle><path d="M8 7l7.5 1M7 8l2.3 7.6M16.5 10l-5 6"></path>`,
+			"Map",
+		);
+		this.uiGoalsBtn = this.viewTab(views, "goals", "Goals", `<path d="M5 21V4M5 4h11l-2 4 2 4H5"></path>`, "Goals");
+		this.uiMapBtn.setAttr("data-testid", "gw-map-tab");
+		this.uiGoalsBtn.setAttr("data-testid", "gw-goals-tab");
 		const actions = header.createDiv({ cls: "gw-actions" });
 		const headerTools = actions.createDiv({ cls: "gw-actions-tools" });
 		this.iconButton(headerTools, "square-pen", "New session", () => this.newSession());
 		this.uiLibraryBtn = this.iconButton(headerTools, "library", "Library", () => void this.toggleLibrary());
+		this.uiLibraryBtn.setAttr("data-testid", "gw-library-btn");
 		this.uiFlashBtn = this.iconButton(headerTools, "layers", "Flashcards", () => void this.toggleFlashcards());
 		this.uiSettingsBtn = this.iconButton(headerTools, "settings", "Settings", () => void this.toggleSettings());
 		this.iconButton(headerTools, "more-horizontal", "More actions", (e) => void this.showMoreMenu(e));
-		const chip = actions.createDiv({ cls: "gw-goalchip" });
+		const chip = actions.createDiv({
+			cls: "gw-goalchip",
+			attr: { title: "Working goal — choose what you are studying toward in this session" },
+		});
+		chip.createSpan({ cls: "gw-goalchip-label", text: "Goal" });
 		setIcon(chip.createSpan({ cls: "gw-goalchip-icon" }), "flag");
-		this.uiGoalEl = chip.createEl("select", { cls: "gw-goal-select", attr: { "aria-label": "Goal you are working toward" } });
+		this.uiGoalEl = chip.createEl("select", {
+			cls: "gw-goal-select",
+			attr: { "aria-label": "Working goal — choose what you are studying toward" },
+		});
 		this.uiGoalDaysEl = chip.createSpan({ cls: "gw-goalchip-days" });
 		this.registerDomEvent(this.uiGoalEl, "change", () => {
 			if (this.refreshingGoalSelect) return;
@@ -309,6 +326,8 @@ export class ChatView extends ItemView implements ToolUI {
 			this.addFiles([...(this.uiFileInput.files ?? [])]);
 			this.uiFileInput.value = "";
 		});
+
+		void this.plugin.bootstrapForE2e();
 		this.uiProviderEl = tools.createSpan({ cls: "gw-chip gw-chip-provider" });
 		this.uiContextEl = tools.createSpan({ cls: "gw-chip gw-chip-context" });
 		const openProviderSetup = () => {
@@ -343,6 +362,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
 		this.setupMargin(root);
+		root.setAttr("data-gw-ready", "true");
 		const last = await this.latestChat();
 		if (last) this.openChat(last);
 		else this.newSession();
@@ -368,6 +388,7 @@ export class ChatView extends ItemView implements ToolUI {
 			attr: { "aria-label": label, title: label, type: "button" },
 		});
 		setIcon(b, icon);
+		b.createSpan({ cls: "gw-icon-label", text: label });
 		this.registerDomEvent(b, "click", onClick);
 		return b;
 	}
@@ -720,6 +741,16 @@ export class ChatView extends ItemView implements ToolUI {
 
 	focusGoal(_title: string | null): void {
 		void this.refreshGoalSelect();
+	}
+
+	refreshAfterBootstrap(): void {
+		this.renderHeader();
+		void this.refreshGoalSelect();
+		if (this.pane.overlay === "library") void this.renderLibrary();
+		if (this.pane.overlay === "settings") void this.renderSettings();
+		if (this.pane.screen === "map") void this.renderMap();
+		if (this.pane.screen === "goals") void this.renderGoals();
+		if (this.pane.screen === "learn" && !this.pane.overlay && !this.record.items.length) void this.renderEmpty();
 	}
 
 	private async refreshGoalSelect(): Promise<void> {
@@ -1283,12 +1314,30 @@ export class ChatView extends ItemView implements ToolUI {
 		this.closeLibrary();
 		this.closeSettings();
 		this.pane = openOverlay(closeOverlay(this.pane), "flashcards");
+		if (!this.uiFlashEl?.isConnected) {
+			this.uiFlashEl =
+				(this.contentEl.querySelector(".gw-flash") as HTMLElement | null) ??
+				this.contentEl.createDiv({ cls: "gw-flash" });
+			this.flashPane = new FlashcardsPane(this.uiFlashEl, {
+				app: this.app,
+				store: this.plugin.store,
+				writeFolders: () => this.plugin.settings.writeFolders,
+				goalId: () => this.uiGoalEl?.value ?? "",
+				selection: () => this.selectedQuote(),
+				renderMarkdown: (el, md) => this.renderMd(el, md),
+				onQuiz: (prompt) => {
+					this.closeFlashcards();
+					void this.submit(prompt);
+				},
+				onClose: () => this.closeFlashcards(),
+			});
+		}
 		this.syncPaneLayout();
 		this.uiInputEl?.blur();
-		this.uiFlashBtn.addClass("is-active");
+		await this.flashPane.show();
+		this.uiFlashBtn?.addClass("is-active");
 		this.uiLibraryBtn?.removeClass("is-active");
 		this.uiSettingsBtn?.removeClass("is-active");
-		await this.flashPane.show();
 		this.bindOverlayFocus(this.uiFlashEl, () => this.closeFlashcards(), "Flashcards");
 	}
 
@@ -1314,17 +1363,56 @@ export class ChatView extends ItemView implements ToolUI {
 		else await this.openLibrary();
 	}
 
+	openLibraryPanel(): Promise<void> {
+		return this.openLibrary();
+	}
+
 	private async openLibrary(): Promise<void> {
 		this.closeFlashcards();
 		this.closeSettings();
 		this.pane = openOverlay(closeOverlay(this.pane), "library");
+		if (!this.uiLibraryEl?.isConnected) {
+			this.uiLibraryEl =
+				(this.contentEl.querySelector(".gw-library") as HTMLElement | null) ?? this.uiLibraryEl;
+		}
+		this.paintLibraryShell();
 		this.syncPaneLayout();
 		this.uiInputEl?.blur();
-		this.uiLibraryBtn.addClass("is-active");
+		this.uiLibraryBtn?.addClass("is-active");
 		this.uiFlashBtn?.removeClass("is-active");
 		this.uiSettingsBtn?.removeClass("is-active");
 		await this.renderLibrary();
 		this.bindOverlayFocus(this.uiLibraryEl, () => this.closeLibrary(), "Library");
+	}
+
+	/** Immediate library chrome so the overlay is never an empty bar while data loads. */
+	private paintLibraryShell(): void {
+		if (!this.uiLibraryEl?.isConnected) {
+			this.uiLibraryEl =
+				(this.contentEl.querySelector(".gw-library") as HTMLElement | null) ??
+				this.contentEl.createDiv({ cls: "gw-library" });
+		}
+		this.uiLibraryEl.empty();
+		const top = this.uiLibraryEl.createDiv({ cls: "gw-library-top" });
+		this.panelHead(top, "Library", "Goals, concepts, and past chats.", "Close library", () => this.closeLibrary());
+		const tabs = top.createDiv({ cls: "gw-lib-tabs", attr: { role: "tablist", "aria-label": "Library" } });
+		this.uiLibraryEl.createDiv({ cls: "gw-library-scroll", attr: { "data-gw-library-scroll": "1" } });
+		const tab = (id: "goals" | "concepts" | "chats", label: string) => {
+			const button = tabs.createEl("button", {
+				cls: `gw-lib-tab${this.libraryTab === id ? " is-active" : ""}`,
+				attr: { type: "button", role: "tab", "aria-selected": this.libraryTab === id ? "true" : "false", title: label },
+			});
+			button.createSpan({ text: label });
+			button.createSpan({ cls: "gw-lib-count", text: "…" });
+			button.addEventListener("click", () => {
+				if (this.libraryTab === id) return;
+				this.libraryTab = id;
+				void this.renderLibrary();
+			});
+		};
+		tab("goals", "Goals");
+		tab("concepts", "Concepts");
+		tab("chats", "Chats");
 	}
 
 	private closeLibrary(): void {
@@ -1349,13 +1437,18 @@ export class ChatView extends ItemView implements ToolUI {
 		this.closeFlashcards();
 		this.closeLibrary();
 		this.pane = openOverlay(closeOverlay(this.pane), "settings");
+		if (!this.uiSettingsEl?.isConnected) {
+			this.uiSettingsEl =
+				(this.contentEl.querySelector(".gw-settings") as HTMLElement | null) ??
+				this.contentEl.createDiv({ cls: "gw-settings" });
+		}
+		await this.plugin.refreshTutorRoute();
+		await this.renderSettings();
 		this.syncPaneLayout();
 		this.uiInputEl?.blur();
-		await this.plugin.refreshTutorRoute();
-		this.uiSettingsBtn.addClass("is-active");
+		this.uiSettingsBtn?.addClass("is-active");
 		this.uiLibraryBtn?.removeClass("is-active");
 		this.uiFlashBtn?.removeClass("is-active");
-		await this.renderSettings();
 		this.bindOverlayFocus(this.uiSettingsEl, () => this.closeSettings(), "Settings");
 	}
 
@@ -1370,12 +1463,48 @@ export class ChatView extends ItemView implements ToolUI {
 
 	/** Goals, concepts, and chats, one tab at a time. Nothing here opens a vault note. */
 	private async renderLibrary(): Promise<void> {
+		if (!this.uiLibraryEl?.isConnected) {
+			this.uiLibraryEl = this.contentEl.querySelector(".gw-library") ?? this.uiLibraryEl;
+		}
+		if (!this.uiLibraryEl.querySelector(".gw-library-top")) this.paintLibraryShell();
+		try {
+			await this.renderLibraryBody();
+		} catch (err) {
+			const scroll =
+				this.uiLibraryEl.querySelector(".gw-library-scroll") ??
+				this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
+			scroll.empty();
+			scroll.createDiv({
+				cls: "gw-error",
+				text: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	private async renderLibraryBody(): Promise<void> {
 		const store = this.plugin.store;
-		this.uiLibraryEl.empty();
-		const top = this.uiLibraryEl.createDiv({ cls: "gw-library-top" });
-		this.panelHead(top, "Library", "Goals, concepts, and past chats.", "Close library", () => this.closeLibrary());
-		const tabs = top.createDiv({ cls: "gw-lib-tabs", attr: { role: "tablist", "aria-label": "Library" } });
-		const scroll = this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
+		if (!this.uiLibraryEl.querySelector(".gw-library-top")) this.paintLibraryShell();
+		const top = this.uiLibraryEl.querySelector(".gw-library-top") as HTMLElement | null;
+		if (!top) return;
+		const tabs = top.querySelector(".gw-lib-tabs") as HTMLElement | null;
+		if (!tabs) return;
+		let scroll = this.uiLibraryEl.querySelector(".gw-library-scroll") as HTMLElement | null;
+		if (!scroll) scroll = this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
+		scroll.empty();
+
+		const tab = (id: "goals" | "concepts" | "chats", label: string, count: number | string) => {
+			const button = tabs.createEl("button", {
+				cls: `gw-lib-tab${this.libraryTab === id ? " is-active" : ""}`,
+				attr: { type: "button", role: "tab", "aria-selected": this.libraryTab === id ? "true" : "false", title: label },
+			});
+			button.createSpan({ text: label });
+			button.createSpan({ cls: "gw-lib-count", text: String(count) });
+			button.addEventListener("click", () => {
+				if (this.libraryTab === id) return;
+				this.libraryTab = id;
+				void this.renderLibrary();
+			});
+		};
 
 		let choices: Awaited<ReturnType<typeof store.goalChoices>> = [];
 		let goals: Awaited<ReturnType<typeof store.goals>> = [];
@@ -1388,19 +1517,7 @@ export class ChatView extends ItemView implements ToolUI {
 			return;
 		}
 
-		const tab = (id: "goals" | "concepts" | "chats", label: string, count: number) => {
-			const button = tabs.createEl("button", {
-				cls: `gw-lib-tab${this.libraryTab === id ? " is-active" : ""}`,
-				attr: { type: "button", role: "tab", "aria-selected": this.libraryTab === id ? "true" : "false" },
-			});
-			button.createSpan({ text: label });
-			button.createSpan({ cls: "gw-lib-count", text: String(count) });
-			button.addEventListener("click", () => {
-				if (this.libraryTab === id) return;
-				this.libraryTab = id;
-				void this.renderLibrary();
-			});
-		};
+		tabs.empty();
 		tab("goals", "Goals", goals.length);
 		tab("concepts", "Concepts", concepts.size);
 		tab("chats", "Chats", chats.length);
@@ -1412,7 +1529,18 @@ export class ChatView extends ItemView implements ToolUI {
 				text: "A goal can name a course or a file, like Lecture 1 note fluency. Its concepts stay abstract so they carry to the next goal. Work toward one, quiz it, or delete it. Deleting a goal leaves those concepts in place.",
 			});
 			const choiceIds = new Set(choices.map((c) => c.id));
-			if (!goals.length) section.createDiv({ cls: "gw-lib-empty", text: "No goals yet. Tell the tutor what you want to learn." });
+			if (!choices.length && !goals.length) {
+				this.libraryEmpty(
+					section,
+					"Goals name what you want built by a date. They stay here after you finish.",
+					"Tell the tutor your goal",
+					() => {
+						this.closeLibrary();
+						this.showScreen("learn");
+						void this.submit("I want to learn calculus fluency for my exam.");
+					},
+				);
+			}
 			for (const choice of choices) {
 				const row = this.libraryRow(section, choice.title, goalChoiceLabel(choice).replace(`${choice.title} → `, ""));
 				this.libraryButton(row, "Work toward", () => void this.workToward(choice.id), true);
@@ -1446,7 +1574,15 @@ export class ChatView extends ItemView implements ToolUI {
 				const q = filter.value.trim().toLowerCase();
 				const shown = conceptRows.filter((c) => !q || c.title.toLowerCase().includes(q) || c.aliases.some((a) => a.toLowerCase().includes(q)));
 				if (!shown.length) {
-					conceptList.createDiv({ cls: "gw-lib-empty", text: conceptRows.length ? "No concepts match." : "No concepts yet." });
+					if (!conceptRows.length) {
+						this.libraryEmpty(section, "Concepts are reusable ideas the tutor quizzes and tracks.", "Ask the tutor to teach one", () => {
+							this.closeLibrary();
+							this.showScreen("learn");
+							void this.submit("Teach me what a derivative is.");
+						});
+					} else {
+						conceptList.createDiv({ cls: "gw-lib-empty", text: "No concepts match your filter." });
+					}
 					return;
 				}
 				for (const concept of shown) {
@@ -1471,7 +1607,13 @@ export class ChatView extends ItemView implements ToolUI {
 
 		const section = scroll.createDiv({ cls: "gw-lib-section" });
 		section.createDiv({ cls: "gw-lib-help", text: "Deleting a chat removes it from the tutor's history, including its session transcript." });
-		if (!chats.length) section.createDiv({ cls: "gw-lib-empty", text: "No past chats." });
+		if (!chats.length) {
+			this.libraryEmpty(section, "Past chats stay on your account. Open one to continue where you left off.", "Start a chat", () => {
+				this.closeLibrary();
+				this.showScreen("learn");
+				this.uiInputEl?.focus();
+			});
+		}
 		for (const chat of chats) {
 			const when = chat.updated?.slice(0, 10) || chat.created?.slice(0, 10) || "";
 			const row = this.libraryRow(section, chat.title || "Untitled", when);
@@ -1487,6 +1629,11 @@ export class ChatView extends ItemView implements ToolUI {
 	/** Learner file, a few preferences, and a vault reset. */
 	private async renderSettings(): Promise<void> {
 		const store = this.plugin.store;
+		if (!this.uiSettingsEl?.isConnected) {
+			this.uiSettingsEl =
+				(this.contentEl.querySelector(".gw-settings") as HTMLElement | null) ??
+				this.contentEl.createDiv({ cls: "gw-settings" });
+		}
 		this.uiSettingsEl.empty();
 		const top = this.uiSettingsEl.createDiv({ cls: "gw-library-top" });
 		this.panelHead(top, "Settings", "Vault folders, the tutor, and your account.", "Close settings", () => this.closeSettings());
@@ -1739,10 +1886,16 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 	}
 
-	private viewTab(parent: HTMLElement, id: "learn" | "map" | "goals", label: string, path: string): HTMLElement {
+	private viewTab(parent: HTMLElement, id: "learn" | "map" | "goals", label: string, path: string, shortLabel?: string): HTMLElement {
 		const button = parent.createEl("button", {
 			cls: `gw-view${id === this.pane.screen ? " is-on" : ""}`,
-			attr: { type: "button", role: "tab", "aria-selected": id === this.pane.screen ? "true" : "false" },
+			attr: {
+				type: "button",
+				role: "tab",
+				"aria-selected": id === this.pane.screen ? "true" : "false",
+				title: label,
+				"aria-label": label,
+			},
 		});
 		const icon = button.createSpan({ cls: "gw-view-icon" });
 		const svg = icon.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1755,7 +1908,7 @@ export class ChatView extends ItemView implements ToolUI {
 		svg.setAttribute("aria-hidden", "true");
 		appendSvgFragment(svg, path);
 		icon.append(svg);
-		button.createSpan({ cls: "gw-view-label", text: label });
+		button.createSpan({ cls: "gw-view-label", text: shortLabel ?? label });
 		this.registerDomEvent(button, "click", () => this.showScreen(id));
 		return button;
 	}
@@ -1888,6 +2041,7 @@ export class ChatView extends ItemView implements ToolUI {
 				void this.renderMap();
 			},
 			onStart: (title: string) => void this.studyConcept(title, "start"),
+			onOpenGoals: () => this.showScreen("goals"),
 		};
 	}
 
@@ -2067,6 +2221,13 @@ export class ChatView extends ItemView implements ToolUI {
 		await this.refreshGoalSelect();
 		if (this.pane.overlay === "settings") await this.renderSettings();
 		new Notice("Learning vault reset. Files in this Obsidian vault are still there.");
+	}
+
+	private libraryEmpty(parent: HTMLElement, detail: string, action: string, run: () => void): void {
+		const box = parent.createDiv({ cls: "gw-lib-empty-block" });
+		box.createDiv({ cls: "gw-lib-empty", text: detail });
+		const btn = box.createEl("button", { cls: "gw-lib-btn mod-cta", text: action, attr: { type: "button" } });
+		btn.addEventListener("click", run);
 	}
 
 	private panelHead(parent: HTMLElement, title: string, subtitle: string, closeLabel: string, onClose: () => void): void {

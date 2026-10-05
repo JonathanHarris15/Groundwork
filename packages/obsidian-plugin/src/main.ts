@@ -61,6 +61,11 @@ export default class GroundworkPlugin extends Plugin {
 			callback: async () => (await this.activateView())?.showFlashcards(),
 		});
 		this.addCommand({
+			id: "open-library",
+			name: "Open library",
+			callback: async () => (await this.activateView())?.openLibraryPanel(),
+		});
+		this.addCommand({
 			id: "recompute",
 			name: "Rebuild all mastery stats from evidence",
 			callback: async () => {
@@ -76,6 +81,8 @@ export default class GroundworkPlugin extends Plugin {
 
 		this.app.workspace.onLayoutReady(async () => {
 			this.markLayoutReady();
+			await this.bootstrapAccountToken();
+			await this.importE2eMemoryFixture();
 			await this.connectMemory();
 			await this.refreshTutorRoute();
 			await this.store.ensureLayout();
@@ -404,6 +411,53 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 	/** Load tutor memory from the website. An empty account picks up notes already in this vault, once. */
+	/** Test harness: `e2e-memory.json` in the plugin folder seeds tutor memory without the website. */
+	async bootstrapForE2e(): Promise<void> {
+		await this.bootstrapAccountToken();
+		await this.importE2eMemoryFixture();
+		await this.refreshTutorRoute();
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+			if (leaf.view instanceof ChatView) leaf.view.refreshAfterBootstrap();
+		}
+	}
+
+	async importE2eMemoryFixture(): Promise<void> {
+		const paths = [
+			this.manifest.dir ? `${this.manifest.dir}/e2e-memory.json` : "",
+			".obsidian/plugins/groundwork/e2e-memory.json",
+		].filter(Boolean);
+		for (const path of paths) {
+			try {
+				const parsed = JSON.parse(await this.app.vault.adapter.read(path)) as { files?: unknown };
+				if (!parsed?.files || typeof parsed.files !== "object") continue;
+				replaceTutorMemoryFiles(this.memoryIO.files, { files: parseTutorMemoryFiles(parsed.files) });
+				this.store.invalidate();
+				return;
+			} catch {
+				/* try next path */
+			}
+		}
+	}
+
+	private async bootstrapAccountToken(): Promise<void> {
+		if (loadAccountToken(this.app)) return;
+		const paths = [
+			this.manifest.dir ? `${this.manifest.dir}/e2e-account-token` : "",
+			".obsidian/plugins/groundwork/e2e-account-token",
+		].filter(Boolean);
+		for (const path of paths) {
+			try {
+				const token = (await this.app.vault.adapter.read(path)).trim();
+				if (token) {
+					saveAccountToken(this.app, token);
+					return;
+				}
+			} catch {
+				/* try next path */
+			}
+		}
+	}
+
 	async connectMemory(): Promise<void> {
 		const client = await this.memoryClient();
 		if (!client) return;
@@ -559,7 +613,11 @@ export default class GroundworkPlugin extends Plugin {
 	// ── settings ───────────────────────────────────────────────────────
 
 	async loadSettings(): Promise<void> {
-		const data = ((await this.loadData()) ?? {}) as Partial<GroundworkSettings> & { siteTheme?: unknown; provider?: string };
+		const data = ((await this.loadData()) ?? {}) as Partial<GroundworkSettings> & {
+			siteTheme?: unknown;
+			provider?: string;
+			accountToken?: string;
+		};
 		const appearance = appearanceFrom(data);
 		delete data.siteTheme;
 		if (data.provider !== "demo" && data.provider !== "claude-code") data.provider = "claude-code";
@@ -567,6 +625,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.settings.appearance = appearance;
 		this.settings.readFolders = cleanFolderList("readFolders" in data ? data.readFolders : DEFAULT_SETTINGS.readFolders);
 		this.settings.writeFolders = cleanFolderList("writeFolders" in data ? data.writeFolders : DEFAULT_SETTINGS.writeFolders);
+		delete (this.settings as { accountToken?: string }).accountToken;
 	}
 
 	async saveSettings(): Promise<void> {
