@@ -1,8 +1,8 @@
 /** Which primary tab is selected when no overlay is open. */
-export type GroundworkScreen = "learn" | "map" | "goals";
+export type GroundworkScreen = "learn" | "map" | "goals" | "flashcards";
 
-/** Full-screen panels that replace the learn/map/goals body. Only one may be open. */
-export type GroundworkOverlay = "library" | "settings" | "flashcards";
+/** Full-screen panels over the primary tab body. Only one may be open. */
+export type GroundworkOverlay = "library" | "settings";
 
 export interface PaneLayoutState {
 	screen: GroundworkScreen;
@@ -24,9 +24,9 @@ export function paneRootClasses(state: PaneLayoutState): PaneRootClasses {
 	return {
 		isMap: state.screen === "map",
 		isGoals: state.screen === "goals",
+		isFlashcards: state.screen === "flashcards",
 		isLibrary: overlay === "library",
 		isSettings: overlay === "settings",
-		isFlashcards: overlay === "flashcards",
 		isOverlay: overlay !== null,
 	};
 }

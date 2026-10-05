@@ -1871,6 +1871,7 @@
 .gw-composer {
 	display: flex;
 	flex-direction: column;
+	flex: 0 0 auto;
 	gap: 8px;
 	padding: 10px max(12px, calc((100% - var(--gw-column)) / 2)) calc(12px + var(--gw-bottom-inset));
 	border-top: 1px solid var(--background-modifier-border);
@@ -2222,15 +2223,17 @@
 .gw-root.is-map .gw-composer,
 .gw-root.is-goals .gw-messages,
 .gw-root.is-goals .gw-composer,
+.gw-root.is-flashcards .gw-messages,
+.gw-root.is-flashcards .gw-composer,
 .gw-root.is-library .gw-screen,
 .gw-root.is-settings .gw-screen,
-.gw-root.is-flashcards .gw-screen,
 .gw-root.is-overlay .gw-messages,
 .gw-root.is-overlay .gw-composer,
 .gw-root.is-overlay .gw-screen { display: none; }
 .gw-screen { display: none; flex: 1; min-height: 0; min-width: 0; }
 .gw-root.is-map:not(.is-overlay) .gw-map,
-.gw-root.is-goals:not(.is-overlay) .gw-goals { display: flex; }
+.gw-root.is-goals:not(.is-overlay) .gw-goals,
+.gw-root.is-flashcards:not(.is-overlay) .gw-flash { display: flex; }
 
 .gw-messages { gap: 22px; padding: 22px 22px 10px; min-width: 0; }
 .gw-msg-row { display: flex; gap: 14px; max-width: var(--gw-column); width: 100%; margin: 0 auto; }
@@ -2269,6 +2272,8 @@
 	border-radius: 14px;
 	background: var(--gw-sunken);
 	padding: 12px 14px 10px;
+	min-height: 88px;
+	box-sizing: border-box;
 }
 .gw-box .gw-input {
 	width: 100%;
@@ -2411,15 +2416,51 @@
 .gw-work-actions {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: 12px;
 	padding: 16px 18px 12px;
 	flex: none;
+	overflow: hidden;
 }
 .gw-work-foot {
 	flex: none;
 	padding: 14px 18px 18px;
 	border-top: 1px solid var(--gw-line);
 	background: var(--gw-raised);
+}
+.gw-work-btn {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	width: 100%;
+	min-height: 44px;
+	padding: 10px 14px;
+	border-radius: 12px;
+	border: 1px solid var(--gw-line-strong);
+	background: var(--gw-paper);
+	color: var(--gw-ink-strong);
+	font-size: 14px;
+	font-weight: 500;
+	line-height: 1.3;
+	text-align: left;
+	cursor: pointer;
+	box-shadow: none;
+	flex: none;
+	position: relative;
+	z-index: 1;
+}
+.gw-work-btn.is-primary {
+	background: var(--gw-cta-bg);
+	border-color: var(--gw-cta-bg);
+	color: var(--gw-cta-ink);
+}
+.gw-work-delete {
+	margin-top: 4px;
+}
+body .gw-root .gw-work button.gw-work-btn {
+	background-color: var(--gw-paper);
+}
+body .gw-root .gw-work button.gw-work-btn.is-primary {
+	background-color: var(--gw-cta-bg);
 }
 .gw-kicker { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gw-faint); display: flex; align-items: center; gap: 8px; }
 .gw-kicker svg { width: 13px; height: 13px; color: #f0565b; }
@@ -2736,12 +2777,76 @@ body .gw-root select.gw-goal-select {
 	--gw-fc-muted: var(--text-muted);
 	--gw-fc-line: var(--background-modifier-border);
 }
-.gw-root.is-flashcards .gw-flash {
-	display: flex;
+.gw-fc-lib-layout {
+	display: grid;
+	grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+	gap: 16px;
+	min-height: 280px;
 }
-.gw-root.is-flashcards .gw-messages,
-.gw-root.is-flashcards .gw-composer {
-	display: none;
+.gw-fc-lib-decks {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.gw-fc-lib-deck {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	width: 100%;
+	padding: 8px 10px;
+	border-radius: 10px;
+	border: 1px solid var(--gw-line);
+	background: var(--gw-paper);
+	color: var(--gw-ink);
+	font-size: 13px;
+	cursor: pointer;
+	text-align: left;
+}
+.gw-fc-lib-deck.is-on {
+	border-color: var(--gw-line-strong);
+	background: var(--gw-chip);
+}
+.gw-fc-lib-deck-n {
+	font-size: 11px;
+	color: var(--gw-muted);
+}
+.gw-fc-lib-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin-bottom: 12px;
+}
+.gw-fc-lib-head h3 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 500;
+}
+.gw-fc-lib-tools {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.gw-fc-lib-cards {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.gw-fc-lib-card {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 12px;
+	border: 1px solid var(--gw-line);
+	border-radius: 10px;
+	background: var(--gw-paper);
+}
+.gw-fc-manage {
+	flex: none;
+	align-self: flex-start;
 }
 .gw-fc-loading,
 .gw-fc-empty-sub,

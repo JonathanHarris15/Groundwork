@@ -190,21 +190,20 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	sideHead.textContent = "Work on this goal";
 	const work = el(side, "div", "gw-work");
 	const actions = el(work, "div", "gw-work-actions");
-	option(actions, true, "Continue the path", board.nextTitle ? `${board.nextTitle}${board.nextAfter ? `, then ${board.nextAfter}` : ""}` : "Nothing is waiting on this goal.", board.sessions ? "30m" : "", () => {
+	workOption(actions, true, "Continue the path", () => {
 		if (board.nextTitle) handlers.onOpen(board.nextTitle, "start");
 	});
 	if (board.shaky.length) {
-		option(actions, false, "Quiz my shaky spots", `${board.shaky.slice(0, 2).join(" and ")}${board.shaky.length > 2 ? ` and ${board.shaky.length - 2} more` : ""}`, "10m", () => handlers.onOpen(board.shaky[0], "quiz"));
+		workOption(actions, false, "Quiz my shaky spots", () => handlers.onOpen(board.shaky[0], "quiz"));
 	}
 	if (board.heaviest) {
-		option(actions, false, "Study the heaviest topic", `${board.heaviest.title} is ${board.heaviest.weight}% of this goal`, "35m", () => handlers.onOpen(board.heaviest!.title, "learn"));
+		workOption(actions, false, "Study the heaviest topic", () => handlers.onOpen(board.heaviest!.title, "learn"));
 	}
-	option(actions, false, "Practice exam", "Questions weighted like this goal", "45m", handlers.onPractice);
-	option(actions, false, "View on the concept map", "Opens the map with your goal on top and every concept visible", "", handlers.onMap);
-	option(actions, false, "Add prep docs", "Attach a study guide or syllabus file", "", handlers.onDocs);
+	workOption(actions, false, "Practice exam", handlers.onPractice);
+	workOption(actions, false, "View on the concept map", handlers.onMap);
+	workOption(actions, false, "Add prep docs", handlers.onDocs);
 	const foot = el(work, "div", "gw-work-foot");
-	el(foot, "p", "gw-path-why", "Weights come from the goal. Leave them even and every concept counts the same. As the date gets close, the last two days are for the heaviest concepts.");
-	const remove = el(foot, "button", "gw-text-btn");
+	const remove = el(foot, "button", "gw-text-btn gw-work-delete");
 	remove.type = "button";
 	remove.textContent = "Delete goal";
 	remove.addEventListener("click", () => {
@@ -245,13 +244,10 @@ function renderGoalsUnpinned(main: HTMLElement, boards: GoalBoardView[], handler
 	create.addEventListener("click", handlers.onCreate);
 }
 
-function option(parent: HTMLElement, primary: boolean, title: string, detail: string, time: string, onClick: () => void): void {
-	const button = el(parent, "button", `gw-option-card${primary ? " is-primary" : ""}`);
+function workOption(parent: HTMLElement, primary: boolean, title: string, onClick: () => void): void {
+	const button = el(parent, "button", `gw-work-btn${primary ? " is-primary" : ""}`);
 	button.type = "button";
-	const text = el(button, "span");
-	el(text, "b", "", title);
-	el(text, "span", "", detail);
-	if (time) el(button, "span", "gw-option-time", time);
+	button.textContent = title;
 	button.addEventListener("click", onClick);
 }
 

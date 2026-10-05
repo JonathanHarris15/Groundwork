@@ -23,11 +23,11 @@ describe("paneRootClasses", () => {
 		expect(flags.isFlashcards).toBe(false);
 	});
 
-	it("never marks two overlays at once", () => {
-		const flags = paneRootClasses(openOverlay(learn, "flashcards"));
+	it("treats flashcards as a primary screen, not an overlay", () => {
+		const flags = paneRootClasses({ screen: "flashcards", overlay: null });
 		expect(flags.isFlashcards).toBe(true);
+		expect(flags.isOverlay).toBe(false);
 		expect(flags.isLibrary).toBe(false);
-		expect(flags.isSettings).toBe(false);
 	});
 });
 
@@ -41,8 +41,8 @@ describe("overlay transitions", () => {
 	});
 
 	it("clears overlay when changing screen", () => {
-		const withFlash = openOverlay({ screen: "goals", overlay: "flashcards" }, "flashcards");
-		const next = setScreen(withFlash, "learn");
+		const withLibrary = openOverlay({ screen: "flashcards", overlay: "library" }, "library");
+		const next = setScreen(withLibrary, "learn");
 		expect(next.overlay).toBeNull();
 		expect(next.screen).toBe("learn");
 	});

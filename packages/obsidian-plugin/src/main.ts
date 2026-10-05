@@ -698,7 +698,9 @@ export default class GroundworkPlugin extends Plugin {
 		this.statusEl.setAttr("title", hint);
 		this.statusEl.setAttr("aria-label", hint);
 		this.statusEl.setAttr("data-state", state);
-		this.statusEl.toggleClass("has-sync-glyph", syncStatusShowsGlyph(state));
+		const showGlyph = syncStatusShowsGlyph(state);
+		this.statusEl.toggleClass("has-sync-glyph", showGlyph);
+		this.statusDotEl.style.display = showGlyph ? "" : "none";
 		this.statusEl.toggleClass("is-actionable", state === "offline" || state === "error" || state === "ok");
 	}
 

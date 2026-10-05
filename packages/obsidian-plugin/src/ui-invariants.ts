@@ -2,6 +2,9 @@ import type { TutorStatus } from "@groundwork/core";
 
 export const LEARN_EMPTY_HERO_TITLE = "What do you want to understand?";
 
+/** Composer textarea minimum height in px (matches .gw-box .gw-input). */
+export const COMPOSER_INPUT_MIN_HEIGHT_PX = 48;
+
 export type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
 
 /** Red sync glyph only for syncing, error, or not linked — not for Linked/ok. */

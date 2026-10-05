@@ -9,8 +9,14 @@
 import { cleanFolderList } from "./access";
 import { ensureDir, type VaultIO } from "./io";
 import { getSection, parseNote, safeFileName, serializeNote, slugify } from "./markdown";
-import type { Outcome } from "./model";
+import type { Evidence, Outcome } from "./model";
 import { PATHS, type Concept, type Goal, type KnowledgeStore } from "./store";
+
+/** Rolling window for tiny mastery credit from flashcard reviews (not full quiz weight). */
+export const FLASHCARD_MASTERY_WINDOW_MS = 4 * 60 * 60 * 1000;
+/** Max flashcard evidence events per concept within the window — blocks spam-studying to completion. */
+export const FLASHCARD_MASTERY_CAP = 8;
+export const FLASHCARD_EVIDENCE_NOTE = "flashcard";
 
 export const FLASHCARDS_DIR = "flashcards";
 
@@ -177,9 +183,24 @@ export function applyRating(card: Flashcard, rating: CardRating, now: Date): Fla
 
 export function ratingOutcome(rating: CardRating): { outcome: Outcome; difficulty: number } {
 	if (rating === "again") return { outcome: "incorrect", difficulty: 2 };
-	if (rating === "hard") return { outcome: "partial", difficulty: 3 };
-	if (rating === "good") return { outcome: "correct", difficulty: 3 };
-	return { outcome: "correct", difficulty: 4 };
+	if (rating === "hard") return { outcome: "partial", difficulty: 2 };
+	if (rating === "good") return { outcome: "correct", difficulty: 2 };
+	return { outcome: "correct", difficulty: 3 };
+}
+
+export function flashcardMasteryEventsInWindow(evidence: Evidence[], now: Date, windowMs = FLASHCARD_MASTERY_WINDOW_MS): number {
+	const cutoff = now.getTime() - windowMs;
+	let n = 0;
+	for (const ev of evidence) {
+		if (ev.note !== FLASHCARD_EVIDENCE_NOTE) continue;
+		const t = Date.parse(ev.ts);
+		if (!Number.isNaN(t) && t >= cutoff) n++;
+	}
+	return n;
+}
+
+export function canApplyFlashcardMastery(evidence: Evidence[], now: Date): boolean {
+	return flashcardMasteryEventsInWindow(evidence, now) < FLASHCARD_MASTERY_CAP;
 }
 
 export function auditFlashcardLibrary(lib: FlashcardLibrary): boolean {
@@ -707,7 +728,25 @@ export async function rateFlashcard(store: KnowledgeStore, id: string, rating: C
 	const card = applyRating(lib.cards[index], rating, now);
 	lib.cards[index] = card;
 	await persist(store, lib, now);
-	// Scheduling only — flashcard taps must not move vault mastery like a quiz session.
+	const conceptRef = card.concept.trim();
+	if (conceptRef && rating !== "again") {
+		try {
+			const conceptId = slugify(conceptRef);
+			const prior = await store.evidenceFor(conceptId);
+			if (canApplyFlashcardMastery(prior, now)) {
+				const { outcome, difficulty } = ratingOutcome(rating);
+				await store.recordEvidence(conceptRef, {
+					kind: "check",
+					outcome,
+					difficulty,
+					note: FLASHCARD_EVIDENCE_NOTE,
+					question: card.front.slice(0, 240),
+				});
+			}
+		} catch {
+			// Concept may not exist yet; scheduling still applies.
+		}
+	}
 	return card;
 }
 

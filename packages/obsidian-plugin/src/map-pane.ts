@@ -31,6 +31,30 @@ export function renderStartedVaultMap(parent: HTMLElement, data: ForceGraphData,
 	const bar = el(wrap, "div", "gw-map-toolbar");
 	const hint = el(bar, "p", "gw-map-click-hint");
 	hint.textContent = "Only concepts you have started appear here. Pin a goal in Learn to see the full path to that goal.";
+	appendMapKey(wrap, parent.ownerDocument, { startedOnly: true });
+}
+
+function appendMapKey(parent: HTMLElement, doc: Document, opts: { startedOnly: boolean }): void {
+	const key = el(parent, "div", "gw-map-key");
+	for (const [cssVar, fallback, label] of [
+		["--color-green", "#3CC56F", "Solid"],
+		["--color-blue", "#45A9F0", "Learning"],
+		["--color-orange", "#F7A93E", "Needs work"],
+	] as const) {
+		const item = el(key, "span");
+		const dot = el(item, "i", "gw-dot");
+		dot.style.background = obsidianColor(doc, cssVar, fallback);
+		item.append(label);
+	}
+	const ahead = el(key, "span");
+	el(ahead, "i", "gw-key-ghost");
+	ahead.append("Not started");
+	if (!opts.startedOnly) {
+		const solid = el(key, "span", "gw-key-edge is-solid");
+		solid.append("Solid arrow — next step on the path up");
+		const dashed = el(key, "span", "gw-key-edge is-dashed");
+		dashed.append("Dashed arrow — groundwork outside this goal");
+	}
 }
 
 function obsidianColor(doc: Document, cssVar: string, fallback: string): string {
@@ -59,24 +83,7 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	const hint = el(bar, "p", "gw-map-click-hint");
 	hint.textContent = "Foundations sit at the bottom; your working goal is the red node on top. Click a concept to study it.";
 	const doc = parent.ownerDocument;
-	const key = el(wrap, "div", "gw-map-key");
-	for (const [cssVar, fallback, label] of [
-		["--color-green", "#3CC56F", "Solid"],
-		["--color-blue", "#45A9F0", "Learning"],
-		["--color-orange", "#F7A93E", "Needs work"],
-	] as const) {
-		const item = el(key, "span");
-		const dot = el(item, "i", "gw-dot");
-		dot.style.background = obsidianColor(doc, cssVar, fallback);
-		item.append(label);
-	}
-	const ahead = el(key, "span");
-	el(ahead, "i", "gw-key-ghost");
-	ahead.append("Not started");
-	const solid = el(key, "span", "gw-key-edge is-solid");
-	solid.append("Solid arrow — next step on the path up");
-	const dashed = el(key, "span", "gw-key-edge is-dashed");
-	dashed.append("Dashed arrow — groundwork outside this goal");
+	appendMapKey(wrap, doc, { startedOnly: false });
 
 	const side = el(row, "aside", "gw-side");
 	const head = el(side, "div", "gw-side-head");

@@ -15,6 +15,10 @@ import {
 	parseCardFile,
 	previewIntervals,
 	rateFlashcard,
+	FLASHCARD_EVIDENCE_NOTE,
+	FLASHCARD_MASTERY_CAP,
+	canApplyFlashcardMastery,
+	flashcardMasteryEventsInWindow,
 	removeFlashcardMirrors,
 	scheduledMinutes,
 	serializeCardMarkdown,
@@ -176,6 +180,40 @@ describe("flashcard vault mirror", () => {
 		expect(memory.files.has(".groundwork/flashcards.json")).toBe(true);
 		await store.resetVault();
 		expect(memory.files.has(".groundwork/flashcards.json")).toBe(false);
+	});
+});
+
+describe("flashcard mastery cap", () => {
+	it("counts flashcard evidence in a rolling window", () => {
+		const now = new Date("2026-10-02T12:00:00.000Z");
+		const evidence = Array.from({ length: FLASHCARD_MASTERY_CAP }, (_, i) => ({
+			ts: new Date(now.getTime() - i * 60_000).toISOString(),
+			concept: "c1",
+			outcome: "correct" as const,
+			difficulty: 2,
+			kind: "check" as const,
+			note: FLASHCARD_EVIDENCE_NOTE,
+		}));
+		expect(flashcardMasteryEventsInWindow(evidence, now)).toBe(FLASHCARD_MASTERY_CAP);
+		expect(canApplyFlashcardMastery(evidence, now)).toBe(false);
+		const older = evidence.map((e) => ({ ...e, ts: new Date(now.getTime() - 5 * 60 * 60 * 1000).toISOString() }));
+		expect(canApplyFlashcardMastery(older, now)).toBe(true);
+	});
+
+	it("records tiny mastery on good ratings until the cap", async () => {
+		const { store } = pair();
+		await store.upsertConcept({ title: "Base rates" });
+		const card = await createFlashcard(store, { concept: "Base rates", front: "Why?", back: "Signal." }, NOW);
+		for (let i = 0; i < FLASHCARD_MASTERY_CAP; i++) {
+			await rateFlashcard(store, card.id, "good", new Date(NOW.getTime() + i * 1000));
+		}
+		const events = await store.evidenceFor("base-rates");
+		const flash = events.filter((e) => e.note === FLASHCARD_EVIDENCE_NOTE);
+		expect(flash.length).toBe(FLASHCARD_MASTERY_CAP);
+		await rateFlashcard(store, card.id, "good", new Date(NOW.getTime() + FLASHCARD_MASTERY_CAP * 1000));
+		expect((await store.evidenceFor("base-rates")).filter((e) => e.note === FLASHCARD_EVIDENCE_NOTE).length).toBe(
+			FLASHCARD_MASTERY_CAP,
+		);
 	});
 });
 
