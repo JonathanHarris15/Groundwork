@@ -69,7 +69,7 @@ test("plan picker and sign-out", async ({ page, request }) => {
 	await request.post("/v1/account/plan", { data: { plan: "free" } });
 	await page.goto("/#signin");
 	await page.getByRole("button", { name: "Continue on this device" }).click();
-	await page.getByRole("button", { name: "Change plan" }).click();
+	await page.getByRole("button", { name: /Upgrade|Change plan/i }).click();
 	await expect(page.getByRole("heading", { name: /Choose a plan/i })).toBeVisible();
 	await page.getByRole("button", { name: "Sign out", exact: true }).click();
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
