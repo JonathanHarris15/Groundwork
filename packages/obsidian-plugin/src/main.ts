@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorStatus, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
@@ -21,6 +21,8 @@ export default class GroundworkPlugin extends Plugin {
 	private accountPublishAgain = false;
 	private statusEl!: HTMLElement;
 	private lastSync: Date | null = null;
+	/** Files and timestamp last loaded or saved. The next save is based on this, so another device is not wiped. */
+	private memoryBaseline: { files: Record<string, string>; updatedAt: string } | null = null;
 	private markLayoutReady: () => void = () => {};
 	private readonly layoutReady = new Promise<void>((resolve) => {
 		this.markLayoutReady = resolve;
@@ -390,6 +392,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.setSync("syncing", "loading tutor memory…");
 		try {
 			const remote = await client.getHostedMemory();
+			this.memoryBaseline = { files: { ...remote.files }, updatedAt: remote.updatedAt };
 			if (Object.keys(remote.files).length === 0) {
 				const imported = await this.importVaultMemory();
 				const local = tutorMemoryFiles(this.memoryIO.files);
@@ -421,7 +424,7 @@ export default class GroundworkPlugin extends Plugin {
 		}, 2000);
 	}
 
-	/** Copy account flashcards into flashcards/ inside each write folder, and pull hand edits back. */
+	/** Pull hand edits of cards the learner already wrote into the vault. Does not copy cards out. */
 	async syncFlashcards(): Promise<void> {
 		try {
 			await syncFlashcards(this.store, this.settings.writeFolders);
@@ -437,6 +440,12 @@ export default class GroundworkPlugin extends Plugin {
 			if (manual) new Notice("Groundwork: open the website and choose Open Obsidian. Tutor memory is kept on that account.");
 			return;
 		}
+		if (!this.memoryBaseline) {
+			if (!manual) return;
+			await this.connectMemory();
+			if (!this.memoryBaseline) new Notice("Groundwork: could not load tutor memory from your account.");
+			return;
+		}
 		if (this.accountPublishing) {
 			this.accountPublishAgain = true;
 			return;
@@ -444,13 +453,29 @@ export default class GroundworkPlugin extends Plugin {
 		this.accountPublishing = true;
 		this.setSync("syncing", "saving tutor memory…");
 		try {
-			const concepts = [...(await this.store.concepts()).values()];
-			const goals = await this.store.goals();
-			const saved = await client.putHostedMemory({
-				files: tutorMemoryFiles(this.memoryIO.files),
-				knowledge: knowledgeSnapshot(concepts, goals, new Date().toISOString()),
-			});
-			this.lastSync = new Date(saved.updatedAt);
+			let saved: TutorMemory | null = null;
+			for (let attempt = 0; attempt < 3; attempt++) {
+				const concepts = [...(await this.store.concepts()).values()];
+				const goals = await this.store.goals();
+				try {
+					saved = await client.putHostedMemory({
+						files: tutorMemoryFiles(this.memoryIO.files),
+						knowledge: knowledgeSnapshot(concepts, goals, new Date().toISOString()),
+						baseUpdatedAt: this.memoryBaseline.updatedAt,
+					});
+					break;
+				} catch (e) {
+					if (!(e instanceof AccountError) || e.status !== 409 || attempt === 2) throw e;
+					const remote = memoryFromConflict(e.body) ?? (await client.getHostedMemory());
+					const merged = mergeTutorMemoryFiles(this.memoryBaseline.files, tutorMemoryFiles(this.memoryIO.files), remote.files);
+					replaceTutorMemoryFiles(this.memoryIO.files, { files: merged });
+					this.store.invalidate();
+					this.memoryBaseline = { files: { ...remote.files }, updatedAt: remote.updatedAt };
+				}
+			}
+			if (!saved) return;
+			this.memoryBaseline = { files: { ...saved.files }, updatedAt: saved.updatedAt };
+			this.lastSync = saved.updatedAt ? new Date(saved.updatedAt) : new Date();
 			this.setSync("ok", "tutor memory saved to your account");
 			if (manual) new Notice("Groundwork: tutor memory saved to your account. Your profile map will follow it.");
 		} catch (e) {
@@ -529,5 +554,18 @@ export default class GroundworkPlugin extends Plugin {
 		await this.saveData(this.settings);
 		this.resetAgent();
 		this.applyAppearance();
+	}
+}
+
+function memoryFromConflict(body: unknown): TutorMemory | null {
+	if (!body || typeof body !== "object") return null;
+	const memory = (body as { memory?: unknown }).memory;
+	if (!memory || typeof memory !== "object") return null;
+	const updatedAt = (memory as { updatedAt?: unknown }).updatedAt;
+	if (typeof updatedAt !== "string") return null;
+	try {
+		return { updatedAt, files: parseTutorMemoryFiles((memory as { files?: unknown }).files) };
+	} catch {
+		return null;
 	}
 }

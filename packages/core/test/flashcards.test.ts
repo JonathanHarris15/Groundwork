@@ -4,6 +4,7 @@ import {
 	applyRating,
 	buildStudyQueue,
 	createFlashcard,
+	exportFlashcards,
 	flashcardContentKey,
 	formatInterval,
 	loadFlashcardLibrary,
@@ -62,21 +63,23 @@ describe("flashcard schedule", () => {
 });
 
 describe("flashcard vault mirror", () => {
-	it("keeps the schedule on the account and copies markdown into every write folder", async () => {
+	it("keeps the schedule on the account and copies markdown only when asked", async () => {
 		const { memory, vault, store } = pair();
 		await store.upsertConcept({ title: "Base rates", summary: "A positive test is often a false alarm when the disease is rare." });
 		const card = await createFlashcard(
 			store,
 			{ concept: "Base rates", front: "Why is a positive result often wrong?", back: "False alarms outnumber real cases.", deckId: "exam-2", deckTitle: "Exam 2" },
-			["Groundwork", "submissions"],
 			NOW,
 		);
-		expect(memory.files.has("submissions/flashcards/Base rates.md")).toBe(false);
+		expect(vault.files.has("Groundwork/flashcards/Base rates.md")).toBe(false);
+		expect(vault.files.has("submissions/flashcards/Base rates.md")).toBe(false);
 		expect(isTutorMemoryPath(".groundwork/flashcards.json")).toBe(true);
 		expect(isTutorMemoryPath("Groundwork/flashcards/Base rates.md")).toBe(false);
 		const saved = await loadFlashcardLibrary(memory);
 		expect(saved.cards.map((c) => c.id)).toEqual([card.id]);
-		for (const folder of ["Groundwork/flashcards", "submissions/flashcards"]) {
+		const written = await exportFlashcards(store, ["Groundwork", "submissions"], NOW);
+		expect(written).toEqual(["Groundwork/flashcards", "submissions/flashcards"]);
+		for (const folder of written) {
 			const note = await vault.read(`${folder}/Base rates.md`);
 			expect(note).toContain("Why is a positive result often wrong?");
 			expect(note).toContain("False alarms outnumber real cases.");
@@ -86,24 +89,29 @@ describe("flashcard vault mirror", () => {
 		expect(vault.files.has("notes/flashcards/Base rates.md")).toBe(false);
 	});
 
-	it("pulls a hand edit back onto the account and leaves an untouched mirror alone", async () => {
+	it("pulls a hand edit back onto the account and does not push account edits into the vault", async () => {
 		const { memory, vault, store } = pair();
-		const card = await createFlashcard(store, { concept: "Base rates", front: "Why?", back: "Answer A", deckId: "library", deckTitle: "Library" }, ["Groundwork"], NOW);
+		const card = await createFlashcard(store, { concept: "Base rates", front: "Why?", back: "Answer A", deckId: "library", deckTitle: "Library" }, NOW);
 		const path = "Groundwork/flashcards/Base rates.md";
+		expect(vault.files.has(path)).toBe(false);
+		await exportFlashcards(store, ["Groundwork"], NOW);
 		const edited = (await vault.read(path)).replace("Answer A", "Answer B");
 		expect(edited).toContain(`contentKey: ${card.contentKey}`);
 		await vault.write(path, edited);
 		const lib = await syncFlashcards(store, ["Groundwork"], NOW);
 		expect(lib.cards[0].back).toBe("Answer B");
 		expect(await vault.read(path)).toContain("Answer B");
+		expect(await vault.read(path)).toContain(`contentKey: ${card.contentKey}`);
 
+		await exportFlashcards(store, ["Groundwork"], NOW);
 		const cloud = await loadFlashcardLibrary(memory);
 		cloud.cards[0].back = "Answer C";
 		cloud.cards[0].contentKey = flashcardContentKey("Base rates", "Why?", "Answer C");
 		await memory.write(".groundwork/flashcards.json", `${JSON.stringify(cloud, null, 2)}\n`);
 		const kept = await syncFlashcards(store, ["Groundwork"], NOW);
 		expect(kept.cards[0].back).toBe("Answer C");
-		expect(await vault.read(path)).toContain("Answer C");
+		expect(await vault.read(path)).toContain("Answer B");
+		expect(await vault.read(path)).not.toContain("Answer C");
 	});
 
 	it("imports a new card note and does not delete a file that is not a card", async () => {
@@ -140,7 +148,7 @@ describe("flashcard vault mirror", () => {
 		const again = await syncFlashcards(store, ["Groundwork"], NOW);
 		expect(again.cards).toHaveLength(1);
 
-		const graded = await rateFlashcard(store, first.cards[0].id, "again", ["Groundwork"], NOW);
+		const graded = await rateFlashcard(store, first.cards[0].id, "again", NOW);
 		expect(graded.lapses).toBe(0);
 		expect(graded.state).toBe("learning");
 		const concept = (await store.concepts()).get("base-rates");
@@ -150,7 +158,7 @@ describe("flashcard vault mirror", () => {
 
 	it("drops the account copy on reset", async () => {
 		const { memory, store } = pair();
-		await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio." }, [], NOW);
+		await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio." }, NOW);
 		expect(memory.files.has(".groundwork/flashcards.json")).toBe(true);
 		await store.resetVault();
 		expect(memory.files.has(".groundwork/flashcards.json")).toBe(false);
@@ -158,15 +166,15 @@ describe("flashcard vault mirror", () => {
 });
 
 describe("flashcard tools", () => {
-	it("saves a card into the write folders and lists it when due", async () => {
+	it("saves a card on the account and lists it when due", async () => {
 		const { vault, store } = pair();
 		const saved = await toolByName("save_flashcard")!.run(
 			{ concept: "Base rates", front: "Why 9%?", back: "False alarms.", deck: "Exam 2" },
 			{ store, access: { readFolders: [], writeFolders: ["Groundwork"] } },
 		);
 		expect(saved.isError).toBeFalsy();
-		expect(saved.text).toContain("Groundwork/flashcards");
-		expect(await vault.read("Groundwork/flashcards/Base rates.md")).toContain("Why 9%?");
+		expect(saved.text).toContain("stays on the account");
+		expect(vault.files.has("Groundwork/flashcards/Base rates.md")).toBe(false);
 		const due = await toolByName("list_due_flashcards")!.run({}, { store });
 		expect(due.text).toContain("Why 9%?");
 		const empty = await toolByName("save_flashcard")!.run({ concept: " ", front: "", back: "x" }, { store });

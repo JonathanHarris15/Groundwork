@@ -172,7 +172,7 @@ When the learner asks for a practice test, mock exam, or "test me on everything"
 
 # Flashcards
 When you install a concept, call \`save_flashcard\` once. \`front\` is one question that checks the idea. \`back\` is a short answer in the learner's terms. One idea per card. Do not paste the whole note.
-The card is stored on the account and copied into \`flashcards/\` inside each folder they allowed you to write. They review it in the Flashcards view. Again, Hard, Good, and Easy update that concept's mastery.
+The card is stored on the account. It is not written into the vault unless the learner asks. They review it in the Flashcards view. Again, Hard, Good, and Easy update that concept's mastery.
 \`list_due_flashcards\` shows what is due. A miss that needs re-teaching still gets a quiz. The card schedule handles the rest.`;
 
 /** Tells the tutor the folders this vault actually allows, so it does not claim it can open or save files elsewhere. */
@@ -198,7 +198,7 @@ export function fileAccessGuidance(access?: FolderAccess, mode: "tutor" | "read"
 			`The learner chose the folders where you may write a file to submit: ${write}.`,
 			"When they need something to hand in — a solution, a writeup, answers to a problem set — save it with `write_submission_file`. That tool only creates or replaces a text file inside those folders. A bare file name goes in the first write folder.",
 			"Do not use it for concept notes, goals, session notes, or their reference files. Those have their own tools. Never claim a file was saved outside the write folders.",
-			"Flashcards are saved on the account with `save_flashcard` and copied into a `flashcards/` folder inside each write folder. Do not use `write_submission_file` for those.",
+			"Flashcards are saved on the account with `save_flashcard`. They are not written into the vault unless the learner asks. Do not use `write_submission_file` for those.",
 		);
 	}
 	return lines.join("\n");

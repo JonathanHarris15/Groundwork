@@ -851,7 +851,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "save_flashcard",
 		description:
-			"Save one flashcard on the learner's account. It is also copied to flashcards/ inside each folder they allowed you to write. One idea per card: front is the question, back is a short answer in their terms. Pass deck as a goal title when the card belongs to that goal.",
+			"Save one flashcard on the learner's account. It is not copied into the vault unless they ask to write the cards down. One idea per card: front is the question, back is a short answer in their terms. Pass deck as a goal title when the card belongs to that goal.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -863,11 +863,12 @@ export const TOOLS: ToolDef[] = [
 			required: ["concept", "front", "back"],
 		},
 		async run({ concept, front, back, deck }: { concept: string; front: string; back: string; deck?: string }, ctx) {
-			const writes = accessFromContext(ctx).writeFolders;
 			try {
-				const saved = await saveFlashcard(ctx.store, { concept, front, back, deck }, writes);
-				const where = saved.folders.length ? ` Copied into ${saved.folders.join(", ")}.` : " Add a write folder in Settings and the card will be copied into flashcards/ there.";
-				return { text: `Saved a flashcard on ${saved.card.concept}.${where}`, summary: `Saved a flashcard on ${saved.card.concept}` };
+				const saved = await saveFlashcard(ctx.store, { concept, front, back, deck });
+				return {
+					text: `Saved a flashcard on ${saved.card.concept}. It stays on the account until the learner asks to write cards into the vault.`,
+					summary: `Saved a flashcard on ${saved.card.concept}`,
+				};
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				return { text: message, isError: true, summary: "Couldn't save the flashcard" };

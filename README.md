@@ -1,6 +1,6 @@
 # Groundwork
 
-A tutor that plans any learning goal from first principles, calibrates what you actually know with quizzes, and **remembers it** — in a private GitHub repo that is also an Obsidian vault, so the same memory follows you to every computer.
+A tutor that plans any learning goal from first principles, calibrates what you actually know with quizzes, and **remembers it on your Groundwork account**, so the same memory follows you to every computer. Obsidian is the window. The vault only holds files you explicitly ask to be written there.
 
 You talk to it **inside Obsidian**: a chat panel with native LaTeX, callouts, highlights, mermaid, and clickable quiz cards.
 
@@ -9,8 +9,8 @@ Inspired by [amosblomqvist/learn](https://github.com/amosblomqvist/learn): the t
 | `learn` | Groundwork |
 | --- | --- |
 | TUI on one side, Obsidian mirroring a log file on the other | One surface: the chat lives *in* Obsidian and renders natively. `groundwork open` launches everything. |
-| Memory is the current session | Persistent, calibrated memory: every quiz answer is evidence; per-concept mastery, forgetting, and misconceptions are recomputed from it. |
-| Tied to one project directory | A private git repo synced automatically (pull on open, debounced commit + push after changes), merge-safe across machines. |
+| Memory is the current session | Persistent memory on your account: every quiz answer is evidence; per-concept mastery, forgetting, and misconceptions are recomputed from it. |
+| Tied to one project directory | Sign in on each device. The account is the study record. The vault is only extra files you choose. |
 | pi-only | An Obsidian plugin. The chat lives in the vault. |
 
 Groundwork is [MIT licensed](LICENSE).
@@ -37,13 +37,13 @@ The plugin is desktop-only.
 
 ```mermaid
 graph LR
-  P[Obsidian plugin<br/>chat panel + quiz cards<br/>model: your Claude subscription via Claude Code]
+  P[Obsidian plugin<br/>chat panel + quiz cards]
   C[core<br/>teaching method · tools · mastery model · goal DAGs]
-  V[(Knowledge vault<br/>markdown + evidence logs)]
-  G[(Private GitHub repo)]
+  A[(Account database<br/>concepts · goals · dates · evidence · cards)]
+  V[Vault files you ask for]
   P --> C
-  C --> V
-  V <-->|auto git sync| G
+  C --> A
+  C -.-> V
 ```
 
 **Tutor memory** (stored on the account; the Obsidian vault is only optional context folders):
@@ -60,18 +60,18 @@ learner.md                      your background and how you learn best (the tuto
 .groundwork/chats/*.json        chat history, so sessions resume on any machine
 ```
 
-Because prerequisites are wikilinks, Obsidian's graph view *is* your dependency graph (colored by status). A goal is not a slogan. It is the list of concepts you have not built yet — the targets — plus the steps that get you there. Concepts are shared across goals, so building "Chain rule" for one goal counts toward every other goal that still has it as a target.
+The concept map in the tutor, and on your profile, is that dependency graph. A goal is not a slogan. It is the list of concepts you have not built yet — the targets — plus the steps that get you there. Concepts are shared across goals, so building "Chain rule" for one goal counts toward every other goal that still has it as a target.
 
 **The session shape** the tutor follows (see `packages/core/src/prompt.ts`):
 
-0. **Recall** — read the vault first. Solid + recent concepts aren't re-probed; rusty ones get a quick review; open misconceptions get dislodged.
+0. **Recall** — read the account first. Solid + recent concepts aren't re-probed; rusty ones get a quick review; open misconceptions get dislodged.
 1. **Probe** — quizzes that bracket the edge of your understanding on every prerequisite strand (a floor you get right *and* a ceiling you miss). Plus plain questions about what you actually want.
 2. **Plan** — a dependency DAG from caveat-free truths up to the concepts you have not built yet. Those concepts are the goal's targets. The plan is saved to `goals/` and shown as a map. It waits for your go-ahead.
 3. **Teach** — forward, target by target: ground in the relation they already hold → show one difference → name it → a small quiz on a new case of that difference → that step becomes the ground for the next. A root is two cases and one flipped case, then the unconditional truth. A derived idea is a minimal pair, then the statement (concrete, then the same fact in symbols). A procedure is one worked example, then they do the last step. A missed check is re-taught in the other representation, not with a chain of easier quizzes. Gaps off the path to a target are noted, not chased. When every target is built, the goal is done. Concept notes are updated as it goes.
 
 **Exam prep** is the same loop, pointed at *their* files. Attach lecture slides, a couple of homeworks, a study guide, or a practice exam (paperclip, paste, or drop onto the tutor). Groundwork classifies each file, pulls out the topics and the level the exam seems to demand (the same 1–5 scale as quizzes: recognize → apply → combine → transfer), writes `exams/…`, and opens a goal whose targets are those topics — not a concept named after the exam. Homeworks say what is practiced; a practice exam or study guide says what is sufficient. The tutor still reads the files and can refine the plan (`ingest_exam_materials`).
 
-**The calibration model** (`packages/core/src/model.ts`). Each concept's state is a pure function of its evidence log, so merged logs from two machines converge to the same numbers:
+**The calibration model** (`packages/core/src/model.ts`). Each concept's state is a pure function of its evidence log. The log lives on the account, so two devices recompute the same numbers:
 
 - *Ability* θ on a logit scale (Rasch/Elo). A question of difficulty $d \in 1..5$ has $P(\text{correct}) = \sigma(\theta - (d-3))$; each answer moves θ by $K(\text{outcome} - P)$, with $K$ shrinking as evidence accumulates.
 - *Memory half-life* $h$: spaced successes grow it, crammed ones barely do, misses shrink it. Retention $R = 2^{-\Delta t / h}$.
@@ -154,7 +154,7 @@ Attach files to a message with the paperclip (**Upload from this computer** or *
 
 The tutor reads images (PNG, JPEG, GIF, WebP), PDFs, and text files (markdown, code, CSV, LaTeX, …) from those folders (`list_vault_files`, `read_vault_file`): drop your lecture notes or textbook into a read folder and say "use my lecture 3 notes". Ask it to write up answers and it saves a markdown file in a write folder. With the Claude subscription, PDFs are read with Claude Code's `Read` tool, held to the same read folders. Groundwork splits PDFs longer than 10 pages or larger than 16 MB into parts under `.groundwork/cache/pdf-parts/` (ignored by git) so each part opens whole, with no need for poppler (`pdftoppm`) on the machine. Limits: 50 MB per upload (the vault is a git repo), and images must be under 5 MB and PDFs under 20 MB to be sent inline. Saved chats don't store file contents, only the paths.
 
-**Flashcards** (the layers icon in the tutor panel) are a spaced-repetition deck. The schedule and the card text live on the account with the rest of tutor memory. Each folder the tutor can write also gets a `flashcards/` subfolder of plain Markdown — one note per card, plus a deck note — so you can edit a question or an answer in the vault. The next sync copies that edit back to the account and to every other write folder. Turning on "Add cards from new teaching notes" makes a card from each concept that has a summary. Rating Again, Hard, Good, or Easy updates that concept on the map.
+**Flashcards** (the layers icon in the tutor panel) are a spaced-repetition deck. The schedule and the card text live on the account with the rest of tutor memory. Nothing is written into the vault until you choose **Write cards into the vault**, which copies them as plain Markdown into `flashcards/` inside each folder the tutor can write. A hand edit of one of those notes is pulled back onto the account the next time the deck opens. Turning on "Add cards from new teaching notes" makes a card from each concept that has a summary. Rating Again, Hard, Good, or Easy updates that concept on the map.
 
 ## CLI reference
 

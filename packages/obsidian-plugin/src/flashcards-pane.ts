@@ -5,6 +5,7 @@ import {
 	createFlashcard,
 	deleteFlashcard,
 	dueByConcept,
+	exportFlashcards,
 	emptyFlashcardLibrary,
 	flashcardCounts,
 	flashcardsDir,
@@ -154,7 +155,7 @@ export class FlashcardsPane {
 		if (!card || this.busy || !this.revealed) return;
 		this.busy = true;
 		try {
-			const updated = await rateFlashcard(this.host.store, card.id, rating, this.host.writeFolders());
+			const updated = await rateFlashcard(this.host.store, card.id, rating);
 			const index = this.lib.cards.findIndex((c) => c.id === updated.id);
 			if (index >= 0) this.lib.cards[index] = updated;
 			this.queue.shift();
@@ -400,8 +401,7 @@ export class FlashcardsPane {
 		}
 		const made = side.createDiv({ cls: "gw-fc-made" });
 		made.createEl("b", { text: "Made from your notes" });
-		const where = this.mirrorHint();
-		made.createSpan({ text: `Groundwork writes cards from its teaching notes. They live on your account and as plain Markdown in ${where}, so you can edit them like any note.` });
+		made.createSpan({ text: "Groundwork writes cards from its teaching notes. They stay on your account. Write them into the vault only when you want the notes on this computer." });
 		const toggle = made.createDiv({ cls: "gw-fc-toggle" });
 		toggle.createSpan({ text: "Add cards from new teaching notes" });
 		const sw = toggle.createEl("label", { cls: "gw-switch" });
@@ -412,10 +412,11 @@ export class FlashcardsPane {
 		const actions = side.createDiv({ cls: "gw-fc-actions" });
 		this.sideButton(actions, "plus", "New card from selection", () => this.startFromSelection());
 		this.sideButton(actions, "check", "Turn misses into a quiz", () => this.quizMisses());
+		this.sideButton(actions, "download", "Write cards into the vault", () => void this.exportCards());
 		const file = this.primaryDeckFile();
 		this.sideButton(actions, "file-text", file ? `Open ${file.split("/").pop()}` : "Open deck note", () => {
 			if (!file) {
-				new Notice(this.host.writeFolders().length ? "This deck has no cards to open yet." : "Pick a folder the tutor can write. Cards stay on your account until then.");
+				new Notice(this.host.writeFolders().length ? "Write the cards into the vault first." : "Cards stay on your account until you pick a folder and write them into the vault.");
 				return;
 			}
 			void this.openPath(file);
@@ -443,7 +444,7 @@ export class FlashcardsPane {
 		try {
 			const deckId = this.deckId || "library";
 			const deckTitle = deckId === "library" ? "Library" : this.deckTitle();
-			const card = await createFlashcard(this.host.store, { ...this.draft, deckId, deckTitle }, this.host.writeFolders());
+			const card = await createFlashcard(this.host.store, { ...this.draft, deckId, deckTitle });
 			this.lib = await loadFlashcardLibrary(this.host.store.io);
 			this.queue.unshift(card);
 			this.composing = false;
@@ -461,7 +462,7 @@ export class FlashcardsPane {
 		if (this.busy) return;
 		this.busy = true;
 		try {
-			await deleteFlashcard(this.host.store, card.id, this.host.writeFolders());
+			await deleteFlashcard(this.host.store, card.id);
 			this.lib.cards = this.lib.cards.filter((c) => c.id !== card.id);
 			this.queue = this.queue.filter((c) => c.id !== card.id);
 			this.revealed = false;
@@ -475,7 +476,7 @@ export class FlashcardsPane {
 
 	private async toggleNotes(on: boolean): Promise<void> {
 		try {
-			this.lib = await setAddFromTeachingNotes(this.host.store, on, this.host.writeFolders());
+			this.lib = await setAddFromTeachingNotes(this.host.store, on);
 			await this.loadContext();
 			this.startSession();
 			this.draw();
@@ -504,11 +505,20 @@ export class FlashcardsPane {
 		return STATUS_COLOR[status] ?? STATUS_COLOR.unassessed;
 	}
 
-	private mirrorHint(): string {
+	private async exportCards(): Promise<void> {
 		const folders = this.host.writeFolders();
-		if (!folders.length) return "a flashcards folder inside each folder the tutor can write (none picked yet)";
-		if (folders.length === 1) return `${flashcardsDir(folders[0])}/`;
-		return folders.map((folder) => `${flashcardsDir(folder)}/`).join(" and ");
+		if (!folders.length) {
+			new Notice("Cards stay on your account. Pick a folder the tutor can write, then ask again to copy them into the vault.");
+			return;
+		}
+		try {
+			const written = await exportFlashcards(this.host.store, folders);
+			this.lib = await loadFlashcardLibrary(this.host.store.io);
+			new Notice(written.length ? `Groundwork wrote the cards into ${written.join(", ")}.` : "No cards to write yet. They stay on your account.");
+			this.draw();
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
 	}
 
 	private deckPath(card: Flashcard): string {

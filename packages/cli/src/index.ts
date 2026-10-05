@@ -45,7 +45,7 @@ async function prepareAndOpen(vault: string, launch: boolean) {
 
 const program = new Command()
 	.name("groundwork")
-	.description("A tutor that remembers what you know — in a git-synced Obsidian vault.")
+	.description("A tutor that remembers what you know on your Groundwork account.")
 	.version("0.1.0");
 
 program

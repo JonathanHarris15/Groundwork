@@ -1454,10 +1454,10 @@ export class ChatView extends ItemView implements ToolUI {
 		section.createEl("h3", { text: "Vault folders" });
 		section.createDiv({
 			cls: "gw-lib-help",
-			text: "Optional extra context in this vault. The tutor reads only these folders, and writes a file to hand in only inside a write folder. Concepts and notes stay on your account. Flashcards are saved on your account and copied into a flashcards folder inside each write folder.",
+			text: "Optional extra context in this vault. The tutor reads only these folders, and writes a file to hand in only inside a write folder. Concepts, notes, dates, and flashcards stay on your account. Cards are written into the vault only when you ask.",
 		});
 		this.folderEditor(section, "readFolders", "Folders the tutor can read", "Chat uploads are saved in the first one. Leave this empty and the tutor does not read the vault.");
-		this.folderEditor(section, "writeFolders", "Folders the tutor can write", "A file to hand in is written here, and flashcards are copied into flashcards/ inside each of these.");
+		this.folderEditor(section, "writeFolders", "Folders the tutor can write", "A file to hand in is written here. Flashcards stay on your account until you write them into the vault.");
 	}
 
 	private folderEditor(parent: HTMLElement, key: "readFolders" | "writeFolders", name: string, desc: string): void {

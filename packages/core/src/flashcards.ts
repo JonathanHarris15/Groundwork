@@ -1,8 +1,9 @@
 /**
- * Flashcards live on the account (`.groundwork/flashcards.json`) and are mirrored
- * as plain Markdown into `flashcards/` inside every folder the learner allowed
- * the tutor to write. The account copy owns the schedule. A hand edit of a
- * card's question or answer in the vault is pulled back onto the account.
+ * Flashcards live on the account (`.groundwork/flashcards.json`).
+ * They are written into the vault only when the learner asks: `exportFlashcards`
+ * copies them as plain Markdown into `flashcards/` inside the folders they chose.
+ * A hand edit of an exported card is pulled back onto the account by `syncFlashcards`.
+ * The account copy owns the schedule.
  */
 
 import { cleanFolderList } from "./access";
@@ -582,7 +583,7 @@ function fingerprint(lib: FlashcardLibrary): string {
 	});
 }
 
-async function persist(store: KnowledgeStore, lib: FlashcardLibrary, writeFolders: readonly string[], now: Date): Promise<string[]> {
+async function persist(store: KnowledgeStore, lib: FlashcardLibrary, now: Date): Promise<void> {
 	assignFlashcardFiles(lib);
 	for (const card of lib.cards) card.contentKey = flashcardContentKey(card.concept, card.front, card.back);
 	let prev: FlashcardLibrary | null = null;
@@ -597,33 +598,39 @@ async function persist(store: KnowledgeStore, lib: FlashcardLibrary, writeFolder
 		lib.updatedAt = now.toISOString();
 		await store.writeFile(PATHS.flashcards, serializeFlashcardLibrary(lib));
 	}
-	return mirrorFlashcards(store.context, writeFolders, lib);
 }
 
 /**
- * Merge vault edits, optionally make cards from concept notes, save the account
- * copy, and rewrite `flashcards/` in every write folder.
+ * Pull hand edits of exported cards back onto the account, and optionally make
+ * cards from concept notes. Does not write anything into the vault.
  */
 export async function syncFlashcards(store: KnowledgeStore, writeFolders: readonly string[], now = new Date()): Promise<FlashcardLibrary> {
 	const lib = await loadFlashcardLibrary(store.io);
 	await adoptVaultEdits(store.context, writeFolders, lib, now);
 	if (lib.addFromTeachingNotes) addTeachingCards(lib, [...(await store.concepts()).values()], await store.goals(), now);
-	await persist(store, lib, writeFolders, now);
+	await persist(store, lib, now);
 	return lib;
 }
 
-export async function setAddFromTeachingNotes(store: KnowledgeStore, on: boolean, writeFolders: readonly string[], now = new Date()): Promise<FlashcardLibrary> {
+/** Copy the account deck into `flashcards/` in each chosen folder. Hand edits are kept first. */
+export async function exportFlashcards(store: KnowledgeStore, writeFolders: readonly string[], now = new Date()): Promise<string[]> {
+	const lib = await loadFlashcardLibrary(store.io);
+	await adoptVaultEdits(store.context, writeFolders, lib, now);
+	await persist(store, lib, now);
+	return mirrorFlashcards(store.context, writeFolders, lib);
+}
+
+export async function setAddFromTeachingNotes(store: KnowledgeStore, on: boolean, now = new Date()): Promise<FlashcardLibrary> {
 	const lib = await loadFlashcardLibrary(store.io);
 	lib.addFromTeachingNotes = on;
 	if (on) addTeachingCards(lib, [...(await store.concepts()).values()], await store.goals(), now);
-	await persist(store, lib, writeFolders, now);
+	await persist(store, lib, now);
 	return lib;
 }
 
 export async function createFlashcard(
 	store: KnowledgeStore,
 	input: { concept: string; front: string; back: string; deckId?: string; deckTitle?: string; source?: string },
-	writeFolders: readonly string[],
 	now = new Date(),
 ): Promise<Flashcard> {
 	const concept = input.concept.trim();
@@ -636,25 +643,25 @@ export async function createFlashcard(
 	ensureDeck(lib, deckId, deckTitle, deckId === "library" ? undefined : deckId);
 	const card = makeCard({ deckId, concept, front, back, source: input.source, now });
 	lib.cards.push(card);
-	await persist(store, lib, writeFolders, now);
+	await persist(store, lib, now);
 	return card;
 }
 
-export async function deleteFlashcard(store: KnowledgeStore, id: string, writeFolders: readonly string[], now = new Date()): Promise<void> {
+export async function deleteFlashcard(store: KnowledgeStore, id: string, now = new Date()): Promise<void> {
 	const lib = await loadFlashcardLibrary(store.io);
 	const next = lib.cards.filter((c) => c.id !== id);
 	if (next.length === lib.cards.length) throw new Error("That card is already gone.");
 	lib.cards = next;
-	await persist(store, lib, writeFolders, now);
+	await persist(store, lib, now);
 }
 
-export async function rateFlashcard(store: KnowledgeStore, id: string, rating: CardRating, writeFolders: readonly string[], now = new Date()): Promise<Flashcard> {
+export async function rateFlashcard(store: KnowledgeStore, id: string, rating: CardRating, now = new Date()): Promise<Flashcard> {
 	const lib = await loadFlashcardLibrary(store.io);
 	const index = lib.cards.findIndex((c) => c.id === id);
 	if (index < 0) throw new Error("That card is already gone.");
 	const card = applyRating(lib.cards[index], rating, now);
 	lib.cards[index] = card;
-	await persist(store, lib, writeFolders, now);
+	await persist(store, lib, now);
 	const grade = ratingOutcome(rating);
 	try {
 		await store.recordEvidence(card.concept, {
@@ -721,9 +728,8 @@ export function dueByConcept(cards: Flashcard[], now: Date): Array<{ concept: st
 export async function saveFlashcard(
 	store: KnowledgeStore,
 	input: { concept: string; front: string; back: string; deck?: string },
-	writeFolders: readonly string[],
 	now = new Date(),
-): Promise<{ card: Flashcard; folders: string[] }> {
+): Promise<{ card: Flashcard }> {
 	const concept = input.concept.trim();
 	const front = input.front.trim();
 	const back = input.back.trim();
@@ -744,6 +750,6 @@ export async function saveFlashcard(
 		card = makeCard({ deckId, concept, front, back, now });
 		lib.cards.push(card);
 	}
-	const folders = await persist(store, lib, writeFolders, now);
-	return { card, folders };
+	await persist(store, lib, now);
+	return { card };
 }
