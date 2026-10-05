@@ -699,6 +699,9 @@ a:hover { color: #2c2f36; }
 }
 
 .btn-ink { background: #16181d; color: #fff; }
+a.btn { text-decoration: none; }
+a.btn-ink,
+a.btn-ink:hover { color: #fff; }
 .btn-line { background: #fff; color: #16181d; border-color: #16181d; }
 .btn:disabled { cursor: default; opacity: 0.72; }
 

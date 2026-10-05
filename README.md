@@ -19,11 +19,11 @@ Groundwork is [MIT licensed](LICENSE).
 
 Payment is required for full access. The Free plan uses Groundwork's smaller model. **Bring your own model** is $9 per month and uses the Claude subscription already on this computer, or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. **Groundwork** is $20 per month and Groundwork runs the models. Paid plans are billed on the [Groundwork website](https://groundworklearn.com) through Stripe.
 
-An account is required before the tutor will run. Sign in with Google on that website, then choose **Open Obsidian**. Until this device is connected, sending a message only asks you to sign in. Tutor memory — concept notes, goals, quiz evidence, chats, and the learner profile — is stored on the account.
+An account is required before the tutor will run. Sign in with Google on that website. Tutor memory — concept notes, goals, quiz evidence, chats, and the learner profile — is stored on the account.
 
 The plugin uses the network for these services:
 
-- **Groundwork** (`https://groundwork-6f9ca.web.app` in production builds) stores the account, tutor memory, plan routing, and grades written answers. Sign-in happens in the browser on the [Groundwork website](https://groundworklearn.com); **Open Obsidian** passes a refresh token into the plugin. After sign-in, the plugin may call an open-ack URL on that same account host (`/v1/obsidian-opened/<nonce>/signal`) so the website knows Obsidian opened.
+- **Groundwork** (`https://groundwork-6f9ca.web.app` in production builds) stores the account, tutor memory, plan routing, and grades written answers. Sign-in happens in the browser on the [Groundwork website](https://groundworklearn.com). **Open Obsidian** opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
 - **Google** (`https://securetoken.googleapis.com`) refreshes the website sign-in into an ID token the plugin sends to Groundwork.
 - **Google Fonts** (`https://fonts.googleapis.com`) loads Jost for the Groundwork panel stylesheet.
 - **Stripe** — billing for the $9 and $20 plans happens on the website, not inside the plugin.
@@ -205,7 +205,7 @@ The plugin is laid out so it can be submitted:
 
 `node scripts/check-community-plugin.mjs` checks that list. The plugin id is `groundwork`, which is also the community install folder.
 
-From the website, **Add Groundwork to Obsidian** opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
+From the website, **Open Obsidian** opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
 
 The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` unless you override `GROUNDWORK_API_URL` for local development).
 

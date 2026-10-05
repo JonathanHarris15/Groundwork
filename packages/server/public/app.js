@@ -162,7 +162,7 @@ function showAccount() {
 		<p class="welcome-sub">Here is everything you have built so far.</p>
 		${board()}
 		<div class="open-obsidian">
-			<button class="btn btn-ink" id="open-obsidian" type="button">Open Obsidian</button>
+			<a class="btn btn-ink" id="open-obsidian" href="https://community.obsidian.md/plugins/groundwork">Open Obsidian</a>
 		</div>
 		<section class="section">
 			<h2><span class="node red"></span>Profile</h2>
@@ -190,7 +190,6 @@ function showAccount() {
 		</div>
 	`);
 	document.querySelector("#profile").addEventListener("submit", saveProfile);
-	document.querySelector("#open-obsidian").addEventListener("click", () => openObsidian());
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#tutor-setup")?.addEventListener("submit", saveTutor);
 	document.querySelector("#portal").addEventListener("click", openPortal);
@@ -581,88 +580,6 @@ async function saveKey(event) {
 		actionError = err.message;
 		paint();
 	}
-}
-
-const OBSIDIAN_DOWNLOAD = "https://obsidian.md/download";
-const OBSIDIAN_INSTALL = "obsidian://show-plugin?id=groundwork";
-
-// The groundwork link is the fast path: an installed plugin connects, syncs, and reloads.
-// If the page never leaves, Obsidian is not installed. If Obsidian opens and the plugin never answers, open the community installer.
-function openObsidian() {
-	const refresh = user && user.refreshToken;
-	if (!refresh) {
-		actionError = "Sign in again, then open Obsidian.";
-		paint();
-		return;
-	}
-	const button = document.querySelector("#open-obsidian");
-	if (button) {
-		button.disabled = true;
-		button.textContent = "Opening Obsidian…";
-	}
-	const nonce = crypto.randomUUID();
-	const signal = `${location.origin}/v1/obsidian-opened/${nonce}/signal`;
-	const handoff = `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}&opened=${encodeURIComponent(signal)}`;
-	let sawApp = false;
-	let askedInstall = false;
-	let settled = false;
-	const mark = () => {
-		sawApp = true;
-	};
-	const onVis = () => {
-		if (document.hidden) mark();
-	};
-	window.addEventListener("blur", mark);
-	document.addEventListener("visibilitychange", onVis);
-	const started = performance.now();
-	const stop = () => {
-		if (settled) return;
-		settled = true;
-		window.clearInterval(timer);
-		window.removeEventListener("blur", mark);
-		document.removeEventListener("visibilitychange", onVis);
-	};
-	openProtocol(handoff);
-	const timer = window.setInterval(async () => {
-		if (settled) return;
-		const elapsed = performance.now() - started;
-		if (document.hidden || document.visibilityState === "hidden") mark();
-		let opened = false;
-		try {
-			const res = await fetch(`/v1/obsidian-opened/${nonce}`, { cache: "no-store", signal: AbortSignal.timeout(800) });
-			if (res.ok) opened = Boolean((await res.json()).opened);
-		} catch {
-			opened = false;
-		}
-		if (settled) return;
-		if (opened) {
-			stop();
-			if (button && button.isConnected) {
-				button.disabled = false;
-				button.textContent = "Open Obsidian";
-			}
-			return;
-		}
-		// Obsidian stayed in front and Groundwork never answered, so ask it to install the plugin.
-		if (sawApp && !document.hasFocus() && elapsed > 1600 && !askedInstall) {
-			askedInstall = true;
-			openProtocol(OBSIDIAN_INSTALL);
-		}
-		// The page is focused again, so the app did not stay open. A long silence means the same.
-		if ((document.hasFocus() && elapsed > 1500) || elapsed > 8000) {
-			stop();
-			window.location.assign(OBSIDIAN_DOWNLOAD);
-		}
-	}, 400);
-}
-
-function openProtocol(href) {
-	const link = document.createElement("a");
-	link.href = href;
-	link.hidden = true;
-	document.body.appendChild(link);
-	link.click();
-	link.remove();
 }
 
 async function openPortal() {

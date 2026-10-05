@@ -100,8 +100,7 @@ describe("account server", () => {
 		expect(home.headers.get("content-type")).toContain("text/html");
 		const html = await home.text();
 		expect(html).toContain('id="groundwork"');
-		expect(html).toContain("https://community.obsidian.md/plugins/groundwork");
-		expect(html).not.toContain("obsidian://show-plugin?id=groundwork");
+		expect(html).toContain("obsidian://show-plugin?id=groundwork");
 		const css = await (await fetch(baseUrl + "/site.css")).text();
 		expect(css).toContain("#0e6b52");
 		expect(css).toContain("#f3efe6");

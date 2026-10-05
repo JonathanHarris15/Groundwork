@@ -118,14 +118,15 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=10"');
+		expect(site?.body).toContain('src="/app.js?v=11"');
+		expect(site?.body).toContain('href="/styles.css?v=2"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
-		expect(script).toContain("obsidian://groundwork?refresh=");
-		expect(script).toContain("https://obsidian.md/download");
-		expect(script).toContain("obsidian://show-plugin?id=groundwork");
+		expect(script).toContain('href="https://community.obsidian.md/plugins/groundwork"');
 		expect(script).toContain("Open Obsidian");
+		expect(script).not.toContain("obsidian://groundwork?refresh=");
+		expect(script).not.toContain("obsidian://show-plugin?id=groundwork");
 		expect(script).toContain("/v1/groundwork");
 		const board = script.slice(script.indexOf("function board"), script.indexOf("function usageTile"));
 		expect(board).toContain("goals.length");
