@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Groundwork graph harness</title>
+		<link rel="stylesheet" href="/styles.css?v=3" />
+		<style>
+			body { margin: 0; padding: 24px; background: #16181d; color: #ececec; font-family: Jost, system-ui, sans-serif; }
+			.host { height: min(72vh, 720px); max-width: 1200px; margin: 16px auto; }
+			.row { display: flex; flex-wrap: wrap; gap: 16px; max-width: 1200px; margin: 16px auto; align-items: flex-start; }
+			.sidebar { width: 280px; height: 420px; flex-shrink: 0; }
+			.meta { font-size: 14px; opacity: 0.85; }
+		</style>
+		<script type="module" src="/force-graph.js?v=2"></script>
+	</head>
+	<body>
+		<h1>Interactive concept graph (harness)</h1>
+		<p>Synthetic concepts for performance and layout checks.</p>
+		<p class="meta" id="fps" aria-live="polite">Measuring FPS…</p>
+		<div class="graph-host host" id="graph"></div>
+		<div class="row">
+			<div>
+				<h2>Plugin sidebar (280px)</h2>
+				<div class="graph-host sidebar" id="sidebar-graph"></div>
+			</div>
+		</div>
+		<script type="module">
+			const main = document.querySelector("#graph");
+			const side = document.querySelector("#sidebar-graph");
+			const fpsEl = document.querySelector("#fps");
+			const mainHandle = window.GroundworkGraph.mountSyntheticHarness(main, 320);
+			const sideHandle = window.GroundworkGraph.mountSyntheticHarness(side, 320);
+			window.setInterval(() => {
+				fpsEl.textContent = `Main ${mainHandle.getFps()} fps · sidebar ${sideHandle.getFps()} fps (320 nodes each)`;
+			}, 1000);
+		</script>
+	</body>
+</html>

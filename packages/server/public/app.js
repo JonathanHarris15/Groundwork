@@ -22,6 +22,7 @@ let providers = null;
 let tutor = null;
 let groundwork = emptyGroundwork();
 let groundworkTimer = 0;
+let graphHandle = null;
 let user = null;
 let auth = null;
 let firebaseAuth = null;
@@ -89,6 +90,7 @@ async function boot() {
 			paint();
 		}
 	});
+	paint();
 }
 
 function localDevUser() {
@@ -271,6 +273,7 @@ function showAccount() {
 	document.querySelector("#profile").addEventListener("submit", saveProfile);
 	attachOpenObsidian();
 	attachConceptListUI();
+	mountConceptGraph();
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#tutor-setup")?.addEventListener("submit", saveTutor);
 	document.querySelector("#portal")?.addEventListener("click", openPortal);
@@ -313,6 +316,7 @@ async function pullGroundwork() {
 		if (nextBoard) {
 			current.replaceWith(nextBoard);
 			attachConceptListUI();
+			mountConceptGraph();
 		}
 	} catch {
 		// Keep the stats already on screen.
@@ -422,7 +426,7 @@ function board() {
 					<span class="sky-title">${waiting ? "Concepts" : "Concepts you have learned"}</span>
 					${graphLegend(conceptGraph())}
 				</div>
-				${conceptGraphSvg(conceptGraph())}
+				${conceptGraphHost(conceptGraph())}
 				${conceptListPanel(concepts)}
 			</div>
 			<div class="goals">
@@ -450,35 +454,103 @@ function conceptNote(concepts) {
 	return checked === 1 ? "1 quizzed so far." : `${checked} quizzed so far.`;
 }
 
-function conceptGraphSvg(graph) {
+function conceptGraphHost(graph) {
 	const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
 	if (!nodes.length) return `<p class="sky-empty">They show up here as you study.</p>`;
-	const statusOf = new Map(learnedConcepts().map((concept) => [concept.id, concept.status]));
-	const byId = new Map(nodes.map((node) => [node.id, node]));
-	const width = Number.isFinite(graph.width) ? graph.width : 640;
-	const height = Number.isFinite(graph.height) ? graph.height : 220;
-	const edges = (Array.isArray(graph.edges) ? graph.edges : []).flatMap((edge) => {
-		const from = byId.get(edge.from);
-		const to = byId.get(edge.to);
-		if (!from || !to) return [];
-		const color = edge.bridge ? "rgba(255,255,255,.38)" : safeColor(from.color);
-		const dash = edge.bridge ? ` stroke-dasharray="4 5"` : "";
-		return [`<line class="graph-edge${edge.bridge ? " is-bridge" : ""}" x1="${num(from.x)}" y1="${num(from.y)}" x2="${num(to.x)}" y2="${num(to.y)}" stroke="${color}"${dash}></line>`];
-	});
-	const dots = nodes.map((node) => {
-		const color = safeColor(node.color);
-		const open = statusOf.get(node.id) === "unassessed";
-		const anchor = node.labelAnchor === "start" || node.labelAnchor === "end" ? node.labelAnchor : "middle";
-		const label = node.label ? `<text class="graph-label" x="${num(node.labelX ?? node.x)}" y="${num(node.labelY ?? node.y + 18)}" text-anchor="${anchor}">${escapeHtml(shortTitle(node.title))}</text>` : "";
-		const dot = open
-			? `fill="none" stroke="${color}" stroke-width="1.75"`
-			: `fill="${color}"`;
-		const halo = open ? `fill="none" stroke="${color}" stroke-width="1.25"` : `fill="${color}"`;
-		const name = open ? `${node.title} (not quizzed yet)` : node.title;
-		return `<g class="graph-node${open ? " is-open" : ""}"><title>${escapeHtml(name)}</title><circle class="graph-halo" cx="${num(node.x)}" cy="${num(node.y)}" r="9" ${halo}></circle><circle class="graph-dot" cx="${num(node.x)}" cy="${num(node.y)}" r="4.5" ${dot}></circle>${label}</g>`;
-	});
-	const graphH = Math.min(height, 200);
-	return `<div class="graph-scroll" tabindex="0" role="region" aria-label="Concept graph. Scroll horizontally when the map is wider than the screen."><svg class="graph" viewBox="0 0 ${width} ${height}" height="${graphH}" preserveAspectRatio="xMinYMin meet" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg></div>`;
+	const concepts = learnedConcepts();
+	const weak = concepts.filter((c) => c.status === "unassessed" || c.status === "shaky" || c.status === "rusty");
+	const weakLine = weak.length
+		? `<p class="graph-focus">${weak.length === 1 ? "Needs attention:" : "Needs attention:"} ${weak.slice(0, 4).map((c) => escapeHtml(c.title)).join(", ")}${weak.length > 4 ? ` (+${weak.length - 4} more)` : ""}</p>`
+		: `<p class="graph-focus graph-focus-ok">Every concept here has been quizzed.</p>`;
+	return `${weakLine}
+		<div class="graph-shell" id="concept-graph-shell">
+			<div class="graph-toolbar">
+				<p class="graph-hint">Prerequisite arrows point forward. Dot color is mastery. Drag to rearrange, scroll to zoom, click a node to find it in the list below.</p>
+				<button class="btn btn-line btn-sm graph-expand" type="button" id="graph-expand" aria-label="Expand graph to fullscreen">Expand</button>
+			</div>
+			<div class="graph-host" id="concept-graph" role="region" aria-label="Interactive concept graph"></div>
+			<p class="graph-obsidian-offer" id="graph-obsidian-offer" hidden></p>
+		</div>`;
+}
+
+let graphFullscreen = false;
+let graphEscapeBound = false;
+
+function toggleGraphFullscreen(on) {
+	graphFullscreen = on;
+	const shell = document.querySelector("#concept-graph-shell");
+	const expand = document.querySelector("#graph-expand");
+	shell?.classList.toggle("is-fullscreen", on);
+	document.body.classList.toggle("graph-fullscreen-open", on);
+	if (expand) {
+		expand.textContent = on ? "Close" : "Expand";
+		expand.setAttribute("aria-label", on ? "Close fullscreen graph" : "Expand graph to fullscreen");
+	}
+	window.requestAnimationFrame(() => graphHandle?.fit?.());
+}
+
+function bindConceptGraphChrome() {
+	const expand = document.querySelector("#graph-expand");
+	if (!expand || expand.dataset.bound === "1") return;
+	expand.dataset.bound = "1";
+	expand.addEventListener("click", () => toggleGraphFullscreen(!graphFullscreen));
+	if (!graphEscapeBound) {
+		graphEscapeBound = true;
+		document.addEventListener("keydown", (e) => {
+			if (e.key === "Escape" && graphFullscreen) toggleGraphFullscreen(false);
+		});
+	}
+}
+
+function obsidianStudyReady() {
+	try {
+		if (localStorage.getItem("groundwork-obsidian-linked") === "1") return true;
+	} catch {
+		// ignore
+	}
+	return learnedConcepts().length > 0;
+}
+
+function obsidianStudyUrl(title) {
+	const q = encodeURIComponent(String(title ?? "").trim());
+	if (!q) return null;
+	return `obsidian://groundwork?concept=${q}`;
+}
+
+function showObsidianStudyOffer(concept) {
+	const el = document.querySelector("#graph-obsidian-offer");
+	if (!el || !concept || !obsidianStudyReady()) {
+		if (el) el.hidden = true;
+		return;
+	}
+	const url = obsidianStudyUrl(concept.title);
+	if (!url) {
+		el.hidden = true;
+		return;
+	}
+	el.hidden = false;
+	el.innerHTML = `<a class="btn btn-line btn-sm" href="${escapeAttr(url)}">Study “${escapeHtml(shortTitle(concept.title))}” in Obsidian</a>`;
+}
+
+function mountConceptGraph() {
+	const host = document.querySelector("#concept-graph");
+	if (!host || !window.GroundworkGraph) return;
+	graphHandle?.dispose?.();
+	bindConceptGraphChrome();
+	graphHandle = window.GroundworkGraph.mount(
+		host,
+		{ concepts: learnedConcepts(), graph: conceptGraph() },
+		{
+			onSelect: (id) => {
+				const concept = learnedConcepts().find((c) => c.id === id);
+				const row = document.querySelector(`.concept-list [data-concept-id="${CSS.escape(id)}"]`);
+				row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+				document.querySelectorAll(".concept-list li.is-highlight").forEach((el) => el.classList.remove("is-highlight"));
+				row?.classList.add("is-highlight");
+				showObsidianStudyOffer(concept);
+			},
+		},
+	);
 }
 
 function conceptPriority(status) {
@@ -509,7 +581,7 @@ function conceptListItems(concepts) {
 	const colorOf = new Map((conceptGraph().nodes || []).map((node) => [node.id, node.color]));
 	return `<ul class="concept-list">${concepts.map((concept) => {
 		const color = safeColor(colorOf.get(concept.id));
-		return `<li><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name" title="${escapeAttr(concept.title)}">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
+		return `<li data-concept-id="${escapeAttr(concept.id)}"><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name" title="${escapeAttr(concept.title)}">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
 	}).join("")}</ul>`;
 }
 

@@ -41,7 +41,7 @@ async function seedMemory(request: APIRequestContext, count: number) {
 async function signInLocal(page: Page) {
 	await page.goto("/#signin");
 	await page.getByRole("button", { name: "Continue on this device" }).click();
-	await expect(page.getByRole("heading", { name: /Welcome/i })).toBeVisible();
+	await expect(page.getByRole("heading", { name: /^Welcome,/ })).toBeVisible();
 }
 
 for (const vp of viewports) {

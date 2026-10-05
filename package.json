@@ -15,7 +15,7 @@
     "build:all": "npm run build && npm run build -w packages/cli && npm run build -w packages/server",
     "dev:plugin": "npm run dev -w packages/obsidian-plugin",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "npm run build -w packages/server && vitest run",
     "test:website": "playwright test",
     "groundwork": "node packages/cli/dist/groundwork.js",
     "server": "npm run start -w packages/server"

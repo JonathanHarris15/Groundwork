@@ -2,7 +2,7 @@ import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type Work
 import { AccountClient, AccountError, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import { BUILD, readBuildStamp } from "./build";
-import { groundworkOpenedSignal } from "./open-link";
+import { groundworkOpenedSignal, parseGroundworkConcept } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
 import {
@@ -150,7 +150,9 @@ export default class GroundworkPlugin extends Plugin {
 			await this.reloadSelf();
 			return;
 		}
-		await this.activateView(true);
+		const view = await this.activateView(true);
+		const concept = parseGroundworkConcept(params.concept);
+		if (concept) await view?.studyConceptFromDeepLink(concept);
 	}
 
 	private async signalOpened(opened: string | undefined): Promise<void> {
@@ -479,7 +481,11 @@ export default class GroundworkPlugin extends Plugin {
 
 	async connectMemory(): Promise<void> {
 		const client = await this.memoryClient();
-		if (!client) return;
+		if (!client) {
+			const imported = await this.importVaultMemory();
+			if (imported) this.store.invalidate();
+			return;
+		}
 		this.setSync("syncing", "loading tutor memory…");
 		try {
 			const remote = await client.getHostedMemory();

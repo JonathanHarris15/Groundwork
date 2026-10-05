@@ -11,6 +11,10 @@ export interface WebConfig {
 }
 
 export function webConfig(billing: boolean, firebaseAdmin: boolean): WebConfig {
+	if (process.env.GROUNDWORK_E2E?.trim()) {
+		const localDev = !firebaseAdmin && !process.env.K_SERVICE?.trim();
+		return { firebase: null, billing, localDev };
+	}
 	const file = readWebConfig();
 	const apiKey = process.env.FIREBASE_WEB_API_KEY?.trim() || file?.apiKey;
 	const authDomain = process.env.FIREBASE_AUTH_DOMAIN?.trim() || file?.authDomain;

@@ -112,6 +112,9 @@ else run("npx tsx scripts/seed-e2e-tutor-memory.mjs");
 
 const token = scenario === "signed-out" ? undefined : "e2e-local-token";
 prepareVault(token ? pluginData({ accountToken: token }) : pluginData());
+if (scenario !== "signed-out") {
+	run(`npx -y tsx ${JSON.stringify(path.join(root, "scripts/seed-obsidian-graph-vault.mjs"))} ${JSON.stringify(vault)}`);
+}
 
 writeFileSync(
 	obsidianConfig,
