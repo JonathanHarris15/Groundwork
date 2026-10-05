@@ -8,9 +8,9 @@
 
 import { cleanFolderList } from "./access";
 import { ensureDir, type VaultIO } from "./io";
-import { getSection, parseNote, safeFileName, serializeNote, slugify } from "./markdown";
+import { parseNote, safeFileName, serializeNote, slugify } from "./markdown";
 import type { Outcome } from "./model";
-import { PATHS, type Concept, type Goal, type KnowledgeStore } from "./store";
+import { PATHS, type KnowledgeStore } from "./store";
 
 export const FLASHCARDS_DIR = "flashcards";
 
@@ -52,6 +52,7 @@ export interface FlashDeck {
 
 export interface FlashcardLibrary {
 	updatedAt: string;
+	/** Ignored. Older accounts stored this; cards are never made from teaching notes. */
 	addFromTeachingNotes: boolean;
 	decks: FlashDeck[];
 	cards: Flashcard[];
@@ -68,7 +69,7 @@ export function flashcardsDir(writeFolder: string): string {
 }
 
 export function emptyFlashcardLibrary(now = new Date()): FlashcardLibrary {
-	return { updatedAt: now.toISOString(), addFromTeachingNotes: true, decks: [], cards: [] };
+	return { updatedAt: now.toISOString(), addFromTeachingNotes: false, decks: [], cards: [] };
 }
 
 const FLASHCARD_BACK_MAX_WORDS = 8;
@@ -293,7 +294,7 @@ export function parseFlashcardLibrary(value: unknown): FlashcardLibrary {
 	}
 	return {
 		updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : "",
-		addFromTeachingNotes: raw.addFromTeachingNotes !== false,
+		addFromTeachingNotes: raw.addFromTeachingNotes === true,
 		decks,
 		cards,
 	};
@@ -310,16 +311,37 @@ export async function loadFlashcardLibrary(io: VaultIO): Promise<FlashcardLibrar
 	return lib;
 }
 
-export function ensureDeck(lib: FlashcardLibrary, id: string, title: string, goalId?: string): FlashDeck {
+export function ensureDeck(lib: FlashcardLibrary, id: string, title: string): FlashDeck {
 	let deck = lib.decks.find((d) => d.id === id);
 	if (!deck) {
-		deck = { id, title: title.trim() || "Deck", goalId };
+		deck = { id, title: title.trim() || "Deck" };
 		lib.decks.push(deck);
-	} else if (title.trim()) {
-		deck.title = title.trim();
-		if (goalId) deck.goalId = goalId;
 	}
 	return deck;
+}
+
+function deckMatching(lib: FlashcardLibrary, wanted: string): FlashDeck | undefined {
+	const name = wanted.trim();
+	const slug = slugify(name);
+	const lower = name.toLowerCase();
+	return lib.decks.find((d) => d.id === name || (slug !== "" && d.id === slug) || d.title.toLowerCase() === lower);
+}
+
+function nextDeckId(lib: FlashcardLibrary, base: string): string {
+	const stem = base || "deck";
+	if (!lib.decks.some((d) => d.id === stem)) return stem;
+	let n = 2;
+	while (lib.decks.some((d) => d.id === `${stem}-${n}`)) n++;
+	return `${stem}-${n}`;
+}
+
+/** Find a deck by name or id, or create one. An empty name is the Library deck. */
+function resolveDeck(lib: FlashcardLibrary, wanted: string): FlashDeck {
+	const name = wanted.trim();
+	if (!name) return ensureDeck(lib, "library", "Library");
+	const found = deckMatching(lib, name);
+	if (found) return found;
+	return ensureDeck(lib, nextDeckId(lib, slugify(name) || "deck"), name);
 }
 
 function uniqueName(used: Set<string>, base: string, deck = false): string {
@@ -445,40 +467,6 @@ export function parseCardFile(text: string): ParsedCardFile | { kind: "deck" } |
 	};
 }
 
-function draftFromConcept(concept: Concept): { front: string; back: string } | null {
-	const summary = getSection(concept.body, "Summary")?.trim();
-	const truths = getSection(concept.body, "Unconditional truths")?.trim();
-	const back = summary || truths;
-	if (!back) return null;
-	const first = back.split("\n").map((s) => s.trim()).find(Boolean) ?? "";
-	const rest = back.slice(first.length).trim();
-	if (first.endsWith("?") && rest) return { front: first.replace(/^[-*]\s*/, ""), back: rest };
-	return { front: `What is ${concept.title}?`, back };
-}
-
-function goalConceptIds(goal: Goal): string[] {
-	return [...new Set([...goal.targets, ...goal.built, ...goal.nodes])];
-}
-
-/** One card per concept that already has a summary or an unconditional truth. */
-export function addTeachingCards(lib: FlashcardLibrary, concepts: Concept[], goals: Goal[], now = new Date()): boolean {
-	const have = new Set(lib.cards.map((c) => c.concept.trim().toLowerCase()));
-	let changed = false;
-	const active = goals.filter((g) => g.status !== "paused");
-	for (const concept of concepts) {
-		const key = concept.title.trim().toLowerCase();
-		if (!key || have.has(key)) continue;
-		const draft = draftFromConcept(concept);
-		if (!draft) continue;
-		const goal = active.find((g) => goalConceptIds(g).includes(concept.id));
-		const deck = goal ? ensureDeck(lib, goal.id, goal.title, goal.id) : ensureDeck(lib, "library", "Library");
-		lib.cards.push(makeCard({ deckId: deck.id, concept: concept.title, front: draft.front, back: draft.back, source: concept.path, now }));
-		have.add(key);
-		changed = true;
-	}
-	return changed;
-}
-
 /**
  * Pull question/answer edits out of vault card notes. Scheduling in those files is ignored.
  * If the same card was edited in more than one write folder, the last folder in the list wins.
@@ -511,7 +499,7 @@ export async function adoptVaultEdits(vault: VaultIO, writeFolders: readonly str
 			const existing = lib.cards.find((c) => c.id === id);
 			if (!existing) {
 				const deckTitle = parsed.deckId === "library" ? "Library" : parsed.deckId;
-				ensureDeck(lib, parsed.deckId, deckTitle, parsed.deckId === "library" ? undefined : parsed.deckId);
+				ensureDeck(lib, parsed.deckId, deckTitle);
 				const card = makeCard({ id, deckId: parsed.deckId, concept: parsed.concept, front: parsed.front, back: parsed.back, source: parsed.source, now });
 				card.fileName = fileName;
 				card.contentKey = key;
@@ -649,14 +637,10 @@ async function persist(store: KnowledgeStore, lib: FlashcardLibrary, now: Date):
 	}
 }
 
-/**
- * Pull hand edits of exported cards back onto the account, and optionally make
- * cards from concept notes. Does not write anything into the vault.
- */
+/** Pull hand edits of exported cards back onto the account. Does not write anything into the vault, and does not make cards. */
 export async function syncFlashcards(store: KnowledgeStore, writeFolders: readonly string[], now = new Date()): Promise<FlashcardLibrary> {
 	const lib = await loadFlashcardLibrary(store.io);
 	await adoptVaultEdits(store.context, writeFolders, lib, now);
-	if (lib.addFromTeachingNotes) addTeachingCards(lib, [...(await store.concepts()).values()], await store.goals(), now);
 	await persist(store, lib, now);
 	return lib;
 }
@@ -669,12 +653,14 @@ export async function exportFlashcards(store: KnowledgeStore, writeFolders: read
 	return mirrorFlashcards(store.context, writeFolders, lib);
 }
 
-export async function setAddFromTeachingNotes(store: KnowledgeStore, on: boolean, now = new Date()): Promise<FlashcardLibrary> {
+export async function createDeck(store: KnowledgeStore, title: string, now = new Date()): Promise<FlashDeck> {
+	const name = title.trim();
+	if (!name) throw new Error("A deck needs a name.");
+	if (name.length > 120) throw new Error("That deck name is too long.");
 	const lib = await loadFlashcardLibrary(store.io);
-	lib.addFromTeachingNotes = on;
-	if (on) addTeachingCards(lib, [...(await store.concepts()).values()], await store.goals(), now);
+	const deck = resolveDeck(lib, name);
 	await persist(store, lib, now);
-	return lib;
+	return deck;
 }
 
 export async function createFlashcard(
@@ -691,7 +677,7 @@ export async function createFlashcard(
 	const lib = await loadFlashcardLibrary(store.io);
 	const deckId = input.deckId?.trim() || "library";
 	const deckTitle = input.deckTitle?.trim() || (deckId === "library" ? "Library" : deckId);
-	ensureDeck(lib, deckId, deckTitle, deckId === "library" ? undefined : deckId);
+	ensureDeck(lib, deckId, deckTitle);
 	const card = makeCard({ deckId, concept, front, back, source: input.source, now });
 	lib.cards.push(card);
 	await persist(store, lib, now);
@@ -780,12 +766,9 @@ export function flashcardCounts(cards: Flashcard[], now: Date): { fresh: number;
 	return { fresh, learning, review };
 }
 
-export function cardsInDeck(lib: FlashcardLibrary, deckId: string, goals: Goal[]): Flashcard[] {
+export function cardsInDeck(lib: FlashcardLibrary, deckId: string): Flashcard[] {
 	if (!deckId) return lib.cards;
-	const goal = goals.find((g) => g.id === deckId);
-	const ids = goal ? new Set(goalConceptIds(goal)) : null;
-	const decks = new Set([deckId, ...(goal ? lib.decks.filter((d) => d.goalId === goal.id).map((d) => d.id) : [])]);
-	return lib.cards.filter((c) => decks.has(c.deckId) || (ids ? ids.has(slugify(c.concept)) : false));
+	return lib.cards.filter((c) => c.deckId === deckId);
 }
 
 export function dueByConcept(cards: Flashcard[], now: Date): Array<{ concept: string; count: number }> {
@@ -801,12 +784,12 @@ export function dueByConcept(cards: Flashcard[], now: Date): Array<{ concept: st
 		.sort((a, b) => b.count - a.count || a.concept.localeCompare(b.concept));
 }
 
-/** Save or replace one card. `deck` is a goal title, a goal id, or omitted for the Library deck. */
+/** Save or replace one card. `deck` is any deck name. A new name creates that deck. Omit it for the Library deck. */
 export async function saveFlashcard(
 	store: KnowledgeStore,
 	input: { concept: string; front: string; back: string; deck?: string },
 	now = new Date(),
-): Promise<{ card: Flashcard }> {
+): Promise<{ card: Flashcard; deckTitle: string }> {
 	const concept = input.concept.trim();
 	const front = input.front.trim();
 	const back = input.back.trim();
@@ -814,22 +797,17 @@ export async function saveFlashcard(
 	const issue = flashcardQualityIssue(front, back);
 	if (issue) throw new Error(issue);
 	const lib = await loadFlashcardLibrary(store.io);
-	const wanted = input.deck?.trim() ?? "";
-	const goals = await store.goals();
-	const goal = wanted ? goals.find((g) => g.id === slugify(wanted) || g.title.toLowerCase() === wanted.toLowerCase()) : undefined;
-	const deckId = goal?.id ?? (wanted ? slugify(wanted) || "library" : "library");
-	const deckTitle = goal?.title ?? (wanted || "Library");
-	ensureDeck(lib, deckId, deckTitle, goal?.id);
-	let card = lib.cards.find((c) => c.deckId === deckId && c.concept.toLowerCase() === concept.toLowerCase() && c.front === front);
+	const deck = resolveDeck(lib, input.deck ?? "");
+	let card = lib.cards.find((c) => c.deckId === deck.id && c.concept.toLowerCase() === concept.toLowerCase() && c.front === front);
 	if (card) {
 		card.back = back;
 		card.updatedAt = now.toISOString();
 		card.contentKey = flashcardContentKey(concept, front, back);
 		delete card.qualityIssue;
 	} else {
-		card = makeCard({ deckId, concept, front, back, now });
+		card = makeCard({ deckId: deck.id, concept, front, back, now });
 		lib.cards.push(card);
 	}
 	await persist(store, lib, now);
-	return { card };
+	return { card, deckTitle: deck.title };
 }

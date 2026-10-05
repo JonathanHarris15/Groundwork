@@ -1,14 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { emptyFlashcardLibrary, makeCard, type Goal } from "@groundwork/core";
+import { emptyFlashcardLibrary, makeCard } from "@groundwork/core";
 
 vi.mock("obsidian", () => ({ Notice: class {} }));
 const { libraryDecks } = await import("../src/flashcards-library-pane");
 
 const NOW = new Date("2026-10-02T12:00:00.000Z");
-const goal = (id: string, title: string, status: Goal["status"]) => ({ id, title, status, targets: [], built: [], nodes: [] }) as unknown as Goal;
 
 describe("libraryDecks", () => {
-	const goals = [goal("g2", "Statistics", "done"), goal("g1", "Calculus fluency", "active"), goal("g3", "Linear algebra", "paused")];
 	const lib = {
 		...emptyFlashcardLibrary(),
 		decks: [
@@ -22,18 +20,8 @@ describe("libraryDecks", () => {
 		],
 	};
 
-	it("lists one deck per goal, active first, and other decks only when they hold cards", () => {
-		expect(libraryDecks(lib, goals).map((d) => d.title)).toEqual(["Calculus fluency", "Linear algebra", "Statistics", "Loose ends"]);
-	});
-
-	it("folds a deck linked to a goal into that goal's deck", () => {
-		expect(libraryDecks(lib, goals).filter((d) => d.title === "Calculus fluency")).toHaveLength(1);
-	});
-
-	it("lets the learner study any goal deck except a finished goal's", () => {
-		const decks = libraryDecks(lib, goals);
-		expect(decks.find((d) => d.id === "g1")?.studyGoalId).toBe("g1");
-		expect(decks.find((d) => d.id === "g3")).toMatchObject({ note: "Paused", studyGoalId: "g3" });
-		expect(decks.find((d) => d.id === "g2")).toMatchObject({ note: "Done", studyGoalId: undefined });
+	it("lists every deck, including an empty one, and ignores goals", () => {
+		expect(libraryDecks(lib).map((d) => d.title)).toEqual(["Calculus fluency", "Empty", "Loose ends"]);
+		expect(libraryDecks(lib).map((d) => d.id)).toEqual(["deck-calc", "empty", "loose"]);
 	});
 });

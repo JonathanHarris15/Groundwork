@@ -5,6 +5,7 @@ import {
 	auditFlashcardLibrary,
 	buildStudyQueue,
 	cardsInDeck,
+	createDeck,
 	createFlashcard,
 	emptyFlashcardLibrary,
 	exportFlashcards,
@@ -18,13 +19,15 @@ import {
 	rateFlashcard,
 	removeFlashcardMirrors,
 	scheduledMinutes,
+	saveFlashcard,
 	serializeCardMarkdown,
+	serializeFlashcardLibrary,
 	syncFlashcards,
 	updateFlashcard,
 } from "../src/flashcards";
 import { MemoryVaultIO } from "../src/io";
 import { FLASHCARD_CREDIT } from "../src/model";
-import { KnowledgeStore, type Goal } from "../src/store";
+import { KnowledgeStore, PATHS } from "../src/store";
 import { toolByName } from "../src/tools";
 
 const NOW = new Date("2026-10-02T12:00:00.000Z");
@@ -139,26 +142,20 @@ describe("flashcard vault mirror", () => {
 		expect(await vault.read("Groundwork/flashcards/scratch.md")).toBe("just a note\n");
 	});
 
-	it("makes one card from a teaching note and does not move mastery when rated", async () => {
-		const { store } = pair();
+	it("does not make cards from teaching notes, even when an older account asked for that", async () => {
+		const { memory, store } = pair();
 		await store.upsertConcept({
 			title: "Base rates",
 			summary: "Why does a rare disease make a positive test hard to trust?\n\nAbout 10 false alarms show up for every real case.",
 		});
 		await store.setGoal({ title: "Exam 2", targets: ["Base rates"], nodes: [{ title: "Base rates" }] }, { judgments: "off" });
+		const seeded = emptyFlashcardLibrary(NOW);
+		seeded.addFromTeachingNotes = true;
+		await memory.write(PATHS.flashcards, serializeFlashcardLibrary(seeded));
 		const first = await syncFlashcards(store, ["Groundwork"], NOW);
-		expect(first.cards).toHaveLength(1);
-		expect(first.cards[0].deckId).toBe("exam-2");
-		expect(first.cards[0].front).toContain("rare disease");
-		expect(first.cards[0].back).toContain("false alarms");
-		const again = await syncFlashcards(store, ["Groundwork"], NOW);
-		expect(again.cards).toHaveLength(1);
-
-		const graded = await rateFlashcard(store, first.cards[0].id, "again", NOW);
-		expect(graded.lapses).toBe(0);
-		expect(graded.state).toBe("learning");
-		const concept = (await store.concepts()).get("base-rates");
-		expect(concept?.stats.attempts).toBe(0);
+		expect(first.cards).toHaveLength(0);
+		expect(first.decks).toHaveLength(0);
+		expect(first.addFromTeachingNotes).toBe(true);
 	});
 
 	it("rejects multi-answer flashcards and flags existing junk on load", () => {
@@ -282,18 +279,44 @@ describe("flashcard tools", () => {
 		expect(vault.files.has("Groundwork/flashcards/Base rates.md")).toBe(false);
 		const due = await toolByName("list_due_flashcards")!.run({}, { store });
 		expect(due.text).toContain("Why 9%?");
+		expect(due.text).toContain("Decks: Exam 2");
+		const lib = await loadFlashcardLibrary(store.io);
+		expect(lib.decks[0]).toMatchObject({ id: "exam-2", title: "Exam 2" });
+		expect(lib.decks[0].goalId).toBeUndefined();
 		const empty = await toolByName("save_flashcard")!.run({ concept: " ", front: "", back: "x" }, { store });
 		expect(empty.isError).toBe(true);
 	});
 });
 
-describe("goal decks", () => {
-	it("puts cards from a deck linked to the goal in that goal's deck", () => {
-		const goal = { id: "g1", title: "Calculus fluency", status: "active", targets: [], built: [], nodes: [] } as unknown as Goal;
+describe("named decks", () => {
+	it("keeps decks separate from goals and lets one concept live in more than one deck", async () => {
+		const { store } = pair();
+		await store.setGoal({ title: "Exam 2", targets: ["Base rates"], nodes: [{ title: "Base rates" }] }, { judgments: "off" });
+		const deck = await createDeck(store, "Nightly drills", NOW);
+		expect(deck).toEqual({ id: "nightly-drills", title: "Nightly drills" });
+		expect((await createDeck(store, "nightly drills", NOW)).id).toBe(deck.id);
+		const card = await createFlashcard(
+			store,
+			{ concept: "Base rates", front: "Why 9%?", back: "False alarms.", deckId: deck.id, deckTitle: deck.title },
+			NOW,
+		);
+		const saved = await saveFlashcard(store, { concept: "Base rates", front: "What swamps the signal?", back: "False alarms.", deck: "Exam morning" }, NOW);
+		expect(saved.deckTitle).toBe("Exam morning");
+		expect(saved.card.deckId).toBe("exam-morning");
+		const lib = await loadFlashcardLibrary(store.io);
+		expect(lib.decks.map((d) => d.id).sort()).toEqual(["exam-morning", "nightly-drills"]);
+		expect(lib.decks.every((d) => d.goalId === undefined)).toBe(true);
+		expect(cardsInDeck(lib, "nightly-drills").map((c) => c.id)).toEqual([card.id]);
+		expect(cardsInDeck(lib, "exam-morning")).toHaveLength(1);
+		expect(cardsInDeck(lib, "exam-2")).toHaveLength(0);
+	});
+
+	it("returns only the cards stored in that deck", () => {
 		const lib = {
 			...emptyFlashcardLibrary(),
 			decks: [
 				{ id: "deck-calc", title: "Calculus fluency", goalId: "g1" },
+				{ id: "g1", title: "Limits" },
 				{ id: "other", title: "Other" },
 			],
 			cards: [
@@ -302,8 +325,9 @@ describe("goal decks", () => {
 				makeCard({ id: "elsewhere", deckId: "other", concept: "Odds", front: "What is odds?", back: "A ratio.", now: NOW }),
 			],
 		};
-		expect(cardsInDeck(lib, "g1", [goal]).map((c) => c.id).sort()).toEqual(["linked", "own"]);
-		expect(cardsInDeck(lib, "other", [goal]).map((c) => c.id)).toEqual(["elsewhere"]);
+		expect(cardsInDeck(lib, "g1").map((c) => c.id)).toEqual(["own"]);
+		expect(cardsInDeck(lib, "deck-calc").map((c) => c.id)).toEqual(["linked"]);
+		expect(cardsInDeck(lib, "other").map((c) => c.id)).toEqual(["elsewhere"]);
 	});
 });
 
