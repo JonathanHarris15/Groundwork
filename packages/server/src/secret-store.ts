@@ -10,6 +10,8 @@ export type SecretRecord = Partial<Record<UserKeyProvider, string>>;
 export interface SecretStore {
 	read(uid: string): Promise<SecretRecord | null>;
 	write(uid: string, keys: SecretRecord): Promise<void>;
+	/** Read-modify-write so two provider keys saved at once cannot drop each other. */
+	update(uid: string, change: (current: SecretRecord) => SecretRecord): Promise<void>;
 }
 
 export function serializeSecrets(keys: SecretRecord): Record<string, string> {
@@ -51,10 +53,14 @@ export class FileSecretStore implements SecretStore {
 	}
 
 	async write(uid: string, keys: SecretRecord): Promise<void> {
+		await this.update(uid, () => keys);
+	}
+
+	async update(uid: string, change: (current: SecretRecord) => SecretRecord): Promise<void> {
 		await this.enqueue(async () => {
 			const db = await this.load();
-			const saved = serializeSecrets(keys);
-			if (Object.keys(saved).length) db.users[uid] = saved;
+			const next = serializeSecrets(change(parseSecrets(db.users[uid])));
+			if (Object.keys(next).length) db.users[uid] = next;
 			else delete db.users[uid];
 			await this.save(db);
 		});
@@ -103,10 +109,19 @@ export class FirestoreSecretStore implements SecretStore {
 	}
 
 	async write(uid: string, keys: SecretRecord): Promise<void> {
-		const saved = serializeSecrets(keys);
-		const ref = this.firestore().collection("secrets").doc(uid);
-		if (Object.keys(saved).length) await ref.set(saved);
-		else await ref.delete();
+		await this.update(uid, () => keys);
+	}
+
+	async update(uid: string, change: (current: SecretRecord) => SecretRecord): Promise<void> {
+		const db = this.firestore();
+		const ref = db.collection("secrets").doc(uid);
+		await db.runTransaction(async (tx) => {
+			const snap = await tx.get(ref);
+			const current = snap.exists ? parseSecrets(snap.data()) : {};
+			const saved = serializeSecrets(change(current));
+			if (Object.keys(saved).length) tx.set(ref, saved);
+			else tx.delete(ref);
+		});
 	}
 }
 

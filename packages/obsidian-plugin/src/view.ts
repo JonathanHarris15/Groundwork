@@ -70,6 +70,7 @@ import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
 import type { GroundworkAppearance } from "./appearance";
 import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
+import { filesUnderFolderRoots } from "./vault-scope";
 
 export const VIEW_TYPE = "groundwork-chat";
 
@@ -596,7 +597,6 @@ export class ChatView extends ItemView implements ToolUI {
 				this.toolChips.delete(e.id);
 				// A failed call is feedback for the tutor, which retries or explains in its reply.
 				if (e.isError) {
-					console.debug(`Groundwork: ${e.name} failed (the tutor was told): ${e.text}`);
 					chip.remove();
 					break;
 				}
@@ -874,9 +874,9 @@ export class ChatView extends ItemView implements ToolUI {
 		const el = this.uiMessagesEl.createDiv({ cls: "gw-empty" });
 		const hero = el.createDiv({ cls: "gw-hero" });
 		setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
-		hero.createEl("h2", { text: "What do you want to understand?" });
+		hero.createEl("h2", { text: "What are you studying?" });
 		hero.createEl("p", {
-			text: "Say what you want to learn, or drop in a lecture, homework, or notes. The tutor checks what you already hold and teaches that.",
+			text: "Name the exam or topic, or attach a syllabus or practice test. The tutor probes what you already know, then teaches from there.",
 		});
 
 		const provider = this.plugin.providerLabel();
@@ -1442,7 +1442,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const connected = !!loadAccountToken(this.app);
 		section.createDiv({
 			cls: "gw-lib-help",
-			text: connected ? "This device is connected. On the website, choose Open Obsidian again if you switch accounts." : "Open the website, sign in, and choose Open Obsidian.",
+			text: connected ? "This device is linked. Choose Open Obsidian on the website again if you switch accounts." : "Sign in on the Groundwork website, then choose Open Obsidian.",
 		});
 		const row = section.createDiv({ cls: "gw-lib-save-row" });
 		const open = row.createEl("button", { cls: "gw-lib-btn mod-cta", text: connected ? "Open website" : "Sign in", attr: { type: "button" } });
@@ -1506,7 +1506,7 @@ export class ChatView extends ItemView implements ToolUI {
 		if (!loadAccountToken(this.app)) {
 			section.createDiv({
 				cls: "gw-lib-help",
-				text: "Sign in on the Groundwork website, then choose Open Obsidian. The tutor waits until this device is connected.",
+				text: "Sign in on the Groundwork website, then choose Open Obsidian. The tutor waits until this device is linked.",
 			});
 			const signIn = section.createEl("button", { cls: "gw-lib-btn", text: "Sign in", attr: { type: "button" } });
 			signIn.addEventListener("click", () => window.open(accountSignInUrl()));
@@ -1514,7 +1514,7 @@ export class ChatView extends ItemView implements ToolUI {
 			const used = Math.round((this.plugin.tutorRoute.budgetUsed || 0) * 100);
 			section.createDiv({
 				cls: "gw-lib-help",
-				text: `This account uses Groundwork's smaller model. ${used}% of this month's budget is used. A Claude subscription is the Bring your own model plan.`,
+				text: `This account uses Groundwork's smaller model. ${used}% of this month's tutor budget is used. For your own Claude subscription, switch to Bring your own model on the website.`,
 			});
 		} else if (this.plugin.tutorRoute?.action === "key") {
 			section.createDiv({ cls: "gw-lib-help", text: `The tutor calls ${this.plugin.tutorRoute.label} with the key saved on your account. Change that on the website.` });
@@ -1527,7 +1527,7 @@ export class ChatView extends ItemView implements ToolUI {
 		} else {
 			section.createDiv({
 				cls: "gw-lib-help",
-				text: "This device is signed in, and the account has not answered yet. On the website, choose Open Obsidian.",
+				text: "Your account is signed in here, but Obsidian is not linked yet. On the website, choose Open Obsidian.",
 			});
 			const open = section.createEl("button", { cls: "gw-lib-btn", text: "Open website", attr: { type: "button" } });
 			open.addEventListener("click", () => window.open(accountOrigin()));
@@ -2561,8 +2561,7 @@ class VaultFileModal extends FuzzySuggestModal<TFile> {
 	getItems(): TFile[] {
 		const first = this.readFolders[0];
 		const inFirst = (f: TFile) => (first && (f.path === first || f.path.startsWith(`${first}/`)) ? 0 : 1);
-		return this.app.vault
-			.getFiles()
+		return filesUnderFolderRoots(this.app, this.readFolders)
 			.filter((f) => f.extension !== "md" && fileKind(f.path).kind !== "other" && pathInsideAny(f.path, this.readFolders))
 			.sort((a, b) => inFirst(a) - inFirst(b) || b.stat.mtime - a.stat.mtime);
 	}

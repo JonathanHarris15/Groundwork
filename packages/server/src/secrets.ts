@@ -7,6 +7,8 @@ import type { SecretStore } from "./secret-store";
  * and to every other Cloud Run instance. The response surface only reports
  * which providers are saved. Jev is not a slot here.
  */
+const MAX_SECRET_CHARS = 512;
+
 export class SecretDirectory {
 	private readonly byUser = new Map<string, Map<UserKeyProvider, string>>();
 
@@ -14,14 +16,19 @@ export class SecretDirectory {
 
 	async save(uid: string, provider: string, apiKey: string): Promise<UserKeyProvider> {
 		if (!isUserKeyProvider(provider)) {
-			throw new SecretError(provider === "jev" || provider === "typesafe" ? "Jev is configured on the server. It is not a key you paste." : `Unknown provider "${provider}".`);
+			throw new SecretError(provider === "jev" || provider === "typesafe" ? "Answer grading runs on Groundwork's servers. It is not an API key you paste." : `Unknown provider "${provider}".`);
 		}
 		const key = apiKey.trim();
 		if (!key) throw new SecretError("Paste the API key.");
+		if (key.length > MAX_SECRET_CHARS) throw new SecretError("That API key is too long.");
+		if (this.store) {
+			await this.store.update(uid, (current) => ({ ...current, [provider]: key }));
+			this.byUser.delete(uid);
+			return provider;
+		}
 		const slot = await this.slot(uid);
 		slot.set(provider, key);
 		this.byUser.set(uid, slot);
-		if (this.store) await this.store.write(uid, Object.fromEntries(slot));
 		return provider;
 	}
 

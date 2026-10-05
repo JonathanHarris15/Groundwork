@@ -191,7 +191,7 @@ function showSignIn() {
 		<div class="hero">
 			<div>
 				<h1>Sign in to study.</h1>
-				<p class="lede">Manage your plan and model keys here. After sign-in, use Open Obsidian on the account page to connect the plugin on this computer.</p>
+				<p class="lede">Sign in to manage your plan. Then choose <strong>Open Obsidian</strong> on the account page to link the plugin on this computer.</p>
 				${notice(false)}
 				<div class="signin">
 					${config.firebase ? `<button class="btn btn-ink" id="google" type="button">Sign in with Google</button>` : ""}
@@ -211,10 +211,10 @@ function showPlans() {
 	site.classList.remove("is-study");
 	dotfield.hidden = true;
 	const credit = account.needsPlan
-		? "Choose a plan to start."
+		? "Pick Free, Bring your own model, or Groundwork to start the tutor."
 		: account.ownModel
-			? "This plan uses your model. Groundwork does not meter it."
-			: "You can change plans below.";
+			? "This plan uses your Claude subscription or a saved provider key. Groundwork does not track that usage."
+			: "You can switch plans below.";
 	show(`
 		${notice(true)}
 		${account.needsPlan ? "" : `<p class="page-nav"><button class="link-btn" id="back-account" type="button">Back to account</button></p>`}
@@ -238,61 +238,48 @@ function showAccount() {
 	const name = account.displayName || user.displayName || "there";
 	const emptyRecord = studyRecordIsEmpty();
 	const greeting = emptyRecord ? `Welcome, ${escapeHtml(name)}.` : `Welcome back, ${escapeHtml(name)}.`;
-	const billingHint = account.hasBilling && config.billing
-		? ""
-		: account.hasBilling
-			? `<p class="hint">Billing portal is unavailable on this server.</p>`
-			: `<p class="hint">No active subscription. Use Change plan below to start checkout.</p>`;
 	show(`
 		<div class="account-shell">
 		${notice(true)}
 		<header class="page-head">
-			<h1>${greeting}</h1>
-			<p class="welcome-sub">${emptyRecord ? "Open Obsidian on this computer to start studying. Your record fills in after the first session." : "Goals, concepts, and plan usage from Obsidian show up here as you study."}</p>
+			<div class="page-head-row">
+				<div class="page-head-copy">
+					<h1>${greeting}</h1>
+					<p class="welcome-sub">${emptyRecord ? "Choose <strong>Open Obsidian</strong> below to link the plugin on this computer. Goals and concepts appear here after you study." : "Goals and concepts from Obsidian sync here as you study."}</p>
+				</div>
+				${emptyRecord ? "" : `<div class="page-head-actions"><button class="btn btn-ink" type="button" id="open-obsidian">Open Obsidian</button></div>`}
+			</div>
 		</header>
-		${emptyRecord ? firstRunChecklist() : `${board()}<p class="account-actions"><button class="btn btn-ink" type="button" id="open-obsidian">Open Obsidian</button></p>`}
+		${emptyRecord ? firstRunChecklist() : board()}
 		<div class="settings">
 		<section class="section">
-			<h2><span class="node red"></span>Profile</h2>
-			<p>This name is what Groundwork shows for you. Your Google account stays the sign-in.</p>
+			<h2>Profile</h2>
 			<form id="profile">
 				<div class="row">
 					<div class="field grow">
 						<label for="displayName">Display name</label>
 						<input class="input" type="text" id="displayName" name="displayName" maxlength="80" value="${escapeAttr(account.displayName || user.displayName || "")}" />
-						<span class="hint">Up to 80 characters.</span>
 					</div>
 					<button class="btn btn-ink" type="submit">Save</button>
 				</div>
 			</form>
 		</section>
-		<section class="section">
-			<h2><span class="node orange"></span>Billing</h2>
-			<p>${account.hasBilling ? "Update the card, see invoices, or cancel in Stripe." : "A paid plan opens Stripe checkout. You can change the card later from here."}</p>
-			<div class="actions stack">
-				<button class="btn ${account.hasBilling && config.billing ? "btn-line" : ""}" id="portal" type="button" ${account.hasBilling && config.billing ? "" : "disabled"} aria-disabled="${account.hasBilling && config.billing ? "false" : "true"}">Manage billing in Stripe</button>
-				${billingHint}
-			</div>
-		</section>
-		${account.ownModel ? keysSection() : hostedTutorSection()}
-		</div>
-		<div class="plan-foot">
-			<p>Your plan: <strong>${escapeHtml(planLabel())}</strong></p>
-			<button class="btn btn-line btn-sm" id="change-plan" type="button">Change plan</button>
+		${planSection()}
+		${account.ownModel ? keysSection() : ""}
 		</div>
 		</div>
 	`);
 	document.querySelector("#profile").addEventListener("submit", saveProfile);
 	attachOpenObsidian();
 	attachConceptListUI();
+	mountConceptGraph();
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#tutor-setup")?.addEventListener("submit", saveTutor);
-	document.querySelector("#portal").addEventListener("click", openPortal);
-	document.querySelector("#change-plan").addEventListener("click", () => {
+	document.querySelector("#portal")?.addEventListener("click", openPortal);
+	document.querySelector("#change-plan")?.addEventListener("click", () => {
 		location.hash = "#plans";
 	});
 	watchGroundwork();
-	mountConceptGraph();
 }
 
 function stopGroundworkWatch() {
@@ -398,9 +385,9 @@ function firstRunChecklist() {
 		<section class="start-checklist" aria-labelledby="start-title">
 			<h2 id="start-title" class="start-title">First session</h2>
 			<ol class="start-steps">
-				<li><span class="start-step-num" aria-hidden="true">1</span><div><strong>Open Obsidian</strong><p>Groundwork connects this browser sign-in to the plugin on this computer.</p></div></li>
-				<li><span class="start-step-num" aria-hidden="true">2</span><div><strong>Install the plugin if asked</strong><p>Obsidian may open the Groundwork listing in the community catalog.</p></div></li>
-				<li><span class="start-step-num" aria-hidden="true">3</span><div><strong>Study in the vault</strong><p>Choose folders, set a goal, and quiz. Concepts and goals sync back here automatically.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">1</span><div><strong>Open Obsidian</strong><p>Press the button below. Obsidian opens and links this sign-in to the plugin.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">2</span><div><strong>Install Groundwork if prompted</strong><p>Obsidian may open the community plugin page. Enable the plugin once.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">3</span><div><strong>Start studying</strong><p>In the Groundwork panel, name your exam or topic, or attach a syllabus. Quizzes sync concepts back here.</p></div></li>
 			</ol>
 			<div class="start-actions">
 				<button class="btn btn-ink btn-wide" type="button" id="open-obsidian">Open Obsidian</button>
@@ -417,38 +404,32 @@ function board() {
 	const concepts = learnedConcepts();
 	const goals = reachedGoals();
 	const waiting = concepts.some((concept) => concept.status === "unassessed");
-	const usage = account.ownModel ? `
-			<span class="big">Your model</span>
-			<span class="tile-label">Plan usage</span>
-			<p class="tile-note">This plan uses your model. Groundwork does not meter it.</p>` : usageTile();
 	return `
 		<section class="board" aria-labelledby="board-title">
 			<div class="blobs"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
 			<div class="spot"></div>
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
-			<div class="stats">
+			<div class="stats stats-pair">
 				<div class="tile">
-					${statBig(goals.length, "Goals reached")}
-					<span class="tile-label">Goals reached</span>
+					${statBig(goals.length, "Goals")}
+					<span class="tile-label">Goals</span>
 				</div>
 				<div class="tile" style="animation-delay: .12s">
-					${statBig(concepts.length, waiting ? "Concepts" : "Concepts learned")}
-					<span class="tile-label">${waiting ? "Concepts" : "Concepts learned"}</span>
+					${statBig(concepts.length, "Concepts")}
+					<span class="tile-label">Concepts</span>
 					<p class="tile-note">${escapeHtml(conceptNote(concepts))}</p>
 				</div>
-				<div class="tile" style="animation-delay: .24s">${usage}</div>
 			</div>
 			<div class="sky">
 				<div class="sky-head">
 					<span class="sky-title">${waiting ? "Concepts" : "Concepts you have learned"}</span>
 					${graphLegend(conceptGraph())}
-					${statusLegend()}
 				</div>
 				${conceptGraphHost(conceptGraph())}
 				${conceptListPanel(concepts)}
 			</div>
 			<div class="goals">
-				<h3 class="goals-title">Goals reached</h3>
+				<h3 class="goals-title">Goals</h3>
 				${goalList(goals)}
 			</div>
 		</section>`;
@@ -465,12 +446,11 @@ function graphLegend(graph) {
 	return `<ul class="sky-legend">${items.map((item) => `<li><i style="background:${safeColor(item.color)}"></i>${escapeHtml(item.domain)}</li>`).join("")}</ul>`;
 }
 
-function statusLegend() {
-	return `<ul class="sky-legend sky-legend-status" aria-label="Mastery legend">
-		<li><i class="status-solid"></i>Solid</li>
-		<li><i class="status-learning"></i>Learning</li>
-		<li><i class="status-open"></i>Not quizzed</li>
-	</ul>`;
+function conceptNote(concepts) {
+	const checked = concepts.filter((concept) => concept.status !== "unassessed").length;
+	if (!concepts.length || checked === concepts.length) return "Counted after a quiz.";
+	if (!checked) return "Waiting on a quiz.";
+	return checked === 1 ? "1 quizzed so far." : `${checked} quizzed so far.`;
 }
 
 function conceptGraphHost(graph) {
@@ -480,11 +460,11 @@ function conceptGraphHost(graph) {
 	const weak = concepts.filter((c) => c.status === "unassessed" || c.status === "shaky" || c.status === "rusty");
 	const weakLine = weak.length
 		? `<p class="graph-focus">${weak.length === 1 ? "Needs attention:" : "Needs attention:"} ${weak.slice(0, 4).map((c) => escapeHtml(c.title)).join(", ")}${weak.length > 4 ? ` (+${weak.length - 4} more)` : ""}</p>`
-		: `<p class="graph-focus graph-focus-ok">Every concept here has been quizzed. Dashed rings mark spots worth revisiting if they fade.</p>`;
+		: `<p class="graph-focus graph-focus-ok">Every concept here has been quizzed.</p>`;
 	return `${weakLine}
 		<div class="graph-shell" id="concept-graph-shell">
 			<div class="graph-toolbar">
-				<p class="graph-hint">Arrows run prerequisite → concept. Color is mastery; dot size is how connected it is. Drag to rearrange, scroll to zoom, click a node to jump to it in the list.</p>
+				<p class="graph-hint">Prerequisite arrows point forward. Dot color is mastery. Drag to rearrange, scroll to zoom, click a node to find it in the list below.</p>
 				<button class="btn btn-line btn-sm graph-expand" type="button" id="graph-expand" aria-label="Expand graph to fullscreen">Expand</button>
 			</div>
 			<div class="graph-host" id="concept-graph" role="region" aria-label="Interactive concept graph"></div>
@@ -570,13 +550,6 @@ function mountConceptGraph() {
 			},
 		},
 	);
-}
-
-function conceptNote(concepts) {
-	const checked = concepts.filter((concept) => concept.status !== "unassessed").length;
-	if (!concepts.length || checked === concepts.length) return "Each one checked with a quiz before it counted.";
-	if (!checked) return "Your tutor has these. A quiz has not counted one yet.";
-	return checked === 1 ? "1 was checked with a quiz." : `${checked} were checked with a quiz.`;
 }
 
 function conceptPriority(status) {
@@ -747,18 +720,32 @@ function usageTile() {
 				</svg>
 				<div>
 					<div class="usage-amt">${pct}%</div>
-					<div class="tile-label">of this month's budget used</div>
+					<div class="tile-label usage-label">Tutor usage this month</div>
 				</div>
 			</div>
-			<p class="tile-note" style="margin-top: 10px">Resets at the end of the month.</p>`;
+			<p class="tile-note usage-reset">Resets at the end of the month.</p>`;
 }
 
-function hostedTutorSection() {
+function planSection() {
+	const usage = account.ownModel
+		? `<p class="plan-note">You bring the tutor model. Usage is not metered here.</p>`
+		: `<div class="plan-usage">${usageTile()}<p class="plan-note">Written quiz answers are graded on the server and do not count toward tutor usage.</p></div>`;
+	const action = planPrimaryAction();
 	return `
-		<section class="section">
-			<h2><span class="node green"></span>Tutor</h2>
-			<p>On Free and Groundwork plans, the tutor runs on Groundwork's model. One shared key on our side; you do not paste one. The monthly budget caps tutor usage. Jev grades written answers on our key and does not count against that budget.</p>
+		<section class="section plan-section">
+			<h2>Plan</h2>
+			<p class="plan-current"><strong>${escapeHtml(planLabel())}</strong></p>
+			${usage}
+			<div class="plan-actions">${action}</div>
 		</section>`;
+}
+
+function planPrimaryAction() {
+	if (account.hasBilling && config.billing) {
+		return `<button class="btn btn-ink" type="button" id="portal">Manage billing</button>`;
+	}
+	const label = account.priceUsdPerMonth === 0 ? "Upgrade" : "Change plan";
+	return `<button class="btn btn-ink" type="button" id="change-plan">${label}</button>`;
 }
 
 function keysSection() {
@@ -767,8 +754,8 @@ function keysSection() {
 	const via = account.tutorVia === "key" && savedNames.length ? "key" : "claude";
 	return `
 		<section class="section">
-			<h2><span class="node blue"></span>Your model</h2>
-			<p>This plan uses a model you already pay for. Groundwork does not meter it.</p>
+			<h2>Your model</h2>
+			<p>Claude on this computer or a provider key you save below.</p>
 			<h3>Claude subscription</h3>
 			<p>The simplest path. The login stays on this computer. Groundwork never stores it.</p>
 			<ol class="setup-list">${steps.map((step) => `<li><strong>${escapeHtml(step.title)}</strong><p>${escapeHtml(step.detail)}</p></li>`).join("")}</ol>
@@ -782,7 +769,7 @@ function keysSection() {
 				<div class="actions"><button class="btn btn-ink" type="submit">Save tutor</button></div>
 			</form>
 			<h3>Or paste a provider key</h3>
-			<p>The key stays on this account. The tutor calls that provider through Groundwork, so it is not written into the vault. Jev stays on our server and is not a key you paste.</p>
+			<p>The key stays on this account. The tutor calls that provider through Groundwork, not from files in your vault. Written quiz answers are graded on the Groundwork website; that is not a key you paste.</p>
 			<ul class="keys" aria-label="Saved keys">${keyList()}</ul>
 			<form id="key" autocomplete="off">
 				<div class="row">
@@ -1057,9 +1044,9 @@ async function readJson(res) {
 	try {
 		body = text ? JSON.parse(text) : {};
 	} catch {
-		throw new Error("The account server did not answer.");
+		throw new Error("The account server did not answer. Check that Groundwork is running, then reload this page.");
 	}
-	if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);
+	if (!res.ok) throw new Error(body.error || `That request failed (${res.status}). Try again, or sign out and sign in.`);
 	return body;
 }
 

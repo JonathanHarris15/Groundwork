@@ -120,9 +120,9 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=13"');
 		expect(site?.body).toContain('src="/force-graph.js?v=2"');
-		expect(site?.body).toContain('href="/styles.css?v=4"');
+		expect(site?.body).toContain('src="/app.js?v=16"');
+		expect(site?.body).toContain('href="/styles.css?v=5"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
@@ -132,12 +132,10 @@ describe("account server", () => {
 		expect(script).toContain("https://community.obsidian.md/plugins/groundwork");
 		expect(script).toContain("Open Obsidian");
 		expect(script).toContain("/v1/groundwork");
-		const board = script.slice(script.indexOf("function board"), script.indexOf("function usageTile"));
+		const board = script.slice(script.indexOf("function board"), script.indexOf("function statBig"));
 		expect(board).toContain("goals.length");
 		expect(board).toContain("concepts.length");
 		expect(board).toContain("conceptListPanel(concepts)");
-		expect(board).toContain("conceptGraphHost(conceptGraph())");
-		expect(board).toContain("mountConceptGraph");
 		expect(script).toContain("concept-filter");
 		expect(board).toContain("They show up here as you study.");
 		expect(board).toContain("Goals you finish in Obsidian show up here.");
@@ -151,11 +149,13 @@ describe("account server", () => {
 		const signIn = script.slice(script.indexOf("function showSignIn"), script.indexOf("function showPlans"));
 		expect(signIn).toContain("Sign in with Google");
 		expect(signIn).toContain("Continue on this device");
-		expect(script).toContain("graph-scroll");
+		expect(script).toContain("conceptGraphHost");
+		expect(script).toContain("graph-shell");
 		expect(script).toContain("is-empty");
 		expect(signIn).not.toContain("planGrid");
 		expect(script).toContain("Claude subscription on this computer");
-		expect(script).toContain("One shared key on our side");
+		expect(script).toContain("Written quiz answers are graded");
+		expect(script).not.toMatch(/\bJev\b/);
 		expect(script).not.toMatch(/\$3|\$8 of/);
 		const tile = script.slice(script.indexOf("function usageTile"), script.indexOf("function keysSection"));
 		expect(tile).toContain("Resets at the end of the month.");

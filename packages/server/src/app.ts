@@ -50,7 +50,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { received: true } };
 		}
 		if (hasClientKey(body)) {
-			return { status: 400, json: { error: "Model keys are not accepted on this request. Jev is configured on the server." } };
+			return { status: 400, json: { error: "Do not send API keys on this request. Paste keys under Your model on the account page." } };
 		}
 
 		const identity = await deps.auth.uid(authorization);
@@ -69,7 +69,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 		if (method === "POST" && path === "/v1/account/profile") {
 			const displayName = (body as { displayName?: unknown } | null)?.displayName;
-			if (typeof displayName !== "string") return { status: 400, json: { error: "Send a display name." } };
+			if (typeof displayName !== "string" || !displayName.trim()) return { status: 400, json: { error: "Send a display name." } };
 			return { status: 200, json: presentAccount(await deps.accounts.rename(uid, displayName)) };
 		}
 		if (method === "POST" && path === "/v1/account/plan") {
@@ -146,7 +146,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			}
 		}
 		if (method === "POST" && path === "/v1/grade") {
-			if (!deps.jev) return { status: 503, json: { error: "TYPESAFE_API_KEY is not set on the Groundwork server." } };
+			if (!deps.jev) return { status: 503, json: { error: "Written-answer grading is not set up on this server yet." } };
 			const items = (body as { items?: unknown } | null)?.items;
 			if (!Array.isArray(items) || !items.length) return { status: 400, json: { error: "Send the written answers to grade." } };
 			if (items.length > 40) return { status: 400, json: { error: "Grade at most 40 answers at once." } };

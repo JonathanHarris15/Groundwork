@@ -1,7 +1,7 @@
 import { type Firestore } from "firebase-admin/firestore";
 import { openFirestore } from "./firestore";
 import { parseKnowledgeSnapshot, parseTutorMemoryFiles } from "@groundwork/core";
-import type { TutorMemoryRecord, TutorMemoryStore } from "./memory";
+import { MemoryConflict, type TutorMemoryRecord, type TutorMemoryStore, type TutorMemoryWriteOptions } from "./memory";
 
 const MAX_PART = 700_000;
 
@@ -54,9 +54,17 @@ export class FirestoreTutorMemoryStore implements TutorMemoryStore {
 		return { memory: { updatedAt, files }, knowledge };
 	}
 
-	async write(uid: string, record: TutorMemoryRecord): Promise<void> {
+	async write(uid: string, record: TutorMemoryRecord, options?: TutorMemoryWriteOptions): Promise<void> {
 		const db = this.firestore();
 		const ref = db.collection("tutorMemory").doc(uid);
+		const snap = await ref.get();
+		if (options?.ifUpdatedAt !== undefined) {
+			const currentAt = snap.exists ? String(snap.data()?.updatedAt ?? "") : "";
+			if (currentAt !== options.ifUpdatedAt) {
+				const saved = await this.read(uid);
+				throw new MemoryConflict(saved?.memory ?? { updatedAt: currentAt, files: {} });
+			}
+		}
 		const payload = JSON.stringify(record);
 		const parts = Buffer.byteLength(payload) <= 900_000 ? [] : splitUtf8(payload, MAX_PART);
 		if (!parts.length) {
@@ -107,10 +115,11 @@ export class BestEffortStore implements TutorMemoryStore {
 		}
 	}
 
-	async write(uid: string, record: TutorMemoryRecord): Promise<void> {
+	async write(uid: string, record: TutorMemoryRecord, options?: TutorMemoryWriteOptions): Promise<void> {
 		try {
-			await this.store.write(uid, record);
+			await this.store.write(uid, record, options);
 		} catch (err) {
+			if (err instanceof MemoryConflict) throw err;
 			console.error("Groundwork could not save tutor memory.", err);
 		}
 	}

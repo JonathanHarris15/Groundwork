@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { knowledgeSnapshot, mergeTutorMemoryFiles, parseKnowledgeSnapshot, presentGroundwork, refreshFirebaseSession, tutorMemoryFiles } from "../src/account";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AccountClient, knowledgeSnapshot, mergeTutorMemoryFiles, parseKnowledgeSnapshot, presentGroundwork, refreshFirebaseSession, tutorMemoryFiles } from "../src/account";
 import { MemoryVaultIO } from "../src/io";
 import { KnowledgeStore } from "../src/store";
 import { layoutGroundworkGraph } from "../src/groundwork-graph";
@@ -102,6 +102,21 @@ describe("groundwork graph", () => {
 	});
 });
 
+describe("AccountClient", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("rejects unreadable JSON from the website", async () => {
+		vi.stubGlobal(
+			"fetch",
+			async () => new Response("not json", { status: 500 }),
+		);
+		const client = new AccountClient("https://groundwork.test", "token");
+		await expect(client.getHostedMemory()).rejects.toThrow(/unreadable response/);
+	});
+});
+
 describe("website sign-in", () => {
 	it("exchanges a refresh token for an id token", async () => {
 		const fetchImpl = async () => new Response(JSON.stringify({ id_token: "id-token", refresh_token: "next" }), { status: 200 });
@@ -111,6 +126,11 @@ describe("website sign-in", () => {
 	it("reports an expired website session", async () => {
 		const fetchImpl = async () => new Response(JSON.stringify({ error: { message: "TOKEN_EXPIRED" } }), { status: 400 });
 		await expect(refreshFirebaseSession("old", "web-key", fetchImpl as typeof fetch)).rejects.toThrow(/TOKEN_EXPIRED/);
+	});
+
+	it("rejects a non-JSON sign-in response", async () => {
+		const fetchImpl = async () => new Response("not json", { status: 502 });
+		await expect(refreshFirebaseSession("old", "web-key", fetchImpl as typeof fetch)).rejects.toThrow(/unreadable response/);
 	});
 });
 

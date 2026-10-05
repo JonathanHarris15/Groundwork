@@ -38,6 +38,10 @@ for (const file of ["main.js", "styles.css", "manifest.json"]) {
 	copyFileSync(path.join(pluginDist, file), path.join(pluginVault, file));
 }
 writeFileSync(
+	path.join(vault, ".obsidian/appearance.json"),
+	JSON.stringify({ theme: "obsidian", baseFontSize: 16, accentColor: "" }, null, 2),
+);
+writeFileSync(
 	path.join(vault, ".obsidian/plugins/groundwork/data.json"),
 	JSON.stringify(
 		{
@@ -209,13 +213,11 @@ await openConceptMap();
 await shot("graph-main-tab-dark-1280");
 await shotCanvas("graph-canvas-main-dark-1280");
 
-await page.setViewportSize({ width: 280, height: 720 });
-await sleep(800);
-await shot("graph-sidebar-280-dark");
-try {
-	await shotCanvas("graph-canvas-sidebar-280-dark");
-} catch (e) {
-	console.warn("Sidebar canvas crop skipped:", e instanceof Error ? e.message : e);
+for (const width of [280, 360]) {
+	await page.setViewportSize({ width, height: 720 });
+	await sleep(800);
+	await shot(`graph-sidebar-${width}-dark`);
+	await shotCanvas(`graph-canvas-sidebar-${width}-dark`);
 }
 
 try {
@@ -245,16 +247,24 @@ try {
 	console.warn("Zoom/hover/drag shots skipped:", e instanceof Error ? e.message : e);
 }
 
-try {
-	await runPalette("Switch to light mode");
-	await openConceptMap();
-	await shotCanvas("graph-canvas-main-light-1280");
-	await page.setViewportSize({ width: 280, height: 720 });
+await cdp.send("Runtime.evaluate", {
+	expression: `(() => {
+		const app = window.app;
+		if (!app) throw new Error('no app');
+		if (typeof app.changeTheme === 'function') app.changeTheme('moonstone');
+		else if (typeof app.setTheme === 'function') app.setTheme('moonstone');
+		else document.body.classList.remove('theme-dark');
+		document.body.classList.add('theme-light');
+	})()`,
+});
+await sleep(1200);
+await openConceptMap();
+await shot("graph-main-tab-light-1280");
+await shotCanvas("graph-canvas-main-light-1280");
+for (const width of [280, 360]) {
+	await page.setViewportSize({ width, height: 720 });
 	await sleep(700);
-	await shotCanvas("graph-canvas-sidebar-280-light");
-} catch (e) {
-	console.warn("Light mode graph shots skipped:", e instanceof Error ? e.message : e);
-	await shot("graph-light-mode-skipped");
+	await shotCanvas(`graph-canvas-sidebar-${width}-light`);
 }
 
 await browser.close();

@@ -1,4 +1,5 @@
 import { createSimulationState, seedPositions, simulationTick } from "./simulation";
+import { readGraphTheme, withAlpha, type GraphPaintTheme } from "./theme";
 import type { ForceGraphData, ForceGraphLink, ForceGraphNode } from "./types";
 
 export interface ForceGraphMountOptions {
@@ -73,6 +74,20 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 	let fpsLast = performance.now();
 	let fpsValue = 60;
 	let neighborCache: Map<string, Set<string>> | null = null;
+	let theme: GraphPaintTheme = readGraphTheme(host);
+	const applyTipTheme = () => {
+		tip.style.color = theme.tipText;
+		tip.style.background = theme.tipBg;
+		tip.style.borderColor = theme.tipBorder;
+	};
+	const refreshTheme = () => {
+		theme = readGraphTheme(host);
+		applyTipTheme();
+	};
+	applyTipTheme();
+	host.addEventListener("groundwork-graph-theme", refreshTheme);
+	const themeObserver = new MutationObserver(refreshTheme);
+	themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
 	const neighborsOf = () => {
 		if (!neighborCache) {
@@ -245,7 +260,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			ctx.beginPath();
 			ctx.moveTo(start.x, start.y);
 			ctx.lineTo(end.x, end.y);
-			ctx.strokeStyle = link.bridge ? "rgba(127,132,142,0.4)" : "rgba(127,132,142,0.72)";
+			ctx.strokeStyle = link.bridge ? theme.linkBridge : theme.link;
 			ctx.lineWidth = (link.bridge ? 1.1 : 1.7) / camera.scale;
 			ctx.globalAlpha = dim ? 0.1 : 1;
 			if (link.bridge) ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
@@ -258,7 +273,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			ctx.lineTo(end.x - ux * head - uy * head * 0.6, end.y - uy * head + ux * head * 0.6);
 			ctx.lineTo(end.x - ux * head + uy * head * 0.6, end.y - uy * head - ux * head * 0.6);
 			ctx.closePath();
-			ctx.fillStyle = link.bridge ? "rgba(127,132,142,0.4)" : "rgba(127,132,142,0.72)";
+			ctx.fillStyle = link.bridge ? theme.linkBridge : theme.link;
 			ctx.globalAlpha = dim ? 0.1 : 1;
 			ctx.fill();
 		}
@@ -271,13 +286,13 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			if (node.isNext) {
 				ctx.beginPath();
 				ctx.arc(node.x, node.y, r + 7, 0, Math.PI * 2);
-				ctx.strokeStyle = "rgba(69, 169, 240, 0.85)";
+				ctx.strokeStyle = withAlpha(theme.accent, 0.85);
 				ctx.lineWidth = 2 / camera.scale;
 				ctx.stroke();
 			} else if (node.needsAttention) {
 				ctx.beginPath();
 				ctx.arc(node.x, node.y, r + 5, 0, Math.PI * 2);
-				ctx.strokeStyle = "rgba(247, 169, 62, 0.75)";
+				ctx.strokeStyle = withAlpha(theme.warn, 0.75);
 				ctx.lineWidth = 1.5 / camera.scale;
 				ctx.setLineDash([4 / camera.scale, 3 / camera.scale]);
 				ctx.stroke();
@@ -300,7 +315,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 				ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
 				ctx.fillStyle = node.color;
 				ctx.fill();
-				ctx.strokeStyle = "rgba(255,255,255,0.85)";
+				ctx.strokeStyle = withAlpha(theme.nodeRing, 0.85);
 				ctx.lineWidth = 1.1 / camera.scale;
 				ctx.stroke();
 			}
@@ -329,7 +344,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			if (!layout) continue;
 			const { text } = measureLabel(ctx, node.title);
 			ctx.globalAlpha = layout.alpha * (fade && node.id !== hovered && !neighbors?.has(node.id) ? 0.35 : 1);
-			ctx.fillStyle = "rgba(230,232,236,0.96)";
+			ctx.fillStyle = theme.label;
 			ctx.fillText(text, layout.x, layout.y);
 		}
 		ctx.restore();
@@ -355,7 +370,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		const settling = sim.alpha > 0.012 || dragged != null;
 		if (nodes.length && settling) {
 			simulationTick(nodes, links, sim, { width, height, dragId: dragged });
-		} else if (!layoutFitted && options.fit !== false) {
+		} else if (!layoutFitted && options.fit !== false && sim.alpha < 0.025) {
 			fit();
 		}
 
@@ -383,7 +398,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 
 	const ro = new ResizeObserver(() => {
 		resize();
-		if (options.fit !== false) fit();
+		if (options.fit !== false) window.requestAnimationFrame(() => fit());
 	});
 	ro.observe(host);
 
@@ -504,6 +519,8 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		dispose: () => {
 			alive = false;
 			window.cancelAnimationFrame(raf);
+			themeObserver.disconnect();
+			host.removeEventListener("groundwork-graph-theme", refreshTheme);
 			ro.disconnect();
 			canvas.removeEventListener("wheel", onWheel);
 			canvas.removeEventListener("pointerdown", onPointerDown);

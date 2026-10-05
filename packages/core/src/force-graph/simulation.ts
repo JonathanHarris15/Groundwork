@@ -11,7 +11,7 @@ export function seedPositions(nodes: ForceGraphNode[], width: number, height: nu
 	const clusters = [...new Set(nodes.map((n) => n.cluster))].sort();
 	const cx = width / 2;
 	const cy = height / 2;
-	const orbit = Math.min(width, height) * (0.28 + Math.min(0.12, clusters.length * 0.02));
+	const orbit = Math.min(width, height) * (0.22 + Math.min(0.1, clusters.length * 0.02)) * (width < 420 ? 0.82 : 1);
 	const centers = new Map<string, { x: number; y: number }>();
 	clusters.forEach((cluster, i) => {
 		const turn = ((hash(cluster) % 100) / 100) * 0.5;
@@ -21,7 +21,7 @@ export function seedPositions(nodes: ForceGraphNode[], width: number, height: nu
 	for (const node of nodes) {
 		const center = centers.get(node.cluster) ?? { x: cx, y: cy };
 		const members = nodes.filter((n) => n.cluster === node.cluster).length;
-		const spread = 28 + Math.sqrt(members) * 14;
+		const spread = (28 + Math.sqrt(members) * 14) * (width < 420 ? 1.15 : 1);
 		const angle = ((hash(node.id) % 1000) / 1000) * Math.PI * 2;
 		const dist = spread * (0.35 + ((hash(node.title) % 100) / 100) * 0.65);
 		node.x = center.x + Math.cos(angle) * dist;
@@ -79,7 +79,9 @@ export function simulationTick(
 	const centroids = clusterCentroids(nodes);
 	const cx = width / 2;
 	const cy = height / 2;
-	const charge = 720 + Math.sqrt(n) * 40;
+	const narrow = width < 420;
+	const sizeScale = Math.min(1.15, Math.max(0.72, Math.min(width, height) / 520));
+	const charge = (720 + Math.sqrt(n) * 40) * sizeScale * (narrow ? 1.45 : 1);
 	const stride = n > 160 ? 3 : n > 90 ? 2 : 1;
 
 	for (const node of nodes) {
@@ -120,7 +122,7 @@ export function simulationTick(
 		dx /= dist;
 		dy /= dist;
 		const bridge = link.bridge || a.cluster !== b.cluster;
-		const want = bridge ? 110 : 42 + (a.radius + b.radius);
+		const want = (bridge ? 110 : 42 + (a.radius + b.radius)) * (narrow ? 1.22 : 1);
 		const strength = (bridge ? 0.018 : 0.065) * state.alpha;
 		const pull = (dist - want) * strength;
 		if (!a.fixed) {
@@ -175,7 +177,7 @@ export function simulationTick(
 		node.y += node.vy * 0.24;
 	}
 
-	separate(nodes, 20 + state.alpha * 8);
+	separate(nodes, (narrow ? 26 : 20) + state.alpha * (narrow ? 10 : 8));
 	state.tick += 1;
 	state.alpha *= 0.988;
 	return state.alpha >= alphaMin;

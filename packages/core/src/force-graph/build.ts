@@ -17,7 +17,7 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 			node.next
 				? "Start here in chat"
 				: node.visual === "ghost"
-					? "Still to learn — tap to start"
+					? "Not started — tap to begin"
 					: node.visual === "shaky" || node.visual === "rusty"
 						? "Weak spot — tap to quiz"
 						: node.visual === "goal"
@@ -49,7 +49,7 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 	const legend: ForceGraphLegendItem[] = [
 		{ key: "known", label: "Known", color: MAP_VISUAL_COLORS.known },
 		{ key: "learning", label: "Learning", color: MAP_VISUAL_COLORS.learning },
-		{ key: "ghost", label: "Ghost", color: MAP_VISUAL_COLORS.ghost },
+		{ key: "ghost", label: "Not started", color: MAP_VISUAL_COLORS.ghost },
 		{ key: "goal", label: "Goal", color: MAP_VISUAL_COLORS.goal },
 	];
 	return { nodes, links, legend };

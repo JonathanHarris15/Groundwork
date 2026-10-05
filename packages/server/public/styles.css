@@ -798,6 +798,16 @@ label { font-size: 15px; font-weight: 500; }
 .saved { color: #16181d; font-weight: 500; }
 
 .page-head { margin-bottom: 8px; }
+.page-head-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px 24px;
+}
+.page-head-copy { flex: 1 1 240px; min-width: 0; }
+.page-head-actions { flex: 0 0 auto; }
+.page-head-actions .btn { white-space: nowrap; }
 .welcome-sub { font-size: 19px; color: #4a4f57; margin: 12px 0 0; max-width: 36em; }
 .page-nav { margin: 0 0 8px; }
 
@@ -939,6 +949,7 @@ label { font-size: 15px; font-weight: 500; }
 
 @container (min-width: 760px) {
 	.stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+	.stats.stats-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .tile {
@@ -1081,9 +1092,6 @@ body.graph-fullscreen-open {
 	pointer-events: none;
 	z-index: 3;
 }
-.sky-legend-status i.status-solid { background: #3cc56f; }
-.sky-legend-status i.status-learning { background: #45a9f0; }
-.sky-legend-status i.status-open { background: transparent; border: 1.5px solid #6b6f76; }
 .concept-list li.is-highlight { background: rgba(255, 255, 255, 0.06); border-radius: 10px; }
 .graph-edge { stroke-width: 1.6; stroke-linecap: round; }
 .graph-edge.is-bridge { stroke-width: 1.4; }
@@ -1165,6 +1173,18 @@ body.graph-fullscreen-open {
 }
 
 .usage-amt { font-size: 40px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+.usage-label { max-width: 11em; line-height: 1.25; }
+
+.plan-section .plan-current { margin: 8px 0 0; font-size: 18px; color: #4a4f57; }
+.plan-section .plan-current strong { color: #16181d; font-weight: 500; }
+.plan-section .plan-note { margin: 12px 0 0; font-size: 15px; color: #6b7280; max-width: 36em; line-height: 1.45; }
+.plan-section .plan-actions { margin-top: 20px; }
+.plan-usage { margin-top: 16px; }
+.plan-usage .usage { gap: 16px; }
+.plan-usage .gauge { width: 72px; height: 72px; flex-shrink: 0; }
+.plan-usage .usage-amt { font-size: 32px; color: #16181d; }
+.plan-usage .tile-label { color: #4a4f57; font-size: 15px; }
+.plan-usage .usage-reset { margin: 10px 0 0; font-size: 14px; color: #6b7280; }
 
 .blobs {
 	position: absolute;

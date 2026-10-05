@@ -13,13 +13,18 @@ export interface MapPaneOptions {
 	onStudy?: (title: string, action: "quiz" | "learn") => void;
 }
 
+function obsidianColor(doc: Document, cssVar: string, fallback: string): string {
+	const raw = doc.defaultView?.getComputedStyle(doc.body).getPropertyValue(cssVar).trim();
+	return raw || fallback;
+}
+
 export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null, options: MapPaneOptions): void {
 	parent.replaceChildren();
 	const row = el(parent, "div", "gw-map-row");
 	const wrap = el(row, "div", "gw-mapwrap");
 	if (!model || !model.nodes.length) {
 		const empty = el(wrap, "div", "gw-map-empty");
-		empty.append("Pin a goal to see the path toward it. Ghost concepts are what still has to be learned before that goal.");
+		empty.append("Pin a goal to see which concepts lead to it. Dashed nodes are still ahead on the path.");
 		return;
 	}
 	const mapSlot = el(wrap, "div", "gw-force-map");
@@ -36,20 +41,25 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	toggle.setAttribute("aria-pressed", options.showGhosts ? "true" : "false");
 	const sw = el(toggle, "span", `gw-switch-ui${options.showGhosts ? " is-on" : ""}`);
 	sw.setAttribute("aria-hidden", "true");
-	toggle.append("Show ghost concepts");
+	toggle.append("Show concepts still ahead");
 	toggle.addEventListener("click", () => options.onGhosts(!options.showGhosts));
+	const hint = el(bar, "p", "gw-map-click-hint");
+	hint.textContent = "Click a node to study or quiz it in chat.";
+	const doc = parent.ownerDocument;
 	const key = el(wrap, "div", "gw-map-key");
-	for (const [color, label] of [
-		["#3CC56F", "Known"],
-		["#45A9F0", "Learning"],
-		["#F7A93E", "Shaky"],
+	for (const [cssVar, fallback, label] of [
+		["--color-green", "#3CC56F", "Solid"],
+		["--color-blue", "#45A9F0", "Learning"],
+		["--color-orange", "#F7A93E", "Needs work"],
 	] as const) {
 		const item = el(key, "span");
 		const dot = el(item, "i", "gw-dot");
-		dot.style.background = color;
+		dot.style.background = obsidianColor(doc, cssVar, fallback);
 		item.append(label);
 	}
-	key.append(keyLine("gw-key-ghost", "Ghost, not learned yet"), keyLine("gw-key-built", "Path you have built"), keyLine("gw-key-ahead", "Path still to build"));
+	const ahead = el(key, "span");
+	el(ahead, "i", "gw-key-ghost");
+	ahead.append("Not started");
 
 	const side = el(row, "aside", "gw-side");
 	const head = el(side, "div", "gw-side-head");
@@ -82,7 +92,7 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 		button.append(`Start: ${next.title}`, arrowIcon(parent.ownerDocument));
 		button.addEventListener("click", () => options.onStart?.(next.title));
 	}
-	el(body, "p", "gw-path-why", "Ghost concepts are what Groundwork thinks you still need before the goal. They turn solid once a quiz shows you know them.");
+	el(body, "p", "gw-path-why", "Solid nodes mean a quiz showed you know them. Start with the highlighted next step.");
 }
 
 function stepMark(doc: Document, visual: string, step: number | undefined, next: boolean): HTMLElement {
@@ -102,14 +112,6 @@ function segBtn(label: string, on: boolean, click: () => void): HTMLButtonElemen
 	button.textContent = label;
 	button.addEventListener("click", click);
 	return button;
-}
-
-function keyLine(cls: string, label: string): HTMLElement {
-	const item = document.createElement("span");
-	const mark = document.createElement("i");
-	mark.className = cls;
-	item.append(mark, label);
-	return item;
 }
 
 function flagIcon(doc: Document): SVGElement {

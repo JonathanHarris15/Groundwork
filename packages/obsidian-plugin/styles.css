@@ -2038,7 +2038,15 @@
 .gw-next-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; fill: var(--gw-next); }
 .gw-num { font-size: 12px; fill: var(--gw-muted); font-weight: 500; }
 .gw-num.is-next { fill: var(--gw-next); }
-.gw-map-toolbar { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gw-map-toolbar { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 32px); }
+.gw-map-click-hint {
+	margin: 0;
+	flex: 1 1 140px;
+	min-width: 0;
+	font-size: 12px;
+	line-height: 1.35;
+	color: var(--text-muted);
+}
 .gw-seg, .gw-toggle {
 	display: inline-flex; align-items: center; gap: 8px;
 	background: var(--gw-pill); border: 1px solid var(--gw-line-strong); border-radius: 999px; color: var(--gw-ink);

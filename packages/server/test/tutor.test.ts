@@ -58,6 +58,8 @@ describe("tutor API", () => {
 		});
 		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
 		await route("POST", "/v1/account/plan", { plan: "free" }, server);
+		const routeInfo = await route("GET", "/v1/tutor", null, server);
+		expect(routeInfo.json).toMatchObject({ action: "hosted" });
 		const result = await route("POST", "/v1/tutor/complete", { ...turn, model: "anthropic/claude-opus-4" }, server);
 		expect(result.status).toBe(200);
 		expect(calls).toHaveLength(1);
@@ -163,4 +165,5 @@ describe("tutor API", () => {
 		}
 		expect(USER_KEY_PROVIDERS).toContain("openrouter");
 	});
+
 });
