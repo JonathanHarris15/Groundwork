@@ -23,6 +23,8 @@ export interface Flashcard {
 	concept: string;
 	front: string;
 	back: string;
+	/** Set when the card fails atomic Q/A rules — hidden from review until fixed. */
+	qualityIssue?: string;
 	/** Account concept path, when the card was made from a teaching note. */
 	source?: string;
 	createdAt: string;
@@ -65,6 +67,22 @@ export function flashcardsDir(writeFolder: string): string {
 
 export function emptyFlashcardLibrary(now = new Date()): FlashcardLibrary {
 	return { updatedAt: now.toISOString(), addFromTeachingNotes: true, decks: [], cards: [] };
+}
+
+const FLASHCARD_BACK_MAX_WORDS = 8;
+
+/** One concept, one short answer. Returns a learner-facing reason when invalid. */
+export function flashcardQualityIssue(front: string, back: string): string | null {
+	const f = front.trim();
+	const b = back.trim();
+	if (!f || !b) return "A card needs a question and a short answer.";
+	const words = b.split(/\s+/).filter(Boolean);
+	if (words.length > FLASHCARD_BACK_MAX_WORDS) return "Answer must be a few words, not a paragraph or list.";
+	if (b.includes("\n")) return "Answer must be one line — a few words max.";
+	if (/[,;]/.test(b) && words.length >= 3) return "One atomic answer — no comma-separated lists (e.g. not “min, max, saddle”).";
+	if (/^(what are|list|name all|types of)/i.test(f) && words.length > 2) return "Ask one specific question that has a single short answer.";
+	if (/\b(and|or)\b/i.test(b) && words.length > 3) return "One idea per card — split multi-part answers.";
+	return null;
 }
 
 export function flashcardContentKey(concept: string, front: string, back: string): string {
@@ -164,11 +182,29 @@ export function ratingOutcome(rating: CardRating): { outcome: Outcome; difficult
 	return { outcome: "correct", difficulty: 4 };
 }
 
+export function auditFlashcardLibrary(lib: FlashcardLibrary): boolean {
+	let changed = false;
+	for (const card of lib.cards) {
+		const issue = flashcardQualityIssue(card.front, card.back);
+		if (issue) {
+			if (card.qualityIssue !== issue) {
+				card.qualityIssue = issue;
+				changed = true;
+			}
+		} else if (card.qualityIssue) {
+			delete card.qualityIssue;
+			changed = true;
+		}
+	}
+	return changed;
+}
+
 export function makeCard(input: { id?: string; deckId: string; concept: string; front: string; back: string; source?: string; now?: Date }): Flashcard {
 	const now = (input.now ?? new Date()).toISOString();
 	const concept = input.concept.trim();
 	const front = input.front.trim();
 	const back = input.back.trim();
+	const qualityIssue = flashcardQualityIssue(front, back) ?? undefined;
 	return {
 		id: input.id || newId("fc_"),
 		deckId: input.deckId,
@@ -185,6 +221,7 @@ export function makeCard(input: { id?: string; deckId: string; concept: string; 
 		reps: 0,
 		lapses: 0,
 		contentKey: flashcardContentKey(concept, front, back),
+		qualityIssue,
 	};
 }
 
@@ -242,6 +279,10 @@ export function parseFlashcardLibrary(value: unknown): FlashcardLibrary {
 			lastReviewed: typeof c.lastReviewed === "string" ? c.lastReviewed : undefined,
 			fileName: typeof c.fileName === "string" ? c.fileName : undefined,
 			contentKey: typeof c.contentKey === "string" ? c.contentKey : undefined,
+			qualityIssue:
+				typeof c.qualityIssue === "string" && c.qualityIssue.trim()
+					? c.qualityIssue.trim()
+					: flashcardQualityIssue(c.front.trim(), c.back.trim()) ?? undefined,
 		});
 	}
 	return {
@@ -258,7 +299,9 @@ export function serializeFlashcardLibrary(lib: FlashcardLibrary): string {
 
 export async function loadFlashcardLibrary(io: VaultIO): Promise<FlashcardLibrary> {
 	if (!(await io.exists(PATHS.flashcards))) return emptyFlashcardLibrary();
-	return parseFlashcardLibrary(JSON.parse(await io.read(PATHS.flashcards)));
+	const lib = parseFlashcardLibrary(JSON.parse(await io.read(PATHS.flashcards)));
+	auditFlashcardLibrary(lib);
+	return lib;
 }
 
 export function ensureDeck(lib: FlashcardLibrary, id: string, title: string, goalId?: string): FlashDeck {
@@ -637,6 +680,8 @@ export async function createFlashcard(
 	const front = input.front.trim();
 	const back = input.back.trim();
 	if (!concept || !front || !back) throw new Error("A card needs a concept, a front, and a back.");
+	const issue = flashcardQualityIssue(front, back);
+	if (issue) throw new Error(issue);
 	const lib = await loadFlashcardLibrary(store.io);
 	const deckId = input.deckId?.trim() || "library";
 	const deckTitle = input.deckTitle?.trim() || (deckId === "library" ? "Library" : deckId);
@@ -662,24 +707,13 @@ export async function rateFlashcard(store: KnowledgeStore, id: string, rating: C
 	const card = applyRating(lib.cards[index], rating, now);
 	lib.cards[index] = card;
 	await persist(store, lib, now);
-	const grade = ratingOutcome(rating);
-	try {
-		await store.recordEvidence(card.concept, {
-			outcome: grade.outcome,
-			difficulty: grade.difficulty,
-			kind: "review",
-			question: card.front,
-			response: rating,
-		});
-	} catch {
-		// A card can name a concept that is not in the map yet. The schedule still sticks.
-	}
+	// Scheduling only — flashcard taps must not move vault mastery like a quiz session.
 	return card;
 }
 
 export function buildStudyQueue(cards: Flashcard[], now: Date, opts?: { limitNew?: number; rank?: (concept: string) => number }): Flashcard[] {
 	const dueAt = now.getTime();
-	const due = cards.filter((c) => c.state === "new" || Date.parse(c.due) <= dueAt);
+	const due = cards.filter((c) => !c.qualityIssue && (c.state === "new" || Date.parse(c.due) <= dueAt));
 	const sort = (list: Flashcard[]) =>
 		[...list].sort((a, b) => {
 			const ra = opts?.rank?.(a.concept) ?? 0;
@@ -734,6 +768,8 @@ export async function saveFlashcard(
 	const front = input.front.trim();
 	const back = input.back.trim();
 	if (!concept || !front || !back) throw new Error("A card needs a concept, a front, and a back.");
+	const issue = flashcardQualityIssue(front, back);
+	if (issue) throw new Error(issue);
 	const lib = await loadFlashcardLibrary(store.io);
 	const wanted = input.deck?.trim() ?? "";
 	const goals = await store.goals();
@@ -746,6 +782,7 @@ export async function saveFlashcard(
 		card.back = back;
 		card.updatedAt = now.toISOString();
 		card.contentKey = flashcardContentKey(concept, front, back);
+		delete card.qualityIssue;
 	} else {
 		card = makeCard({ deckId, concept, front, back, now });
 		lib.cards.push(card);

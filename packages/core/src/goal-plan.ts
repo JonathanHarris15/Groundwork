@@ -184,7 +184,46 @@ export function sessionEstimate(openCount: number): number {
 	return Math.max(1, Math.ceil(openCount / 2));
 }
 
-export type MapVisual = "known" | "learning" | "shaky" | "rusty" | "ghost" | "goal" | "beyond" | "dim";
+export type MapVisual = "known" | "learning" | "shaky" | "rusty" | "ghost" | "goal" | "target" | "beyond" | "dim";
+
+/** Nodes that lie on a prerequisite chain up to the working goal. */
+export function conceptPathToGoal(nodes: MapSourceNode[], goalNodeId?: string): Set<string> {
+	const inGoal = nodes.filter((node) => node.inGoal);
+	if (!goalNodeId) return new Set(inGoal.map((node) => node.id));
+	const byId = new Map(inGoal.map((node) => [node.id, node]));
+	const path = new Set<string>([goalNodeId]);
+	const stack = [goalNodeId];
+	while (stack.length) {
+		const id = stack.pop()!;
+		const node = byId.get(id);
+		if (!node) continue;
+		for (const prior of node.prerequisites) {
+			if (byId.has(prior) && !path.has(prior)) {
+				path.add(prior);
+				stack.push(prior);
+			}
+		}
+	}
+	return path;
+}
+
+/** Open targets with nothing in-goal depending on them — red leaves on the pyramid top. */
+export function unbuiltGoalLeafIds(nodes: MapSourceNode[], builtIds: Iterable<string>): Set<string> {
+	const built = new Set(builtIds);
+	const inGoal = nodes.filter((node) => node.inGoal);
+	const inGoalIds = new Set(inGoal.map((node) => node.id));
+	const hasDependent = new Set<string>();
+	for (const node of inGoal) {
+		for (const prior of node.prerequisites) {
+			if (inGoalIds.has(prior)) hasDependent.add(prior);
+		}
+	}
+	const leaves = new Set<string>();
+	for (const node of inGoal) {
+		if (node.role === "target" && !built.has(node.id) && !hasDependent.has(node.id)) leaves.add(node.id);
+	}
+	return leaves;
+}
 
 export interface MapSourceNode {
 	id: string;
@@ -272,6 +311,8 @@ export function buildConceptMap(input: {
 		.sort((a, b) => (weights[b.id] ?? 0) - (weights[a.id] ?? 0) || a.title.localeCompare(b.title))[0]?.id;
 
 	const chosen = input.nodes.slice();
+	const pathIds = conceptPathToGoal(chosen, goalNodeId);
+	const unbuiltLeaves = unbuiltGoalLeafIds(chosen, built);
 	const visible = new Map(chosen.map((node) => [node.id, node]));
 	const layerRanks = conceptLayerRanks(
 		chosen.map((node) => ({ id: node.id, title: node.title, prerequisites: node.prerequisites })),
@@ -302,14 +343,15 @@ export function buildConceptMap(input: {
 		const base = visualFor(node.status, built.has(node.id));
 		let visual: MapVisual = base;
 		if (node.id === goalNodeId) visual = "goal";
-		else if (!node.inGoal) visual = "dim";
+		else if (unbuiltLeaves.has(node.id)) visual = "target";
+		else if (!node.inGoal || !pathIds.has(node.id)) visual = "dim";
 		const subtitle = visual === "goal" ? `Goal · ${input.goalTitle}${input.dueLabel ? `, ${input.dueLabel}` : ""}` : undefined;
 		nodes.push({
 			id: node.id,
 			title: node.title,
 			x: pos.x,
 			y: pos.y,
-			r: visual === "goal" ? 22 : visual === "dim" ? 9 : visual === "ghost" ? 12 : 11,
+			r: visual === "goal" || visual === "target" ? 20 : visual === "dim" ? 9 : visual === "ghost" ? 12 : 11,
 			visual,
 			step: ghostStep.get(node.id),
 			next: node.id === input.nextId && visual !== "goal",
@@ -325,9 +367,18 @@ export function buildConceptMap(input: {
 			if (!byId.has(prior) || prior === node.id) continue;
 			const from = byId.get(prior)!;
 			const to = byId.get(node.id)!;
+			const onPath = pathIds.has(prior) && pathIds.has(node.id);
 			let kind: ConceptMapEdge["kind"] = "ahead";
 			if (from.visual === "dim" || to.visual === "dim") kind = "dim";
-			else if (from.visual === "known" && (to.visual === "known" || to.visual === "shaky" || to.visual === "learning" || to.visual === "rusty")) kind = "built";
+			else if (!onPath) kind = "faint";
+			else if (
+				to.visual === "goal" ||
+				to.visual === "target" ||
+				to.visual === "ghost" ||
+				(from.visual === "known" &&
+					(to.visual === "known" || to.visual === "shaky" || to.visual === "learning" || to.visual === "rusty"))
+			)
+				kind = "built";
 			edges.push({ from: prior, to: node.id, kind });
 		}
 	}

@@ -171,8 +171,8 @@ When the learner asks for a practice test, mock exam, or "test me on everything"
 5. Past tests appear in \`get_learner_overview\` (\`practiceTests\`). Use their weakest concepts to plan reviews, and compare scores over time.
 
 # Flashcards
-When you install a concept, call \`save_flashcard\` once. \`front\` is one question that checks the idea. \`back\` is a short answer in the learner's terms. One idea per card. Do not paste the whole note.
-The card is stored on the account. It is not written into the vault unless the learner asks. They review it in the Flashcards view. Again, Hard, Good, and Easy update that concept's mastery.
+When you install a concept, call \`save_flashcard\` once. One concept per card. \`front\` is one specific question with a single right answer (not “what are the types of…”). \`back\` is a few words max — never a list or paragraph (bad: “min, max, saddle”; good: “saddle” for “What type of critical point has det < 0?”). Do not paste the whole note.
+The card is stored on the account. It is not written into the vault unless the learner asks. They review it in the Flashcards view. Ratings only reschedule the card; they do not move mastery like a quiz.
 \`list_due_flashcards\` shows what is due. A miss that needs re-teaching still gets a quiz. The card schedule handles the rest.`;
 
 /** Tells the tutor the folders this vault actually allows, so it does not claim it can open or save files elsewhere. */

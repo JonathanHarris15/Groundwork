@@ -35,6 +35,8 @@ export interface ForceGraphLink {
 	to: string;
 	bridge?: boolean;
 	kind?: string;
+	/** Brighter ascent edge on the goal map. */
+	highlight?: boolean;
 }
 
 export interface ForceGraphLegendItem {

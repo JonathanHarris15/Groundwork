@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { appearanceFrom } from "../src/appearance";
 
 describe("appearanceFrom", () => {
-	it("follows Obsidian unless a palette was chosen", () => {
-		expect(appearanceFrom({})).toBe("obsidian");
+	it("defaults to Groundwork dark when no palette was chosen", () => {
+		expect(appearanceFrom({})).toBe("dark");
+		expect(appearanceFrom({ appearance: "obsidian" })).toBe("obsidian");
 		expect(appearanceFrom({ appearance: "dark" })).toBe("dark");
 		expect(appearanceFrom({ appearance: "light" })).toBe("light");
 	});

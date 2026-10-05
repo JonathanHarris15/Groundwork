@@ -18,9 +18,8 @@ import {
 } from "./settings";
 import { closeSettings, pluginManager } from "./obsidian-host";
 import { pluginFixturePaths } from "./plugin-paths";
+import { showComposerProviderChip, syncStatusShowsGlyph, type SyncUiState } from "./ui-invariants";
 import { ChatView, VIEW_TYPE } from "./view";
-
-type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
 
 export default class GroundworkPlugin extends Plugin {
 	declare settings: GroundworkSettings;
@@ -345,11 +344,12 @@ export default class GroundworkPlugin extends Plugin {
 	/** Composer provider chip: hide for hosted tutor (no setup action). */
 	showProviderChip(): boolean {
 		const provider = this.providerLabel();
-		if (!provider.label.trim()) return false;
-		if (provider.setup) return true;
-		const route = this.tutorRoute;
-		if (route && !route.ownModel && (route.action === "hosted" || route.via === "hosted")) return false;
-		return true;
+		return showComposerProviderChip({
+			label: provider.label,
+			hasSetup: !!provider.setup,
+			route: this.tutorRoute,
+			runtime: this.runtime().runtime,
+		});
 	}
 
 	async useDemo(): Promise<void> {
@@ -698,7 +698,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.statusEl.setAttr("title", hint);
 		this.statusEl.setAttr("aria-label", hint);
 		this.statusEl.setAttr("data-state", state);
-		this.statusEl.toggleClass("has-sync-glyph", state === "syncing" || state === "error" || state === "offline");
+		this.statusEl.toggleClass("has-sync-glyph", syncStatusShowsGlyph(state));
 		this.statusEl.toggleClass("is-actionable", state === "offline" || state === "error" || state === "ok");
 	}
 

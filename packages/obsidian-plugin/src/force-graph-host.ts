@@ -60,7 +60,7 @@ export function mountConceptMapGraph(
 		onNodeClick: (id) => {
 			const node = byId.get(id);
 			if (!node) return;
-			if ((node.next || node.visual === "ghost") && options.onStart) options.onStart(node.title);
+			if ((node.next || node.visual === "ghost" || node.visual === "target") && options.onStart) options.onStart(node.title);
 			else if ((node.visual === "shaky" || node.visual === "rusty") && options.onStudy) options.onStudy(node.title, "quiz");
 			else if (options.onStudy) options.onStudy(node.title, "learn");
 			options.onNodeClick?.(id, node.title);

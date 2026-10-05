@@ -851,13 +851,13 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "save_flashcard",
 		description:
-			"Save one flashcard on the learner's account. It is not copied into the vault unless they ask to write the cards down. One idea per card: front is the question, back is a short answer in their terms. Pass deck as a goal title when the card belongs to that goal.",
+			"Save one flashcard on the learner's account. It is not copied into the vault unless they ask to write the cards down. One concept, one atomic question, back is a few words (no comma lists). Pass deck as a goal title when the card belongs to that goal.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				concept: str("Concept this card checks. The title of a concept you have already saved."),
-				front: str("The question on the front of the card. One checkable idea. Markdown and LaTeX allowed."),
-				back: str("The answer on the back, in the learner's terms. Short."),
+				front: str("One specific question with a single short answer (not “list all types of…”). Markdown and LaTeX allowed."),
+				back: str("A few words max — one atomic answer, no comma-separated lists."),
 				deck: str("Goal title this card belongs to. Omit for the Library deck."),
 			},
 			required: ["concept", "front", "back"],

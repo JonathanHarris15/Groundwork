@@ -16,6 +16,7 @@ export const MAP_VISUAL_COLORS: Record<string, string> = {
 	rusty: "#9d8cf0",
 	ghost: "#8b8e94",
 	goal: "#F0565B",
+	target: "#F0565B",
 	beyond: "#5f6268",
 	dim: "#5f6268",
 };

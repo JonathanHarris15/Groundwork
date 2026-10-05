@@ -4,6 +4,7 @@ import { KnowledgeStore } from "../src/store";
 import { toolByName } from "../src/tools";
 import {
 	buildConceptMap,
+	unbuiltGoalLeafIds,
 	buildSchedule,
 	defaultDue,
 	parseIsoDate,
@@ -167,6 +168,21 @@ describe("concept map", () => {
 		expect(map.nodes.find((node) => node.id === "counting")?.visual).toBe("dim");
 		expect(map.steps.at(-1)?.id).toBe("bayes");
 		expect(map.edges.every((edge) => map.nodes.some((node) => node.id === edge.from) && map.nodes.some((node) => node.id === edge.to))).toBe(true);
+	});
+
+	it("marks unbuilt goal leaves red and brightens ascent edges", () => {
+		const map = buildConceptMap({
+			goalTitle: "Exam 2",
+			nodes,
+			weights: { bayes: 40 },
+			builtIds: ["spaces", "conditional"],
+			nextId: "total",
+		});
+		expect(map.nodes.find((node) => node.id === "bayes")?.visual).toBe("goal");
+		const leaves = unbuiltGoalLeafIds(nodes, new Set(["spaces", "conditional"]));
+		expect(leaves.has("bayes")).toBe(true);
+		expect(map.nodes.find((node) => node.id === "prior")?.visual).not.toBe("target");
+		expect(map.edges.some((edge) => edge.from === "prior" && edge.to === "bayes" && edge.kind === "built")).toBe(true);
 	});
 
 	it("keeps off-goal vault concepts on the map, dimmed", () => {

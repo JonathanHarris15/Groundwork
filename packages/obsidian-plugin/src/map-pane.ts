@@ -1,13 +1,36 @@
-import type { ConceptMapModel } from "@groundwork/core";
+import type { ConceptMapModel, ForceGraphData } from "@groundwork/core";
 import { appendSvgFragment } from "./svg-fragment";
-import { mountConceptMapGraph } from "./force-graph-host";
+import { mountConceptMapGraph, mountInteractiveGraph } from "./force-graph-host";
 
 const NS = "http://www.w3.org/2000/svg";
 export interface MapPaneOptions {
 	goalTitle?: string;
+	emptyMessage?: string;
 	onStart?: (title: string) => void;
 	onStudy?: (title: string, action: "quiz" | "learn") => void;
 	onOpenGoals?: () => void;
+}
+
+/** Concepts the learner has already begun — no working goal pinned. */
+export function renderStartedVaultMap(parent: HTMLElement, data: ForceGraphData, options: MapPaneOptions): void {
+	parent.replaceChildren();
+	if (!data.nodes.length) {
+		renderMapPane(parent, null, {
+			...options,
+			emptyMessage: "Start studying a concept in Learn, then it will show up here.",
+		});
+		return;
+	}
+	const row = el(parent, "div", "gw-map-row gw-map-row-started");
+	const wrap = el(row, "div", "gw-mapwrap");
+	const mapHost = el(wrap, "div", "gw-force-map");
+	const slot = mapHost.createDiv({ cls: "gw-force-slot" });
+	mountInteractiveGraph(slot, data, {
+		onNodeClick: (_id, title) => options.onStudy?.(title, "learn"),
+	});
+	const bar = el(wrap, "div", "gw-map-toolbar");
+	const hint = el(bar, "p", "gw-map-click-hint");
+	hint.textContent = "Only concepts you have started appear here. Pin a goal in Learn to see the full path to that goal.";
 }
 
 function obsidianColor(doc: Document, cssVar: string, fallback: string): string {
@@ -21,7 +44,7 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	const wrap = el(row, "div", "gw-mapwrap");
 	if (!model || !model.nodes.length) {
 		const empty = el(wrap, "div", "gw-map-empty");
-		empty.append("Pin a goal to see your whole vault stacked from groundwork at the bottom up to the goal.");
+		empty.append(options.emptyMessage ?? "Pin a goal to see your path from groundwork up to the goal.");
 		const cta = el(empty, "button", "gw-next-btn");
 		cta.type = "button";
 		cta.textContent = "Open goals";
