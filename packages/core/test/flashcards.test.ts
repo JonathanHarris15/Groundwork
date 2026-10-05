@@ -4,6 +4,7 @@ import {
 	applyRating,
 	auditFlashcardLibrary,
 	buildStudyQueue,
+	cardsInDeck,
 	createFlashcard,
 	emptyFlashcardLibrary,
 	exportFlashcards,
@@ -23,7 +24,7 @@ import {
 } from "../src/flashcards";
 import { MemoryVaultIO } from "../src/io";
 import { FLASHCARD_CREDIT } from "../src/model";
-import { KnowledgeStore } from "../src/store";
+import { KnowledgeStore, type Goal } from "../src/store";
 import { toolByName } from "../src/tools";
 
 const NOW = new Date("2026-10-02T12:00:00.000Z");
@@ -283,6 +284,26 @@ describe("flashcard tools", () => {
 		expect(due.text).toContain("Why 9%?");
 		const empty = await toolByName("save_flashcard")!.run({ concept: " ", front: "", back: "x" }, { store });
 		expect(empty.isError).toBe(true);
+	});
+});
+
+describe("goal decks", () => {
+	it("puts cards from a deck linked to the goal in that goal's deck", () => {
+		const goal = { id: "g1", title: "Calculus fluency", status: "active", targets: [], built: [], nodes: [] } as unknown as Goal;
+		const lib = {
+			...emptyFlashcardLibrary(),
+			decks: [
+				{ id: "deck-calc", title: "Calculus fluency", goalId: "g1" },
+				{ id: "other", title: "Other" },
+			],
+			cards: [
+				makeCard({ id: "linked", deckId: "deck-calc", concept: "Derivative", front: "d/dx x^2?", back: "2x", now: NOW }),
+				makeCard({ id: "own", deckId: "g1", concept: "Limit", front: "What is a limit?", back: "A value approached.", now: NOW }),
+				makeCard({ id: "elsewhere", deckId: "other", concept: "Odds", front: "What is odds?", back: "A ratio.", now: NOW }),
+			],
+		};
+		expect(cardsInDeck(lib, "g1", [goal]).map((c) => c.id).sort()).toEqual(["linked", "own"]);
+		expect(cardsInDeck(lib, "other", [goal]).map((c) => c.id)).toEqual(["elsewhere"]);
 	});
 });
 

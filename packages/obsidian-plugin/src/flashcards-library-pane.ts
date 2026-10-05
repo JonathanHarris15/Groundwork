@@ -45,7 +45,7 @@ export function libraryDecks(lib: FlashcardLibrary, goals: Goal[]): DeckEntry[] 
 		}));
 	const goalIds = new Set(goals.map((goal) => goal.id));
 	const others = lib.decks
-		.filter((deck) => !goalIds.has(deck.id) && lib.cards.some((card) => card.deckId === deck.id))
+		.filter((deck) => !goalIds.has(deck.id) && !(deck.goalId && goalIds.has(deck.goalId)) && lib.cards.some((card) => card.deckId === deck.id))
 		.sort((a, b) => a.title.localeCompare(b.title))
 		.map((deck) => ({ id: deck.id, title: deck.title }));
 	return [...goalDecks, ...others];

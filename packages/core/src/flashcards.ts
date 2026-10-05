@@ -784,7 +784,8 @@ export function cardsInDeck(lib: FlashcardLibrary, deckId: string, goals: Goal[]
 	if (!deckId) return lib.cards;
 	const goal = goals.find((g) => g.id === deckId);
 	const ids = goal ? new Set(goalConceptIds(goal)) : null;
-	return lib.cards.filter((c) => c.deckId === deckId || (ids ? ids.has(slugify(c.concept)) : false));
+	const decks = new Set([deckId, ...(goal ? lib.decks.filter((d) => d.goalId === goal.id).map((d) => d.id) : [])]);
+	return lib.cards.filter((c) => decks.has(c.deckId) || (ids ? ids.has(slugify(c.concept)) : false));
 }
 
 export function dueByConcept(cards: Flashcard[], now: Date): Array<{ concept: string; count: number }> {
