@@ -5,6 +5,7 @@ import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
+import { appearanceFrom } from "./appearance";
 import { accountOrigin, accountOriginIsLocal, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
 
@@ -77,7 +78,9 @@ export default class GroundworkPlugin extends Plugin {
 			await this.refreshTutorRoute();
 			await this.store.ensureLayout();
 			const reveal = this.takeOpenRequest();
-			if (reveal || !this.app.workspace.getLeavesOfType(VIEW_TYPE).length) await this.activateView(reveal);
+			const open = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+			const inMain = open.some((leaf) => leaf.getRoot() === this.app.workspace.rootSplit);
+			if (reveal || !inMain) await this.activateView(reveal);
 		});
 
 		// Obsidian keeps running the loaded bundle after `update_groundwork.py` replaces it on disk.
@@ -320,12 +323,13 @@ export default class GroundworkPlugin extends Plugin {
 
 	async activateView(reveal = true): Promise<ChatView | null> {
 		const { workspace } = this.app;
-		let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(VIEW_TYPE)[0] ?? null;
+		const open = workspace.getLeavesOfType(VIEW_TYPE);
+		let leaf: WorkspaceLeaf | null = open.find((item) => item.getRoot() === workspace.rootSplit) ?? null;
 		if (!leaf) {
-			leaf = workspace.getRightLeaf(false);
-			if (!leaf) return null;
+			leaf = workspace.getLeaf(true);
 			await leaf.setViewState({ type: VIEW_TYPE, active: true });
 		}
+		for (const side of open) if (side !== leaf) side.detach();
 		if (reveal) await workspace.revealLeaf(leaf);
 		return leaf.view instanceof ChatView ? leaf.view : null;
 	}
@@ -343,9 +347,8 @@ export default class GroundworkPlugin extends Plugin {
 		this.scheduleMemorySave();
 	}
 
-	applySiteTheme(): void {
-		const on = this.settings.siteTheme;
-		for (const view of this.views()) view.applySiteTheme(on);
+	applyAppearance(): void {
+		for (const view of this.views()) view.applyAppearance(this.settings.appearance);
 	}
 
 	/** ID token for the website, or the stored token when talking to a local server. */
@@ -513,6 +516,8 @@ export default class GroundworkPlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		const data = ((await this.loadData()) ?? {}) as Partial<GroundworkSettings>;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+		this.settings.appearance = appearanceFrom(data);
+		delete (this.settings as { siteTheme?: unknown }).siteTheme;
 		this.settings.readFolders = cleanFolderList("readFolders" in data ? data.readFolders : DEFAULT_SETTINGS.readFolders);
 		this.settings.writeFolders = cleanFolderList("writeFolders" in data ? data.writeFolders : DEFAULT_SETTINGS.writeFolders);
 	}
@@ -520,6 +525,6 @@ export default class GroundworkPlugin extends Plugin {
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 		this.resetAgent();
-		this.applySiteTheme();
+		this.applyAppearance();
 	}
 }

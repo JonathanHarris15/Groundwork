@@ -68,6 +68,7 @@ import { FlashcardsPane } from "./flashcards-pane";
 import { enhanceGraphs } from "./graph-pane";
 import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
+import type { GroundworkAppearance } from "./appearance";
 import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
 
 export const VIEW_TYPE = "groundwork-chat";
@@ -214,16 +215,16 @@ export class ChatView extends ItemView implements ToolUI {
 		return "graduation-cap";
 	}
 
-	/** The panel always uses the website palette. Drop any older parchment override. */
-	applySiteTheme(_on: boolean): void {
-		this.contentEl.removeClass("gw-site-theme");
+	applyAppearance(mode: GroundworkAppearance): void {
+		this.contentEl.removeClass("gw-theme-obsidian", "gw-theme-dark", "gw-theme-light", "gw-site-theme");
+		this.contentEl.addClass("gw-root", `gw-theme-${mode}`);
 	}
 
 	async onOpen(): Promise<void> {
 		const root = this.contentEl;
 		root.empty();
 		root.addClass("gw-root");
-		this.applySiteTheme(this.plugin.settings.siteTheme);
+		this.applyAppearance(this.plugin.settings.appearance);
 
 		const header = root.createDiv({ cls: "gw-header" });
 		const brand = header.createDiv({ cls: "gw-brand" });
@@ -1613,8 +1614,27 @@ export class ChatView extends ItemView implements ToolUI {
 		section.createEl("h3", { text: "Appearance" });
 		section.createDiv({
 			cls: "gw-lib-help",
-			text: "This panel uses the Groundwork website: dark paper, Jost, and the red, amber, blue, and green status dots. The rest of Obsidian keeps its own theme.",
+			text: "Obsidian follows this vault's theme, buttons included. Dark and Light are Groundwork's own palettes.",
 		});
+		const row = section.createDiv({ cls: "gw-appearance" });
+		const choices: [GroundworkAppearance, string][] = [
+			["obsidian", "Obsidian"],
+			["dark", "Dark"],
+			["light", "Light"],
+		];
+		for (const [id, label] of choices) {
+			const button = row.createEl("button", {
+				cls: `gw-lib-btn gw-appearance-btn${this.plugin.settings.appearance === id ? " is-on" : ""}`,
+				text: label,
+				attr: { type: "button" },
+			});
+			button.addEventListener("click", () => {
+				if (this.plugin.settings.appearance === id) return;
+				this.plugin.settings.appearance = id;
+				this.applyAppearance(id);
+				void this.plugin.saveSettings().then(() => this.renderSettings());
+			});
+		}
 	}
 
 	private viewTab(parent: HTMLElement, id: "learn" | "map" | "goals", label: string, path: string): HTMLElement {
