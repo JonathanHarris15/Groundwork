@@ -136,6 +136,7 @@ describe("account server", () => {
 		expect(script).toContain("/v1/auth/sign-out");
 		const board = script.slice(script.indexOf("function board"), script.indexOf("function statBig"));
 		expect(board).toContain("goals.length");
+		expect(board).toContain('<span class="tile-label">Goals reached</span>');
 		expect(board).toContain("concepts.length");
 		expect(board).toContain("conceptListPanel(concepts)");
 		expect(script).toContain("concept-filter");

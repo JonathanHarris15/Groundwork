@@ -434,8 +434,8 @@ function board() {
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
 			<div class="stats stats-pair">
 				<div class="tile">
-					${statBig(goals.length, "Goals")}
-					<span class="tile-label">Goals</span>
+					${statBig(goals.length, "Goals reached")}
+					<span class="tile-label">Goals reached</span>
 				</div>
 				<div class="tile" style="animation-delay: .12s">
 					${statBig(concepts.length, "Concepts")}
