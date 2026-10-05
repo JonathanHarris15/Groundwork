@@ -219,6 +219,8 @@ npm run build            # plugin → packages/obsidian-plugin/dist, CLI → pac
 npm run dev:plugin       # rebuild the plugin on change; then `groundwork install-plugin` and reload Obsidian
 ```
 
+Local website + plugin against the same server: run `npm run server`, sign in on `http://127.0.0.1:8787`, then rebuild the plugin with `GROUNDWORK_API_URL=http://127.0.0.1:8787 npm run build` and reload it in Obsidian (or reinstall into the vault). Without that env var at build time, the plugin talks to production.
+
 Sync details: evidence logs use git's `union` merge driver (`.gitattributes`), so both machines' answers survive a merge. Prose conflicts prefer the local side. After any merge that brings in changes, every concept's stats and every goal map are rebuilt from the merged evidence.
 
 ## Not built yet

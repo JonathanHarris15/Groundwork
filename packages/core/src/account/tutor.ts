@@ -172,7 +172,13 @@ export function tutorRuntime(input: {
 	if (!input.signedIn) return { runtime: "setup", detail: SIGN_IN_DETAIL, website: true };
 	if (input.selected === "demo") return { runtime: "demo", detail: null, website: false };
 	const account = input.account;
-	if (!account) return { runtime: "setup", detail: "On the website, choose Open Obsidian so this device can use your account.", website: true };
+	if (!account) {
+		return {
+			runtime: "setup",
+			detail: "Could not load tutor settings from your account. Check your connection, or open the Groundwork website and choose Open Obsidian again.",
+			website: true,
+		};
+	}
 	if (account.action === "hosted" || account.action === "key") return { runtime: "proxy", detail: null, website: false };
 	if (account.action === "claude") {
 		return input.claudeReady

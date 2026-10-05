@@ -73,16 +73,15 @@ async function boot() {
 
 async function refresh() {
 	const token = await user.getIdToken();
-	const [nextAccount, secrets, nextGroundwork, nextTutor] = await Promise.all([
-		get("/v1/account", token),
-		get("/v1/secrets", token),
-		get("/v1/groundwork", token).catch(() => emptyGroundwork()),
-		get("/v1/tutor", token),
+	account = await get("/v1/account", token);
+	const [secrets, nextGroundwork, nextTutor] = await Promise.all([
+		get("/v1/secrets", token).catch(() => null),
+		get("/v1/groundwork", token).catch(() => null),
+		get("/v1/tutor", token).catch(() => null),
 	]);
-	account = nextAccount;
-	providers = secrets.providers;
-	groundwork = nextGroundwork;
-	tutor = nextTutor;
+	if (secrets?.providers) providers = secrets.providers;
+	if (nextGroundwork) groundwork = nextGroundwork;
+	if (nextTutor) tutor = nextTutor;
 }
 
 function emptyGroundwork() {

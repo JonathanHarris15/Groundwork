@@ -1,12 +1,12 @@
 import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
-import { accountOrigin, accountOriginIsLocal, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
+import { accountOrigin, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
 
 type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
@@ -205,16 +205,37 @@ export default class GroundworkPlugin extends Plugin {
 		}
 		try {
 			const res = await fetch(`${accountOrigin()}/v1/tutor`, { headers: { authorization: `Bearer ${token}` } });
-			const body = (await res.json()) as TutorStatus;
+			const body = (await res.json()) as TutorStatus & { error?: unknown };
 			if (!res.ok) {
 				if (res.status === 401 || res.status === 403) this.disconnectAccount();
-				else this.tutorRoute = null;
+				else {
+					const message =
+						typeof body.error === "string"
+							? body.error
+							: `Groundwork could not load tutor settings (${res.status}). Try again in a moment.`;
+					this.tutorRoute = this.unavailableTutorRoute(message);
+				}
 				return;
 			}
 			this.tutorRoute = body;
 		} catch {
 			// Keep the last route. A missed refresh should not drop a lesson in progress.
 		}
+	}
+
+	private unavailableTutorRoute(message: string): TutorStatus {
+		return {
+			action: "blocked",
+			via: "hosted",
+			model: null,
+			provider: null,
+			label: "Tutor paused",
+			error: message,
+			setup: null,
+			budgetUsed: 0,
+			ownModel: false,
+			claude: CLAUDE_SETUP,
+		};
 	}
 
 	tutorRouteKey(): string {
@@ -358,7 +379,6 @@ export default class GroundworkPlugin extends Plugin {
 	private async accountAccessToken(): Promise<string | null> {
 		const refresh = loadAccountToken(this.app);
 		if (!refresh) return null;
-		if (accountOriginIsLocal()) return refresh;
 		try {
 			const session = await refreshFirebaseSession(refresh, GROUNDWORK_WEB_API_KEY);
 			if (session.refreshToken !== refresh) saveAccountToken(this.app, session.refreshToken);
@@ -466,6 +486,7 @@ export default class GroundworkPlugin extends Plugin {
 					break;
 				} catch (e) {
 					if (!(e instanceof AccountError) || e.status !== 409 || attempt === 2) throw e;
+					new Notice("Groundwork: your account changed on another device. Merged the changes and saving again.");
 					const remote = memoryFromConflict(e.body) ?? (await client.getHostedMemory());
 					const merged = mergeTutorMemoryFiles(this.memoryBaseline.files, tutorMemoryFiles(this.memoryIO.files), remote.files);
 					replaceTutorMemoryFiles(this.memoryIO.files, { files: merged });
