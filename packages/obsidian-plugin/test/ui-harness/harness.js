@@ -56,7 +56,7 @@ function shell(screen) {
     <div class="gw-library"></div>
     <div class="gw-settings"></div>
     <div class="gw-flash"><div class="gw-fc-loading">Loading cards…</div></div>
-    <div class="gw-composer"><div class="gw-box"><textarea class="gw-input" rows="1" placeholder="Answer, ask a question…"></textarea><div class="gw-box-row"><div class="gw-box-tools"><span class="gw-chip">Groundwork</span></div><button type="button" class="mod-cta gw-send" aria-label="Send">↑</button></div></div></div>
+    <div class="gw-composer"><div class="gw-box"><textarea class="gw-input" rows="1" placeholder="Answer, ask a question, or say what you want to learn"></textarea><div class="gw-box-row"><div class="gw-box-tools"><button type="button" class="clickable-icon gw-icon-btn gw-attach" aria-label="Attach files" title="Attach files"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.57 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg></button></div><button type="button" class="mod-cta gw-send" aria-label="Send">↑</button></div></div></div>
   `;
 }
 

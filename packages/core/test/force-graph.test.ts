@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { goalMermaid, type GraphNode } from "../src/graph";
 import { buildFromGroundwork, buildSyntheticGraph } from "../src/force-graph/build";
+import { CONCEPT_MAP_WHEEL_EASE, CONCEPT_MAP_WHEEL_PIXELS, conceptMapWheelZoom } from "../src/force-graph/canvas";
 import { TONE_FALLBACK_COLORS } from "../src/force-graph/colors";
 import { MASTERY_LABEL, MASTERY_TONES } from "../src/mastery-tone";
 import { forceGraphFromGoalMermaid, parseGoalMermaid } from "../src/force-graph/parse-mermaid";
@@ -76,6 +77,23 @@ describe("force graph", () => {
 		const tones = data.legend.filter((item) => !item.key.startsWith("edge-"));
 		expect(tones.map((item) => item.label)).toEqual(MASTERY_TONES.map((tone) => MASTERY_LABEL[tone]));
 		expect(data.legend.some((item) => item.label === "Bayes")).toBe(false);
+	});
+
+	it("zooms the concept map with wheel travel, not a fixed jump per event", () => {
+		const notch = conceptMapWheelZoom(100, 0);
+		expect(notch).toBeCloseTo(-100 / CONCEPT_MAP_WHEEL_PIXELS);
+		expect(Math.abs(notch)).toBeLessThan(Math.log(1.08));
+		const tick = conceptMapWheelZoom(4, 0);
+		expect(Math.abs(tick)).toBeLessThan(Math.abs(notch) / 10);
+		// Twenty tiny trackpad ticks used to be twenty 8% jumps.
+		const burst = 20 * Math.abs(conceptMapWheelZoom(4, 0));
+		expect(burst).toBeLessThan(Math.log(1.08) * 3);
+		expect(conceptMapWheelZoom(-100, 0)).toBeGreaterThan(0);
+		expect(conceptMapWheelZoom(10000, 0)).toBeCloseTo(-280 / CONCEPT_MAP_WHEEL_PIXELS);
+		expect(conceptMapWheelZoom(3, 1)).toBeCloseTo(conceptMapWheelZoom(120, 0));
+		const queued = conceptMapWheelZoom(100, 0);
+		const firstFrame = queued * CONCEPT_MAP_WHEEL_EASE;
+		expect(Math.abs(firstFrame)).toBeLessThan(Math.abs(queued));
 	});
 
 	it("names a node's state once in its hover text", () => {

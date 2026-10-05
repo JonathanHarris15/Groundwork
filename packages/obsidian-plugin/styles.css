@@ -1871,7 +1871,21 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-attach {
 	flex: 0 0 auto;
 	width: 34px;
-	height: 40px;
+	height: 34px;
+	min-width: 34px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.gw-attach .gw-icon-label {
+	display: none;
+}
+.gw-attach svg {
+	width: 18px;
+	height: 18px;
+	display: block;
+	flex: none;
 }
 .gw-input {
 	flex: 1;
@@ -2724,6 +2738,26 @@ body .gw-root .clickable-icon {
 	color: var(--gw-muted);
 	background: transparent;
 	box-shadow: none;
+}
+body .gw-root button.gw-attach {
+	width: 34px;
+	height: 34px;
+	min-width: 34px;
+	padding: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	color: var(--gw-muted);
+}
+body .gw-root button.gw-attach .gw-icon-label {
+	display: none;
+}
+body .gw-root button.gw-attach svg {
+	width: 18px;
+	height: 18px;
+	display: block;
+	flex: none;
 }
 body .gw-root button.gw-icon-btn:hover,
 body .gw-root .clickable-icon:hover {
