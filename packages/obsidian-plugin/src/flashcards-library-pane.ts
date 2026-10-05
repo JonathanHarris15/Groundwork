@@ -13,6 +13,7 @@ import {
 	type Goal,
 	type KnowledgeStore,
 } from "@groundwork/core";
+import { paintMarkdown, type RenderMarkdown } from "./markdown-face";
 
 export interface FlashcardsLibraryHost {
 	store: KnowledgeStore;
@@ -22,6 +23,7 @@ export interface FlashcardsLibraryHost {
 	pinnedGoalId: () => string;
 	/** Pin the goal and study its deck in the Flashcards tab. */
 	onStudy: (goalId: string) => void;
+	renderMarkdown?: RenderMarkdown;
 }
 
 interface DeckEntry {
@@ -167,8 +169,8 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 		const row = list.createDiv({ cls: "gw-fc-lib-card" });
 		const qa = row.createDiv({ cls: "gw-fc-card-qa" });
 		qa.createEl("b", { text: card.concept });
-		qa.createEl("span", { text: card.front.split("\n")[0] });
-		qa.createEl("span", { cls: "gw-fc-card-back", text: card.back.split("\n")[0] });
+		paintMarkdown(qa, "span", "", card.front.split("\n")[0], host.renderMarkdown);
+		paintMarkdown(qa, "span", "gw-fc-card-back", card.back.split("\n")[0], host.renderMarkdown);
 		if (card.qualityIssue) qa.createEl("em", { text: `Left out of study until edited: ${card.qualityIssue}` });
 		const rowTools = row.createDiv({ cls: "gw-fc-card-row-tools" });
 		const edit = rowTools.createEl("button", { cls: "gw-lib-btn", text: "Edit", attr: { type: "button", "aria-label": `Edit card: ${card.front.slice(0, 60)}` } });

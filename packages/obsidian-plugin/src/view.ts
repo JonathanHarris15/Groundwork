@@ -1487,6 +1487,7 @@ export class ChatView extends ItemView implements ToolUI {
 				goals: () => store.goals(),
 				pinnedGoalId: () => this.uiGoalEl?.value ?? "",
 				onStudy: (goalId) => void this.studyDeck(goalId),
+				renderMarkdown: (el, md) => this.renderMd(el, md),
 			});
 			return;
 		}

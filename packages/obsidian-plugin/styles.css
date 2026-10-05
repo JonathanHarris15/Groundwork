@@ -3247,6 +3247,11 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+/* Rendered rows stay one ellipsized line. */
+.gw-fc-card-qa span > p {
+	display: inline;
+	margin: 0;
+}
 .gw-fc-card-qa em {
 	font-size: 11px;
 	color: var(--text-warning);

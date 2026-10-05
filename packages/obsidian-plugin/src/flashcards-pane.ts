@@ -18,6 +18,7 @@ import {
 	type MasteryTone,
 	slugify,
 } from "@groundwork/core";
+import { paintMarkdown, type RenderMarkdown } from "./markdown-face";
 import { masteryDot } from "./mastery-ui";
 
 export interface FlashcardsHost {
@@ -25,7 +26,7 @@ export interface FlashcardsHost {
 	store: KnowledgeStore;
 	writeFolders: () => string[];
 	goalId: () => string;
-	renderMarkdown(el: HTMLElement, markdown: string): Promise<void>;
+	renderMarkdown: RenderMarkdown;
 	onManageCards: () => void;
 	onFocusWorkingGoal?: () => void;
 }
@@ -334,16 +335,7 @@ export class FlashcardsPane {
 			el.createDiv({ cls: "gw-fcard-placeholder", text: "No text on this card yet." });
 			return;
 		}
-		const inner = el.createDiv({ cls: "gw-fcard-md", text });
-		// The renderer appends, so it fills a fresh element that replaces the plain-text stand-in.
-		const rendered = el.ownerDocument.createElement("div");
-		rendered.className = "gw-fcard-md";
-		void this.host.renderMarkdown(rendered, text).then(
-			() => {
-				if (rendered.textContent?.trim() || rendered.querySelector("img, svg, mjx-container")) inner.replaceWith(rendered);
-			},
-			() => {},
-		);
+		paintMarkdown(el, "div", "gw-fcard-md", text, this.host.renderMarkdown);
 	}
 
 	private conceptTone(concept: string): MasteryTone {
