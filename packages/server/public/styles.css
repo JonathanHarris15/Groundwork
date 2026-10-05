@@ -898,6 +898,46 @@ label { font-size: 15px; font-weight: 500; }
 .sky-legend li { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: #d3d6db; }
 .sky-legend i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .sky-empty { margin: 14px 0 0; }
+.graph-host {
+	position: relative;
+	width: 100%;
+	height: min(52vh, 420px);
+	min-height: 240px;
+	margin-top: 8px;
+	border-radius: 14px;
+	background: rgba(0, 0, 0, 0.18);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	overflow: hidden;
+}
+.graph-focus {
+	margin: 10px 0 0;
+	font-size: 13px;
+	color: #d8dbe0;
+}
+.graph-focus-ok {
+	color: #a8adb6;
+}
+.graph-hint {
+	position: absolute;
+	z-index: 2;
+	left: 12px;
+	top: 10px;
+	margin: 0;
+	font-size: 12px;
+	color: #a8adb6;
+	pointer-events: none;
+}
+.graph-canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+	cursor: grab;
+	touch-action: none;
+}
+.sky-legend-status i.status-solid { background: #3cc56f; }
+.sky-legend-status i.status-learning { background: #45a9f0; }
+.sky-legend-status i.status-open { background: transparent; border: 1.5px solid #6b6f76; }
+.concept-list li.is-highlight { background: rgba(255, 255, 255, 0.06); border-radius: 10px; }
 .graph { width: 100%; height: auto; display: block; margin-top: 6px; overflow: visible; }
 .graph-edge { stroke-width: 1.6; stroke-linecap: round; }
 .graph-edge.is-bridge { stroke-width: 1.4; }

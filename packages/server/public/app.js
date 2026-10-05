@@ -22,6 +22,7 @@ let providers = null;
 let tutor = null;
 let groundwork = emptyGroundwork();
 let groundworkTimer = 0;
+let graphHandle = null;
 let user = null;
 let auth = null;
 let firebaseAuth = null;
@@ -197,6 +198,7 @@ function showAccount() {
 		location.hash = "#plans";
 	});
 	watchGroundwork();
+	mountConceptGraph();
 }
 
 function stopGroundworkWatch() {
@@ -225,6 +227,7 @@ async function pullGroundwork() {
 		holder.innerHTML = board();
 		const nextBoard = holder.querySelector(".board");
 		if (nextBoard) current.replaceWith(nextBoard);
+		mountConceptGraph();
 	} catch {
 		// Keep the stats already on screen.
 	}
@@ -302,8 +305,9 @@ function board() {
 				<div class="sky-head">
 					<span class="sky-title">${waiting ? "Concepts" : "Concepts you have learned"}</span>
 					${graphLegend(conceptGraph())}
+					${statusLegend()}
 				</div>
-				${conceptGraphSvg(conceptGraph())}
+				${conceptGraphHost(conceptGraph())}
 				${conceptList(concepts)}
 			</div>
 			<div class="goals">
@@ -319,6 +323,43 @@ function graphLegend(graph) {
 	return `<ul class="sky-legend">${items.map((item) => `<li><i style="background:${safeColor(item.color)}"></i>${escapeHtml(item.domain)}</li>`).join("")}</ul>`;
 }
 
+function statusLegend() {
+	return `<ul class="sky-legend sky-legend-status" aria-label="Mastery legend">
+		<li><i class="status-solid"></i>Solid</li>
+		<li><i class="status-learning"></i>Learning</li>
+		<li><i class="status-open"></i>Not quizzed</li>
+	</ul>`;
+}
+
+function conceptGraphHost(graph) {
+	const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+	if (!nodes.length) return `<p class="sky-empty">They show up here as you study in Obsidian.</p>`;
+	const concepts = learnedConcepts();
+	const weak = concepts.filter((c) => c.status === "unassessed" || c.status === "shaky" || c.status === "rusty");
+	const weakLine = weak.length
+		? `<p class="graph-focus">${weak.length === 1 ? "Needs attention:" : "Needs attention:"} ${weak.slice(0, 4).map((c) => escapeHtml(c.title)).join(", ")}${weak.length > 4 ? ` (+${weak.length - 4} more)` : ""}</p>`
+		: `<p class="graph-focus graph-focus-ok">Every concept here has been quizzed. Dashed rings mark spots worth revisiting if they fade.</p>`;
+	return `${weakLine}<div class="graph-host" id="concept-graph" role="region" aria-label="Interactive concept graph"><p class="graph-hint">Arrows run prerequisite → concept. Color is mastery; dot size is how connected it is. Click a node to jump to it in the list.</p></div>`;
+}
+
+function mountConceptGraph() {
+	const host = document.querySelector("#concept-graph");
+	if (!host || !window.GroundworkGraph) return;
+	graphHandle?.dispose?.();
+	graphHandle = window.GroundworkGraph.mount(
+		host,
+		{ concepts: learnedConcepts(), graph: conceptGraph() },
+		{
+			onSelect: (id) => {
+				const row = document.querySelector(`.concept-list [data-concept-id="${CSS.escape(id)}"]`);
+				row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+				document.querySelectorAll(".concept-list li.is-highlight").forEach((el) => el.classList.remove("is-highlight"));
+				row?.classList.add("is-highlight");
+			},
+		},
+	);
+}
+
 function conceptNote(concepts) {
 	const checked = concepts.filter((concept) => concept.status !== "unassessed").length;
 	if (!concepts.length || checked === concepts.length) return "Each one checked with a quiz before it counted.";
@@ -326,42 +367,12 @@ function conceptNote(concepts) {
 	return checked === 1 ? "1 was checked with a quiz." : `${checked} were checked with a quiz.`;
 }
 
-function conceptGraphSvg(graph) {
-	const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
-	if (!nodes.length) return `<p class="sky-empty">They show up here as you study.</p>`;
-	const statusOf = new Map(learnedConcepts().map((concept) => [concept.id, concept.status]));
-	const byId = new Map(nodes.map((node) => [node.id, node]));
-	const width = Number.isFinite(graph.width) ? graph.width : 640;
-	const height = Number.isFinite(graph.height) ? graph.height : 220;
-	const edges = (Array.isArray(graph.edges) ? graph.edges : []).flatMap((edge) => {
-		const from = byId.get(edge.from);
-		const to = byId.get(edge.to);
-		if (!from || !to) return [];
-		const color = edge.bridge ? "rgba(255,255,255,.38)" : safeColor(from.color);
-		const dash = edge.bridge ? ` stroke-dasharray="4 5"` : "";
-		return [`<line class="graph-edge${edge.bridge ? " is-bridge" : ""}" x1="${num(from.x)}" y1="${num(from.y)}" x2="${num(to.x)}" y2="${num(to.y)}" stroke="${color}"${dash}></line>`];
-	});
-	const dots = nodes.map((node) => {
-		const color = safeColor(node.color);
-		const open = statusOf.get(node.id) === "unassessed";
-		const anchor = node.labelAnchor === "start" || node.labelAnchor === "end" ? node.labelAnchor : "middle";
-		const label = node.label ? `<text class="graph-label" x="${num(node.labelX ?? node.x)}" y="${num(node.labelY ?? node.y + 18)}" text-anchor="${anchor}">${escapeHtml(shortTitle(node.title))}</text>` : "";
-		const dot = open
-			? `fill="none" stroke="${color}" stroke-width="1.75"`
-			: `fill="${color}"`;
-		const halo = open ? `fill="none" stroke="${color}" stroke-width="1.25"` : `fill="${color}"`;
-		const name = open ? `${node.title} (not quizzed yet)` : node.title;
-		return `<g class="graph-node${open ? " is-open" : ""}"><title>${escapeHtml(name)}</title><circle class="graph-halo" cx="${num(node.x)}" cy="${num(node.y)}" r="9" ${halo}></circle><circle class="graph-dot" cx="${num(node.x)}" cy="${num(node.y)}" r="4.5" ${dot}></circle>${label}</g>`;
-	});
-	return `<svg class="graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Concept graph">${edges.join("")}${dots.join("")}</svg>`;
-}
-
 function conceptList(concepts) {
 	if (!concepts.length) return "";
 	const colorOf = new Map((conceptGraph().nodes || []).map((node) => [node.id, node.color]));
 	return `<ul class="concept-list">${concepts.map((concept) => {
 		const color = safeColor(colorOf.get(concept.id));
-		return `<li><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
+		return `<li data-concept-id="${escapeAttr(concept.id)}"><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
 	}).join("")}</ul>`;
 }
 

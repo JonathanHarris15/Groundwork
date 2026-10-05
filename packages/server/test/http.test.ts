@@ -120,7 +120,8 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=12"');
+		expect(site?.body).toContain('src="/app.js?v=13"');
+		expect(site?.body).toContain('src="/force-graph.js?v=1"');
 		expect(site?.body).toContain('href="/styles.css?v=3"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
@@ -134,7 +135,8 @@ describe("account server", () => {
 		expect(board).toContain("goals.length");
 		expect(board).toContain("concepts.length");
 		expect(board).toContain("conceptList(concepts)");
-		expect(board).toContain("They show up here as you study.");
+		expect(board).toContain("They show up here as you study in Obsidian.");
+		expect(board).toContain("mountConceptGraph");
 		expect(board).toContain("Goals you finish in Obsidian show up here.");
 		expect(board).not.toContain('<span class="big">0</span>');
 		expect(script).not.toContain("Connect Obsidian");

@@ -6,6 +6,18 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 mkdirSync(path.join(here, "dist"), { recursive: true });
 
+mkdirSync(path.join(here, "public"), { recursive: true });
+
+await esbuild.build({
+	entryPoints: [path.join(here, "graph-client/entry.ts")],
+	bundle: true,
+	platform: "browser",
+	target: "es2022",
+	format: "esm",
+	outfile: path.join(here, "public/force-graph.js"),
+	logLevel: "info",
+});
+
 await esbuild.build({
 	entryPoints: [path.join(here, "src/index.ts")],
 	bundle: true,

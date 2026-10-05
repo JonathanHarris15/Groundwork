@@ -1,6 +1,7 @@
 export * from "./access";
 export * from "./account";
 export * from "./groundwork-graph";
+export * from "./force-graph";
 export * from "./io";
 export * from "./files";
 export * from "./flashcards";

@@ -1,16 +1,8 @@
 import type { ConceptMapModel } from "@groundwork/core";
 import { appendSvgFragment } from "./svg-fragment";
+import { mountConceptMapGraph } from "./force-graph-host";
 
 const NS = "http://www.w3.org/2000/svg";
-let mapSerial = 0;
-const FILL: Record<string, string> = {
-	known: "#3CC56F",
-	learning: "#45A9F0",
-	shaky: "#F7A93E",
-	rusty: "#9d8cf0",
-	goal: "#F0565B",
-};
-
 export interface MapPaneOptions {
 	scope: "path" | "all";
 	showGhosts: boolean;
@@ -18,6 +10,7 @@ export interface MapPaneOptions {
 	onScope: (scope: "path" | "all") => void;
 	onGhosts: (on: boolean) => void;
 	onStart?: (title: string) => void;
+	onStudy?: (title: string, action: "quiz" | "learn") => void;
 }
 
 export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null, options: MapPaneOptions): void {
@@ -29,7 +22,9 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 		empty.append("Pin a goal to see the path toward it. Ghost concepts are what still has to be learned before that goal.");
 		return;
 	}
-	wrap.append(drawMap(parent.ownerDocument, model));
+	const mapSlot = el(wrap, "div", "gw-force-map");
+	mapSlot.createDiv({ cls: "gw-force-slot" });
+	mountConceptMapGraph(wrap, model, { onStart: options.onStart, onStudy: options.onStudy });
 	const bar = el(wrap, "div", "gw-map-toolbar");
 	const seg = el(bar, "div", "gw-seg");
 	seg.append(
@@ -88,123 +83,6 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 		button.addEventListener("click", () => options.onStart?.(next.title));
 	}
 	el(body, "p", "gw-path-why", "Ghost concepts are what Groundwork thinks you still need before the goal. They turn solid once a quiz shows you know them.");
-}
-
-function drawMap(doc: Document, model: ConceptMapModel): SVGSVGElement {
-	const svg = doc.createElementNS(NS, "svg");
-	svg.setAttribute("class", "gw-concept-map");
-	svg.setAttribute("viewBox", model.viewBox);
-	svg.setAttribute("role", "img");
-	svg.setAttribute("aria-label", "Concept map with the goal path and ghost concepts");
-	const defs = doc.createElementNS(NS, "defs");
-	const grad = doc.createElementNS(NS, "linearGradient");
-	const gradId = `gw-path-${++mapSerial}`;
-	grad.id = gradId;
-	grad.setAttribute("x1", "0");
-	grad.setAttribute("x2", "1");
-	for (const [offset, color] of [["0", "#3CC56F"], ["1", "#45A9F0"]] as const) {
-		const stop = doc.createElementNS(NS, "stop");
-		stop.setAttribute("offset", offset);
-		stop.setAttribute("stop-color", color);
-		grad.append(stop);
-	}
-	defs.append(grad);
-	svg.append(defs);
-	const byId = new Map(model.nodes.map((node) => [node.id, node]));
-	for (const edge of model.edges) {
-		const from = byId.get(edge.from);
-		const to = byId.get(edge.to);
-		if (!from || !to) continue;
-		const line = doc.createElementNS(NS, "line");
-		line.setAttribute("x1", String(from.x));
-		line.setAttribute("y1", String(from.y));
-		line.setAttribute("x2", String(to.x));
-		line.setAttribute("y2", String(to.y));
-		line.setAttribute("class", `gw-edge is-${edge.kind}`);
-		if (edge.kind === "built") line.setAttribute("stroke", `url(#${gradId})`);
-		svg.append(line);
-	}
-	for (const node of model.nodes) svg.append(drawNode(doc, node));
-	return svg;
-}
-
-function drawNode(doc: Document, node: ConceptMapModel["nodes"][number]): SVGGElement {
-	const g = doc.createElementNS(NS, "g");
-	g.setAttribute("class", `gw-node is-${node.visual}`);
-	const add = (tag: string, attrs: Record<string, string>) => {
-		const shape = doc.createElementNS(NS, tag);
-		for (const [key, value] of Object.entries(attrs)) shape.setAttribute(key, value);
-		g.append(shape);
-		return shape;
-	};
-	if (node.visual === "goal") add("circle", { cx: String(node.x), cy: String(node.y), r: "30", class: "gw-goal-ring" });
-	if (node.next) add("circle", { cx: String(node.x), cy: String(node.y), r: "15", class: "gw-next-ring" });
-	const fill = FILL[node.visual];
-	if (fill && node.visual !== "goal") {
-		add("circle", { cx: String(node.x), cy: String(node.y), r: String(node.r + 8), fill, opacity: "0.16" });
-		add("circle", { cx: String(node.x), cy: String(node.y), r: String(node.r), fill });
-	} else if (node.visual === "goal") {
-		add("circle", {
-			cx: String(node.x),
-			cy: String(node.y),
-			r: String(node.r),
-			fill: "#1e1e1e",
-			stroke: "#F0565B",
-			"stroke-width": "2.5",
-			"stroke-dasharray": "5 5",
-		});
-		const icon = doc.createElementNS(NS, "path");
-		icon.setAttribute("transform", `translate(${node.x} ${node.y})`);
-		icon.setAttribute("d", "M-6 9V-9M-6 -9h11l-2.5 4 2.5 4H-6");
-		icon.setAttribute("stroke", "#F0565B");
-		icon.setAttribute("stroke-width", "2");
-		icon.setAttribute("fill", "none");
-		icon.setAttribute("stroke-linecap", "round");
-		icon.setAttribute("stroke-linejoin", "round");
-		g.append(icon);
-	} else if (node.visual === "ghost") {
-		add("circle", {
-			cx: String(node.x),
-			cy: String(node.y),
-			r: String(node.r),
-			fill: "rgba(255,255,255,.03)",
-			stroke: node.next ? "#45A9F0" : "#6b6f76",
-			"stroke-width": "1.8",
-			"stroke-dasharray": "4 4",
-		});
-		const num = add("text", { x: String(node.x), y: String(node.y + 4), "text-anchor": "middle", class: node.next ? "gw-num is-next" : "gw-num" });
-		num.textContent = String(node.step ?? "");
-	} else {
-		add("circle", {
-			cx: String(node.x),
-			cy: String(node.y),
-			r: String(node.r),
-			fill: "none",
-			stroke: "#3a3d42",
-			"stroke-width": "1.5",
-			"stroke-dasharray": "3 4",
-		});
-	}
-	if (node.next) {
-		const badge = add("text", { x: String(node.x), y: String(node.y - node.r - 12), "text-anchor": "middle", class: "gw-next-label" });
-		badge.textContent = "Next up";
-	}
-	const label = add("text", {
-		x: String(node.x),
-		y: String(node.y + node.r + 20),
-		"text-anchor": "middle",
-		class: `gw-node-label${node.visual === "goal" ? " is-goal" : ""}${node.visual === "ghost" ? " is-ghost" : ""}${node.visual === "dim" || node.visual === "beyond" ? " is-dim" : ""}`,
-	});
-	label.textContent = node.title;
-	if (node.subtitle) {
-		const sub = add("text", { x: String(node.x), y: String(node.y + node.r + 38), "text-anchor": "middle", class: "gw-node-sub" });
-		sub.textContent = node.subtitle;
-	}
-	if (node.caption) {
-		const cap = add("text", { x: String(node.x), y: String(node.y + node.r + 36), "text-anchor": "middle", class: "gw-node-beyond" });
-		cap.textContent = node.caption;
-	}
-	return g;
 }
 
 function stepMark(doc: Document, visual: string, step: number | undefined, next: boolean): HTMLElement {
