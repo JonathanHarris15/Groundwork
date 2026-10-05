@@ -7,3 +7,7 @@ Never state how many dollars of model credit a plan includes, or how many dollar
 The prices that may be shown are **$9 per month** (Bring your own model) and **$20 per month** (Groundwork). The Free plan can be described as Groundwork's smaller model.
 
 `hostedCreditUsd` stays in server code. `publicPlan` and `presentAccount` are what clients may see. The website may show the share of the month's budget already used, as a percentage, without a dollar amount.
+
+## Deploy
+
+When the user asks to deploy, run `scripts/deploy.sh` and wait for it to finish. That publishes this repo to the live site. Do not use a different command, and do not set or replace Cloud Run environment variables.
