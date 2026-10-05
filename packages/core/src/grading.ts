@@ -74,7 +74,7 @@ export async function recordQuizAnswer(
 			const tutorSlip = judgment.slip === true;
 			const tutorOutcome = tutorSlip ? "correct" : judgment.outcome;
 			if (graded.outcome !== tutorOutcome || graded.slip !== tutorSlip) {
-				judgmentNote = `Jev graded the understanding as ${graded.slip ? "a slip" : graded.outcome}. That is what was recorded.`;
+				judgmentNote = `Groundwork re-checked your written answer as ${graded.slip ? "a slip (small mistake in otherwise correct work)" : graded.outcome}. That is what was recorded.`;
 			}
 			applied = { ...judgment, outcome: graded.outcome, slip: graded.slip };
 		}

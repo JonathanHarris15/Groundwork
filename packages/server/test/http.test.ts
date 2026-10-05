@@ -120,15 +120,16 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=12"');
+		expect(site?.body).toContain('src="/app.js?v=15"');
 		expect(site?.body).toContain('href="/styles.css?v=3"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
-		expect(script).toContain('href="https://community.obsidian.md/plugins/groundwork"');
+		expect(script).toContain("obsidian://groundwork?refresh=");
+		expect(script).toContain("https://obsidian.md/download");
+		expect(script).toContain("obsidian://show-plugin?id=groundwork");
+		expect(script).toContain("https://community.obsidian.md/plugins/groundwork");
 		expect(script).toContain("Open Obsidian");
-		expect(script).not.toContain("obsidian://groundwork?refresh=");
-		expect(script).not.toContain("obsidian://show-plugin?id=groundwork");
 		expect(script).toContain("/v1/groundwork");
 		const board = script.slice(script.indexOf("function board"), script.indexOf("function usageTile"));
 		expect(board).toContain("goals.length");
@@ -149,7 +150,8 @@ describe("account server", () => {
 		expect(signIn).toContain("Sign in with Google");
 		expect(signIn).not.toContain("planGrid");
 		expect(script).toContain("Claude subscription on this computer");
-		expect(script).toContain("One key covers every account");
+		expect(script).toContain("Written quiz answers are graded");
+		expect(script).not.toMatch(/\bJev\b/);
 		expect(script).not.toMatch(/\$3|\$8 of/);
 		const tile = script.slice(script.indexOf("function usageTile"), script.indexOf("function keysSection"));
 		expect(tile).toContain("Resets at the end of the month.");

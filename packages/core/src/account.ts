@@ -370,7 +370,7 @@ export class AccountClient {
 				body: body === undefined ? undefined : JSON.stringify(body),
 			});
 		} catch (e) {
-			throw new AccountError(`Could not reach the Groundwork website. ${(e as Error).message}`, 0);
+			throw new AccountError(`Could not reach your account server. ${(e as Error).message}`, 0);
 		}
 		const text = await response.text();
 		const parsed = text ? (JSON.parse(text) as unknown) : {};

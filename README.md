@@ -23,7 +23,7 @@ An account is required before the tutor will run. Sign in with Google on that we
 
 The plugin uses the network for these services:
 
-- **Groundwork** (`https://groundwork-6f9ca.web.app` in production builds) stores the account, tutor memory, plan routing, and grades written answers. Sign-in happens in the browser on the [Groundwork website](https://groundworklearn.com). **Open Obsidian** opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
+- **Groundwork** (`https://groundwork-6f9ca.web.app` in production builds) stores the account, tutor memory, plan routing, and grades written answers. Sign-in happens in the browser on the [Groundwork website](https://groundworklearn.com). **Open Obsidian** connects this device through Obsidian; if the plugin is not installed yet, the site opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
 - **Google** (`https://securetoken.googleapis.com`) refreshes the website sign-in into an ID token the plugin sends to Groundwork.
 - **Google Fonts** (`https://fonts.googleapis.com`) loads Jost for the Groundwork panel stylesheet.
 - **Stripe** — billing for the $9 and $20 plans happens on the website, not inside the plugin.
@@ -184,7 +184,7 @@ The site lives in `packages/server/public` and is what [groundworklearn.com](htt
 npm run server           # http://127.0.0.1:8787
 ```
 
-Sign in with Google on that site. **Open Obsidian** opens the community plugin page. If this vault already has concept notes, the first connection copies them onto the account once.
+Sign in with Google on that site. **Open Obsidian** connects Obsidian to this account (refresh token plus an opened signal). If the plugin is missing, the site sends you to install it. If this vault already has concept notes, the first connection copies them onto the account once.
 
 `GROUNDWORK_PORT` chooses the listen port (default `8787`). `GROUNDWORK_MEMORY_FILE` chooses the local tutor-memory file when Firebase is not configured (default `data/tutor-memory.json`, gitignored).
 
@@ -203,7 +203,7 @@ The plugin is laid out so it can be submitted:
 
 `node scripts/check-community-plugin.mjs` checks that list. The plugin id is `groundwork`, which is also the community install folder.
 
-From the website, **Open Obsidian** opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
+From the website, **Open Obsidian** opens Obsidian and connects this device. Manual install: [community plugin page](https://community.obsidian.md/plugins/groundwork).
 
 The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` unless you override `GROUNDWORK_API_URL` for local development).
 
@@ -218,6 +218,8 @@ npm run typecheck
 npm run build            # plugin → packages/obsidian-plugin/dist, CLI → packages/cli/dist
 npm run dev:plugin       # rebuild the plugin on change; then `groundwork install-plugin` and reload Obsidian
 ```
+
+Local website + plugin against the same server: run `npm run server`, sign in on `http://127.0.0.1:8787`, then rebuild the plugin with `GROUNDWORK_API_URL=http://127.0.0.1:8787 npm run build` and reload it in Obsidian (or reinstall into the vault). Without that env var at build time, the plugin talks to production.
 
 Sync details: evidence logs use git's `union` merge driver (`.gitattributes`), so both machines' answers survive a merge. Prose conflicts prefer the local side. After any merge that brings in changes, every concept's stats and every goal map are rebuilt from the merged evidence.
 

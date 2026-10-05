@@ -60,7 +60,11 @@ const ctx = await esbuild.context({
 	target: "es2022",
 	external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
 	// The Agent SDK calls createRequire(import.meta.url) at load time; CJS has no import.meta, so give it a real file URL.
-	define: { "import.meta.url": "__gw_import_meta_url", __GW_BUILD__: JSON.stringify(build) },
+	define: {
+		"import.meta.url": "__gw_import_meta_url",
+		__GW_BUILD__: JSON.stringify(build),
+		"process.env.GROUNDWORK_API_URL": JSON.stringify(process.env.GROUNDWORK_API_URL?.trim() ?? ""),
+	},
 	banner: {
 		js: `/* groundwork-build: ${build} */\nvar __gw_import_meta_url = require("url").pathToFileURL(typeof __filename === "string" ? __filename : require("path").join(process.cwd(), "groundwork-plugin.js")).href;`,
 	},

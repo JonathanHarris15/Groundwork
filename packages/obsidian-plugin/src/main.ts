@@ -1,12 +1,12 @@
 import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
-import { accountOrigin, accountOriginIsLocal, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
+import { accountOrigin, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
 import { ChatView, VIEW_TYPE } from "./view";
 
 type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
@@ -126,7 +126,7 @@ export default class GroundworkPlugin extends Plugin {
 		const refresh = typeof params.refresh === "string" ? params.refresh.trim() : "";
 		if (refresh) {
 			saveAccountToken(this.app, refresh);
-			new Notice("Groundwork: this device is connected to your account.");
+			new Notice("Groundwork: this device is linked to your account.");
 		}
 		await this.signalOpened(typeof params.opened === "string" ? params.opened : undefined);
 		await this.connectMemory();
@@ -205,16 +205,37 @@ export default class GroundworkPlugin extends Plugin {
 		}
 		try {
 			const res = await fetch(`${accountOrigin()}/v1/tutor`, { headers: { authorization: `Bearer ${token}` } });
-			const body = (await res.json()) as TutorStatus;
+			const body = (await res.json()) as TutorStatus & { error?: unknown };
 			if (!res.ok) {
 				if (res.status === 401 || res.status === 403) this.disconnectAccount();
-				else this.tutorRoute = null;
+				else {
+					const message =
+						typeof body.error === "string"
+							? body.error
+							: `Groundwork could not load tutor settings (${res.status}). Try again in a moment.`;
+					this.tutorRoute = this.unavailableTutorRoute(message);
+				}
 				return;
 			}
 			this.tutorRoute = body;
 		} catch {
 			// Keep the last route. A missed refresh should not drop a lesson in progress.
 		}
+	}
+
+	private unavailableTutorRoute(message: string): TutorStatus {
+		return {
+			action: "blocked",
+			via: "hosted",
+			model: null,
+			provider: null,
+			label: "Tutor paused",
+			error: message,
+			setup: null,
+			budgetUsed: 0,
+			ownModel: false,
+			claude: CLAUDE_SETUP,
+		};
 	}
 
 	tutorRouteKey(): string {
@@ -263,7 +284,7 @@ export default class GroundworkPlugin extends Plugin {
 			return {
 				label: "Sign in",
 				demo: false,
-				setup: { title: "Sign in to start.", detail: SIGN_IN_DETAIL, action: "Sign in", website: true },
+				setup: { title: "Sign in to start the tutor.", detail: SIGN_IN_DETAIL, action: "Open website", website: true },
 			};
 		}
 		const { provider } = this.settings;
@@ -276,7 +297,7 @@ export default class GroundworkPlugin extends Plugin {
 				label: route?.action === "blocked" ? "Tutor paused" : runtime.website ? "Account" : "Claude Code not found",
 				demo: false,
 				setup: {
-					title: runtime.website ? "Finish setup on the website." : "Connect your Claude subscription to start.",
+					title: runtime.website ? "Finish setup on the website." : "Install Claude Code to use your subscription.",
 					detail: runtime.detail ?? SIGN_IN_DETAIL,
 					action: runtime.website ? "Open website" : "Open settings",
 					website: runtime.website,
@@ -291,7 +312,7 @@ export default class GroundworkPlugin extends Plugin {
 				demo: false,
 				setup: {
 					title: "Connect your Claude subscription to start.",
-					detail: "Groundwork runs the tutor through Claude Code, so it uses your Pro or Max plan instead of an API key. Install Claude Code, run `claude` once in a terminal and type /login, then check the connection in settings.",
+					detail: "Install Claude Code, run `claude` once in a terminal and sign in (/login), then press Check connection in Groundwork settings.",
 					action: "Open settings",
 				},
 			};
@@ -358,7 +379,6 @@ export default class GroundworkPlugin extends Plugin {
 	private async accountAccessToken(): Promise<string | null> {
 		const refresh = loadAccountToken(this.app);
 		if (!refresh) return null;
-		if (accountOriginIsLocal()) return refresh;
 		try {
 			const session = await refreshFirebaseSession(refresh, GROUNDWORK_WEB_API_KEY);
 			if (session.refreshToken !== refresh) saveAccountToken(this.app, session.refreshToken);
@@ -373,13 +393,13 @@ export default class GroundworkPlugin extends Plugin {
 	private disconnectAccount(): void {
 		saveAccountToken(this.app, "");
 		this.tutorRoute = null;
-		this.setSync("offline", "open the website and choose Open Obsidian");
+		this.setSync("offline", "choose Open Obsidian on the Groundwork website");
 	}
 
 	private async memoryClient(): Promise<AccountClient | null> {
 		const token = await this.accountAccessToken();
 		if (!token) {
-			if (!loadAccountToken(this.app)) this.setSync("offline", "open the website and choose Open Obsidian");
+			if (!loadAccountToken(this.app)) this.setSync("offline", "choose Open Obsidian on the Groundwork website");
 			return null;
 		}
 		return new AccountClient(accountOrigin(), token);
@@ -414,7 +434,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	private scheduleMemorySave(): void {
 		if (!loadAccountToken(this.app)) {
-			this.setSync("offline", "open the website and choose Open Obsidian");
+			this.setSync("offline", "choose Open Obsidian on the Groundwork website");
 			return;
 		}
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
@@ -437,13 +457,13 @@ export default class GroundworkPlugin extends Plugin {
 	async saveMemory(manual: boolean): Promise<void> {
 		const client = await this.memoryClient();
 		if (!client) {
-			if (manual) new Notice("Groundwork: open the website and choose Open Obsidian. Tutor memory is kept on that account.");
+			if (manual) new Notice("Groundwork: sign in on the website and choose Open Obsidian. Tutor memory stays on your account.");
 			return;
 		}
 		if (!this.memoryBaseline) {
 			if (!manual) return;
 			await this.connectMemory();
-			if (!this.memoryBaseline) new Notice("Groundwork: could not load tutor memory from your account.");
+			if (!this.memoryBaseline) new Notice("Groundwork: could not load tutor memory. Check the network, then choose Open Obsidian on the website again.");
 			return;
 		}
 		if (this.accountPublishing) {
@@ -466,6 +486,7 @@ export default class GroundworkPlugin extends Plugin {
 					break;
 				} catch (e) {
 					if (!(e instanceof AccountError) || e.status !== 409 || attempt === 2) throw e;
+					new Notice("Groundwork: your account changed on another device. Merged the changes and saving again.");
 					const remote = memoryFromConflict(e.body) ?? (await client.getHostedMemory());
 					const merged = mergeTutorMemoryFiles(this.memoryBaseline.files, tutorMemoryFiles(this.memoryIO.files), remote.files);
 					replaceTutorMemoryFiles(this.memoryIO.files, { files: merged });

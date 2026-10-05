@@ -62,7 +62,7 @@ export const CLAUDE_SETUP = [
 export const CLAUDE_SETUP_DETAIL =
 	"Install Claude Code, run `claude` in a terminal and type /login with your Claude subscription, then choose Check connection in Groundwork settings.";
 
-export const SIGN_IN_DETAIL = "Sign in on the Groundwork website, then choose Open Obsidian.";
+export const SIGN_IN_DETAIL = "Sign in on the Groundwork website, then choose Open Obsidian to connect this computer.";
 
 export type UpstreamKind = "anthropic" | "openai" | "google";
 
@@ -115,11 +115,11 @@ export function hostedCostUsd(usage: { input: number; output: number }): number 
 
 export function tutorDecision(view: AccountView, choice: TutorChoice, saved: Partial<Record<UserKeyProvider, boolean>>): TutorDecision {
 	if (view.needsPlan || !view.plan) {
-		return { action: "blocked", status: 402, error: "Choose a plan on the Groundwork website.", setup: "plan" };
+		return { action: "blocked", status: 402, error: "Choose a plan on the Groundwork website (Plans), then choose Open Obsidian.", setup: "plan" };
 	}
 	if (!view.ownModel) {
 		if (view.remainingUsd <= 0) {
-			return { action: "blocked", status: 402, error: "This month's model budget is used up. It resets at the start of next month.", setup: "credit" };
+			return { action: "blocked", status: 402, error: "This month's tutor budget is used up. Wait until next month, or switch to Bring your own model on the website.", setup: "credit" };
 		}
 		return { action: "hosted", model: HOSTED_MODEL.id, provider: "openrouter", key: "groundwork" };
 	}
@@ -130,7 +130,7 @@ export function tutorDecision(view: AccountView, choice: TutorChoice, saved: Par
 			return {
 				action: "blocked",
 				status: 409,
-				error: `Paste a ${which} key on the website, or switch the tutor to your Claude subscription.`,
+				error: `Save a ${which} key on the website (Your model), or switch the tutor to your Claude subscription.`,
 				setup: "key",
 			};
 		}
@@ -172,7 +172,13 @@ export function tutorRuntime(input: {
 	if (!input.signedIn) return { runtime: "setup", detail: SIGN_IN_DETAIL, website: true };
 	if (input.selected === "demo") return { runtime: "demo", detail: null, website: false };
 	const account = input.account;
-	if (!account) return { runtime: "setup", detail: "On the website, choose Open Obsidian so this device can use your account.", website: true };
+	if (!account) {
+		return {
+			runtime: "setup",
+			detail: "Could not load tutor settings from your account. Check your connection, or open the Groundwork website and choose Open Obsidian again.",
+			website: true,
+		};
+	}
 	if (account.action === "hosted" || account.action === "key") return { runtime: "proxy", detail: null, website: false };
 	if (account.action === "claude") {
 		return input.claudeReady

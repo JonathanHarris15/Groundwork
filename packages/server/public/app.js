@@ -62,9 +62,9 @@ async function boot() {
 		try {
 			await refresh();
 			problem = "";
+			actionError = "";
 			paint();
 		} catch (err) {
-			user = null;
 			problem = err.message;
 			paint();
 		}
@@ -73,16 +73,15 @@ async function boot() {
 
 async function refresh() {
 	const token = await user.getIdToken();
-	const [nextAccount, secrets, nextGroundwork, nextTutor] = await Promise.all([
-		get("/v1/account", token),
-		get("/v1/secrets", token),
-		get("/v1/groundwork", token).catch(() => emptyGroundwork()),
-		get("/v1/tutor", token),
+	account = await get("/v1/account", token);
+	const [secrets, nextGroundwork, nextTutor] = await Promise.all([
+		get("/v1/secrets", token).catch(() => null),
+		get("/v1/groundwork", token).catch(() => null),
+		get("/v1/tutor", token).catch(() => null),
 	]);
-	account = nextAccount;
-	providers = secrets.providers;
-	groundwork = nextGroundwork;
-	tutor = nextTutor;
+	if (secrets?.providers) providers = secrets.providers;
+	if (nextGroundwork) groundwork = nextGroundwork;
+	if (nextTutor) tutor = nextTutor;
 }
 
 function emptyGroundwork() {
@@ -123,7 +122,7 @@ function showSignIn() {
 		<div class="hero">
 			<div>
 				<h1>Sign in to study.</h1>
-				<p class="lede">Your plan, billing, and model keys live here. The tutor in Obsidian uses this account.</p>
+				<p class="lede">Manage your plan and model keys on this site. After sign-in, open the account page and choose <strong>Open Obsidian</strong> to connect the plugin on this computer.</p>
 				${notice(false)}
 				<div class="signin"><button class="btn btn-ink" id="google" type="button" ${config.firebase ? "" : "disabled"}>Sign in with Google</button></div>
 			</div>
@@ -137,10 +136,10 @@ function showPlans() {
 	site.classList.remove("is-study");
 	dotfield.hidden = true;
 	const credit = account.needsPlan
-		? "Choose a plan to start."
+		? "Pick Free, Bring your own model, or Groundwork to start the tutor."
 		: account.ownModel
-			? "This plan uses your model. Groundwork does not meter it."
-			: "You can change plans below.";
+			? "This plan uses your Claude subscription or a saved provider key. Groundwork does not track that usage."
+			: "You can switch plans below.";
 	show(`
 		${notice(true)}
 		<h1>Choose a plan.</h1>
@@ -159,10 +158,10 @@ function showAccount() {
 	show(`
 		${notice(true)}
 		<h1>Welcome back, ${escapeHtml(name)}.</h1>
-		<p class="welcome-sub">Here is everything you have built so far.</p>
+		<p class="welcome-sub">Goals, concepts, and plan usage from Obsidian show up here as you study.</p>
 		${board()}
 		<div class="open-obsidian">
-			<a class="btn btn-ink" id="open-obsidian" href="https://community.obsidian.md/plugins/groundwork">Open Obsidian</a>
+			<button class="btn btn-ink" id="open-obsidian" type="button">Open Obsidian</button>
 		</div>
 		<section class="section">
 			<h2><span class="node red"></span>Profile</h2>
@@ -190,6 +189,7 @@ function showAccount() {
 		</div>
 	`);
 	document.querySelector("#profile").addEventListener("submit", saveProfile);
+	document.querySelector("#open-obsidian").addEventListener("click", () => openObsidian());
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#tutor-setup")?.addEventListener("submit", saveTutor);
 	document.querySelector("#portal").addEventListener("click", openPortal);
@@ -279,7 +279,7 @@ function board() {
 	const usage = account.ownModel ? `
 			<span class="big">Your model</span>
 			<span class="tile-label">Plan usage</span>
-			<p class="tile-note">This plan uses your model. Groundwork does not meter it.</p>` : usageTile();
+			<p class="tile-note">This plan uses your Claude subscription or a saved provider key. Groundwork does not track that usage.</p>` : usageTile();
 	return `
 		<section class="board" aria-labelledby="board-title">
 			<div class="blobs"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
@@ -432,7 +432,7 @@ function hostedTutorSection() {
 	return `
 		<section class="section">
 			<h2><span class="node green"></span>Tutor</h2>
-			<p>Obsidian calls Groundwork, and Groundwork calls the smaller model. One key covers every account on this plan. You do not paste one. This month's budget is what limits the tutor. Written answers are graded with Jev, on our key, and that does not use the tutor budget.</p>
+			<p>On Free and Groundwork plans, Groundwork runs the tutor model for you. You do not paste an API key. The monthly usage bar on this page is the tutor limit. Written quiz answers are graded on our servers and do not use that bar.</p>
 		</section>`;
 }
 
@@ -443,7 +443,7 @@ function keysSection() {
 	return `
 		<section class="section">
 			<h2><span class="node blue"></span>Your model</h2>
-			<p>This plan uses a model you already pay for. Groundwork does not meter it.</p>
+			<p>This plan uses your Claude subscription or a provider key you save on the website. Groundwork does not track that usage.</p>
 			<h3>Claude subscription</h3>
 			<p>The simplest path. The login stays on this computer. Groundwork never stores it.</p>
 			<ol class="setup-list">${steps.map((step) => `<li><strong>${escapeHtml(step.title)}</strong><p>${escapeHtml(step.detail)}</p></li>`).join("")}</ol>
@@ -457,7 +457,7 @@ function keysSection() {
 				<div class="actions"><button class="btn btn-ink" type="submit">Save tutor</button></div>
 			</form>
 			<h3>Or paste a provider key</h3>
-			<p>The key stays on this account. The tutor calls that provider through Groundwork, so it is not written into the vault. Jev stays on our server and is not a key you paste.</p>
+			<p>The key stays on this account. The tutor calls that provider through Groundwork, not from files in your vault. Written quiz answers are graded on the Groundwork website; that is not a key you paste.</p>
 			<ul class="keys" aria-label="Saved keys">${keyList()}</ul>
 			<form id="key" autocomplete="off">
 				<div class="row">
@@ -600,6 +600,87 @@ async function saveKey(event) {
 	}
 }
 
+const OBSIDIAN_DOWNLOAD = "https://obsidian.md/download";
+const OBSIDIAN_INSTALL = "obsidian://show-plugin?id=groundwork";
+const OBSIDIAN_COMMUNITY = "https://community.obsidian.md/plugins/groundwork";
+
+// The groundwork link is the fast path: an installed plugin connects, syncs, and reloads.
+// If the page never leaves, Obsidian is not installed. If Obsidian opens and the plugin never answers, open the community installer.
+function openObsidian() {
+	const refresh = user && user.refreshToken;
+	if (!refresh) {
+		actionError = "Your sign-in expired. Sign in again, then choose Open Obsidian.";
+		paint();
+		return;
+	}
+	const button = document.querySelector("#open-obsidian");
+	if (button) {
+		button.disabled = true;
+		button.textContent = "Opening Obsidian…";
+	}
+	const nonce = crypto.randomUUID();
+	const signal = `${location.origin}/v1/obsidian-opened/${nonce}/signal`;
+	const handoff = `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}&opened=${encodeURIComponent(signal)}`;
+	let sawApp = false;
+	let askedInstall = false;
+	let settled = false;
+	const mark = () => {
+		sawApp = true;
+	};
+	const onVis = () => {
+		if (document.hidden) mark();
+	};
+	window.addEventListener("blur", mark);
+	document.addEventListener("visibilitychange", onVis);
+	const started = performance.now();
+	const stop = () => {
+		if (settled) return;
+		settled = true;
+		window.clearInterval(timer);
+		window.removeEventListener("blur", mark);
+		document.removeEventListener("visibilitychange", onVis);
+	};
+	openProtocol(handoff);
+	const timer = window.setInterval(async () => {
+		if (settled) return;
+		const elapsed = performance.now() - started;
+		if (document.hidden || document.visibilityState === "hidden") mark();
+		let opened = false;
+		try {
+			const res = await fetch(`/v1/obsidian-opened/${nonce}`, { cache: "no-store", signal: AbortSignal.timeout(800) });
+			if (res.ok) opened = Boolean((await res.json()).opened);
+		} catch {
+			opened = false;
+		}
+		if (settled) return;
+		if (opened) {
+			stop();
+			if (button && button.isConnected) {
+				button.disabled = false;
+				button.textContent = "Open Obsidian";
+			}
+			return;
+		}
+		if (sawApp && !document.hasFocus() && elapsed > 1600 && !askedInstall) {
+			askedInstall = true;
+			openProtocol(OBSIDIAN_INSTALL);
+		}
+		if ((document.hasFocus() && elapsed > 1500) || elapsed > 8000) {
+			stop();
+			window.location.assign(sawApp ? OBSIDIAN_COMMUNITY : OBSIDIAN_DOWNLOAD);
+		}
+	}, 400);
+}
+
+function openProtocol(href) {
+	const link = document.createElement("a");
+	link.href = href;
+	link.hidden = true;
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
+}
+
 async function openPortal() {
 	const token = await user.getIdToken();
 	try {
@@ -631,9 +712,9 @@ async function readJson(res) {
 	try {
 		body = text ? JSON.parse(text) : {};
 	} catch {
-		throw new Error("The account server did not answer.");
+		throw new Error("The account server did not answer. Check that Groundwork is running, then reload this page.");
 	}
-	if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);
+	if (!res.ok) throw new Error(body.error || `That request failed (${res.status}). Try again, or sign out and sign in.`);
 	return body;
 }
 

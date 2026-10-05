@@ -14,7 +14,7 @@ export class SecretDirectory {
 
 	async save(uid: string, provider: string, apiKey: string): Promise<UserKeyProvider> {
 		if (!isUserKeyProvider(provider)) {
-			throw new SecretError(provider === "jev" || provider === "typesafe" ? "Jev is configured on the server. It is not a key you paste." : `Unknown provider "${provider}".`);
+			throw new SecretError(provider === "jev" || provider === "typesafe" ? "Answer grading runs on Groundwork's servers. It is not an API key you paste." : `Unknown provider "${provider}".`);
 		}
 		const key = apiKey.trim();
 		if (!key) throw new SecretError("Paste the API key.");
