@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Groundwork plugin UI harness</title>
+  <link rel="stylesheet" href="../../styles.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body { display: flex; flex-direction: column; background: #1e1e1e; }
+    #toolbar {
+      flex: none;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px;
+      background: #111;
+      color: #ccc;
+      font: 13px system-ui, sans-serif;
+    }
+    #toolbar button { cursor: pointer; }
+    #frame { flex: 1; min-height: 0; display: flex; }
+    #root { flex: 1; min-width: 0; min-height: 0; }
+    /* Obsidian-ish tokens for the Obsidian appearance mode */
+    .gw-theme-obsidian {
+      --background-primary: #1e1e1e;
+      --background-primary-alt: #262626;
+      --background-secondary: #2a2a2a;
+      --background-modifier-border: #333;
+      --background-modifier-hover: #353535;
+      --background-modifier-form-field: #252525;
+      --text-normal: #dcddde;
+      --text-muted: #9a9da3;
+      --text-faint: #7c7f85;
+      --text-accent: #7cbcf2;
+      --text-on-accent: #1e1e1e;
+      --interactive-accent: #7cbcf2;
+      --font-interface: system-ui, sans-serif;
+      --font-ui-small: 12px;
+      --font-ui-smaller: 11px;
+      --font-ui-medium: 14px;
+      --font-text-size: 15px;
+      --line-height-normal: 1.6;
+      --radius-s: 4px;
+      --radius-m: 8px;
+    }
+    .gw-theme-light {
+      --background-primary: #f6f4f0;
+      --background-primary-alt: #fff;
+      --background-secondary: #efeae3;
+      --background-modifier-border: #e4ddd4;
+      --background-modifier-hover: #e7e1d8;
+      --text-normal: #1c1b19;
+      --text-muted: #6f6a63;
+      --text-faint: #8a847c;
+      --text-accent: #1d6fbf;
+      --text-on-accent: #f7f4ef;
+      --interactive-accent: #1c1b19;
+    }
+  </style>
+</head>
+<body>
+  <div id="toolbar"></div>
+  <div id="frame"><div id="root" class="gw-root gw-theme-dark" data-harness-state="learn"></div></div>
+  <script type="module" src="./harness.js"></script>
+</body>
+</html>

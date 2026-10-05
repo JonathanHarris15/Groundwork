@@ -11,3 +11,4 @@ packages/obsidian-plugin/main.js
 firebase-service-account.json
 .firebase/
 test-results
+tmp/

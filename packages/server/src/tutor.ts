@@ -39,6 +39,31 @@ export async function completeTutor(ctx: TutorCallContext, body: unknown): Promi
 	const call = parseTutorCall(body);
 	if (!call) return { status: 400, json: { error: "Send the tutor turn: a system prompt, messages, and tools." } };
 
+	if (process.env.GROUNDWORK_TUTOR_STUB === "1") {
+		const status = describeTutor(ctx);
+		const shown = presentAccount(ctx.view);
+		return {
+			status: 200,
+			json: {
+				content: [
+					{
+						type: "text",
+						text: "Stub tutor reply for E2E. **Bold**, `inline code`, and $E=mc^2$ render in the pane.",
+					},
+				],
+				stopReason: "end_turn",
+				usage: { input: 16, output: 32 },
+				budgetUsed: shown.budgetUsed,
+				route: {
+					action: status.action,
+					model: status.model ?? "stub",
+					provider: status.provider,
+					label: status.label,
+				},
+			},
+		};
+	}
+
 	const rawKey = decision.key === "groundwork" ? ctx.openRouterKey : await ctx.userKey(decision.provider);
 	const apiKey = rawKey?.trim();
 	if (!apiKey) {

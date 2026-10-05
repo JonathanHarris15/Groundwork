@@ -18,6 +18,7 @@ export interface MapPaneOptions {
 	onScope: (scope: "path" | "all") => void;
 	onGhosts: (on: boolean) => void;
 	onStart?: (title: string) => void;
+	onOpenGoals?: () => void;
 }
 
 export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null, options: MapPaneOptions): void {
@@ -26,7 +27,12 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	const wrap = el(row, "div", "gw-mapwrap");
 	if (!model || !model.nodes.length) {
 		const empty = el(wrap, "div", "gw-map-empty");
-		empty.append("Pin a goal to see the path toward it. Ghost concepts are what still has to be learned before that goal.");
+		empty.append("Pick a working goal to see the concept path. Ghost nodes are prerequisites you have not built yet.");
+		const cta = el(empty, "button", "gw-next-btn");
+		cta.type = "button";
+		cta.textContent = "Open goals";
+		cta.setAttribute("title", "Choose or create a goal");
+		cta.addEventListener("click", () => options.onOpenGoals?.());
 		return;
 	}
 	wrap.append(drawMap(parent.ownerDocument, model));
