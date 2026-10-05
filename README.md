@@ -205,7 +205,7 @@ The plugin is laid out so it can be submitted:
 
 `node scripts/check-community-plugin.mjs` checks that list. The plugin id is `groundwork`, which is also the community install folder.
 
-From the website, **Add Groundwork to Obsidian** opens `obsidian://show-plugin?id=groundwork`. After the community listing is accepted, that opens Obsidian's plugin browser on Groundwork. Until then, copy the three release files into `.obsidian/plugins/groundwork/`.
+From the website, **Add Groundwork to Obsidian** opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
 
 The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` unless you override `GROUNDWORK_API_URL` for local development).
 
