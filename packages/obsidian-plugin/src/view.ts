@@ -78,6 +78,7 @@ import {
 	type GroundworkScreen,
 	type PaneLayoutState,
 } from "./pane-layout";
+import { trapFocus } from "./focus-trap";
 import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
 import { filesUnderFolderRoots } from "./vault-scope";
 
@@ -158,7 +159,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiProviderEl!: HTMLElement;
 	private uiContextEl!: HTMLElement;
 	private uiGoalDaysEl!: HTMLElement;
-	private uiSyncBtn!: HTMLElement;
+	private releaseOverlayFocus: (() => void) | null = null;
 	private uiLearnBtn!: HTMLElement;
 	private uiMapBtn!: HTMLElement;
 	private uiGoalsBtn!: HTMLElement;
@@ -250,11 +251,10 @@ export class ChatView extends ItemView implements ToolUI {
 		const actions = header.createDiv({ cls: "gw-actions" });
 		const headerTools = actions.createDiv({ cls: "gw-actions-tools" });
 		this.iconButton(headerTools, "square-pen", "New session", () => this.newSession());
-		this.iconButton(headerTools, "history", "Past sessions", (e) => this.showHistory(e));
 		this.uiLibraryBtn = this.iconButton(headerTools, "library", "Library", () => void this.toggleLibrary());
 		this.uiFlashBtn = this.iconButton(headerTools, "layers", "Flashcards", () => void this.toggleFlashcards());
 		this.uiSettingsBtn = this.iconButton(headerTools, "settings", "Settings", () => void this.toggleSettings());
-		this.uiSyncBtn = this.iconButton(headerTools, "refresh-cw", "Save tutor memory to your account", () => void this.plugin.saveMemory(true));
+		this.iconButton(headerTools, "more-horizontal", "More actions", (e) => void this.showMoreMenu(e));
 		const chip = actions.createDiv({ cls: "gw-goalchip" });
 		setIcon(chip.createSpan({ cls: "gw-goalchip-icon" }), "flag");
 		this.uiGoalEl = chip.createEl("select", { cls: "gw-goal-select", attr: { "aria-label": "Goal you are working toward" } });
@@ -343,15 +343,6 @@ export class ChatView extends ItemView implements ToolUI {
 		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
 		this.setupMargin(root);
-		this.registerDomEvent(root, "keydown", (e) => {
-			if (e.key !== "Escape" || e.isComposing) return;
-			if (!this.pane.overlay) return;
-			e.preventDefault();
-			if (this.pane.overlay === "library") this.closeLibrary();
-			else if (this.pane.overlay === "settings") this.closeSettings();
-			else this.closeFlashcards();
-		});
-
 		const last = await this.latestChat();
 		if (last) this.openChat(last);
 		else this.newSession();
@@ -361,6 +352,8 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	async onClose(): Promise<void> {
+		this.releaseOverlayFocus?.();
+		this.releaseOverlayFocus = null;
 		this.closeLibrary();
 		this.closeSettings();
 		this.closeFlashcards();
@@ -929,29 +922,41 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private async renderEmpty(): Promise<void> {
 		const el = this.uiMessagesEl.createDiv({ cls: "gw-empty" });
-		const hero = el.createDiv({ cls: "gw-hero" });
-		setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
-		hero.createEl("h2", { text: "What are you studying?" });
-		hero.createEl("p", {
-			text: "Name the exam or topic, or attach a syllabus or practice test. The tutor probes what you already know, then teaches from there.",
-		});
-
 		const provider = this.plugin.providerLabel();
-		if (provider.setup) {
-			const warn = el.createDiv({ cls: "gw-setup" });
-			warn.createEl("strong", { text: provider.setup.title });
-			void MarkdownRenderer.render(this.app, provider.setup.detail, warn.createDiv({ cls: "gw-setup-detail" }), "", this);
-			const row = warn.createDiv({ cls: "gw-row" });
-			row.createEl("button", { cls: "mod-cta", text: provider.setup.action }).addEventListener("click", () => {
+		const needsSetup = !!provider.setup;
+
+		if (needsSetup) {
+			const start = el.createDiv({ cls: "gw-start" });
+			start.createEl("h2", { cls: "gw-start-title", text: provider.setup!.title });
+			void MarkdownRenderer.render(this.app, provider.setup!.detail, start.createDiv({ cls: "gw-start-detail" }), "", this);
+			const actions = start.createDiv({ cls: "gw-start-actions" });
+			const primary = actions.createEl("button", {
+				cls: "mod-cta gw-start-primary",
+				text: provider.setup!.action,
+				attr: { type: "button" },
+			});
+			primary.addEventListener("click", () => {
 				if (provider.setup?.website) window.open(this.plugin.signedIn() ? accountOrigin() : accountSignInUrl());
-				else this.plugin.openSettings();
+				else void this.openSettings();
 			});
 			if (this.plugin.signedIn()) {
-				row.createEl("button", { text: "Try the demo" }).addEventListener("click", async () => {
+				const demo = actions.createEl("button", {
+					cls: "gw-text-btn gw-start-demo",
+					text: "Preview with the demo tutor",
+					attr: { type: "button" },
+				});
+				demo.addEventListener("click", async () => {
 					await this.plugin.useDemo();
 					this.renderAll();
 				});
 			}
+		} else {
+			const hero = el.createDiv({ cls: "gw-hero" });
+			setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
+			hero.createEl("h2", { text: "What do you want to understand?" });
+			hero.createEl("p", {
+				text: "Say what you want to learn, or drop in a lecture, homework, or notes. The tutor checks what you already hold and teaches that.",
+			});
 		}
 
 		const store = this.plugin.store;
@@ -961,7 +966,10 @@ export class ChatView extends ItemView implements ToolUI {
 		} catch {
 			overview = null;
 		}
-		const suggestions = el.createDiv({ cls: "gw-suggestions" });
+		const suggestions = el.createDiv({ cls: `gw-suggestions${needsSetup ? " is-deferred" : ""}` });
+		if (needsSetup) {
+			suggestions.createEl("h3", { cls: "gw-suggestions-kicker", text: "After you are connected" });
+		}
 		const suggest = (icon: string, label: string, detail: string, run: () => void) => {
 			const b = suggestions.createEl("button", { cls: "gw-suggestion" });
 			setIcon(b.createSpan({ cls: "gw-suggestion-icon" }), icon);
@@ -970,7 +978,7 @@ export class ChatView extends ItemView implements ToolUI {
 			t.createDiv({ cls: "gw-suggestion-detail", text: detail });
 			b.addEventListener("click", run);
 		};
-		if (provider.demo) {
+		if (provider.demo && !needsSetup) {
 			suggest("play", "Run the demo lesson", "A scripted lesson on the derivative: recall, plan, quizzes, memory updates.", () => void this.submit("Teach me what a derivative really is."));
 		}
 		for (const g of overview?.activeGoals.slice(0, 3) ?? []) {
@@ -1018,13 +1026,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	refreshSyncIndicator(): void {
-		if (!this.uiSyncBtn) return;
-		const s = this.plugin.syncStatus;
-		this.uiSyncBtn.toggleClass("is-syncing", s.state === "syncing");
-		this.uiSyncBtn.toggleClass("is-warning", s.state === "error" || s.state === "offline");
-		const label = `Tutor memory — ${s.text}`;
-		this.uiSyncBtn.setAttr("aria-label", label);
-		this.uiSyncBtn.setAttr("title", label);
+		// Tutor memory sync lives on the Obsidian status bar (see GroundworkPlugin.renderStatus).
 	}
 
 	// ── attachments ─────────────────────────────────────────────────────
@@ -1219,7 +1221,22 @@ export class ChatView extends ItemView implements ToolUI {
 
 	// ── menus ───────────────────────────────────────────────────────────
 
-	private async showHistory(evt: MouseEvent): Promise<void> {
+	private showMoreMenu(evt: MouseEvent): void {
+		const menu = new Menu();
+		menu.addItem((i) =>
+			i.setTitle("Past sessions").setIcon("history").onClick(() => void this.showHistory(evt)),
+		);
+		const s = this.plugin.syncStatus;
+		menu.addItem((i) =>
+			i
+				.setTitle(`Save tutor memory — ${s.text}`)
+				.setIcon("refresh-cw")
+				.onClick(() => void this.plugin.saveMemory(true)),
+		);
+		menu.showAtMouseEvent(evt);
+	}
+
+	private async showHistory(evt?: MouseEvent): Promise<void> {
 		const menu = new Menu();
 		const chats = await this.listChats();
 		if (!chats.length) menu.addItem((i) => i.setTitle("No past sessions yet").setDisabled(true));
@@ -1234,7 +1251,23 @@ export class ChatView extends ItemView implements ToolUI {
 					}),
 			);
 		}
-		menu.showAtMouseEvent(evt);
+		if (evt) menu.showAtMouseEvent(evt);
+	}
+
+	private bindOverlayFocus(panel: HTMLElement, close: () => void, label: string): void {
+		this.releaseOverlayFocus?.();
+		panel.setAttr("role", "dialog");
+		panel.setAttr("aria-modal", "true");
+		panel.setAttr("aria-label", label);
+		this.releaseOverlayFocus = trapFocus(panel, close);
+	}
+
+	private clearOverlayFocus(panel: HTMLElement): void {
+		this.releaseOverlayFocus?.();
+		this.releaseOverlayFocus = null;
+		panel.removeAttribute("role");
+		panel.removeAttribute("aria-modal");
+		panel.removeAttribute("aria-label");
 	}
 
 	showFlashcards(): Promise<void> {
@@ -1256,10 +1289,12 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiLibraryBtn?.removeClass("is-active");
 		this.uiSettingsBtn?.removeClass("is-active");
 		await this.flashPane.show();
+		this.bindOverlayFocus(this.uiFlashEl, () => this.closeFlashcards(), "Flashcards");
 	}
 
 	private closeFlashcards(): void {
 		if (this.pane.overlay !== "flashcards") return;
+		this.clearOverlayFocus(this.uiFlashEl);
 		this.pane = closeOverlay(this.pane);
 		this.syncPaneLayout();
 		this.uiFlashBtn?.removeClass("is-active");
@@ -1289,10 +1324,12 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiFlashBtn?.removeClass("is-active");
 		this.uiSettingsBtn?.removeClass("is-active");
 		await this.renderLibrary();
+		this.bindOverlayFocus(this.uiLibraryEl, () => this.closeLibrary(), "Library");
 	}
 
 	private closeLibrary(): void {
 		if (this.pane.overlay !== "library") return;
+		this.clearOverlayFocus(this.uiLibraryEl);
 		this.pane = closeOverlay(this.pane);
 		this.syncPaneLayout();
 		this.uiLibraryBtn?.removeClass("is-active");
@@ -1319,10 +1356,12 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiLibraryBtn?.removeClass("is-active");
 		this.uiFlashBtn?.removeClass("is-active");
 		await this.renderSettings();
+		this.bindOverlayFocus(this.uiSettingsEl, () => this.closeSettings(), "Settings");
 	}
 
 	private closeSettings(): void {
 		if (this.pane.overlay !== "settings") return;
+		this.clearOverlayFocus(this.uiSettingsEl);
 		this.pane = closeOverlay(this.pane);
 		this.syncPaneLayout();
 		this.uiSettingsBtn?.removeClass("is-active");

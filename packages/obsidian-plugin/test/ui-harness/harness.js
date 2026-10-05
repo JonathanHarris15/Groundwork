@@ -2,7 +2,7 @@ const root = document.getElementById("root");
 const toolbar = document.getElementById("toolbar");
 
 const states = [
-  ["learn-empty", { screen: "learn", overlay: null, theme: "dark", body: "empty" }],
+  ["learn-empty", { screen: "learn", overlay: null, theme: "dark", body: "start" }],
   ["learn-chat", { screen: "learn", overlay: null, theme: "dark", body: "chat" }],
   ["map", { screen: "map", overlay: null, theme: "dark", body: "map" }],
   ["goals", { screen: "goals", overlay: null, theme: "dark", body: "goals" }],
@@ -52,8 +52,8 @@ function fill(body) {
   library.innerHTML = "";
   settings.innerHTML = "";
   flash.innerHTML = '<div class="gw-fc-loading">Loading cards…</div>';
-  if (body === "empty") {
-    messages.innerHTML = `<div class="gw-empty"><div class="gw-hero"><h2>What do you want to understand?</h2><p>Sign in on the website, then choose Open Obsidian.</p></div><div class="gw-setup"><strong>Connect this device</strong><p>Open the Groundwork website and sign in.</p></div></div>`;
+  if (body === "start") {
+    messages.innerHTML = `<div class="gw-empty"><div class="gw-start"><h2 class="gw-start-title">Sign in to start.</h2><div class="gw-start-detail"><p>Open the Groundwork website, sign in, and choose Open Obsidian.</p></div><div class="gw-start-actions"><button type="button" class="mod-cta gw-start-primary">Sign in</button></div></div><div class="gw-suggestions is-deferred"><h3 class="gw-suggestions-kicker">After you are connected</h3></div></div>`;
   }
   if (body === "chat") {
     messages.innerHTML = `

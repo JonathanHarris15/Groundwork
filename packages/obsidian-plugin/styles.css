@@ -158,8 +158,10 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	padding: 10px 12px 8px;
+	min-height: 48px;
+	padding: 8px 12px;
 	border-bottom: 1px solid var(--background-modifier-border);
+	flex-wrap: wrap;
 }
 .gw-titles {
 	flex: 1;
@@ -1614,10 +1616,62 @@
 .gw-empty {
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: 20px;
 	margin: auto 0;
-	padding: 12px 4px;
+	padding: 12px 4px 24px;
 	width: 100%;
+}
+.gw-start {
+	max-width: var(--gw-column);
+	margin: 0 auto;
+	padding: 8px 12px 4px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+.gw-start-title {
+	margin: 0;
+	font-size: 1.35em;
+	font-weight: 600;
+	line-height: 1.25;
+}
+.gw-start-detail {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	line-height: 1.5;
+	max-width: 52ch;
+}
+.gw-start-detail p {
+	margin: 0 0 8px;
+}
+.gw-start-actions {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 10px;
+	margin-top: 4px;
+}
+.gw-start-primary {
+	min-width: 200px;
+}
+.gw-start-demo {
+	margin-left: 2px;
+}
+.gw-suggestions-kicker {
+	margin: 0 0 8px;
+	width: 100%;
+	text-align: center;
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+.gw-suggestions.is-deferred {
+	opacity: 0.72;
+}
+.gw-suggestions.is-deferred .gw-suggestion {
+	pointer-events: none;
 }
 .gw-hero {
 	text-align: center;
@@ -1881,11 +1935,11 @@
 }
 
 /* Website look, scoped to this panel. Obsidian outside it is unchanged. */
-.gw-header {
-	height: 48px;
+.gw-root.gw-theme-dark .gw-header,
+.gw-root.gw-theme-light .gw-header {
 	gap: 12px;
 	padding: 0 14px;
-	border-bottom: 1px solid var(--gw-line);
+	border-bottom-color: var(--gw-line);
 	background: var(--gw-paper);
 }
 .gw-brand { display: flex; align-items: center; gap: 9px; color: var(--gw-ink-strong); flex: none; }
@@ -1916,8 +1970,16 @@
 }
 .gw-view svg { width: 13px; height: 13px; }
 .gw-view.is-on { background: var(--gw-pill-on); color: var(--gw-ink-strong); }
-.gw-brand, .gw-actions { flex: 1; }
-.gw-actions { justify-content: flex-end; }
+.gw-root.gw-theme-dark .gw-brand,
+.gw-root.gw-theme-light .gw-brand,
+.gw-root.gw-theme-dark .gw-actions,
+.gw-root.gw-theme-light .gw-actions {
+	flex: 1;
+}
+.gw-root.gw-theme-dark .gw-actions,
+.gw-root.gw-theme-light .gw-actions {
+	justify-content: flex-end;
+}
 .gw-goalchip {
 	display: inline-flex;
 	align-items: center;
