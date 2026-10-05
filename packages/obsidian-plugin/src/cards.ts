@@ -5,6 +5,7 @@ import {
 	familiarityLabel,
 	gradeQuiz,
 	letter,
+	masteryTone,
 	MAX_FAMILIARITY,
 	type AskInput,
 	type AskResponse,
@@ -16,6 +17,7 @@ import {
 	type TestReport,
 	type TestResponse,
 } from "@groundwork/core";
+import { setTone, statusPill } from "./mastery-ui";
 
 export type RenderMd = (el: HTMLElement, markdown: string) => Promise<void>;
 
@@ -354,10 +356,11 @@ export class QuizCard {
 		const to = Math.round(after.current * 100);
 		const label = this.mastery.createDiv({ cls: "gw-mastery-label" });
 		label.createSpan({ text: this.quiz.concept });
-		label.createSpan({ cls: `gw-status gw-status-${after.status}`, text: after.status });
+		statusPill(label, after.status);
 		label.createSpan({ cls: "gw-mastery-delta", text: from === null ? `${to}%` : `${from}% → ${to}%` });
 		const bar = this.mastery.createDiv({ cls: "gw-bar" });
-		const fill = bar.createDiv({ cls: `gw-bar-fill gw-status-${after.status}` });
+		const fill = bar.createDiv({ cls: "gw-bar-fill" });
+		setTone(fill, masteryTone(after.status));
 		fill.style.width = `${Math.max(3, to)}%`;
 	}
 }
@@ -549,11 +552,13 @@ export class TestCard {
 			const row = concepts.createDiv({ cls: "gw-test-concept" });
 			const label = row.createDiv({ cls: "gw-mastery-label" });
 			label.createSpan({ text: c.concept });
-			label.createSpan({ cls: `gw-status gw-status-${c.status}`, text: c.status });
+			statusPill(label, c.status);
 			label.createSpan({ cls: "gw-mastery-delta", text: `${fmtPoints(c.earned)}/${c.possible} · Q${c.questions.join(", Q")}` });
 			const bar = row.createDiv({ cls: "gw-bar" });
 			const p = Math.round(c.percent * 100);
-			bar.createDiv({ cls: `gw-bar-fill ${p >= 80 ? "gw-status-solid" : p >= 50 ? "gw-status-shaky" : "gw-status-learning"}` }).style.width = `${Math.max(3, p)}%`;
+			const fill = bar.createDiv({ cls: "gw-bar-fill" });
+			setTone(fill, masteryTone(c.status));
+			fill.style.width = `${Math.max(3, p)}%`;
 		}
 		if (report.misconceptions.length) {
 			const m = this.reportEl.createDiv({ cls: "gw-test-misconceptions" });

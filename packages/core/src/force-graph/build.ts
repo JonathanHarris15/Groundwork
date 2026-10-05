@@ -2,7 +2,8 @@ import type { ConceptMapModel } from "../goal-plan";
 import type { ConceptStatus } from "../model";
 import type { GroundworkGraph } from "../groundwork-graph";
 import { GROUNDWORK_COLORS } from "../groundwork-graph";
-import { MAP_VISUAL_COLORS, STATUS_COLORS } from "./colors";
+import { MASTERY_LABEL, MASTERY_TONES, masteryTone, STUDY_MOVE_HINT, studyMove } from "../mastery-tone";
+import { TONE_FALLBACK_COLORS } from "./colors";
 import type { ForceGraphData, ForceGraphLegendItem, ForceGraphLink, ForceGraphNode } from "./types";
 
 export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
@@ -12,17 +13,9 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 		degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
 	}
 	const nodes: ForceGraphNode[] = model.nodes.map((node) => {
-		const attention = node.visual === "ghost" || node.visual === "shaky" || node.visual === "rusty" || node.visual === "target";
-		const hint =
-			node.next
-				? "Start here in chat"
-				: node.visual === "ghost"
-					? "Not started — tap to begin"
-					: node.visual === "shaky" || node.visual === "rusty"
-						? "Weak spot — tap to quiz"
-						: node.visual === "goal" || node.visual === "target"
-							? "Goal target — tap to build"
-							: "Tap to open in chat";
+		const tone = node.tone;
+		const state = tone === "goal" ? "Goal" : MASTERY_LABEL[tone];
+		const action = STUDY_MOVE_HINT[studyMove(tone, node.next)];
 		return {
 			id: node.id,
 			title: node.title,
@@ -31,13 +24,15 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 			vx: 0,
 			vy: 0,
 			radius: node.r + 2,
-			color: MAP_VISUAL_COLORS[node.visual] ?? MAP_VISUAL_COLORS.dim,
+			color: TONE_FALLBACK_COLORS[tone],
 			cluster: node.visual === "goal" ? "Goal" : node.visual,
 			visual: node.visual,
+			tone,
+			faded: node.offPath,
+			open: tone === "unstarted",
 			label: true,
-			needsAttention: attention,
 			isNext: node.next,
-			actionHint: hint,
+			actionHint: `${node.next ? "Next · " : ""}${state}${node.offPath ? " · off this goal's path" : ""} — ${action}`,
 		};
 	});
 	const links: ForceGraphLink[] = model.edges.map((edge) => ({
@@ -48,10 +43,8 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 		highlight: edge.kind === "built",
 	}));
 	const legend: ForceGraphLegendItem[] = [
-		{ key: "known", label: "Solid — you have this groundwork", color: MAP_VISUAL_COLORS.known },
-		{ key: "learning", label: "Learning", color: MAP_VISUAL_COLORS.learning },
-		{ key: "ghost", label: "Not started yet", color: MAP_VISUAL_COLORS.ghost },
-		{ key: "goal", label: "Working goal", color: MAP_VISUAL_COLORS.goal },
+		...MASTERY_TONES.map((tone) => ({ key: tone, label: MASTERY_LABEL[tone], color: TONE_FALLBACK_COLORS[tone] })),
+		{ key: "goal", label: "Goal", color: TONE_FALLBACK_COLORS.goal },
 		{ key: "edge-built", label: "Solid arrow — the next step up", color: "#7f848e" },
 		{ key: "edge-bridge", label: "Dashed arrow — link across subjects", color: "#a8adb6" },
 	];
@@ -61,6 +54,12 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 export function buildFromGroundwork(
 	concepts: Array<{ id: string; title: string; status: ConceptStatus }>,
 	graph: GroundworkGraph,
+	opts: {
+		/** Hover text names the click's study move instead of the website's "see the list below". */
+		studyHints?: boolean;
+		/** Dashed warning rings around shaky, rusty, and open nodes. Off where a legend explains every mark. */
+		attentionRings?: boolean;
+	} = {},
 ): ForceGraphData {
 	const statusOf = new Map(concepts.map((c) => [c.id, c.status]));
 	const degree = new Map<string, number>();
@@ -70,17 +69,9 @@ export function buildFromGroundwork(
 	}
 	const nodes: ForceGraphNode[] = graph.nodes.map((node) => {
 		const status = statusOf.get(node.id) ?? "unassessed";
+		const tone = masteryTone(status);
 		const deg = degree.get(node.id) ?? 0;
-		const open = status === "unassessed";
 		const attention = status === "unassessed" || status === "shaky" || status === "rusty";
-		const hint =
-			status === "unassessed"
-				? "Not quizzed yet — find it in the list below"
-				: status === "shaky" || status === "rusty"
-					? "Needs review — find it in the list below"
-					: status === "learning"
-						? "Still building — see the list below"
-						: "Solid — see the list below";
 		const placed = graph.nodes.find((n) => n.id === node.id);
 		return {
 			id: node.id,
@@ -90,13 +81,15 @@ export function buildFromGroundwork(
 			vx: 0,
 			vy: 0,
 			radius: 5 + Math.min(12, Math.sqrt(deg + 1) * 2.4),
-			color: open ? node.color : STATUS_COLORS[status],
+			color: TONE_FALLBACK_COLORS[tone],
 			cluster: node.domain,
 			status,
-			open,
+			tone,
+			open: tone === "unstarted",
 			label: deg >= 2 || graph.nodes.length <= 8 || attention,
-			needsAttention: attention,
-			actionHint: hint,
+			needsAttention: attention && opts.attentionRings !== false,
+			// The hover tip already names the state, so the hint only says what a click does.
+			actionHint: opts.studyHints ? STUDY_MOVE_HINT[studyMove(tone)] : "find it in the list below",
 		};
 	});
 	const links: ForceGraphLink[] = graph.edges.map((edge) => ({
@@ -105,9 +98,7 @@ export function buildFromGroundwork(
 		bridge: edge.bridge,
 	}));
 	const legend: ForceGraphLegendItem[] = [
-		...(graph.legend ?? []).map((item) => ({ key: item.domain, label: item.domain, color: item.color })),
-		{ key: "status-solid", label: "Solid", color: STATUS_COLORS.solid },
-		{ key: "status-open", label: "Not quizzed", color: STATUS_COLORS.unassessed },
+		...MASTERY_TONES.map((tone) => ({ key: tone, label: MASTERY_LABEL[tone], color: TONE_FALLBACK_COLORS[tone] })),
 		{ key: "edge-built", label: "Solid arrow — groundwork you build on", color: "#7f848e" },
 		{ key: "edge-bridge", label: "Dashed arrow — ties two subjects", color: "#a8adb6" },
 	];

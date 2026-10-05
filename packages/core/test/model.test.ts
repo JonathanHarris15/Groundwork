@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeStats, predictCorrect, type Evidence } from "../src/model";
+import { computeStats, FLASHCARD_CREDIT, predictCorrect, type Evidence } from "../src/model";
 
 const day = (n: number) => new Date(Date.UTC(2026, 0, 1) + n * 86_400_000).toISOString();
 const ev = (n: number, outcome: Evidence["outcome"], difficulty = 3, extra: Partial<Evidence> = {}): Evidence => ({
@@ -107,5 +107,49 @@ describe("computeStats", () => {
 	it("predicts lower odds for harder questions", () => {
 		const s = computeStats([ev(0, "correct"), ev(1, "correct")], new Date(day(1)));
 		expect(predictCorrect(s, 5)).toBeLessThan(predictCorrect(s, 1));
+	});
+});
+
+describe("flashcard credit", () => {
+	const quiz = [ev(0, "correct"), ev(0.01, "partial")];
+	const card = (hours: number, outcome: Evidence["outcome"] = "correct"): Evidence => ({
+		ts: new Date(Date.parse(day(1)) + hours * 3_600_000).toISOString(),
+		concept: "x",
+		outcome,
+		difficulty: 3,
+		kind: "review",
+		source: "flashcard",
+	});
+
+	it("holds every rolling 4-hour window to the cap, wherever the window starts", () => {
+		const cards = Array.from({ length: 48 }, (_, i) => card(i * 0.25));
+		const base = computeStats(quiz, new Date(day(1))).ability;
+		for (let start = 0; start < 12; start += 0.25) {
+			const before = computeStats([...quiz, ...cards.filter((c) => Date.parse(c.ts) < Date.parse(card(start).ts))], new Date(day(1)));
+			const through = computeStats(
+				[...quiz, ...cards.filter((c) => Date.parse(c.ts) < Date.parse(card(start + 4).ts))],
+				new Date(day(1)),
+			);
+			expect(through.ability - before.ability).toBeLessThanOrEqual(FLASHCARD_CREDIT.windowCap + 0.002);
+		}
+		expect(computeStats([...quiz, ...cards], new Date(day(1))).ability).toBeGreaterThan(base);
+	});
+
+	it("never takes ability away and is not an attempt", () => {
+		const base = computeStats(quiz, new Date(day(1)));
+		const missed = computeStats([...quiz, card(1, "incorrect"), card(2, "partial")], new Date(day(1)));
+		expect(missed.ability).toBe(base.ability);
+		expect(missed.attempts).toBe(base.attempts);
+	});
+
+	it("does nothing before the first quiz", () => {
+		expect(computeStats([card(0), card(1)]).status).toBe("unassessed");
+	});
+
+	it("stops below solid, so only a quiz completes a concept", () => {
+		const cards = Array.from({ length: 400 }, (_, i) => card(i * 2));
+		const stats = computeStats([...quiz, ...cards], new Date(day(1)));
+		expect(stats.mastery).toBeLessThan(0.8);
+		expect(stats.status).not.toBe("solid");
 	});
 });

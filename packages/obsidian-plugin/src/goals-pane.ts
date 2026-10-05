@@ -1,5 +1,6 @@
-import { daysLeftPhrase } from "@groundwork/core";
-import { paceLabel, type GoalBoardView } from "./goal-board";
+import { daysLeftPhrase, type StudyMove } from "@groundwork/core";
+import { paceLabel, type GoalBoardView, type GoalConceptRow } from "./goal-board";
+import { masteryDot, masteryPill, setTone } from "./mastery-ui";
 import { appendSvgFragment } from "./svg-fragment";
 
 export interface GoalsPaneHandlers {
@@ -9,7 +10,7 @@ export interface GoalsPaneHandlers {
 	onCreate: () => void;
 	onDue: (id: string, due: string) => void;
 	onWeight: (id: string, title: string, weight: number) => void;
-	onOpen: (title: string, action: "start" | "quiz" | "learn") => void;
+	onOpen: (title: string, move: StudyMove) => void;
 	onPractice: () => void;
 	onMap: () => void;
 	onDocs: () => void;
@@ -34,9 +35,9 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 		for (const board of boards) {
 			const tab = el(tabs, "button", `gw-goal-tab${board.id === selectedId ? " is-on" : ""}`);
 			tab.type = "button";
-			const dot = el(tab, "i", "gw-dot");
-			dot.style.background = board.status === "done" ? "#3CC56F" : board.status === "paused" ? "#F7A93E" : "#F0565B";
+			masteryDot(tab, board.status === "done" ? "solid" : board.status === "paused" ? "unstarted" : "goal");
 			tab.append(board.title);
+			if (board.status !== "active") el(tab, "span", "gw-goal-count", board.status === "done" ? "Done" : "Paused");
 			if (board.daysLeft != null) el(tab, "span", "gw-goal-count", daysLeftPhrase(board.daysLeft).replace(" days", "d").replace(" day", "d"));
 			tab.addEventListener("click", () => handlers.onSelect(board.id));
 		}
@@ -115,14 +116,14 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	track.setAttribute("cy", "64");
 	track.setAttribute("r", "52");
 	track.setAttribute("fill", "none");
-	track.setAttribute("stroke", "#333");
+	track.setAttribute("class", "gw-ring-track");
 	track.setAttribute("stroke-width", "10");
 	const arc = doc.createElementNS(NS, "circle");
 	arc.setAttribute("cx", "64");
 	arc.setAttribute("cy", "64");
 	arc.setAttribute("r", "52");
 	arc.setAttribute("fill", "none");
-	arc.setAttribute("stroke", "#3CC56F");
+	arc.setAttribute("class", "gw-ring-arc");
 	arc.setAttribute("stroke-width", "10");
 	arc.setAttribute("stroke-linecap", "round");
 	arc.setAttribute("stroke-dasharray", `${(pct / 100) * circ} 999`);
@@ -134,19 +135,15 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	label.textContent = `${pct}%`;
 	ringSvg.append(track, arc, label);
 	ring.append(ringSvg);
-	el(ring, "div", "gw-ring-label", `ready, weighted by the goal\n${board.knownCount} of ${board.conceptCount} concepts known`);
+	el(ring, "div", "gw-ring-label", `ready, weighted by the goal\n${board.knownCount} of ${board.conceptCount} concepts solid`);
 
 	const list = el(main, "div", "gw-concept-list");
 	const head = el(list, "div", "gw-concept-head");
 	for (const label of ["Concept", "Weight", "Complete", "State", "Work on it"]) el(head, "span", "", label);
 	for (const concept of board.concepts) {
 		const line = el(list, "div", `gw-concept-row${concept.next ? " is-next" : ""}`);
-		const name = el(line, "span", `gw-concept-name${concept.ghost ? " is-ghost" : ""}`);
-		if (concept.ghost) el(name, "i", "gw-ghost-dot");
-		else {
-			const dot = el(name, "i", "gw-dot");
-			dot.style.background = concept.color;
-		}
+		const name = el(line, "span", `gw-concept-name${concept.tone === "unstarted" ? " is-unstarted" : ""}`);
+		masteryDot(name, concept.tone);
 		name.append(concept.title);
 		const weight = el(line, "label", "gw-weight");
 		const input = el(weight, "input");
@@ -164,25 +161,12 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 		const bar = el(line, "span", "gw-complete");
 		const track = el(bar, "span", "gw-complete-bar");
 		const fill = el(track, "span");
+		setTone(fill, concept.tone);
 		fill.style.width = `${concept.complete}%`;
-		fill.style.background = concept.color;
 		el(bar, "em", "", `${concept.complete}%`);
-		el(line, "span", "gw-state", concept.state);
-		const action = el(line, "button", `gw-row-action${concept.action === "start" ? " is-primary" : ""}${concept.action === "known" ? " is-done" : ""}`);
-		action.type = "button";
-		if (concept.action === "known") {
-			action.append(icon(action, `<path d="M5 12l5 5 9-10"></path>`), "Known");
-			action.disabled = true;
-		} else if (concept.action === "start") {
-			action.append("Start", icon(action, `<path d="M5 12h14M13 6l6 6-6 6"></path>`));
-			action.addEventListener("click", () => handlers.onOpen(concept.title, "start"));
-		} else if (concept.action === "quiz") {
-			action.textContent = "Quiz me";
-			action.addEventListener("click", () => handlers.onOpen(concept.title, "quiz"));
-		} else {
-			action.textContent = "Learn";
-			action.addEventListener("click", () => handlers.onOpen(concept.title, "learn"));
-		}
+		const state = el(line, "span", "gw-state");
+		masteryPill(state, concept.tone, concept.state);
+		rowAction(line, concept, handlers);
 	}
 
 	const side = el(row, "aside", "gw-side");
@@ -190,21 +174,18 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	sideHead.textContent = "Work on this goal";
 	const work = el(side, "div", "gw-work");
 	const actions = el(work, "div", "gw-work-actions");
-	option(actions, true, "Continue the path", board.nextTitle ? `${board.nextTitle}${board.nextAfter ? `, then ${board.nextAfter}` : ""}` : "Nothing is waiting on this goal.", board.sessions ? "30m" : "", () => {
-		if (board.nextTitle) handlers.onOpen(board.nextTitle, "start");
-	});
+	const nextTitle = board.nextTitle;
+	if (nextTitle) workOption(actions, true, "Continue the path", () => handlers.onOpen(nextTitle, "start"));
 	if (board.shaky.length) {
-		option(actions, false, "Quiz my shaky spots", `${board.shaky.slice(0, 2).join(" and ")}${board.shaky.length > 2 ? ` and ${board.shaky.length - 2} more` : ""}`, "10m", () => handlers.onOpen(board.shaky[0], "quiz"));
+		workOption(actions, false, board.shaky.length === 1 ? "Quiz my shaky spot" : "Quiz my shaky spots", () => handlers.onOpen(listTitles(board.shaky.slice(0, 3)), "quiz"));
 	}
-	if (board.heaviest) {
-		option(actions, false, "Study the heaviest topic", `${board.heaviest.title} is ${board.heaviest.weight}% of this goal`, "35m", () => handlers.onOpen(board.heaviest!.title, "learn"));
-	}
-	option(actions, false, "Practice exam", "Questions weighted like this goal", "45m", handlers.onPractice);
-	option(actions, false, "View on the concept map", "Opens the map with your goal on top and every concept visible", "", handlers.onMap);
-	option(actions, false, "Add prep docs", "Attach a study guide or syllabus file", "", handlers.onDocs);
+	const heaviest = board.heaviest;
+	if (heaviest) workOption(actions, false, "Study the heaviest topic", () => handlers.onOpen(heaviest.title, "learn"));
+	workOption(actions, !nextTitle, "Practice exam", handlers.onPractice);
+	workOption(actions, false, "View on the concept map", handlers.onMap);
+	workOption(actions, false, "Add prep docs", handlers.onDocs);
 	const foot = el(work, "div", "gw-work-foot");
-	el(foot, "p", "gw-path-why", "Weights come from the goal. Leave them even and every concept counts the same. As the date gets close, the last two days are for the heaviest concepts.");
-	const remove = el(foot, "button", "gw-text-btn");
+	const remove = el(foot, "button", "gw-text-btn gw-work-delete");
 	remove.type = "button";
 	remove.textContent = "Delete goal";
 	remove.addEventListener("click", () => {
@@ -245,13 +226,34 @@ function renderGoalsUnpinned(main: HTMLElement, boards: GoalBoardView[], handler
 	create.addEventListener("click", handlers.onCreate);
 }
 
-function option(parent: HTMLElement, primary: boolean, title: string, detail: string, time: string, onClick: () => void): void {
-	const button = el(parent, "button", `gw-option-card${primary ? " is-primary" : ""}`);
+const ROW_ACTION: Record<StudyMove, { label: string; title: (concept: string) => string }> = {
+	start: { label: "Start", title: (concept) => `Start ${concept} with the tutor` },
+	learn: { label: "Learn", title: (concept) => `Keep learning ${concept}` },
+	quiz: { label: "Quiz me", title: (concept) => `Quiz me on ${concept}` },
+	review: { label: "Review", title: (concept) => `Known. Review ${concept} to keep it solid` },
+};
+
+function rowAction(line: HTMLElement, concept: GoalConceptRow, handlers: GoalsPaneHandlers): void {
+	const move = concept.action;
+	const action = el(line, "button", `gw-row-action${concept.next ? " is-primary" : ""}${move === "review" ? " is-known" : ""}`);
+	action.type = "button";
+	action.title = ROW_ACTION[move].title(concept.title);
+	action.setAttribute("aria-label", ROW_ACTION[move].title(concept.title));
+	if (move === "review") action.append(icon(action, `<path d="M5 12l5 5 9-10"></path>`), "Known");
+	else if (move === "start") action.append("Start", icon(action, `<path d="M5 12h14M13 6l6 6-6 6"></path>`));
+	else action.textContent = ROW_ACTION[move].label;
+	action.addEventListener("click", () => handlers.onOpen(concept.title, move));
+}
+
+function listTitles(titles: string[]): string {
+	if (titles.length <= 1) return titles[0] ?? "";
+	return `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`;
+}
+
+function workOption(parent: HTMLElement, primary: boolean, title: string, onClick: () => void): void {
+	const button = el(parent, "button", `gw-work-btn${primary ? " is-primary" : ""}`);
 	button.type = "button";
-	const text = el(button, "span");
-	el(text, "b", "", title);
-	el(text, "span", "", detail);
-	if (time) el(button, "span", "gw-option-time", time);
+	button.textContent = title;
 	button.addEventListener("click", onClick);
 }
 

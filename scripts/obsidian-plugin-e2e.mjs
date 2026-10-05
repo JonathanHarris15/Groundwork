@@ -234,7 +234,15 @@ async function shot(name) {
 
 async function shotGroundwork(name) {
 	const file = path.join(outDir, `${prefix}${name}.png`);
-	await page.locator(".gw-root").screenshot({ path: file, timeout: 30_000 });
+	for (let attempt = 0; attempt < 5; attempt++) {
+		try {
+			await page.locator(".gw-root").screenshot({ path: file, timeout: 30_000 });
+			return;
+		} catch (e) {
+			if (attempt === 4) throw e;
+			await sleep(400);
+		}
+	}
 }
 
 async function shotStatusBar(name) {
@@ -336,12 +344,20 @@ await page.keyboard.press("Control+=");
 await sleep(500);
 await shot("03-zoom-in");
 
+/** Library and Settings are screens like the tabs: no Close or X, and a center tab leaves them. */
+async function expectNoCloseButton(screen) {
+	const closers = page.locator(`${rootSel}.is-${screen} .gw-${screen} button`).filter({ hasText: /^(Close|×|✕)$/ });
+	const labelled = page.locator(`${rootSel}.is-${screen} .gw-${screen} button[aria-label="Close"]`);
+	if ((await closers.count()) + (await labelled.count())) throw new Error(`${screen} still shows a Close button`);
+}
+const tab = (id) => page.locator(`${rootSel} [data-testid="gw-${id}-tab"]`);
+const utility = (id) => page.locator(`${rootSel} [data-testid="gw-${id}-btn"]`);
+
 if (scenario === "signed-in") {
-	await page.keyboard.press("Escape");
-	await sleep(300);
-	await page.locator(`${rootSel} [data-testid="gw-library-btn"]`).click();
+	await utility("library").click();
 	await page.waitForSelector(`${rootSel}.is-library`, { timeout: 15_000 });
 	await page.waitForSelector(`${rootSel} .gw-lib-name`, { hasText: /Calculus/i, timeout: 20_000 });
+	await expectNoCloseButton("library");
 	await sleep(800);
 	await shotGroundwork("04-library");
 
@@ -349,70 +365,82 @@ if (scenario === "signed-in") {
 	await sleep(600);
 	await shot("05-library-concepts");
 
-	await page.keyboard.press("Escape");
-	await sleep(400);
-	await page.locator(`${rootSel} [data-testid="gw-map-tab"]`).click();
-	await page.waitForSelector(`${rootSel}.is-map`, { timeout: 15_000 });
+	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Flashcards/ }).click({ timeout: 10_000 });
+	await page.waitForSelector(`${rootSel} .gw-fc-lib-layout`, { timeout: 20_000 });
+	await sleep(600);
+	await shotGroundwork("05b-library-flashcards");
+
+	await tab("map").click();
+	await page.waitForSelector(`${rootSel}.is-map:not(.is-library)`, { timeout: 15_000 });
 	await page.waitForSelector(`${rootSel} .gw-force-map, ${rootSel} .gw-map-empty`, { timeout: 60_000 });
 	await sleep(800);
 	await shotGroundwork("06-map");
 
-	await page.locator(`${rootSel} [data-testid="gw-goals-tab"]`).click();
+	await tab("goals").click();
 	await page.waitForSelector(`${rootSel}.is-goals`, { timeout: 15_000 });
 	await sleep(1200);
 	await shotGroundwork("07-goals");
+	await page.locator(`${rootSel} .gw-concept-list`).scrollIntoViewIfNeeded();
+	const clipped = await page.evaluate((sel) => {
+		const list = document.querySelector(`${sel} .gw-concept-list`);
+		const edge = list?.getBoundingClientRect().right ?? 0;
+		return [...(list?.querySelectorAll(".gw-row-action") ?? [])].filter((b) => b.getBoundingClientRect().right > edge + 1).length;
+	}, rootSel);
+	if (clipped) throw new Error(`${clipped} Goals row action(s) sit past the edge of the concept list`);
+	await sleep(400);
+	await shotGroundwork("07b-goals-concepts");
 
-	await page.locator(`${rootSel} button[aria-label="Flashcards"]`).click();
+	await tab("flashcards").click();
 	await page.waitForSelector(`${rootSel}.is-flashcards`, { timeout: 15_000 });
 	await page.waitForSelector(`${rootSel} .gw-fc-loading, ${rootSel} .gw-fc-empty, ${rootSel} .gw-fcard`, { timeout: 20_000 });
 	await sleep(800);
 	await shotGroundwork("08-flashcards");
 
-	await page.keyboard.press("Escape");
-	await sleep(400);
-	await page.locator(`${rootSel} button[aria-label="Settings"]`).click();
-	await page.waitForSelector(`${rootSel}.is-settings`, { timeout: 15_000 });
+	await utility("settings").click();
+	await page.waitForSelector(`${rootSel}.is-settings:not(.is-flashcards)`, { timeout: 15_000 });
 	await page.waitForSelector(`${rootSel}.is-settings .gw-library-title`, { hasText: "Settings", timeout: 15_000 });
 	await page.waitForSelector(`${rootSel}.is-settings h3`, { timeout: 15_000 });
+	await expectNoCloseButton("settings");
 	await sleep(600);
 	await shotGroundwork("09-settings");
 
-	await page.keyboard.press("Escape");
-	await sleep(400);
-	await page.locator(`${rootSel} button[aria-label="Library"]`).click();
+	await utility("library").click();
+	await page.waitForSelector(`${rootSel}.is-library:not(.is-settings)`, { timeout: 15_000 });
 	await sleep(800);
 	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Chats/ }).click({ timeout: 15_000 });
 	await sleep(500);
 	const openChat = page.locator(`${rootSel}.is-library .gw-library-scroll button.gw-lib-btn`).filter({ hasText: /^Open$/ });
 	if (await openChat.count()) {
 		await openChat.first().click({ timeout: 15_000 });
-		await page.waitForSelector(`${rootSel}:not(.is-overlay)`, { timeout: 15_000 });
+		await page.waitForSelector(`${rootSel}:not(.is-library)`, { timeout: 15_000 });
 		await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 25_000 });
 		await page.waitForSelector(`${rootSel} .gw-assistant`, { timeout: 25_000 });
 		await sleep(800);
 		await shotGroundwork("10-chat-seeded");
 	}
-	await page.keyboard.press("Escape");
-	await sleep(400);
-	await page.locator(`${rootSel} button[aria-label="Settings"]`).click();
+	await utility("settings").click();
 	await page.waitForSelector(`${rootSel}.is-settings`, { timeout: 15_000 });
 	await sleep(600);
 	await page.locator(`${rootSel} button.gw-appearance-btn`, { hasText: /^Dark$/ }).click({ timeout: 15_000 });
 	await sleep(500);
-	await page.keyboard.press("Escape");
-	await sleep(400);
-	await page.waitForSelector(`${rootSel}:not(.is-overlay)`, { timeout: 15_000 });
+	await tab("learn").click();
+	await page.waitForSelector(`${rootSel}:not(.is-settings)`, { timeout: 15_000 });
 	await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 20_000 });
 	await sleep(600);
 	await shotGroundwork("11-dark-learn");
-	await page.locator(`${rootSel} button[aria-label="Library"]`).click();
+	await utility("library").click();
+	await page.waitForSelector(`${rootSel}.is-library`, { timeout: 15_000 });
+	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Concepts/ }).click({ timeout: 10_000 }).catch(() => {});
 	await sleep(1000);
 	await shot("12-dark-library");
-	await page.keyboard.press("Escape");
-	await sleep(300);
-	await page.locator(`${rootSel} button.gw-view[aria-label="Concept map"]`).click();
+	await tab("map").click();
+	await page.waitForSelector(`${rootSel}.is-map:not(.is-library)`, { timeout: 15_000 });
 	await sleep(1200);
 	await shot("13-dark-map");
+	await tab("goals").click();
+	await page.waitForSelector(`${rootSel}.is-goals`, { timeout: 15_000 });
+	await sleep(1000);
+	await shot("14-dark-goals");
 }
 
 if (scenario === "signed-out") {
@@ -420,10 +448,10 @@ if (scenario === "signed-out") {
 }
 
 if (scenario === "new-account") {
-	await page.locator(`${rootSel} button[aria-label="Library"]`).click();
+	await utility("library").click();
 	await sleep(1000);
 	await shot("04-new-account-library");
-	await page.keyboard.press("Escape");
+	await tab("learn").click();
 }
 
 await browser.close();

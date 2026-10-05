@@ -3,8 +3,10 @@ import {
 	buildFromGroundwork,
 	forceGraphFromGoalMermaid,
 	mountForceGraph,
+	studyMove,
 	type ForceGraphData,
 	type ForceGraphHandle,
+	type StudyMove,
 } from "@groundwork/core";
 import type { ConceptMapModel } from "@groundwork/core";
 import type { ConceptStatus } from "@groundwork/core";
@@ -49,7 +51,7 @@ export function mountGoalMermaidGraph(
 export function mountConceptMapGraph(
 	wrap: HTMLElement,
 	model: ConceptMapModel,
-	options: ForceGraphHostOptions & { onStart?: (title: string) => void; onStudy?: (title: string, action: "quiz" | "learn") => void } = {},
+	options: ForceGraphHostOptions & { onStudy?: (title: string, move: StudyMove) => void } = {},
 ): void {
 	const slot = wrap.querySelector(".gw-force-slot") as HTMLElement | null;
 	if (!slot) return;
@@ -60,9 +62,7 @@ export function mountConceptMapGraph(
 		onNodeClick: (id) => {
 			const node = byId.get(id);
 			if (!node) return;
-			if ((node.next || node.visual === "ghost" || node.visual === "target") && options.onStart) options.onStart(node.title);
-			else if ((node.visual === "shaky" || node.visual === "rusty") && options.onStudy) options.onStudy(node.title, "quiz");
-			else if (options.onStudy) options.onStudy(node.title, "learn");
+			options.onStudy?.(node.title, studyMove(node.tone, node.next));
 			options.onNodeClick?.(id, node.title);
 		},
 	});

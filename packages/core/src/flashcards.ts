@@ -60,6 +60,8 @@ export interface FlashcardLibrary {
 const RATINGS: CardRating[] = ["again", "hard", "good", "easy"];
 const DAY_MINUTES = 24 * 60;
 const EASE_START = 2.5;
+/** Compounding easy ratings would otherwise overflow a Date. */
+const MAX_INTERVAL_MINUTES = 36_500 * DAY_MINUTES;
 
 export function flashcardsDir(writeFolder: string): string {
 	return `${writeFolder}/${FLASHCARDS_DIR}`;
@@ -105,6 +107,10 @@ function clampEase(ease: number): number {
 }
 
 export function scheduledMinutes(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">, rating: CardRating): number {
+	return Math.min(MAX_INTERVAL_MINUTES, rawMinutes(card, rating));
+}
+
+function rawMinutes(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">, rating: CardRating): number {
 	const ease = card.ease || EASE_START;
 	if (rating === "again") return 1;
 	if (rating === "hard") {
@@ -707,7 +713,43 @@ export async function rateFlashcard(store: KnowledgeStore, id: string, rating: C
 	const card = applyRating(lib.cards[index], rating, now);
 	lib.cards[index] = card;
 	await persist(store, lib, now);
-	// Scheduling only — flashcard taps must not move vault mastery like a quiz session.
+	// Recall is credit only: "Again" reschedules the card and leaves mastery alone.
+	if (rating !== "again" && (await store.resolve(card.concept))) {
+		const { outcome, difficulty } = ratingOutcome(rating);
+		await store.recordEvidence(card.concept, {
+			ts: now.toISOString(),
+			kind: "review",
+			source: "flashcard",
+			outcome,
+			difficulty,
+			question: card.front.slice(0, 240),
+		});
+	}
+	return card;
+}
+
+/** Edit a card's wording in place. Its schedule and review history stay. */
+export async function updateFlashcard(
+	store: KnowledgeStore,
+	id: string,
+	input: { concept: string; front: string; back: string },
+	now = new Date(),
+): Promise<Flashcard> {
+	const concept = input.concept.trim();
+	const front = input.front.trim();
+	const back = input.back.trim();
+	if (!concept || !front || !back) throw new Error("A card needs a concept, a front, and a back.");
+	const issue = flashcardQualityIssue(front, back);
+	if (issue) throw new Error(issue);
+	const lib = await loadFlashcardLibrary(store.io);
+	const card = lib.cards.find((c) => c.id === id);
+	if (!card) throw new Error("That card is already gone.");
+	card.concept = concept;
+	card.front = front;
+	card.back = back;
+	card.updatedAt = now.toISOString();
+	delete card.qualityIssue;
+	await persist(store, lib, now);
 	return card;
 }
 
@@ -742,7 +784,8 @@ export function cardsInDeck(lib: FlashcardLibrary, deckId: string, goals: Goal[]
 	if (!deckId) return lib.cards;
 	const goal = goals.find((g) => g.id === deckId);
 	const ids = goal ? new Set(goalConceptIds(goal)) : null;
-	return lib.cards.filter((c) => c.deckId === deckId || (ids ? ids.has(slugify(c.concept)) : false));
+	const decks = new Set([deckId, ...(goal ? lib.decks.filter((d) => d.goalId === goal.id).map((d) => d.id) : [])]);
+	return lib.cards.filter((c) => decks.has(c.deckId) || (ids ? ids.has(slugify(c.concept)) : false));
 }
 
 export function dueByConcept(cards: Flashcard[], now: Date): Array<{ concept: string; count: number }> {

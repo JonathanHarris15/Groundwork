@@ -120,9 +120,9 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/force-graph.js?v=2"');
-		expect(site?.body).toContain('src="/app.js?v=16"');
-		expect(site?.body).toContain('href="/styles.css?v=5"');
+		expect(site?.body).toContain('src="/force-graph.js?v=3"');
+		expect(site?.body).toContain('src="/app.js?v=17"');
+		expect(site?.body).toContain('href="/styles.css?v=6"');
 		expect(site?.body).toContain("Groundwork plans from first principles");
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
@@ -136,6 +136,7 @@ describe("account server", () => {
 		expect(script).toContain("/v1/auth/sign-out");
 		const board = script.slice(script.indexOf("function board"), script.indexOf("function statBig"));
 		expect(board).toContain("goals.length");
+		expect(board).toContain('<span class="tile-label">Goals reached</span>');
 		expect(board).toContain("concepts.length");
 		expect(board).toContain("conceptListPanel(concepts)");
 		expect(script).toContain("concept-filter");

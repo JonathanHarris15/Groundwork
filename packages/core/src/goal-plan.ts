@@ -1,5 +1,6 @@
 import type { ConceptStatus } from "./model";
 import { conceptLayerRanks, placePyramidLayout } from "./force-graph/pyramid-layout";
+import { MASTERY_LABEL, masteryTone, type MasteryTone } from "./mastery-tone";
 
 /** A goal's deadline, stored as YYYY-MM-DD. */
 export function parseIsoDate(value: unknown): string | undefined {
@@ -186,6 +187,9 @@ export function sessionEstimate(openCount: number): number {
 
 export type MapVisual = "known" | "learning" | "shaky" | "rusty" | "ghost" | "goal" | "target" | "beyond" | "dim";
 
+/** How a map node and its path-panel row are painted: a mastery tone, or the goal's red. */
+export type MapTone = MasteryTone | "goal";
+
 /** Nodes that lie on a prerequisite chain up to the working goal. */
 export function conceptPathToGoal(nodes: MapSourceNode[], goalNodeId?: string): Set<string> {
 	const inGoal = nodes.filter((node) => node.inGoal);
@@ -242,6 +246,9 @@ export interface ConceptMapNode {
 	y: number;
 	r: number;
 	visual: MapVisual;
+	tone: MapTone;
+	/** Not on the prerequisite chain to the working goal: same tone, drawn faded. */
+	offPath: boolean;
 	step?: number;
 	next: boolean;
 	subtitle?: string;
@@ -258,7 +265,11 @@ export interface PathStep {
 	id: string;
 	title: string;
 	visual: MapVisual;
+	tone: MapTone;
+	offPath: boolean;
 	meta: string;
+	/** Learner-facing state, in the same words as the map legend. */
+	label: string;
 	step?: number;
 	rank: number;
 }
@@ -353,6 +364,8 @@ export function buildConceptMap(input: {
 			y: pos.y,
 			r: visual === "goal" || visual === "target" ? 20 : visual === "dim" ? 9 : visual === "ghost" ? 12 : 11,
 			visual,
+			tone: visual === "goal" || visual === "target" ? "goal" : masteryTone(node.status, built.has(node.id)),
+			offPath: visual === "dim",
 			step: ghostStep.get(node.id),
 			next: node.id === input.nextId && visual !== "goal",
 			subtitle,
@@ -397,7 +410,18 @@ export function buildConceptMap(input: {
 							: drawn.visual === "ghost"
 								? "ghost"
 								: drawn.visual;
-			return { id: node.id, title: node.title, visual: drawn.visual, meta, step: drawn.step, rank: layerRanks.get(node.id) ?? 0 };
+			const label = drawn.tone === "goal" ? "Goal" : drawn.next ? "Next" : MASTERY_LABEL[drawn.tone];
+			return {
+				id: node.id,
+				title: node.title,
+				visual: drawn.visual,
+				tone: drawn.tone,
+				offPath: drawn.offPath,
+				meta,
+				label,
+				step: drawn.step,
+				rank: layerRanks.get(node.id) ?? 0,
+			};
 		})
 		.sort((a, b) => a.rank - b.rank || Number(a.visual === "goal") - Number(b.visual === "goal") || a.title.localeCompare(b.title));
 
@@ -413,7 +437,8 @@ export function buildConceptMap(input: {
 	}
 	const width = Math.max(480, maxX - minX + 48);
 	const height = Math.max(320, maxY - minY + 36);
-	const inPlace = inGoal.filter((node) => built.has(node.id)).length;
+	/** Counted the way the nodes are painted, so the panel's count matches its solid marks. */
+	const inPlace = inGoal.filter((node) => masteryTone(node.status, built.has(node.id)) === "solid").length;
 	return {
 		nodes,
 		edges,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLAUDE_SETUP, type TutorStatus } from "@groundwork/core";
-import { showComposerProviderChip, syncStatusShowsGlyph } from "../src/ui-invariants";
+import { COMPOSER_INPUT_MIN_HEIGHT_PX, showComposerProviderChip, syncStatusShowsGlyph } from "../src/ui-invariants";
 
 const hostedRoute = (): TutorStatus => ({
 	action: "hosted",
@@ -13,6 +13,12 @@ const hostedRoute = (): TutorStatus => ({
 	budgetUsed: 0,
 	ownModel: false,
 	claude: CLAUDE_SETUP,
+});
+
+describe("composer layout invariants", () => {
+	it("keeps a usable minimum composer height", () => {
+		expect(COMPOSER_INPUT_MIN_HEIGHT_PX).toBeGreaterThanOrEqual(44);
+	});
 });
 
 describe("syncStatusShowsGlyph", () => {

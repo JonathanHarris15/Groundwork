@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { goalMermaid, type GraphNode } from "../src/graph";
 import { buildFromGroundwork, buildSyntheticGraph } from "../src/force-graph/build";
+import { TONE_FALLBACK_COLORS } from "../src/force-graph/colors";
+import { MASTERY_LABEL, MASTERY_TONES } from "../src/mastery-tone";
 import { forceGraphFromGoalMermaid, parseGoalMermaid } from "../src/force-graph/parse-mermaid";
 import { clusterCentroids, runSimulation } from "../src/force-graph/simulation";
 import { layoutGroundworkGraph } from "../src/groundwork-graph";
@@ -55,5 +57,31 @@ describe("force graph", () => {
 		expect(data.layout).toBe("layered");
 		expect(data.nodes.every((n) => n.radius > 0)).toBe(true);
 		expect(data.nodes.find((n) => n.id === "b")!.y).toBeLessThan(data.nodes.find((n) => n.id === "a")!.y);
+	});
+
+	it("draws website nodes and legend in the mastery tones, not subject colors", () => {
+		const concepts = [
+			{ id: "a", title: "Prior", prerequisites: [], domain: "Bayes", status: "solid" as const },
+			{ id: "b", title: "Posterior", prerequisites: ["a"], domain: "Bayes", status: "rusty" as const },
+			{ id: "c", title: "Eigenvalues", prerequisites: [], domain: "Linear algebra", status: "unassessed" as const },
+		];
+		const graph = layoutGroundworkGraph(concepts);
+		const data = buildFromGroundwork(concepts, graph);
+		const node = (id: string) => data.nodes.find((n) => n.id === id)!;
+		expect(node("a")).toMatchObject({ tone: "solid", color: TONE_FALLBACK_COLORS.solid, open: false });
+		expect(node("b")).toMatchObject({ tone: "rusty", color: TONE_FALLBACK_COLORS.rusty });
+		expect(node("c")).toMatchObject({ tone: "unstarted", color: TONE_FALLBACK_COLORS.unstarted, open: true });
+		const subjects = new Set(graph.legend.map((item) => item.color));
+		expect(data.nodes.some((n) => subjects.has(n.color))).toBe(false);
+		const tones = data.legend.filter((item) => !item.key.startsWith("edge-"));
+		expect(tones.map((item) => item.label)).toEqual(MASTERY_TONES.map((tone) => MASTERY_LABEL[tone]));
+		expect(data.legend.some((item) => item.label === "Bayes")).toBe(false);
+	});
+
+	it("names a node's state once in its hover text", () => {
+		const concepts = [{ id: "a", title: "Prior", prerequisites: [], domain: "Bayes", status: "learning" as const }];
+		const graph = layoutGroundworkGraph(concepts);
+		expect(buildFromGroundwork(concepts, graph).nodes[0]!.actionHint).toBe("find it in the list below");
+		expect(buildFromGroundwork(concepts, graph, { studyHints: true }).nodes[0]!.actionHint).toBe("click to keep learning");
 	});
 });

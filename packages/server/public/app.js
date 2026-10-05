@@ -385,7 +385,11 @@ function planLabel() {
 	return `${account.name}, $${account.priceUsdPerMonth} / month`;
 }
 
-const GRAPH_COLORS = ["#2db560", "#2e9be6", "#f59e2b", "#e5484d"];
+const MASTERY_LABEL = { solid: "Solid", shaky: "Shaky", learning: "Learning", rusty: "Rusty", unstarted: "Not started" };
+
+function masteryTone(status) {
+	return status !== "unstarted" && MASTERY_LABEL[status] ? status : "unstarted";
+}
 
 function learnedConcepts() {
 	return Array.isArray(groundwork?.concepts) ? groundwork.concepts : [];
@@ -430,8 +434,8 @@ function board() {
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
 			<div class="stats stats-pair">
 				<div class="tile">
-					${statBig(goals.length, "Goals")}
-					<span class="tile-label">Goals</span>
+					${statBig(goals.length, "Goals reached")}
+					<span class="tile-label">Goals reached</span>
 				</div>
 				<div class="tile" style="animation-delay: .12s">
 					${statBig(concepts.length, "Concepts")}
@@ -442,7 +446,7 @@ function board() {
 			<div class="sky">
 				<div class="sky-head">
 					<span class="sky-title">${waiting ? "Concepts" : "Concepts you have learned"}</span>
-					${graphLegend(conceptGraph())}
+					${graphLegend()}
 				</div>
 				${conceptGraphHost(conceptGraph())}
 				${conceptListPanel(concepts)}
@@ -459,10 +463,9 @@ function statBig(value, label) {
 	return `<span class="big">${value}</span>`;
 }
 
-function graphLegend(graph) {
-	const items = Array.isArray(graph?.legend) ? graph.legend : [];
-	if (!items.length) return "";
-	return `<ul class="sky-legend">${items.map((item) => `<li><i style="background:${safeColor(item.color)}"></i>${escapeHtml(item.domain)}</li>`).join("")}</ul>`;
+function graphLegend() {
+	if (!conceptGraph().nodes.length) return "";
+	return `<ul class="sky-legend" aria-label="Mastery">${Object.entries(MASTERY_LABEL).map(([tone, label]) => `<li><span class="tone-dot" data-tone="${tone}" aria-hidden="true"></span>${label}</li>`).join("")}</ul>`;
 }
 
 function conceptNote(concepts) {
@@ -478,7 +481,7 @@ function conceptGraphHost(graph) {
 	const concepts = learnedConcepts();
 	const weak = concepts.filter((c) => c.status === "unassessed" || c.status === "shaky" || c.status === "rusty");
 	const weakLine = weak.length
-		? `<p class="graph-focus">${weak.length === 1 ? "Needs attention:" : "Needs attention:"} ${weak.slice(0, 4).map((c) => escapeHtml(c.title)).join(", ")}${weak.length > 4 ? ` (+${weak.length - 4} more)` : ""}</p>`
+		? `<p class="graph-focus">Needs attention: ${weak.slice(0, 4).map((c) => escapeHtml(c.title)).join(", ")}${weak.length > 4 ? ` (+${weak.length - 4} more)` : ""}</p>`
 		: `<p class="graph-focus graph-focus-ok">Every concept here has been quizzed.</p>`;
 	return `${weakLine}
 		<div class="graph-shell" id="concept-graph-shell">
@@ -600,10 +603,9 @@ function filteredConcepts(concepts) {
 
 function conceptListItems(concepts) {
 	if (!concepts.length) return `<p class="sky-empty">No concepts match this filter.</p>`;
-	const colorOf = new Map((conceptGraph().nodes || []).map((node) => [node.id, node.color]));
 	return `<ul class="concept-list">${concepts.map((concept) => {
-		const color = safeColor(colorOf.get(concept.id));
-		return `<li data-concept-id="${escapeAttr(concept.id)}"><span class="goal-dot" style="background:${color}" aria-hidden="true"></span><span class="concept-name" title="${escapeAttr(concept.title)}">${escapeHtml(concept.title)}</span><span class="concept-status">${escapeHtml(statusLabel(concept.status))}</span></li>`;
+		const tone = masteryTone(concept.status);
+		return `<li data-concept-id="${escapeAttr(concept.id)}"><span class="tone-dot" data-tone="${tone}" aria-hidden="true"></span><span class="concept-name" title="${escapeAttr(concept.title)}">${escapeHtml(concept.title)}</span><span class="concept-status" data-tone="${tone}">${MASTERY_LABEL[tone]}</span></li>`;
 	}).join("")}</ul>`;
 }
 
@@ -686,23 +688,13 @@ function attachOpenObsidian() {
 	}
 }
 
-function statusLabel(status) {
-	if (status === "learning") return "Learning";
-	if (status === "shaky") return "Shaky";
-	if (status === "solid") return "Solid";
-	if (status === "rusty") return "Rusty";
-	return "Not quizzed";
-}
-
 function goalList(goals) {
 	if (!goals.length) return `<p class="sky-empty">Goals you finish in Obsidian show up here.</p>`;
-	const legend = new Map((conceptGraph().legend || []).map((item) => [item.domain, safeColor(item.color)]));
-	return goals.map((goal, index) => {
-		const color = legend.get(goal.domain) || GRAPH_COLORS[index % GRAPH_COLORS.length];
+	return goals.map((goal) => {
 		const count = conceptCount(goal.concepts);
 		return `
 				<div class="goal">
-					<span class="goal-dot" style="background:${color}" aria-hidden="true"></span>
+					<span class="tone-dot" data-tone="solid" aria-hidden="true"></span>
 					<div class="goal-body"><span class="goal-name">${escapeHtml(goal.title)}</span>${count ? `<span class="goal-meta">${escapeHtml(count)}</span>` : ""}</div>
 					<span class="check">Reached</span>
 				</div>`;
@@ -718,10 +710,6 @@ function conceptCount(value) {
 function shortTitle(title) {
 	const text = String(title ?? "");
 	return text.length > 28 ? `${text.slice(0, 27)}…` : text;
-}
-
-function safeColor(value) {
-	return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? value : GRAPH_COLORS[0];
 }
 
 function num(value) {

@@ -4,6 +4,7 @@ import {
 	applyRating,
 	auditFlashcardLibrary,
 	buildStudyQueue,
+	cardsInDeck,
 	createFlashcard,
 	emptyFlashcardLibrary,
 	exportFlashcards,
@@ -19,9 +20,11 @@ import {
 	scheduledMinutes,
 	serializeCardMarkdown,
 	syncFlashcards,
+	updateFlashcard,
 } from "../src/flashcards";
 import { MemoryVaultIO } from "../src/io";
-import { KnowledgeStore } from "../src/store";
+import { FLASHCARD_CREDIT } from "../src/model";
+import { KnowledgeStore, type Goal } from "../src/store";
 import { toolByName } from "../src/tools";
 
 const NOW = new Date("2026-10-02T12:00:00.000Z");
@@ -179,6 +182,94 @@ describe("flashcard vault mirror", () => {
 	});
 });
 
+describe("flashcard mastery credit", () => {
+	const HOUR = 3_600_000;
+	const at = (ms: number) => new Date(NOW.getTime() + ms);
+
+	async function quizzed(store: KnowledgeStore) {
+		await store.upsertConcept({ title: "Base rates" });
+		await store.recordEvidence("Base rates", { kind: "check", outcome: "correct", difficulty: 3, ts: NOW.toISOString() });
+		await store.recordEvidence("Base rates", { kind: "check", outcome: "partial", difficulty: 3, ts: at(60_000).toISOString() });
+		return createFlashcard(store, { concept: "Base rates", front: "Why is a positive test often wrong?", back: "False alarms." }, NOW);
+	}
+
+	it("gives a quizzed concept a small nudge and never counts as a quiz attempt", async () => {
+		const { store } = pair();
+		const card = await quizzed(store);
+		const before = (await store.concepts()).get("base-rates")!.stats;
+		await rateFlashcard(store, card.id, "good", at(HOUR));
+		const after = (await store.concepts()).get("base-rates")!.stats;
+		expect(after.ability).toBeGreaterThan(before.ability);
+		expect(after.ability - before.ability).toBeLessThanOrEqual(FLASHCARD_CREDIT.windowCap + 1e-9);
+		expect(after.attempts).toBe(before.attempts);
+		expect(after.lastEvidence).toBe(before.lastEvidence);
+		const events = await store.evidenceFor("base-rates");
+		expect(events.filter((e) => e.source === "flashcard")).toHaveLength(1);
+	});
+
+	it("caps a burst of ratings inside any 4-hour window", async () => {
+		const { store } = pair();
+		const card = await quizzed(store);
+		const before = (await store.concepts()).get("base-rates")!.stats;
+		for (let i = 0; i < 40; i++) await rateFlashcard(store, card.id, i % 2 ? "easy" : "good", at(HOUR + i * 5 * 60_000));
+		const after = (await store.concepts()).get("base-rates")!.stats;
+		expect(after.ability - before.ability).toBeLessThanOrEqual(FLASHCARD_CREDIT.windowCap + 1e-9);
+		expect(after.status).not.toBe("solid");
+	});
+
+	it("cannot complete a concept even when spread across many windows", async () => {
+		const { store } = pair();
+		const card = await quizzed(store);
+		for (let w = 0; w < 30; w++) {
+			for (let i = 0; i < 5; i++) await rateFlashcard(store, card.id, "easy", at(HOUR + w * 5 * HOUR + i * 60_000));
+		}
+		const stats = (await store.concepts()).get("base-rates")!.stats;
+		expect(stats.mastery).toBeLessThan(0.8);
+		expect(stats.status).not.toBe("solid");
+	});
+
+	it("leaves an unquizzed concept unassessed and skips Again", async () => {
+		const { store } = pair();
+		await store.upsertConcept({ title: "Odds" });
+		const card = await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio." }, NOW);
+		for (let i = 0; i < 10; i++) await rateFlashcard(store, card.id, "easy", at(i * 60_000));
+		await rateFlashcard(store, card.id, "again", at(HOUR));
+		expect((await store.concepts()).get("odds")!.stats.status).toBe("unassessed");
+		expect((await store.evidenceFor("odds")).filter((e) => e.source === "flashcard")).toHaveLength(10);
+	});
+
+	it("keeps flashcard ratings out of the concept's quiz history", async () => {
+		const { memory, store } = pair();
+		const card = await quizzed(store);
+		await rateFlashcard(store, card.id, "good", at(HOUR));
+		const note = await memory.read((await store.concepts()).get("base-rates")!.path);
+		expect(note).toContain("Quiz history");
+		expect(note).not.toContain("Why is a positive test often wrong?");
+	});
+});
+
+describe("flashcard editing", () => {
+	it("changes the wording and keeps the schedule", async () => {
+		const { store } = pair();
+		const card = await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio." }, NOW);
+		const rated = await rateFlashcard(store, card.id, "good", NOW);
+		const edited = await updateFlashcard(store, card.id, { concept: "Odds", front: "What formula gives the odds of an event with probability p?", back: "p / (1 − p)." }, NOW);
+		expect(edited.front).toBe("What formula gives the odds of an event with probability p?");
+		expect(edited.state).toBe(rated.state);
+		expect(edited.due).toBe(rated.due);
+		expect(edited.reps).toBe(rated.reps);
+		const saved = await loadFlashcardLibrary(store.io);
+		expect(saved.cards).toHaveLength(1);
+		expect(saved.cards[0].back).toBe("p / (1 − p).");
+	});
+
+	it("refuses a list answer", async () => {
+		const { store } = pair();
+		const card = await createFlashcard(store, { concept: "Calc", front: "Which critical point has det < 0?", back: "saddle" }, NOW);
+		await expect(updateFlashcard(store, card.id, { concept: "Calc", front: "Types?", back: "min, max, saddle" }, NOW)).rejects.toThrow();
+	});
+});
+
 describe("flashcard tools", () => {
 	it("saves a card on the account and lists it when due", async () => {
 		const { vault, store } = pair();
@@ -193,5 +284,34 @@ describe("flashcard tools", () => {
 		expect(due.text).toContain("Why 9%?");
 		const empty = await toolByName("save_flashcard")!.run({ concept: " ", front: "", back: "x" }, { store });
 		expect(empty.isError).toBe(true);
+	});
+});
+
+describe("goal decks", () => {
+	it("puts cards from a deck linked to the goal in that goal's deck", () => {
+		const goal = { id: "g1", title: "Calculus fluency", status: "active", targets: [], built: [], nodes: [] } as unknown as Goal;
+		const lib = {
+			...emptyFlashcardLibrary(),
+			decks: [
+				{ id: "deck-calc", title: "Calculus fluency", goalId: "g1" },
+				{ id: "other", title: "Other" },
+			],
+			cards: [
+				makeCard({ id: "linked", deckId: "deck-calc", concept: "Derivative", front: "d/dx x^2?", back: "2x", now: NOW }),
+				makeCard({ id: "own", deckId: "g1", concept: "Limit", front: "What is a limit?", back: "A value approached.", now: NOW }),
+				makeCard({ id: "elsewhere", deckId: "other", concept: "Odds", front: "What is odds?", back: "A ratio.", now: NOW }),
+			],
+		};
+		expect(cardsInDeck(lib, "g1", [goal]).map((c) => c.id).sort()).toEqual(["linked", "own"]);
+		expect(cardsInDeck(lib, "other", [goal]).map((c) => c.id)).toEqual(["elsewhere"]);
+	});
+});
+
+describe("flashcard interval cap", () => {
+	it("keeps compounding easy ratings inside a valid date", () => {
+		let card = makeCard({ deckId: "library", concept: "Odds", front: "What is odds?", back: "A ratio.", now: NOW });
+		for (let i = 0; i < 60; i++) card = applyRating(card, "easy", NOW);
+		expect(Number.isNaN(Date.parse(card.due))).toBe(false);
+		expect(card.intervalMinutes).toBe(36_500 * 24 * 60);
 	});
 });

@@ -1,3 +1,4 @@
+import { masteryLabel } from "../mastery-tone";
 import { createSimulationState, seedPositions, simulationTick } from "./simulation";
 import { readGraphTheme, withAlpha, type GraphPaintTheme } from "./theme";
 import type { ForceGraphData, ForceGraphLink, ForceGraphNode } from "./types";
@@ -282,12 +283,14 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 
 		for (const node of nodes) {
 			const dim = fade && node.id !== hovered && !neighbors?.has(node.id);
-			ctx.globalAlpha = dim ? 0.16 : 1;
+			const strength = node.faded ? 0.45 : 1;
+			const color = (node.tone && theme.tones[node.tone]) || node.color;
+			ctx.globalAlpha = (dim ? 0.16 : 1) * strength;
 			const r = node.radius;
 			if (node.isNext) {
 				ctx.beginPath();
 				ctx.arc(node.x, node.y, r + 7, 0, Math.PI * 2);
-				ctx.strokeStyle = withAlpha(theme.accent, 0.85);
+				ctx.strokeStyle = withAlpha(theme.next, 0.9);
 				ctx.lineWidth = 2 / camera.scale;
 				ctx.stroke();
 			} else if (node.needsAttention) {
@@ -301,20 +304,22 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			}
 			if (node.open) {
 				ctx.beginPath();
-				ctx.arc(node.x, node.y, r + 3, 0, Math.PI * 2);
-				ctx.strokeStyle = node.color;
-				ctx.lineWidth = 1.6 / camera.scale;
+				ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+				ctx.strokeStyle = color;
+				ctx.lineWidth = 1.8 / camera.scale;
+				ctx.setLineDash([3 / camera.scale, 2.5 / camera.scale]);
 				ctx.stroke();
+				ctx.setLineDash([]);
 			} else {
 				ctx.beginPath();
 				ctx.arc(node.x, node.y, r + 4, 0, Math.PI * 2);
-				ctx.fillStyle = node.color;
-				ctx.globalAlpha = dim ? 0.08 : 0.22;
+				ctx.fillStyle = color;
+				ctx.globalAlpha = (dim ? 0.08 : 0.22) * strength;
 				ctx.fill();
-				ctx.globalAlpha = dim ? 0.2 : 1;
+				ctx.globalAlpha = (dim ? 0.2 : 1) * strength;
 				ctx.beginPath();
 				ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-				ctx.fillStyle = node.color;
+				ctx.fillStyle = color;
 				ctx.fill();
 				ctx.strokeStyle = withAlpha(theme.nodeRing, 0.85);
 				ctx.lineWidth = 1.1 / camera.scale;
@@ -344,7 +349,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			const layout = labels.get(node.id);
 			if (!layout) continue;
 			const { text } = measureLabel(ctx, node.title);
-			ctx.globalAlpha = layout.alpha * (fade && node.id !== hovered && !neighbors?.has(node.id) ? 0.35 : 1);
+			ctx.globalAlpha = layout.alpha * (fade && node.id !== hovered && !neighbors?.has(node.id) ? 0.35 : 1) * (node.faded ? 0.7 : 1);
 			ctx.fillStyle = theme.label;
 			ctx.strokeStyle = theme.labelHalo;
 			ctx.lineWidth = 3;
@@ -440,7 +445,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			const node = nodes.find((n) => n.id === id);
 			if (node) {
 				const lines = [node.title];
-				if (node.status) lines.push(statusLabel(node.status));
+				if (node.status) lines.push(masteryLabel(node.status));
 				if (node.actionHint) lines.push(node.actionHint);
 				tip.textContent = lines.join(" · ");
 			} else tip.textContent = "";
@@ -546,12 +551,4 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 
 function cloneNode(node: ForceGraphNode): ForceGraphNode {
 	return { ...node, vx: 0, vy: 0, fixed: false };
-}
-
-function statusLabel(status: NonNullable<ForceGraphNode["status"]>): string {
-	if (status === "solid") return "Solid";
-	if (status === "learning") return "Learning";
-	if (status === "shaky") return "Shaky";
-	if (status === "rusty") return "Rusty";
-	return "Not quizzed";
 }
