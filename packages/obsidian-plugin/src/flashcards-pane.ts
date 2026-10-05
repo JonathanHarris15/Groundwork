@@ -334,11 +334,16 @@ export class FlashcardsPane {
 			el.createDiv({ cls: "gw-fcard-placeholder", text: "No text on this card yet." });
 			return;
 		}
-		const inner = el.createDiv({ cls: "gw-fcard-md" });
-		inner.setText(text);
-		void this.host.renderMarkdown(inner, text).catch(() => {
-			if (!inner.textContent?.trim()) inner.setText(text);
-		});
+		const inner = el.createDiv({ cls: "gw-fcard-md", text });
+		// The renderer appends, so it fills a fresh element that replaces the plain-text stand-in.
+		const rendered = el.ownerDocument.createElement("div");
+		rendered.className = "gw-fcard-md";
+		void this.host.renderMarkdown(rendered, text).then(
+			() => {
+				if (rendered.textContent?.trim() || rendered.querySelector("img, svg, mjx-container")) inner.replaceWith(rendered);
+			},
+			() => {},
+		);
 	}
 
 	private conceptTone(concept: string): MasteryTone {
