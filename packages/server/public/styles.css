@@ -982,7 +982,6 @@ label { font-size: 15px; font-weight: 500; }
 
 @container (min-width: 760px) {
 	.stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-	.stats.stats-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .tile {
@@ -1007,6 +1006,18 @@ label { font-size: 15px; font-weight: 500; }
 
 .big { font-size: 68px; font-weight: 500; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .big.is-empty { font-size: 52px; color: #8a909a; font-weight: 400; }
+.big-unit { font-size: 0.42em; font-weight: 500; letter-spacing: 0; margin-left: 0.06em; vertical-align: 0.6em; }
+.quota-meter { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.quota-meter > span { display: block; height: 100%; border-radius: inherit; background: #45a9f0; }
+.quota-own {
+	display: flex;
+	align-items: flex-end;
+	min-height: 68px;
+	font-size: 32px;
+	font-weight: 500;
+	line-height: 1.1;
+	letter-spacing: -0.02em;
+}
 .tile-label { font-size: 16px; color: #d3d6db; }
 .tile-note { font-size: 14px; color: #aeb3bc; margin: 0; }
 .sky { margin-top: 30px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.02); padding: 18px 18px 16px; }
@@ -1149,9 +1160,42 @@ body.graph-fullscreen-open {
 
 .concept-list-scroll {
 	max-height: min(280px, 42vh);
+	overflow-x: hidden;
 	overflow-y: auto;
+	padding-right: 8px;
 	-webkit-overflow-scrolling: touch;
 	overscroll-behavior-y: contain;
+	color-scheme: dark;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(207, 211, 217, 0.72) rgba(255, 255, 255, 0.08);
+}
+
+.concept-list-scroll::-webkit-scrollbar {
+	width: 10px;
+}
+
+.concept-list-scroll::-webkit-scrollbar-track {
+	background: rgba(255, 255, 255, 0.08);
+	border-radius: 999px;
+}
+
+.concept-list-scroll::-webkit-scrollbar-thumb {
+	background-color: rgba(207, 211, 217, 0.72);
+	border-radius: 999px;
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+
+.concept-list-scroll::-webkit-scrollbar-thumb:hover {
+	background-color: rgba(232, 234, 238, 0.92);
+}
+
+.concept-list-scroll::-webkit-scrollbar-button,
+.concept-list-scroll::-webkit-scrollbar-corner {
+	display: none;
+	width: 0;
+	height: 0;
+	background: transparent;
 }
 
 .concept-list-footer {
@@ -1198,6 +1242,7 @@ body.graph-fullscreen-open {
 
 @container (max-width: 520px) {
 	.big { font-size: 56px; }
+	.quota-own { min-height: 56px; font-size: 28px; }
 	.check { display: none; }
 }
 .usage { display: flex; align-items: center; gap: 20px; }

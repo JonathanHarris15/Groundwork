@@ -432,7 +432,7 @@ function board() {
 			<div class="blobs"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
 			<div class="spot"></div>
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
-			<div class="stats stats-pair">
+			<div class="stats">
 				<div class="tile">
 					${statBig(goals.length, "Goals reached")}
 					<span class="tile-label">Goals reached</span>
@@ -442,6 +442,7 @@ function board() {
 					<span class="tile-label">Concepts</span>
 					<p class="tile-note">${escapeHtml(conceptNote(concepts))}</p>
 				</div>
+				<div class="tile" style="animation-delay: .24s">${boardQuota()}</div>
 			</div>
 			<div class="sky">
 				<div class="sky-head">
@@ -461,6 +462,23 @@ function board() {
 function statBig(value, label) {
 	if (!value) return `<span class="big is-empty" aria-label="None yet for ${escapeAttr(label)}">—</span>`;
 	return `<span class="big">${value}</span>`;
+}
+
+function boardQuota() {
+	if (account.ownModel) {
+		return `
+			<span class="quota-own">Your model</span>
+			<span class="tile-label">Plan usage</span>
+			<p class="tile-note">You bring the tutor model. Usage is not metered here.</p>`;
+	}
+	const used = Math.min(1, Math.max(0, Number(account.budgetUsed) || 0));
+	const pct = Math.round(used * 100);
+	const width = pct === 0 ? "0%" : `max(4px, ${pct}%)`;
+	return `
+			<span class="big">${pct}<span class="big-unit">%</span></span>
+			<span class="tile-label">Tutor usage this month</span>
+			<div class="quota-meter" aria-hidden="true"><span style="width:${width}"></span></div>
+			<p class="tile-note">Resets at the end of the month.</p>`;
 }
 
 function graphLegend() {
