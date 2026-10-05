@@ -491,7 +491,8 @@ a:hover { color: #2c2f36; }
 }
 
 .top { border-bottom: 1px solid #e3e5e8; position: relative; z-index: 1; }
-.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 76px; }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 76px; }
+.top .logo { flex-shrink: 0; min-width: 0; }
 
 @container (max-width: 520px) {
 	.top .wrap { min-height: 58px; }
@@ -504,7 +505,7 @@ a:hover { color: #2c2f36; }
 	.site .logo { font-size: 20px; }
 }
 
-.chip { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.chip { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: nowrap; flex-shrink: 0; }
 
 .avatar {
 	width: 36px;
@@ -522,16 +523,18 @@ a:hover { color: #2c2f36; }
 
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
 
-.who { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.who-name { font-weight: 500; font-size: 16px; }
+.who { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; max-width: 9rem; }
+.who-name { font-weight: 500; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .who-email { font-size: 14px; color: #4a4f57; overflow: hidden; text-overflow: ellipsis; }
 
 @container (max-width: 560px) {
 	.who-email { display: none; }
 }
 
+.chip-signout { white-space: nowrap; flex-shrink: 0; padding-left: 8px; padding-right: 0; }
+
 @container (max-width: 400px) {
-	.who { display: none; }
+	.who { max-width: 5.5rem; }
 }
 
 .link-btn {
@@ -814,11 +817,6 @@ label { font-size: 15px; font-weight: 500; }
 	max-width: 660px;
 }
 
-.panel-cta.is-primary {
-	border-color: #16181d;
-	background: #fff;
-}
-
 .start-checklist {
 	margin-top: 28px;
 	padding: 24px 22px;
@@ -976,15 +974,15 @@ label { font-size: 15px; font-weight: 500; }
 .sky-empty { margin: 14px 0 0; }
 .graph-scroll {
 	max-width: 100%;
-	overflow-x: auto;
-	overflow-y: hidden;
+	max-height: 200px;
+	overflow: auto;
 	margin-top: 6px;
 	-webkit-overflow-scrolling: touch;
-	overscroll-behavior-x: contain;
+	overscroll-behavior: contain;
 	border-radius: 12px;
 }
 .graph-scroll:focus-visible { outline: 2px solid #2e9be6; outline-offset: 2px; }
-.graph { width: 100%; height: auto; display: block; overflow: visible; }
+.graph { display: block; width: auto; height: auto; max-height: 200px; overflow: visible; }
 .graph-edge { stroke-width: 1.6; stroke-linecap: round; }
 .graph-edge.is-bridge { stroke-width: 1.4; }
 .graph-halo { opacity: 0.22; }
@@ -992,13 +990,46 @@ label { font-size: 15px; font-weight: 500; }
 .graph-label { fill: #d5d8de; font-size: 12px; font-family: inherit; }
 .graph-node { cursor: default; }
 .graph-node:hover .graph-halo { opacity: 0.45; }
+.concept-panel { margin-top: 12px; }
+
+.concept-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px 12px;
+	align-items: flex-end;
+	margin-bottom: 8px;
+}
+
+.field-compact { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field-compact.grow { flex: 1 1 160px; }
+.label-text { font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #aeb3bc; }
+.input-compact { min-height: 40px; font-size: 15px; padding: 0 12px; }
+
 .concept-list-scroll {
-	max-height: min(420px, 52vh);
+	max-height: min(280px, 42vh);
 	overflow-y: auto;
-	margin-top: 8px;
 	-webkit-overflow-scrolling: touch;
 	overscroll-behavior-y: contain;
 }
+
+.concept-list-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+	margin-top: 10px;
+}
+
+.concept-count { font-size: 14px; color: #aeb3bc; }
+
+.account-actions { margin: 20px 0 0; max-width: 660px; }
+.account-actions .btn { width: 100%; max-width: 320px; }
+
+.start-actions { margin-top: 22px; }
+.btn-wide { width: 100%; max-width: 320px; }
+
+.site .account-shell { max-width: 720px; margin: 0 auto; }
 .concept-list { list-style: none; margin: 0; padding: 0; }
 .concept-list li { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
 .concept-list li:first-child { border-top: 0; }
