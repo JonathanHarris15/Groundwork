@@ -1,36 +1,59 @@
 import { isUserKeyProvider, USER_KEY_PROVIDERS, type UserKeyProvider } from "@groundwork/core";
+import type { SecretStore } from "./secret-store";
 
 /**
- * Learner provider keys, held for the life of this process.
- * The response surface only reports which providers are saved.
- * Jev is not a slot here.
+ * Learner provider keys.
+ * With a store, a key saved on one server process is available to the next,
+ * and to every other Cloud Run instance. The response surface only reports
+ * which providers are saved. Jev is not a slot here.
  */
 export class SecretDirectory {
 	private readonly byUser = new Map<string, Map<UserKeyProvider, string>>();
 
-	save(uid: string, provider: string, apiKey: string): UserKeyProvider {
+	constructor(private readonly store?: SecretStore) {}
+
+	async save(uid: string, provider: string, apiKey: string): Promise<UserKeyProvider> {
 		if (!isUserKeyProvider(provider)) {
 			throw new SecretError(provider === "jev" || provider === "typesafe" ? "Jev is configured on the server. It is not a key you paste." : `Unknown provider "${provider}".`);
 		}
 		const key = apiKey.trim();
 		if (!key) throw new SecretError("Paste the API key.");
+		const slot = await this.slot(uid);
+		slot.set(provider, key);
+		this.byUser.set(uid, slot);
+		if (this.store) await this.store.write(uid, Object.fromEntries(slot));
+		return provider;
+	}
+
+	/** For a later model proxy. Never send this back to the client. */
+	async get(uid: string, provider: UserKeyProvider): Promise<string | undefined> {
+		return (await this.slot(uid)).get(provider);
+	}
+
+	async saved(uid: string): Promise<Record<UserKeyProvider, boolean>> {
+		const slot = await this.slot(uid);
+		return Object.fromEntries(USER_KEY_PROVIDERS.map((p) => [p, slot.has(p)])) as Record<UserKeyProvider, boolean>;
+	}
+
+	/** Read the store every time so another instance's write is visible. */
+	private async slot(uid: string): Promise<Map<UserKeyProvider, string>> {
+		if (this.store) {
+			const saved = await this.store.read(uid);
+			const slot = new Map<UserKeyProvider, string>();
+			if (saved) {
+				for (const provider of USER_KEY_PROVIDERS) {
+					const key = saved[provider];
+					if (key) slot.set(provider, key);
+				}
+			}
+			return slot;
+		}
 		let slot = this.byUser.get(uid);
 		if (!slot) {
 			slot = new Map();
 			this.byUser.set(uid, slot);
 		}
-		slot.set(provider, key);
-		return provider;
-	}
-
-	/** For a later model proxy. Never send this back to the client. */
-	get(uid: string, provider: UserKeyProvider): string | undefined {
-		return this.byUser.get(uid)?.get(provider);
-	}
-
-	saved(uid: string): Record<UserKeyProvider, boolean> {
-		const slot = this.byUser.get(uid);
-		return Object.fromEntries(USER_KEY_PROVIDERS.map((p) => [p, !!slot?.has(p)])) as Record<UserKeyProvider, boolean>;
+		return slot;
 	}
 }
 

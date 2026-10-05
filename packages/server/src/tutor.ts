@@ -17,7 +17,7 @@ export interface TutorCallContext {
 	view: AccountView;
 	choice: TutorChoice;
 	saved: Partial<Record<UserKeyProvider, boolean>>;
-	userKey(provider: UserKeyProvider): string | undefined;
+	userKey(provider: UserKeyProvider): Promise<string | undefined> | string | undefined;
 	openRouterKey: string | undefined;
 	fetchImpl: typeof fetch;
 	charge(costUsd: number): Promise<AccountView>;
@@ -39,7 +39,8 @@ export async function completeTutor(ctx: TutorCallContext, body: unknown): Promi
 	const call = parseTutorCall(body);
 	if (!call) return { status: 400, json: { error: "Send the tutor turn: a system prompt, messages, and tools." } };
 
-	const apiKey = decision.key === "groundwork" ? ctx.openRouterKey?.trim() : ctx.userKey(decision.provider)?.trim();
+	const rawKey = decision.key === "groundwork" ? ctx.openRouterKey : await ctx.userKey(decision.provider);
+	const apiKey = rawKey?.trim();
 	if (!apiKey) {
 		if (decision.key === "groundwork") return { status: 503, json: { error: "OPENROUTER_API_KEY is not set on the Groundwork server." } };
 		return { status: 409, json: { error: "Paste a provider key on the website, or switch the tutor to your Claude subscription." } };

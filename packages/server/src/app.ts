@@ -2,7 +2,7 @@ import { isPlanId, isUserKeyProvider, PLANS, presentAccount, presentGroundwork, 
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
-import type { MemoryDirectory } from "./memory";
+import { MemoryConflict, type MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
 import { completeTutor, describeTutor } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
@@ -54,8 +54,15 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 
 		const identity = await deps.auth.uid(authorization);
-		const view = await deps.accounts.seen(identity.uid, { email: identity.email, name: identity.name });
 		const uid = identity.uid;
+		if (path !== "/v1/groundwork" && path !== "/v1/memory" && path !== "/v1/grade") {
+			try {
+				await deps.billing.sync?.(uid, identity.email);
+			} catch (err) {
+				console.error("Groundwork could not read the Stripe subscription.", err);
+			}
+		}
+		const view = await deps.accounts.seen(uid, { email: identity.email, name: identity.name });
 
 		if (method === "GET" && path === "/v1/account") {
 			return { status: 200, json: presentAccount(view) };
@@ -69,6 +76,10 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			const plan = (body as { plan?: unknown } | null)?.plan;
 			if (!isPlanId(plan)) return { status: 400, json: { error: "Choose free, byom, or included." } };
 			if (plan !== "free") return paidPlanRefused(deps);
+			const current = await deps.accounts.get(uid);
+			if (deps.billing.configured && (current.plan === "byom" || current.plan === "included")) {
+				return { status: 409, json: { error: "A Stripe subscription is active on this account. Change or cancel it from billing." } };
+			}
 			return { status: 200, json: presentAccount(await deps.accounts.setPlan(uid, plan)) };
 		}
 		if (method === "POST" && path === "/v1/billing/checkout") {
@@ -82,7 +93,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { url } };
 		}
 		if (method === "GET" && path === "/v1/tutor") {
-			return { status: 200, json: describeTutor({ view, choice: await deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+			return { status: 200, json: describeTutor({ view, choice: await deps.accounts.choice(uid), saved: await deps.secrets.saved(uid) }) };
 		}
 		if (method === "POST" && path === "/v1/tutor/setup") {
 			const input = body as { via?: unknown; provider?: unknown } | null;
@@ -91,19 +102,19 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			if (!view.ownModel) return { status: 400, json: { error: "This plan uses Groundwork's model. Bring your own model is the plan for a Claude subscription or a key you paste." } };
 			if (via === "key") {
 				if (!isUserKeyProvider(input?.provider)) return { status: 400, json: { error: "Choose a provider." } };
-				if (!deps.secrets.saved(uid)[input.provider]) return { status: 400, json: { error: `Paste a ${PROVIDER_LABEL[input.provider]} key first.` } };
+				if (!(await deps.secrets.saved(uid))[input.provider]) return { status: 400, json: { error: `Paste a ${PROVIDER_LABEL[input.provider]} key first.` } };
 				const next = await deps.accounts.setTutor(uid, { via, provider: input.provider });
-				return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+				return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: await deps.secrets.saved(uid) }) };
 			}
 			const next = await deps.accounts.setTutor(uid, { via: "claude" });
-			return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: deps.secrets.saved(uid) }) };
+			return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: await deps.secrets.saved(uid) }) };
 		}
 		if (method === "POST" && path === "/v1/tutor/complete") {
 			return completeTutor(
 				{
 					view,
 					choice: await deps.accounts.choice(uid),
-					saved: deps.secrets.saved(uid),
+					saved: await deps.secrets.saved(uid),
 					userKey: (provider) => deps.secrets.get(uid, provider),
 					openRouterKey: deps.openRouterKey,
 					fetchImpl: deps.fetchImpl ?? fetch,
@@ -113,12 +124,12 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			);
 		}
 		if (method === "GET" && path === "/v1/secrets") {
-			return { status: 200, json: { providers: deps.secrets.saved(uid) } };
+			return { status: 200, json: { providers: await deps.secrets.saved(uid) } };
 		}
 		if (method === "POST" && path === "/v1/secrets") {
 			const input = body as { provider?: unknown; apiKey?: unknown } | null;
-			const saved = deps.secrets.save(uid, String(input?.provider ?? ""), String(input?.apiKey ?? ""));
-			return { status: 200, json: { saved, providers: deps.secrets.saved(uid) } };
+			const saved = await deps.secrets.save(uid, String(input?.provider ?? ""), String(input?.apiKey ?? ""));
+			return { status: 200, json: { saved, providers: await deps.secrets.saved(uid) } };
 		}
 		if (method === "GET" && path === "/v1/groundwork") {
 			return { status: 200, json: presentGroundwork(await deps.memory.knowledge(uid)) };
@@ -128,6 +139,9 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			try {
 				return { status: 200, json: await deps.memory.put(uid, body) };
 			} catch (err) {
+				if (err instanceof MemoryConflict) {
+					return { status: 409, json: { error: "The account was updated on another device.", memory: err.memory } };
+				}
 				return { status: 400, json: { error: err instanceof Error ? err.message : "Could not store tutor memory." } };
 			}
 		}

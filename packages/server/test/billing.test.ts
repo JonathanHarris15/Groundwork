@@ -1,10 +1,32 @@
 import { describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { AccountDirectory } from "../src/accounts";
-import { applyStripeEvent } from "../src/billing";
+import { applyStripeEvent, createBilling, escapeStripeSearch, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
+
+const prices = { byom: "price_byom", included: "price_included" };
 
 function event(type: Stripe.Event["type"], object: object): Stripe.Event {
 	return { type, data: { object } } as Stripe.Event;
+}
+
+function stripeFake(opts: {
+	customers?: Array<{ id: string }>;
+	subscriptions?: Array<{ status: string; items?: { data: Array<{ price: string | { id: string } }> } }>;
+	onSearch?: (query: string) => void;
+}): StripeMembershipClient {
+	return {
+		customers: {
+			async search({ query }) {
+				opts.onSearch?.(query);
+				return { data: opts.customers ?? [] };
+			},
+		},
+		subscriptions: {
+			async list({ status }) {
+				return { data: (opts.subscriptions ?? []).filter((sub) => sub.status === status) };
+			},
+		},
+	};
 }
 
 describe("stripe plan updates", () => {
@@ -23,21 +45,40 @@ describe("stripe plan updates", () => {
 		await expect(accounts.customerId("ada")).resolves.toBe("cus_123");
 	});
 
-	it("keeps a paid plan while the subscription is active", async () => {
+	it("uses the subscription price when checkout metadata is stale", async () => {
 		const accounts = new AccountDirectory();
 		await accounts.attachCustomer("ada", "cus_9");
+		await accounts.setPlan("ada", "byom");
 		await applyStripeEvent(
 			accounts,
 			event("customer.subscription.updated", {
 				customer: "cus_9",
 				metadata: { plan: "byom" },
 				status: "active",
+				items: { data: [{ price: { id: "price_included" } }] },
 			}),
+			prices,
+		);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
+	});
+
+	it("keeps a paid plan from an active price even without metadata", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.attachCustomer("ada", "cus_9");
+		await applyStripeEvent(
+			accounts,
+			event("customer.subscription.updated", {
+				customer: "cus_9",
+				metadata: {},
+				status: "past_due",
+				items: { data: [{ price: "price_byom" }] },
+			}),
+			prices,
 		);
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "byom" });
 	});
 
-	it("does not demote an active subscription when Stripe omits plan metadata", async () => {
+	it("does not demote an active subscription whose price is not one of ours", async () => {
 		const accounts = new AccountDirectory();
 		await accounts.setPlan("ada", "included");
 		await accounts.attachCustomer("ada", "cus_123");
@@ -47,7 +88,9 @@ describe("stripe plan updates", () => {
 				customer: "cus_123",
 				metadata: {},
 				status: "active",
+				items: { data: [{ price: { id: "price_other" } }] },
 			}),
+			prices,
 		);
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
 	});
@@ -65,5 +108,92 @@ describe("stripe plan updates", () => {
 			}),
 		);
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "free", hasBilling: true });
+	});
+});
+
+describe("stripe membership sync", () => {
+	it("finds the customer by uid and prefers the included price", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		let query = "";
+		await syncStripeMembership(
+			stripeFake({
+				customers: [{ id: "cus_ada" }],
+				subscriptions: [
+					{ status: "active", items: { data: [{ price: { id: "price_byom" } }] } },
+					{ status: "trialing", items: { data: [{ price: "price_included" }] } },
+				],
+				onSearch: (value) => {
+					query = value;
+				},
+			}),
+			prices,
+			accounts,
+			"ada",
+		);
+		expect(query).toBe(`metadata['uid']:'ada'`);
+		expect(query).not.toContain("ada@example.com");
+		await expect(accounts.customerId("ada")).resolves.toBe("cus_ada");
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
+	});
+
+	it("drops a stored paid plan when Stripe has no subscription, and leaves free alone", async () => {
+		const paid = new AccountDirectory();
+		await paid.setPlan("ada", "byom");
+		await syncStripeMembership(stripeFake({ customers: [] }), prices, paid, "ada");
+		await expect(paid.get("ada")).resolves.toMatchObject({ plan: "free" });
+
+		const free = new AccountDirectory();
+		await free.setPlan("ada", "free");
+		await syncStripeMembership(stripeFake({ customers: [] }), prices, free, "ada");
+		await expect(free.get("ada")).resolves.toMatchObject({ plan: "free", needsPlan: false });
+
+		const unset = new AccountDirectory();
+		await unset.seen("ada", {});
+		await syncStripeMembership(stripeFake({ customers: [] }), prices, unset, "ada");
+		await expect(unset.get("ada")).resolves.toMatchObject({ plan: null, needsPlan: true });
+	});
+
+	it("leaves a paid plan alone when the only subscription price is unrecognized", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.setPlan("ada", "included");
+		await accounts.attachCustomer("ada", "cus_ada");
+		await syncStripeMembership(
+			stripeFake({ subscriptions: [{ status: "active", items: { data: [{ price: { id: "price_legacy" } }] } }] }),
+			prices,
+			accounts,
+			"ada",
+		);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
+	});
+
+	it("escapes a uid before searching Stripe", () => {
+		expect(escapeStripeSearch("ada'o\\b")).toBe("ada\\'o\\\\b");
+	});
+
+	it("caches a successful read and retries after Stripe fails", async () => {
+		const accounts = new AccountDirectory();
+		let searches = 0;
+		const stripe = {
+			customers: {
+				async search() {
+					searches++;
+					if (searches === 1) throw new Error("stripe down");
+					return { data: [{ id: "cus_ada" }] };
+				},
+			},
+			subscriptions: {
+				async list() {
+					return { data: [{ status: "active", items: { data: [{ price: { id: "price_byom" } }] } }] };
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec", accounts);
+		await billing.sync!("ada");
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: null });
+		await billing.sync!("ada");
+		await billing.sync!("ada");
+		expect(searches).toBe(2);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "byom" });
 	});
 });

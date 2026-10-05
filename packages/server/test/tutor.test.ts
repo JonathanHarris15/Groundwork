@@ -134,7 +134,7 @@ describe("tutor API", () => {
 		const { fetchImpl } = capture({ error: { message: "bad key sk-ant-user" } }, 401);
 		const server = deps({ fetchImpl });
 		await server.accounts.setPlan("local", "byom");
-		server.secrets.save("local", "anthropic", "sk-ant-user");
+		await server.secrets.save("local", "anthropic", "sk-ant-user");
 		await route("POST", "/v1/tutor/setup", { via: "key", provider: "anthropic" }, server);
 		const result = await route("POST", "/v1/tutor/complete", turn, server);
 		expect(result.status).toBe(502);
@@ -154,7 +154,7 @@ describe("tutor API", () => {
 			});
 			const server = deps({ fetchImpl });
 			await server.accounts.setPlan("local", "byom");
-			server.secrets.save("local", provider, `${provider}-secret`);
+			await server.secrets.save("local", provider, `${provider}-secret`);
 			await route("POST", "/v1/tutor/setup", { via: "key", provider }, server);
 			const result = await route("POST", "/v1/tutor/complete", turn, server);
 			expect(result.status).toBe(200);

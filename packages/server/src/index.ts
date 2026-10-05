@@ -11,6 +11,7 @@ import { MemoryDirectory } from "./memory";
 import { FileTutorMemoryStore } from "./memory-file";
 import { BestEffortStore, FirestoreTutorMemoryStore } from "./memory-firestore";
 import { SecretDirectory } from "./secrets";
+import { FileSecretStore, FirestoreSecretStore } from "./secret-store";
 import { readSite } from "./static";
 
 const { port, host } = listenTarget();
@@ -23,7 +24,7 @@ const memoryStore = auth.firebase ? new BestEffortStore(new FirestoreTutorMemory
 const deps = {
 	auth,
 	accounts,
-	secrets: new SecretDirectory(),
+	secrets: new SecretDirectory(auth.firebase ? new FirestoreSecretStore() : new FileSecretStore(process.env.GROUNDWORK_SECRETS_FILE ?? path.resolve(process.cwd(), "data/secrets.json"))),
 	billing: loadBilling(accounts),
 	jev: jevConfigured(),
 	memory: new MemoryDirectory(memoryStore),

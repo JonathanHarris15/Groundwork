@@ -13,6 +13,7 @@ import { MemoryDirectory } from "../src/memory";
 import { FileTutorMemoryStore } from "../src/memory-file";
 import { splitUtf8 } from "../src/memory-firestore";
 import { SecretDirectory } from "../src/secrets";
+import { FileSecretStore } from "../src/secret-store";
 
 function billing(over: Partial<Billing> = {}): Billing {
 	return {
@@ -77,7 +78,7 @@ describe("account server", () => {
 		expect(saved.status).toBe(200);
 		expect(JSON.stringify(saved.json)).not.toContain("sk-or-secret");
 		expect(saved.json).toMatchObject({ saved: "openrouter", providers: { openrouter: true, anthropic: false } });
-		expect(server.secrets.get("local", "openrouter")).toBe("sk-or-secret");
+		expect(await server.secrets.get("local", "openrouter")).toBe("sk-or-secret");
 
 		const listed = await route("GET", "/v1/secrets", null, server);
 		expect(JSON.stringify(listed.json)).not.toContain("sk-or");
@@ -86,7 +87,7 @@ describe("account server", () => {
 		const jev = await route("POST", "/v1/secrets", { provider: "jev", apiKey: "ts-secret" }, server);
 		expect(jev.status).toBe(400);
 		expect(JSON.stringify(jev.json)).toMatch(/server/);
-		expect(server.secrets.get("local", "openrouter")).toBe("sk-or-secret");
+		expect(await server.secrets.get("local", "openrouter")).toBe("sk-or-secret");
 	});
 
 	it("rejects a bare API key on the grade route", async () => {
@@ -325,6 +326,105 @@ describe("account server", () => {
 		expect(after.json).toEqual({ opened: true });
 		const junk = await route("GET", "/v1/obsidian-opened/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/signal", null, server);
 		expect(junk.status).toBe(400);
+	});
+
+	it("sets the plan from Stripe before the account is shown, and will not drop a paid plan locally", async () => {
+		const accounts = new AccountDirectory();
+		let syncs = 0;
+		const server = deps({
+			accounts,
+			billing: billing({
+				configured: true,
+				async sync(uid) {
+					syncs++;
+					await accounts.setPlan(uid, "included");
+				},
+			}),
+		});
+		const view = await route("GET", "/v1/account", null, server);
+		expect(view.status).toBe(200);
+		expect(view.json).toMatchObject({ plan: "included", needsPlan: false });
+		expect(syncs).toBe(1);
+		const refused = await route("POST", "/v1/account/plan", { plan: "free" }, server);
+		expect(refused.status).toBe(409);
+		expect(refused.json).toEqual({ error: "A Stripe subscription is active on this account. Change or cancel it from billing." });
+		expect(JSON.stringify(refused.json)).not.toMatch(/\$|hostedCredit/);
+		expect((await route("GET", "/v1/account", null, server)).json).toMatchObject({ plan: "included" });
+
+		const quiet = deps({
+			billing: billing({
+				configured: true,
+				async sync() {
+					syncs++;
+				},
+			}),
+		});
+		await route("GET", "/v1/groundwork", null, quiet);
+		await route("GET", "/v1/memory", null, quiet);
+		await route("POST", "/v1/grade", { items: [{ question: "q", reference: "a", answer: "b" }] }, quiet);
+		expect(syncs).toBe(3);
+		await route("GET", "/v1/account", null, quiet);
+		expect(syncs).toBe(4);
+	});
+
+	it("still serves the account when Stripe cannot be reached", async () => {
+		const server = deps({
+			billing: billing({
+				configured: true,
+				async sync() {
+					throw new Error("stripe down");
+				},
+			}),
+		});
+		const view = await route("GET", "/v1/account", null, server);
+		expect(view.status).toBe(200);
+		expect(view.json).toMatchObject({ needsPlan: true });
+	});
+
+	it("keeps a provider key after the server process is gone, and still does not return it", async () => {
+		const file = path.join(mkdtempSync(path.join(os.tmpdir(), "gw-secrets-")), "secrets.json");
+		const first = deps({ secrets: new SecretDirectory(new FileSecretStore(file)) });
+		const saved = await route("POST", "/v1/secrets", { provider: "openrouter", apiKey: "sk-or-secret" }, first);
+		expect(saved.status).toBe(200);
+		expect(JSON.stringify(saved.json)).not.toContain("sk-or-secret");
+		const restarted = deps({ secrets: new SecretDirectory(new FileSecretStore(file)) });
+		expect(await restarted.secrets.get("local", "openrouter")).toBe("sk-or-secret");
+		const listed = await route("GET", "/v1/secrets", null, restarted);
+		expect(JSON.stringify(listed.json)).not.toContain("sk-or-secret");
+		expect(listed.json).toMatchObject({ providers: { openrouter: true } });
+	});
+
+	it("refuses a tutor-memory save that would wipe another device", async () => {
+		const file = path.join(mkdtempSync(path.join(os.tmpdir(), "gw-memory-conflict-")), "memory.json");
+		const knowledge = { concepts: [], goals: [], updatedAt: "2026-10-02T00:00:00.000Z" };
+		const laptop = deps({ memory: new MemoryDirectory(new FileTutorMemoryStore(file)) });
+		const saved = await route("PUT", "/v1/memory", { files: { "learner.md": "from the laptop" }, knowledge, baseUpdatedAt: "" }, laptop);
+		expect(saved.status).toBe(200);
+		const updatedAt = (saved.json as { updatedAt: string }).updatedAt;
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		const phone = deps({ memory: new MemoryDirectory(new FileTutorMemoryStore(file)) });
+		const added = await route(
+			"PUT",
+			"/v1/memory",
+			{
+				files: {
+					"learner.md": "from the laptop",
+					"concepts/Limit.md": "---\ntitle: Limit\n---\nprivate note",
+				},
+				knowledge,
+				baseUpdatedAt: updatedAt,
+			},
+			phone,
+		);
+		expect(added.status).toBe(200);
+		const stale = await route("PUT", "/v1/memory", { files: { "learner.md": "from the laptop only" }, knowledge, baseUpdatedAt: updatedAt }, laptop);
+		expect(stale.status).toBe(409);
+		expect(JSON.stringify(stale.json)).not.toMatch(/\$|hostedCredit/);
+		const memory = (stale.json as { memory: { files: Record<string, string> } }).memory;
+		expect(memory.files["concepts/Limit.md"]).toContain("title: Limit");
+		expect(memory.files["learner.md"]).toBe("from the laptop");
+		const kept = await route("GET", "/v1/memory", null, phone);
+		expect((kept.json as { files: Record<string, string> }).files["concepts/Limit.md"]).toContain("Limit");
 	});
 
 	it("reports Jev as unavailable when the server key is missing", async () => {

@@ -23,6 +23,14 @@ export interface TutorMemoryStore {
 	write(uid: string, record: TutorMemoryRecord): Promise<void>;
 }
 
+/** The account changed since this device last loaded it. The save is refused so it can merge. */
+export class MemoryConflict extends Error {
+	constructor(readonly memory: TutorMemory) {
+		super("The account was updated on another device.");
+		this.name = "MemoryConflict";
+	}
+}
+
 /** Tutor memory for each signed-in account. Notes stay here; they are not a vault folder. */
 export class MemoryDirectory {
 	private readonly memories = new Map<string, TutorMemory>();
@@ -57,9 +65,13 @@ export class MemoryDirectory {
 	}
 
 	async put(uid: string, body: unknown): Promise<TutorMemory> {
-		const record = body && typeof body === "object" ? (body as { files?: unknown; knowledge?: unknown }) : {};
+		const record = body && typeof body === "object" ? (body as { files?: unknown; knowledge?: unknown; baseUpdatedAt?: unknown }) : {};
 		const files = parseTutorMemoryFiles(record.files);
 		const knowledge = parseKnowledgeSnapshot(record.knowledge);
+		if (typeof record.baseUpdatedAt === "string") {
+			const stored = await this.current(uid);
+			if (stored?.memory.updatedAt && stored.memory.updatedAt !== record.baseUpdatedAt) throw new MemoryConflict(stored.memory);
+		}
 		const updatedAt = new Date().toISOString();
 		knowledge.updatedAt = updatedAt;
 		const memory: TutorMemory = { updatedAt, files };
@@ -69,6 +81,16 @@ export class MemoryDirectory {
 		this.maps.set(uid, knowledge);
 		if (this.store) await this.store.write(uid, { memory, knowledge });
 		return memory;
+	}
+
+	private async current(uid: string): Promise<TutorMemoryRecord | null> {
+		const saved = await this.readStore(uid);
+		if (saved) return saved;
+		const memory = this.memories.get(uid);
+		if (!memory) return null;
+		const knowledge = this.maps.get(uid);
+		if (!knowledge) return null;
+		return { memory, knowledge };
 	}
 
 	private async readStore(uid: string): Promise<TutorMemoryRecord | null> {

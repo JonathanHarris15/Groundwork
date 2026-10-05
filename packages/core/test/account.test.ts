@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { knowledgeSnapshot, parseKnowledgeSnapshot, presentGroundwork, refreshFirebaseSession } from "../src/account";
+import { knowledgeSnapshot, mergeTutorMemoryFiles, parseKnowledgeSnapshot, presentGroundwork, refreshFirebaseSession, tutorMemoryFiles } from "../src/account";
+import { MemoryVaultIO } from "../src/io";
+import { KnowledgeStore } from "../src/store";
 import { layoutGroundworkGraph } from "../src/groundwork-graph";
 import { isUserKeyProvider, PLANS, publicPlan, USER_KEY_PROVIDERS } from "../src/account/plans";
 import { choosePlan, emptyAccount, presentAccount, rememberProfile, setDisplayName, spendHosted, viewAccount } from "../src/account/usage";
@@ -187,5 +189,49 @@ describe("hosted credit", () => {
 		const nextMonth = viewAccount(spent.account, new Date("2026-11-02T00:00:00Z"));
 		expect(nextMonth.spentUsd).toBe(0);
 		expect(nextMonth.remainingUsd).toBe(8);
+	});
+});
+
+describe("tutor memory across devices", () => {
+	it("keeps a file only one device added, and a delete only when the other side did not edit it", () => {
+		const base = { "learner.md": "base", "concepts/Old.md": "old" };
+		const merged = mergeTutorMemoryFiles(
+			base,
+			{ "learner.md": "base", "concepts/Old.md": "old", "concepts/Limit.md": "from the laptop" },
+			{ "learner.md": "base", "concepts/Old.md": "old", "concepts/Integral.md": "from the phone" },
+		);
+		expect(merged).toEqual({
+			"learner.md": "base",
+			"concepts/Old.md": "old",
+			"concepts/Limit.md": "from the laptop",
+			"concepts/Integral.md": "from the phone",
+		});
+		const honored = mergeTutorMemoryFiles(base, { "learner.md": "base" }, { "learner.md": "base", "concepts/Old.md": "old" });
+		expect(honored).toEqual({ "learner.md": "base" });
+		const kept = mergeTutorMemoryFiles(base, { "learner.md": "base" }, { "learner.md": "base", "concepts/Old.md": "rewritten" });
+		expect(kept["concepts/Old.md"]).toBe("rewritten");
+	});
+
+	it("lets the saving device win when both edited the same file, and takes the other device's edit otherwise", () => {
+		const base = { "learner.md": "base", "concepts/Limit.md": "v1" };
+		const localWins = mergeTutorMemoryFiles(base, { "learner.md": "laptop", "concepts/Limit.md": "v1" }, { "learner.md": "phone", "concepts/Limit.md": "v2" });
+		expect(localWins["learner.md"]).toBe("laptop");
+		expect(localWins["concepts/Limit.md"]).toBe("v2");
+	});
+
+	it("keeps a goal date and quiz evidence when the account files move to another device", async () => {
+		const io = new MemoryVaultIO();
+		const store = new KnowledgeStore(io, { now: () => new Date("2026-10-02T12:00:00.000Z") });
+		await store.upsertConcept({ title: "Limit", summary: "The value a function approaches." });
+		await store.setGoal({ title: "Exam", targets: ["Limit"], nodes: [{ title: "Limit" }], due: "2026-10-20" }, { judgments: "off" });
+		await store.recordEvidence("limit", { outcome: "correct", difficulty: 2, kind: "check", question: "What is a limit?" });
+		const files = tutorMemoryFiles(io.files);
+		expect(Object.keys(files).some((path) => path.startsWith("goals/"))).toBe(true);
+		expect(Object.keys(files).some((path) => path.startsWith(".groundwork/evidence/"))).toBe(true);
+		const next = new MemoryVaultIO();
+		for (const [path, content] of Object.entries(files)) next.files.set(path, content);
+		const other = new KnowledgeStore(next, { now: () => new Date("2026-10-02T12:00:00.000Z") });
+		expect((await other.goals())[0]?.due).toBe("2026-10-20");
+		expect((await other.concepts()).get("limit")?.stats.attempts).toBe(1);
 	});
 });

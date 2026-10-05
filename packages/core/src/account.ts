@@ -285,10 +285,58 @@ function goalSubject(goal: SnapshotGoalInput, concepts: SnapshotConcept[]): stri
 	return best || goal.domain?.trim() || undefined;
 }
 
+/**
+ * Three-way merge for tutor memory so two devices do not wipe each other.
+ * A file only one device changed is kept. A file only one device added is kept.
+ * A delete sticks when the other device left the file alone. When both changed
+ * the same file, the copy being saved wins.
+ */
+export function mergeTutorMemoryFiles(base: Record<string, string>, local: Record<string, string>, remote: Record<string, string>): Record<string, string> {
+	const paths = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)]);
+	const out: Record<string, string> = {};
+	for (const path of paths) {
+		const inBase = Object.prototype.hasOwnProperty.call(base, path);
+		const inLocal = Object.prototype.hasOwnProperty.call(local, path);
+		const inRemote = Object.prototype.hasOwnProperty.call(remote, path);
+		const b = base[path];
+		const l = local[path];
+		const r = remote[path];
+		if (inLocal && inRemote && l === r) {
+			out[path] = l;
+			continue;
+		}
+		if (inLocal && !inRemote && !inBase) {
+			out[path] = l!;
+			continue;
+		}
+		if (inRemote && !inLocal && !inBase) {
+			out[path] = r!;
+			continue;
+		}
+		if (inBase && inLocal && !inRemote) {
+			if (l !== b) out[path] = l!;
+			continue;
+		}
+		if (inBase && inRemote && !inLocal) {
+			if (r !== b) out[path] = r!;
+			continue;
+		}
+		if (inLocal && inRemote) {
+			if (inBase && l === b) out[path] = r!;
+			else out[path] = l!;
+			continue;
+		}
+		if (inLocal) out[path] = l!;
+		else if (inRemote) out[path] = r!;
+	}
+	return out;
+}
+
 export class AccountError extends Error {
 	constructor(
 		message: string,
 		readonly status: number,
+		readonly body?: unknown,
 	) {
 		super(message);
 		this.name = "AccountError";
@@ -306,7 +354,7 @@ export class AccountClient {
 		return this.request("GET", "/v1/memory");
 	}
 
-	async putHostedMemory(input: { files: Record<string, string>; knowledge: KnowledgeSnapshot }): Promise<TutorMemory> {
+	async putHostedMemory(input: { files: Record<string, string>; knowledge: KnowledgeSnapshot; baseUpdatedAt?: string }): Promise<TutorMemory> {
 		return this.request("PUT", "/v1/memory", input);
 	}
 
@@ -328,7 +376,7 @@ export class AccountClient {
 		const parsed = text ? (JSON.parse(text) as unknown) : {};
 		if (!response.ok) {
 			const message = parsed && typeof parsed === "object" && "error" in parsed && typeof (parsed as { error: unknown }).error === "string" ? (parsed as { error: string }).error : response.statusText;
-			throw new AccountError(message || "Account request failed.", response.status);
+			throw new AccountError(message || "Account request failed.", response.status, parsed);
 		}
 		return parsed as T;
 	}
