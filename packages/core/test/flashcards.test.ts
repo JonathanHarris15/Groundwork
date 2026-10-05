@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import { isTutorMemoryPath } from "../src/account";
 import {
 	applyRating,
+	auditFlashcardLibrary,
 	buildStudyQueue,
 	createFlashcard,
+	emptyFlashcardLibrary,
 	exportFlashcards,
 	flashcardContentKey,
+	flashcardQualityIssue,
 	formatInterval,
 	loadFlashcardLibrary,
 	makeCard,
@@ -133,7 +136,7 @@ describe("flashcard vault mirror", () => {
 		expect(await vault.read("Groundwork/flashcards/scratch.md")).toBe("just a note\n");
 	});
 
-	it("makes one card from a teaching note and records a review on the concept", async () => {
+	it("makes one card from a teaching note and does not move mastery when rated", async () => {
 		const { store } = pair();
 		await store.upsertConcept({
 			title: "Base rates",
@@ -152,8 +155,19 @@ describe("flashcard vault mirror", () => {
 		expect(graded.lapses).toBe(0);
 		expect(graded.state).toBe("learning");
 		const concept = (await store.concepts()).get("base-rates");
-		expect(concept?.stats.attempts).toBe(1);
-		expect(concept?.stats.status).not.toBe("unassessed");
+		expect(concept?.stats.attempts).toBe(0);
+	});
+
+	it("rejects multi-answer flashcards and flags existing junk on load", () => {
+		expect(flashcardQualityIssue("What are the types of critical point?", "min, max, saddle")).toMatch(/atomic|list/i);
+		expect(flashcardQualityIssue("What type of critical point has det < 0?", "saddle")).toBeNull();
+		const lib = emptyFlashcardLibrary(NOW);
+		const bad = makeCard({ deckId: "library", concept: "Calc", front: "Types?", back: "min, max, saddle", now: NOW });
+		expect(bad.qualityIssue).toBeTruthy();
+		bad.qualityIssue = undefined;
+		lib.cards.push(bad);
+		expect(auditFlashcardLibrary(lib)).toBe(true);
+		expect(lib.cards[0].qualityIssue).toBeTruthy();
 	});
 
 	it("drops the account copy on reset", async () => {

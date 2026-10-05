@@ -58,7 +58,7 @@ export const DEFAULT_SETTINGS: GroundworkSettings = {
 	model: "claude-sonnet-4-5",
 	maxTokens: 8192,
 	deviceName: "",
-	appearance: "obsidian",
+	appearance: "dark",
 	readFolders: [],
 	writeFolders: [],
 };

@@ -262,7 +262,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			ctx.moveTo(start.x, start.y);
 			ctx.lineTo(end.x, end.y);
 			ctx.strokeStyle = link.bridge ? theme.linkBridge : theme.link;
-			ctx.lineWidth = (link.bridge ? 1.1 : 1.7) / camera.scale;
+			ctx.lineWidth = (link.bridge ? 1.1 : link.highlight ? 2.6 : 1.7) / camera.scale;
 			ctx.globalAlpha = dim ? 0.1 : 1;
 			if (link.bridge) ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
 			else ctx.setLineDash([]);

@@ -306,8 +306,18 @@ if (scenario === "signed-in") {
 	await page.waitForSelector('.gw-root[data-gw-bootstrapped="true"]', { timeout: 120_000 });
 }
 
-if (scenario === "signed-in") {
+	if (scenario === "signed-in") {
 	await waitSignedInLinked();
+	await page.waitForFunction(
+		() => {
+			const root = document.querySelector(".gw-root");
+			if (!root) return false;
+			const empties = root.querySelectorAll(".gw-messages > .gw-empty").length;
+			const heroes = root.querySelectorAll('.gw-messages > .gw-empty .gw-hero h2').length;
+			return empties <= 1 && heroes <= 1;
+		},
+		{ timeout: 30_000 },
+	);
 	await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 30_000 });
 	await sleep(800);
 }

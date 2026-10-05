@@ -13,6 +13,8 @@ import {
 	marginNotes,
 	buildSystemPrompt,
 	buildConceptMap,
+	buildFromGroundwork,
+	layoutGroundworkGraph,
 	daysLeftPhrase,
 	fileAccessGuidance,
 	formatDue,
@@ -60,11 +62,11 @@ import { ClaudeCodeSession } from "@groundwork/core/claude-code";
 import { AsideCard, findQuoteRange } from "./aside";
 import { toBoard, type GoalBoardView } from "./goal-board";
 import { renderGoalsPane } from "./goals-pane";
-import { renderMapPane } from "./map-pane";
+import { renderMapPane, renderStartedVaultMap } from "./map-pane";
 import { mountMark } from "./mark";
 import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source";
 import { AskCard, QuizCard, TestCard } from "./cards";
-import { FlashcardsPane } from "./flashcards-pane";
+import { FlashcardsPane, type FlashcardsHost } from "./flashcards-pane";
 import { enhanceGraphs } from "./graph-pane";
 import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
@@ -281,7 +283,12 @@ export class ChatView extends ItemView implements ToolUI {
 			if (this.refreshingGoalSelect) return;
 			const id = this.uiGoalEl.value;
 			this.selectedGoalId = id || null;
-			void this.plugin.store.setWorkingGoal(id || null).then(() => this.refreshGoalSelect());
+			void this.plugin.store.setWorkingGoal(id || null).then(() => {
+				void this.refreshGoalSelect();
+				if (this.pane.screen === "map") void this.renderMap();
+				else if (this.pane.screen === "goals") void this.renderGoals();
+				if (this.pane.overlay === "flashcards") this.flashPane?.refresh();
+			});
 		});
 
 		this.uiMessagesEl = root.createDiv({ cls: "gw-messages" });
@@ -289,19 +296,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiGoalsEl = root.createDiv({ cls: "gw-screen gw-goals" });
 		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
 		this.uiFlashEl = root.createDiv({ cls: "gw-flash" });
-		this.flashPane = new FlashcardsPane(this.uiFlashEl, {
-			app: this.app,
-			store: this.plugin.store,
-			writeFolders: () => this.plugin.settings.writeFolders,
-			goalId: () => this.uiGoalEl?.value ?? "",
-			selection: () => this.selectedQuote(),
-			renderMarkdown: (el, md) => this.renderMd(el, md),
-			onQuiz: (prompt) => {
-				this.closeFlashcards();
-				void this.submit(prompt);
-			},
-			onClose: () => this.closeFlashcards(),
-		});
+		this.flashPane = new FlashcardsPane(this.uiFlashEl, this.flashcardsHost());
 		this.uiSettingsEl = root.createDiv({ cls: "gw-settings" });
 		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
 			const a = (evt.target as HTMLElement).closest("a.internal-link") as HTMLAnchorElement | null;
@@ -764,9 +759,16 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	refreshAfterAccountLink(): void {
-		this.renderHeader();
 		if (this.pane.overlay === "settings") void this.renderSettings();
-		if (this.pane.screen === "learn" && !this.pane.overlay && this.record && !this.record.items.length) void this.renderEmpty();
+		if (!this.record) {
+			this.renderHeader();
+			return;
+		}
+		if (this.pane.screen === "learn" && !this.pane.overlay && !this.record.items.length) {
+			this.renderAll();
+			return;
+		}
+		this.renderHeader();
 	}
 
 	refreshAfterBootstrap(): void {
@@ -777,7 +779,6 @@ export class ChatView extends ItemView implements ToolUI {
 		if (this.pane.overlay === "settings") void this.renderSettings();
 		if (this.pane.screen === "map") void this.renderMap();
 		if (this.pane.screen === "goals") void this.renderGoals();
-		if (this.pane.screen === "learn" && !this.pane.overlay && !this.record.items.length) void this.renderEmpty();
 	}
 
 	private async refreshGoalSelect(): Promise<void> {
@@ -798,7 +799,7 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 		this.uiGoalEl.value = current && choices.some((c) => c.id === current.id) ? current.id : "";
 		this.refreshingGoalSelect = false;
-		if (current?.id) this.selectedGoalId = current.id;
+		this.selectedGoalId = this.uiGoalEl.value || null;
 		this.uiGoalDaysEl?.setText(current?.daysLeft == null ? "" : daysLeftPhrase(current.daysLeft));
 		this.uiGoalDaysEl?.toggle(current?.daysLeft != null);
 		this.refreshOpenScreen();
@@ -987,7 +988,12 @@ export class ChatView extends ItemView implements ToolUI {
 		this.scrollToBottom(true);
 	}
 
+	private emptyPaintGen = 0;
+
 	private async renderEmpty(): Promise<void> {
+		const gen = ++this.emptyPaintGen;
+		if (!this.record || this.record.items.length) return;
+		this.uiMessagesEl.empty();
 		const el = this.uiMessagesEl.createDiv({ cls: "gw-empty" });
 		const provider = this.plugin.providerLabel();
 		const needsSetup = !!provider.setup;
@@ -1033,6 +1039,7 @@ export class ChatView extends ItemView implements ToolUI {
 		} catch {
 			overview = null;
 		}
+		if (gen !== this.emptyPaintGen || !this.record || this.record.items.length) return;
 		const suggestions = el.createDiv({ cls: `gw-suggestions${needsSetup ? " is-deferred" : ""}` });
 		if (needsSetup) {
 			suggestions.createEl("h3", { cls: "gw-suggestions-kicker", text: "After you are connected" });
@@ -1354,19 +1361,7 @@ export class ChatView extends ItemView implements ToolUI {
 			this.uiFlashEl =
 				(this.contentEl.querySelector(".gw-flash") as HTMLElement | null) ??
 				this.contentEl.createDiv({ cls: "gw-flash" });
-			this.flashPane = new FlashcardsPane(this.uiFlashEl, {
-				app: this.app,
-				store: this.plugin.store,
-				writeFolders: () => this.plugin.settings.writeFolders,
-				goalId: () => this.uiGoalEl?.value ?? "",
-				selection: () => this.selectedQuote(),
-				renderMarkdown: (el, md) => this.renderMd(el, md),
-				onQuiz: (prompt) => {
-					this.closeFlashcards();
-					void this.submit(prompt);
-				},
-				onClose: () => this.closeFlashcards(),
-			});
+			this.flashPane = new FlashcardsPane(this.uiFlashEl, this.flashcardsHost());
 		}
 		this.syncPaneLayout();
 		this.uiInputEl?.blur();
@@ -1375,6 +1370,26 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiLibraryBtn?.removeClass("is-active");
 		this.uiSettingsBtn?.removeClass("is-active");
 		this.bindOverlayFocus(this.uiFlashEl, () => this.closeFlashcards(), "Flashcards");
+	}
+
+	private flashcardsHost(): FlashcardsHost {
+		return {
+			app: this.app,
+			store: this.plugin.store,
+			writeFolders: () => this.plugin.settings.writeFolders,
+			goalId: () => this.uiGoalEl?.value ?? "",
+			selection: () => this.selectedQuote(),
+			renderMarkdown: (el, md) => this.renderMd(el, md),
+			onQuiz: (prompt) => {
+				this.closeFlashcards();
+				void this.submit(prompt);
+			},
+			onClose: () => this.closeFlashcards(),
+			onFocusWorkingGoal: () => {
+				this.uiGoalEl?.focus();
+				this.uiGoalEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+			},
+		};
 	}
 
 	private closeFlashcards(): void {
@@ -2016,16 +2031,41 @@ export class ChatView extends ItemView implements ToolUI {
 		return body.createDiv({ cls: "gw-msg gw-assistant markdown-rendered" });
 	}
 
+	private vaultConceptStarted(status: string): boolean {
+		return status !== "unassessed";
+	}
+
 	private async renderMap(): Promise<void> {
 		const token = ++this.screenToken;
 		const store = this.plugin.store;
 		try {
 			const goals = await store.goals();
-			const working = await store.workingGoal();
+			const pinnedId = this.uiGoalEl?.value?.trim() ?? "";
 			if (token !== this.screenToken) return;
-			const picked = goals.find((goal) => goal.id === this.selectedGoalId) ?? goals.find((goal) => goal.id === working?.id) ?? goals.find((goal) => goal.status !== "done") ?? goals[0];
+			if (!pinnedId) {
+				const concepts = await store.concepts();
+				if (token !== this.screenToken) return;
+				const started = [...concepts.values()].filter((concept) => this.vaultConceptStarted(concept.stats.status));
+				const startedIds = new Set(started.map((concept) => concept.id));
+				const graphConcepts = started.map((concept) => ({
+					id: concept.id,
+					title: concept.title,
+					prerequisites: concept.prerequisites.filter((prior) => startedIds.has(prior)),
+				}));
+				const graph = layoutGroundworkGraph(graphConcepts);
+				const data = buildFromGroundwork(
+					started.map((concept) => ({ id: concept.id, title: concept.title, status: concept.stats.status })),
+					graph,
+				);
+				renderStartedVaultMap(this.uiMapEl, data, this.mapOptions());
+				return;
+			}
+			const picked = goals.find((goal) => goal.id === pinnedId);
 			if (!picked) {
-				renderMapPane(this.uiMapEl, null, this.mapOptions());
+				renderMapPane(this.uiMapEl, null, {
+					...this.mapOptions(),
+					emptyMessage: "Choose a goal in the Working on menu to see its concept map.",
+				});
 				return;
 			}
 			this.selectedGoalId = picked.id;
@@ -2097,10 +2137,14 @@ export class ChatView extends ItemView implements ToolUI {
 			}
 			if (token !== this.screenToken) return;
 			boards.sort((a, b) => Number(a.status === "paused") - Number(b.status === "paused") || Number(a.status === "done") - Number(b.status === "done") || (a.daysLeft ?? 9999) - (b.daysLeft ?? 9999));
-			if (!boards.some((board) => board.id === this.selectedGoalId)) this.selectedGoalId = boards.find((board) => board.status !== "done")?.id ?? boards[0]?.id ?? null;
-			renderGoalsPane(this.uiGoalsEl, boards, this.selectedGoalId, {
+			const pinnedId = this.uiGoalEl?.value?.trim() ?? "";
+			const activeGoalId = pinnedId && boards.some((board) => board.id === pinnedId) ? pinnedId : null;
+			renderGoalsPane(this.uiGoalsEl, boards, activeGoalId, {
+				onFocusWorkingGoal: () => {
+					this.uiGoalEl?.focus();
+					this.uiGoalEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+				},
 				onSelect: (id) => {
-					this.selectedGoalId = id;
 					const board = boards.find((item) => item.id === id);
 					const pin = board && board.status !== "done" ? store.setWorkingGoal(id) : Promise.resolve(null);
 					void pin.then(() => this.refreshGoalSelect()).catch((err: unknown) => new Notice(err instanceof Error ? err.message : String(err)));

@@ -12,7 +12,7 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 		degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
 	}
 	const nodes: ForceGraphNode[] = model.nodes.map((node) => {
-		const attention = node.visual === "ghost" || node.visual === "shaky" || node.visual === "rusty";
+		const attention = node.visual === "ghost" || node.visual === "shaky" || node.visual === "rusty" || node.visual === "target";
 		const hint =
 			node.next
 				? "Start here in chat"
@@ -20,8 +20,8 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 					? "Not started — tap to begin"
 					: node.visual === "shaky" || node.visual === "rusty"
 						? "Weak spot — tap to quiz"
-						: node.visual === "goal"
-							? "Your goal"
+						: node.visual === "goal" || node.visual === "target"
+							? "Goal target — tap to build"
 							: "Tap to open in chat";
 		return {
 			id: node.id,
@@ -45,6 +45,7 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 		to: edge.to,
 		kind: edge.kind,
 		bridge: edge.kind === "dim" || edge.kind === "faint",
+		highlight: edge.kind === "built",
 	}));
 	const legend: ForceGraphLegendItem[] = [
 		{ key: "known", label: "Solid — you have this groundwork", color: MAP_VISUAL_COLORS.known },
