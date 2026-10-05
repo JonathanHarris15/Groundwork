@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -32,3 +34,10 @@ jobs:
             packages/obsidian-plugin/dist/styles.css \
             --title "Groundwork ${GITHUB_REF_NAME}" \
             --notes "Obsidian community plugin release. After the plugin is listed, the website’s Add to Obsidian button opens it. The release assets are main.js, manifest.json, and styles.css."
+      - name: Attest release assets
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            packages/obsidian-plugin/dist/main.js
+            packages/obsidian-plugin/dist/manifest.json
+            packages/obsidian-plugin/dist/styles.css

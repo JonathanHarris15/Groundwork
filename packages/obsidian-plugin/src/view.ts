@@ -765,9 +765,15 @@ export class ChatView extends ItemView implements ToolUI {
 		void this.refreshGoalSelect();
 	}
 
-	refreshAfterBootstrap(): void {
-		if (!this.record) return;
+	refreshAfterAccountLink(): void {
 		this.renderHeader();
+		if (this.pane.overlay === "settings") void this.renderSettings();
+		if (this.pane.screen === "learn" && !this.pane.overlay && this.record && !this.record.items.length) void this.renderEmpty();
+	}
+
+	refreshAfterBootstrap(): void {
+		this.refreshAfterAccountLink();
+		if (!this.record) return;
 		void this.refreshGoalSelect();
 		if (this.pane.overlay === "library") void this.renderLibrary();
 		if (this.pane.overlay === "settings") void this.renderSettings();
