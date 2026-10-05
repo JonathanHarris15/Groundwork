@@ -1829,7 +1829,13 @@
 }
 
 .gw-statusbar {
+	cursor: default;
+}
+.gw-statusbar.is-actionable {
 	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+	text-underline-offset: 2px;
 }
 .gw-statusbar[data-state="offline"],
 .gw-statusbar[data-state="error"] {
@@ -2020,38 +2026,34 @@
 .gw-goalchip {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	gap: 8px;
 	height: 30px;
-	padding: 0 10px 0 10px;
-	border-radius: 999px;
-	background: var(--gw-chip, var(--gw-goal-bg));
-	border: 1px solid var(--background-modifier-border, var(--gw-goal-line));
-	color: var(--text-normal, var(--gw-goal-ink));
+	padding: 0 10px;
+	border-radius: var(--radius-s, 8px);
+	background: var(--background-modifier-hover);
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
 	flex: none;
-	max-width: min(280px, 100%);
+	max-width: min(320px, 100%);
 }
 .gw-goalchip-label {
-	font-size: 11px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	color: var(--text-muted, var(--gw-goal-ink));
+	font-size: var(--font-ui-small);
+	font-weight: 500;
+	color: var(--text-muted);
 	flex: none;
+	white-space: nowrap;
 }
-.gw-goalchip-icon {
-	color: var(--gw-goal-ink);
-}
-.gw-goalchip-icon { display: inline-flex; width: 13px; height: 13px; }
-.gw-goalchip-icon svg { width: 13px; height: 13px; }
 .gw-root select.gw-goal-select {
 	appearance: none;
 	background: transparent;
 	border: 0;
-	color: var(--gw-goal-ink);
-	font-size: 13px;
-	max-width: 140px;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: 500;
+	max-width: min(160px, 42vw);
 	padding: 0;
 	box-shadow: none;
+	cursor: pointer;
 }
 .gw-goalchip-days { font-size: 13px; white-space: nowrap; }
 .gw-root.is-map .gw-messages,
@@ -2450,7 +2452,7 @@ body .gw-root select.gw-goal-select {
 body .gw-root select.gw-goal-select {
 	background: transparent;
 	border-color: transparent;
-	color: var(--gw-goal-ink);
+	color: var(--text-normal, var(--gw-ink));
 }
 .gw-appearance { display: flex; flex-wrap: wrap; gap: 8px; }
 /* flashcards — review deck. Cards are on the account and mirrored into flashcards/. */

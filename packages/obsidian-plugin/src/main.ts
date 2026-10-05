@@ -5,7 +5,16 @@ import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
-import { accountOrigin, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
+import {
+	accountOrigin,
+	accountSignInUrl,
+	DEFAULT_SETTINGS,
+	GROUNDWORK_WEB_API_KEY,
+	GroundworkSettingTab,
+	loadAccountToken,
+	saveAccountToken,
+	type GroundworkSettings,
+} from "./settings";
 import { closeSettings, pluginManager } from "./obsidian-host";
 import { ChatView, VIEW_TYPE } from "./view";
 
@@ -41,7 +50,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.addRibbonIcon("graduation-cap", "Open Groundwork tutor", () => void this.activateView());
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass("gw-statusbar");
-		this.statusEl.addEventListener("click", () => void this.saveMemory(true));
+		this.statusEl.addEventListener("click", () => void this.onStatusBarClick());
 		this.renderStatus();
 
 		this.addCommand({ id: "open-tutor", name: "Open tutor", callback: () => void this.activateView() });
@@ -600,14 +609,50 @@ export default class GroundworkPlugin extends Plugin {
 		for (const v of this.views()) v.refreshSyncIndicator();
 	}
 
+	private onStatusBarClick(): void {
+		const { state } = this.syncStatus;
+		if (state === "offline") {
+			window.open(accountSignInUrl());
+			return;
+		}
+		if (state === "error") {
+			void this.connectMemory();
+			return;
+		}
+		if (state === "syncing") return;
+		void this.saveMemory(true);
+	}
+
 	private renderStatus(): void {
 		if (!this.statusEl) return;
 		const { state, text } = this.syncStatus;
-		const icon = { idle: "○", syncing: "↻", ok: "✓", offline: "⚠", error: "✕", disabled: "–" }[state];
-		const when = this.lastSync && state === "ok" ? ` ${this.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
-		this.statusEl.setText(`Groundwork ${icon}${when}`);
-		this.statusEl.setAttr("aria-label", `Tutor memory: ${text} (click to save to your account)`);
+		const short: Record<SyncUiState, string> = {
+			idle: "Starting",
+			syncing: "Syncing",
+			ok: "Linked",
+			offline: "Not linked",
+			error: "Sync failed",
+			disabled: "Sync off",
+		};
+		const when =
+			this.lastSync && state === "ok"
+				? ` · ${this.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+				: "";
+		this.statusEl.setText(`Groundwork · ${short[state]}${when}`);
+		const hint =
+			state === "offline"
+				? `${text} Open the Groundwork website, sign in, and choose Open Obsidian. Click to open sign-in.`
+				: state === "error"
+					? `${text} Click to try syncing tutor memory again.`
+					: state === "syncing"
+						? text
+						: state === "ok"
+							? `${text} Click to save tutor memory to your account now.`
+							: text;
+		this.statusEl.setAttr("title", hint);
+		this.statusEl.setAttr("aria-label", hint);
 		this.statusEl.setAttr("data-state", state);
+		this.statusEl.toggleClass("is-actionable", state === "offline" || state === "error" || state === "ok");
 	}
 
 	// ── settings ───────────────────────────────────────────────────────

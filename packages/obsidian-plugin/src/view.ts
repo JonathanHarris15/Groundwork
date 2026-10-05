@@ -265,15 +265,14 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiFlashBtn = this.iconButton(headerTools, "layers", "Flashcards", () => void this.toggleFlashcards());
 		this.uiSettingsBtn = this.iconButton(headerTools, "settings", "Settings", () => void this.toggleSettings());
 		this.iconButton(headerTools, "more-horizontal", "More actions", (e) => void this.showMoreMenu(e));
-		const chip = actions.createDiv({
-			cls: "gw-goalchip",
-			attr: { title: "Working goal — choose what you are studying toward in this session" },
-		});
-		chip.createSpan({ cls: "gw-goalchip-label", text: "Goal" });
-		setIcon(chip.createSpan({ cls: "gw-goalchip-icon" }), "flag");
+		const chip = actions.createDiv({ cls: "gw-goalchip" });
+		chip.createSpan({ cls: "gw-goalchip-label", text: "Working goal" });
 		this.uiGoalEl = chip.createEl("select", {
 			cls: "gw-goal-select",
-			attr: { "aria-label": "Working goal — choose what you are studying toward" },
+			attr: {
+				"aria-label": "Working goal — pin a goal for this session, or leave unset and study whatever you bring",
+				title: "Pin a goal for this session. Leave unset to follow the topic or files you open in chat.",
+			},
 		});
 		this.uiGoalDaysEl = chip.createSpan({ cls: "gw-goalchip-days" });
 		this.registerDomEvent(this.uiGoalEl, "change", () => {
@@ -759,7 +758,10 @@ export class ChatView extends ItemView implements ToolUI {
 		const current = await this.plugin.store.workingGoal();
 		this.refreshingGoalSelect = true;
 		this.uiGoalEl.empty();
-		this.uiGoalEl.createEl("option", { text: "You choose", attr: { value: "" } });
+		this.uiGoalEl.createEl("option", {
+			text: "No goal pinned",
+			attr: { value: "", title: "The tutor follows what you bring in chat until you pick a goal" },
+		});
 		for (const choice of choices) {
 			this.uiGoalEl.createEl("option", { text: choice.title, attr: { value: choice.id } });
 		}
