@@ -19,8 +19,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
       - run: npm run build -w packages/obsidian-plugin
+      - run: npm test
       - run: node scripts/check-community-plugin.mjs
       - name: Publish community plugin assets
         env:
