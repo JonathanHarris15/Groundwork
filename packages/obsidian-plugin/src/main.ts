@@ -410,7 +410,11 @@ export default class GroundworkPlugin extends Plugin {
 	/** Load tutor memory from the website. An empty account picks up notes already in this vault, once. */
 	async connectMemory(): Promise<void> {
 		const client = await this.memoryClient();
-		if (!client) return;
+		if (!client) {
+			const imported = await this.importVaultMemory();
+			if (imported) this.store.invalidate();
+			return;
+		}
 		this.setSync("syncing", "loading tutor memory…");
 		try {
 			const remote = await client.getHostedMemory();

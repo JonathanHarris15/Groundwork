@@ -122,11 +122,7 @@ describe("account server", () => {
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/app.js?v=13"');
 		expect(site?.body).toContain('src="/force-graph.js?v=2"');
-<<<<<<< HEAD
 		expect(site?.body).toContain('href="/styles.css?v=4"');
-=======
-		expect(site?.body).toContain('href="/styles.css?v=3"');
->>>>>>> f4913ef (Polish interactive concept graphs for study use)
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
