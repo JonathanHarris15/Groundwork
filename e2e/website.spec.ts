@@ -58,6 +58,8 @@ test("local account dashboard with large study record", async ({ page, request }
 	await page.getByRole("button", { name: "Continue on this device" }).click();
 	await expect(page.getByRole("heading", { name: /Welcome back/i })).toBeVisible();
 	await expect(page.locator(".board")).toHaveCount(1);
+	await expect(page.locator(".board")).toContainText("Tutor usage this month");
+	await expect(page.locator(".board .quota-meter")).toBeVisible();
 	await expect(page.getByRole("region", { name: /Concept graph/i })).toBeVisible();
 	await expect(page.locator(".concept-list li")).toHaveCount(12);
 	await page.getByRole("button", { name: /Show \d+ more/i }).click();
