@@ -33,7 +33,8 @@ for (const chain of chains) {
 
 const report = await store.setGoal({
 	title: "Midterm fluency",
-	targets: ["Chain rule", "Eigenvalues", "Bayes rule"],
+	// Include a reachable target so the map can show Solid (green) after seed quizzes.
+	targets: ["Matrices", "Chain rule", "Eigenvalues", "Bayes rule"],
 	nodes: [
 		{ title: "Limits" },
 		{ title: "Continuity", prerequisites: ["Limits"] },
@@ -48,4 +49,23 @@ const report = await store.setGoal({
 	],
 });
 await store.setWorkingGoal(report.goal.id);
+
+/** Enough quiz evidence that the goal-path map shows all four legend colors at once. */
+async function quiz(title, outcome, difficulty = 3, times = 1) {
+	for (let i = 0; i < times; i++) {
+		await store.recordEvidence(title, { outcome, difficulty, kind: "check" });
+	}
+}
+
+// Solid (green) — target built on the goal
+await quiz("Matrices", "correct", 5, 7);
+// Learning (blue) — quizzed path step, not built yet
+await quiz("Limits", "correct", 3, 2);
+await quiz("Continuity", "correct", 3, 2);
+// Needs work (orange)
+await quiz("Derivative", "incorrect", 3, 3);
+await quiz("Vectors", "partial", 3, 2);
+// Not started (ghost) — leave Product rule, Sample space, Bayes rule, etc. unassessed
+
+await store.recomputeAll();
 console.log(`Seeded ${(await store.concepts()).size} concepts and goal "${report.goal.title}" in ${vault}`);

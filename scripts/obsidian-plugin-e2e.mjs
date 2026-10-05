@@ -145,6 +145,41 @@ async function shotCanvas(name) {
 	});
 }
 
+/** Groundwork map column at a fixed width (toolbar + canvas + legend), not the Obsidian file tree. */
+async function shotMapColumn(name, columnWidth) {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.evaluate((w) => {
+		const side = document.querySelector(".gw-root .gw-side");
+		const wrap = document.querySelector(".gw-root .gw-mapwrap");
+		if (side) side.style.display = "none";
+		if (wrap) {
+			wrap.style.width = `${w}px`;
+			wrap.style.maxWidth = `${w}px`;
+			wrap.style.minHeight = "480px";
+		}
+	}, columnWidth);
+	await sleep(400);
+	const fitBtn = page.locator(`${rootSel} button[aria-label="Fit in window"]`).first();
+	if (await fitBtn.count()) {
+		await fitBtn.click({ force: true });
+		await sleep(500);
+	}
+	await page.locator(`${rootSel} .gw-mapwrap`).screenshot({ path: path.join(outDir, `${name}.png`) });
+}
+
+async function resetMapLayout() {
+	await page.evaluate(() => {
+		const side = document.querySelector(".gw-root .gw-side");
+		const wrap = document.querySelector(".gw-root .gw-mapwrap");
+		if (side) side.style.display = "";
+		if (wrap) {
+			wrap.style.width = "";
+			wrap.style.maxWidth = "";
+			wrap.style.minHeight = "";
+		}
+	});
+}
+
 async function dismissStartupDialogs() {
 	for (const label of [/Turn on community plugins/i, /Trust author/i, /Enable community plugins/i, /^Open$/i]) {
 		const btn = page.getByRole("button", { name: label });
@@ -214,11 +249,9 @@ await shot("graph-main-tab-dark-1280");
 await shotCanvas("graph-canvas-main-dark-1280");
 
 for (const width of [280, 360]) {
-	await page.setViewportSize({ width, height: 720 });
-	await sleep(800);
-	await shot(`graph-sidebar-${width}-dark`);
-	await shotCanvas(`graph-canvas-sidebar-${width}-dark`);
+	await shotMapColumn(`graph-map-column-${width}-dark`, width);
 }
+await resetMapLayout();
 
 try {
 	await page.setViewportSize({ width: 1280, height: 800 });
@@ -262,10 +295,16 @@ await openConceptMap();
 await shot("graph-main-tab-light-1280");
 await shotCanvas("graph-canvas-main-light-1280");
 for (const width of [280, 360]) {
-	await page.setViewportSize({ width, height: 720 });
-	await sleep(700);
-	await shotCanvas(`graph-canvas-sidebar-${width}-light`);
+	await shotMapColumn(`graph-map-column-${width}-light`, width);
 }
+await shotMapColumn("graph-map-column-360-light-ghosts-on", 360);
+await page.locator(`${rootSel} button.gw-toggle`, { hasText: "Show concepts still ahead" }).click();
+await sleep(500);
+await shotMapColumn("graph-map-column-360-light-ghosts-off", 360);
+await page.locator(`${rootSel} .gw-seg button`, { hasText: "All concepts" }).click();
+await sleep(600);
+await shotMapColumn("graph-map-column-360-light-all-concepts", 360);
+await resetMapLayout();
 
 await browser.close();
 try {
