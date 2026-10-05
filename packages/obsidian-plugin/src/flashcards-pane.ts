@@ -32,6 +32,7 @@ export interface FlashcardsHost {
 	renderMarkdown(el: HTMLElement, markdown: string): Promise<void>;
 	onQuiz(prompt: string): void;
 	onClose(): void;
+	onFocusWorkingGoal?: () => void;
 }
 
 const RATINGS: Array<{ rating: CardRating; label: string; key: string }> = [
@@ -79,8 +80,7 @@ export class FlashcardsPane {
 		try {
 			this.lib = await syncFlashcards(this.host.store, this.host.writeFolders());
 			await this.loadContext();
-			if (!this.deckId) this.deckId = this.host.goalId();
-			if (!this.deckOptions().some((o) => o.id === this.deckId)) this.deckId = "";
+			this.syncDeckToWorkingGoal();
 			this.startSession();
 			this.draw();
 			this.root.focus();
@@ -93,6 +93,16 @@ export class FlashcardsPane {
 	hide(): void {
 		this.active = false;
 		this.renderGen++;
+	}
+
+	/** Re-sync deck to Working on and redraw (e.g. after the pinned goal changes). */
+	refresh(): void {
+		if (!this.active) return;
+		this.syncDeckToWorkingGoal();
+		this.queue = this.makeQueue();
+		this.revealed = false;
+		this.composing = false;
+		this.draw();
 	}
 
 	private async loadContext(): Promise<void> {
@@ -172,11 +182,29 @@ export class FlashcardsPane {
 		}
 	}
 
+	private pinnedGoalId(): string {
+		return this.host.goalId()?.trim() ?? "";
+	}
+
+	private syncDeckToWorkingGoal(): void {
+		this.deckId = this.pinnedGoalId();
+	}
+
+	private activeGoal(): Goal | undefined {
+		return this.goals.find((g) => g.id === this.deckId);
+	}
+
 	private draw(): void {
 		const gen = ++this.renderGen;
 		const now = new Date();
 		this.root.empty();
 		this.root.toggleClass("is-revealed", this.revealed);
+		this.syncDeckToWorkingGoal();
+		if (!this.deckId) {
+			this.drawUnpinned();
+			if (gen !== this.renderGen) return;
+			return;
+		}
 		const body = this.root.createDiv({ cls: "gw-fc-body" });
 		const main = body.createDiv({ cls: "gw-fc-main" });
 		this.drawTop(main);
@@ -187,44 +215,38 @@ export class FlashcardsPane {
 		if (gen !== this.renderGen) return;
 	}
 
-	private deckOptions(): Array<{ id: string; title: string }> {
-		const options = [{ id: "", title: "All cards" }];
-		for (const goal of this.goals) {
-			if (goal.status === "done") continue;
-			options.push({ id: goal.id, title: goal.title });
-		}
-		for (const deck of this.lib.decks) {
-			if (options.some((o) => o.id === deck.id)) continue;
-			if (!this.lib.cards.some((c) => c.deckId === deck.id)) continue;
-			options.push({ id: deck.id, title: deck.title });
-		}
-		return options;
+	private drawUnpinned(): void {
+		const body = this.root.createDiv({ cls: "gw-fc-body gw-fc-unpinned" });
+		const main = body.createDiv({ cls: "gw-fc-main" });
+		const top = main.createDiv({ cls: "gw-fc-top" });
+		const deck = top.createDiv({ cls: "gw-deck" });
+		deck.createSpan({ cls: "gw-deck-k", text: "Flashcards" });
+		const close = top.createEl("button", {
+			cls: "clickable-icon gw-icon-btn gw-fc-close",
+			attr: { "aria-label": "Close flashcards", title: "Close flashcards", type: "button" },
+		});
+		setIcon(close, "x");
+		close.addEventListener("click", () => this.host.onClose());
+		const empty = main.createDiv({ cls: "gw-fc-empty gw-fc-unpinned-empty" });
+		empty.createEl("h2", { cls: "gw-goals-unpinned-title", text: "Select a goal to review its cards" });
+		const hint = empty.createEl("p", { cls: "gw-goals-unpinned-hint" });
+		hint.textContent = "Flashcards live on the goal you pin in Working on. Each goal has its own deck.";
+		const focus = empty.createEl("button", { cls: "gw-next-btn", text: "Choose in Working on", attr: { type: "button" } });
+		focus.addEventListener("click", () => this.host.onFocusWorkingGoal?.());
 	}
 
 	private deckTitle(): string {
-		if (!this.deckId) return "All cards";
-		return this.deckOptions().find((o) => o.id === this.deckId)?.title ?? "Deck";
+		return this.activeGoal()?.title ?? this.lib.decks.find((d) => d.id === this.deckId)?.title ?? "Goal deck";
 	}
 
 	private drawTop(parent: HTMLElement): void {
 		const top = parent.createDiv({ cls: "gw-fc-top" });
 		const deck = top.createDiv({ cls: "gw-deck" });
-		deck.createSpan({ cls: "gw-deck-k", text: "Flashcards · due today" });
+		deck.createSpan({ cls: "gw-deck-k", text: "Flashcards · goal deck" });
 		const titleRow = deck.createDiv({ cls: "gw-deck-title-row" });
-		const select = titleRow.createEl("select", { cls: "gw-deck-select", attr: { "aria-label": "Flashcard deck" } });
-		for (const option of this.deckOptions()) {
-			select.createEl("option", { text: option.id ? `${option.title} deck` : option.title, attr: { value: option.id } });
-		}
-		select.value = this.deckOptions().some((o) => o.id === this.deckId) ? this.deckId : "";
-		select.addEventListener("change", () => {
-			this.deckId = select.value;
-			this.startSession();
-			this.draw();
-		});
+		titleRow.createEl("span", { cls: "gw-deck-t", text: this.deckTitle() });
 		const meta = top.createDiv({ cls: "gw-fc-meta" });
-		if (this.deckId && this.goals.some((g) => g.id === this.deckId)) {
-			meta.createSpan({ cls: "gw-fc-chip", text: `Goal deck · ${this.deckTitle()}` });
-		}
+		meta.createSpan({ cls: "gw-fc-chip", text: "Working on" });
 		const close = top.createEl("button", {
 			cls: "clickable-icon gw-icon-btn gw-fc-close",
 			attr: { "aria-label": "Close flashcards", title: "Close flashcards", type: "button" },
@@ -283,8 +305,15 @@ export class FlashcardsPane {
 		const dot = concept.createSpan({ cls: "gw-dot" });
 		dot.style.background = this.conceptColor(card.concept);
 		concept.createSpan({ text: card.concept });
-		head.createSpan({ cls: "gw-fcard-seen", text: seenLabel(card, now) });
-		const del = head.createEl("button", { cls: "gw-fcard-del", text: "Delete", attr: { type: "button" } });
+		const headTools = head.createDiv({ cls: "gw-fcard-head-tools" });
+		const newBtn = headTools.createEl("button", { cls: "gw-fcard-tool", text: "New", attr: { type: "button" } });
+		newBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.composing = true;
+			this.draft = { concept: card.concept, front: "", back: "" };
+			this.draw();
+		});
+		const del = headTools.createEl("button", { cls: "gw-fcard-tool gw-fcard-del", text: "Delete", attr: { type: "button" } });
 		del.addEventListener("click", (e) => {
 			e.stopPropagation();
 			if (del.dataset.armed !== "1") {
@@ -299,8 +328,9 @@ export class FlashcardsPane {
 			}
 			void this.remove(card);
 		});
+		head.createSpan({ cls: "gw-fcard-seen", text: seenLabel(card, now) });
 		const front = face.createDiv({ cls: "gw-fcard-front" });
-		void this.host.renderMarkdown(front, card.front);
+		this.paintCardFace(front, card.front);
 		const show = face.createEl("button", { cls: "gw-fc-show", attr: { type: "button" } });
 		show.createSpan({ text: "Show answer" });
 		show.createEl("kbd", { text: "Space" });
@@ -310,7 +340,7 @@ export class FlashcardsPane {
 		});
 		face.createDiv({ cls: "gw-flipline", text: "Answer" });
 		const back = face.createDiv({ cls: "gw-fcard-back" });
-		void this.host.renderMarkdown(back, card.back);
+		this.paintCardFace(back, card.back);
 		const src = face.createDiv({ cls: "gw-fcard-src" });
 		src.createSpan({ text: "From " });
 		src.createEl("span", { cls: "gw-fcard-src-name", text: card.concept });
@@ -371,7 +401,7 @@ export class FlashcardsPane {
 	private drawSide(parent: HTMLElement, now: Date): void {
 		const side = parent.createDiv({ cls: "gw-fc-side" });
 		const head = side.createDiv({ cls: "gw-fc-side-head" });
-		head.createSpan({ text: "Today's deck" });
+		head.createSpan({ text: `${this.deckTitle()} · deck` });
 		const cards = this.scopedCards();
 		const counts = flashcardCounts(cards, now);
 		const grid = side.createDiv({ cls: "gw-fc-counts" });
@@ -411,7 +441,13 @@ export class FlashcardsPane {
 		input.checked = this.lib.addFromTeachingNotes;
 		sw.createSpan({ cls: "gw-switch-ui" });
 		input.addEventListener("change", () => void this.toggleNotes(input.checked));
+		this.drawDeckLibrary(side);
 		const actions = side.createDiv({ cls: "gw-fc-actions" });
+		this.sideButton(actions, "plus", "New card", () => {
+			this.composing = true;
+			this.draft = { concept: "", front: this.host.selection().trim(), back: "" };
+			this.draw();
+		});
 		this.sideButton(actions, "plus", "New card from selection", () => this.startFromSelection());
 		this.sideButton(actions, "check", "Turn misses into a quiz", () => this.quizMisses());
 		this.sideButton(actions, "download", "Write cards into the vault", () => void this.exportCards());
@@ -440,12 +476,57 @@ export class FlashcardsPane {
 		this.draw();
 	}
 
+	private paintCardFace(el: HTMLElement, markdown: string): void {
+		const text = markdown.trim();
+		if (!text) {
+			el.createDiv({ cls: "gw-fcard-placeholder", text: "No text on this card yet." });
+			return;
+		}
+		const inner = el.createDiv({ cls: "gw-fcard-md" });
+		inner.setText(text);
+		void this.host.renderMarkdown(inner, text).catch(() => {
+			if (!inner.textContent?.trim()) inner.setText(text);
+		});
+	}
+
+	private drawDeckLibrary(side: HTMLElement): void {
+		const block = side.createDiv({ cls: "gw-fc-block gw-fc-library" });
+		block.createEl("p", { cls: "gw-fc-k", text: "Cards in this goal" });
+		const cards = [...this.scopedCards()].sort((a, b) => a.concept.localeCompare(b.concept) || a.front.localeCompare(b.front));
+		if (!cards.length) {
+			block.createDiv({ cls: "gw-fc-muted", text: "No cards yet. Add one from a teaching note or press New." });
+			return;
+		}
+		const list = block.createDiv({ cls: "gw-fc-card-list" });
+		for (const card of cards) {
+			const row = list.createDiv({ cls: "gw-fc-card-row" });
+			const qa = row.createDiv({ cls: "gw-fc-card-qa" });
+			qa.createEl("b", { text: card.concept });
+			qa.createEl("span", { text: card.front.split("\n")[0] });
+			if (card.qualityIssue) qa.createEl("em", { text: card.qualityIssue });
+			const tools = row.createDiv({ cls: "gw-fc-card-row-tools" });
+			const study = tools.createEl("button", { cls: "gw-fcard-tool", text: "Study", attr: { type: "button" } });
+			study.addEventListener("click", () => {
+				this.queue = [card, ...this.queue.filter((c) => c.id !== card.id)];
+				this.revealed = false;
+				this.composing = false;
+				this.draw();
+			});
+			const del = tools.createEl("button", { cls: "gw-fcard-tool gw-fcard-del", text: "Delete", attr: { type: "button" } });
+			del.addEventListener("click", () => void this.remove(card));
+		}
+	}
+
 	private async saveDraft(): Promise<void> {
 		if (this.busy) return;
+		if (!this.deckId) {
+			new Notice("Pin a goal in Working on before saving a card.");
+			return;
+		}
 		this.busy = true;
 		try {
-			const deckId = this.deckId || "library";
-			const deckTitle = deckId === "library" ? "Library" : this.deckTitle();
+			const deckId = this.deckId;
+			const deckTitle = this.deckTitle();
 			const card = await createFlashcard(this.host.store, { ...this.draft, deckId, deckTitle });
 			this.lib = await loadFlashcardLibrary(this.host.store.io);
 			this.queue.unshift(card);

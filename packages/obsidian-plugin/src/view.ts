@@ -66,7 +66,7 @@ import { renderMapPane, renderStartedVaultMap } from "./map-pane";
 import { mountMark } from "./mark";
 import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source";
 import { AskCard, QuizCard, TestCard } from "./cards";
-import { FlashcardsPane } from "./flashcards-pane";
+import { FlashcardsPane, type FlashcardsHost } from "./flashcards-pane";
 import { enhanceGraphs } from "./graph-pane";
 import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
@@ -287,6 +287,7 @@ export class ChatView extends ItemView implements ToolUI {
 				void this.refreshGoalSelect();
 				if (this.pane.screen === "map") void this.renderMap();
 				else if (this.pane.screen === "goals") void this.renderGoals();
+				if (this.pane.overlay === "flashcards") this.flashPane?.refresh();
 			});
 		});
 
@@ -295,19 +296,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiGoalsEl = root.createDiv({ cls: "gw-screen gw-goals" });
 		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
 		this.uiFlashEl = root.createDiv({ cls: "gw-flash" });
-		this.flashPane = new FlashcardsPane(this.uiFlashEl, {
-			app: this.app,
-			store: this.plugin.store,
-			writeFolders: () => this.plugin.settings.writeFolders,
-			goalId: () => this.uiGoalEl?.value ?? "",
-			selection: () => this.selectedQuote(),
-			renderMarkdown: (el, md) => this.renderMd(el, md),
-			onQuiz: (prompt) => {
-				this.closeFlashcards();
-				void this.submit(prompt);
-			},
-			onClose: () => this.closeFlashcards(),
-		});
+		this.flashPane = new FlashcardsPane(this.uiFlashEl, this.flashcardsHost());
 		this.uiSettingsEl = root.createDiv({ cls: "gw-settings" });
 		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
 			const a = (evt.target as HTMLElement).closest("a.internal-link") as HTMLAnchorElement | null;
@@ -1372,19 +1361,7 @@ export class ChatView extends ItemView implements ToolUI {
 			this.uiFlashEl =
 				(this.contentEl.querySelector(".gw-flash") as HTMLElement | null) ??
 				this.contentEl.createDiv({ cls: "gw-flash" });
-			this.flashPane = new FlashcardsPane(this.uiFlashEl, {
-				app: this.app,
-				store: this.plugin.store,
-				writeFolders: () => this.plugin.settings.writeFolders,
-				goalId: () => this.uiGoalEl?.value ?? "",
-				selection: () => this.selectedQuote(),
-				renderMarkdown: (el, md) => this.renderMd(el, md),
-				onQuiz: (prompt) => {
-					this.closeFlashcards();
-					void this.submit(prompt);
-				},
-				onClose: () => this.closeFlashcards(),
-			});
+			this.flashPane = new FlashcardsPane(this.uiFlashEl, this.flashcardsHost());
 		}
 		this.syncPaneLayout();
 		this.uiInputEl?.blur();
@@ -1393,6 +1370,26 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiLibraryBtn?.removeClass("is-active");
 		this.uiSettingsBtn?.removeClass("is-active");
 		this.bindOverlayFocus(this.uiFlashEl, () => this.closeFlashcards(), "Flashcards");
+	}
+
+	private flashcardsHost(): FlashcardsHost {
+		return {
+			app: this.app,
+			store: this.plugin.store,
+			writeFolders: () => this.plugin.settings.writeFolders,
+			goalId: () => this.uiGoalEl?.value ?? "",
+			selection: () => this.selectedQuote(),
+			renderMarkdown: (el, md) => this.renderMd(el, md),
+			onQuiz: (prompt) => {
+				this.closeFlashcards();
+				void this.submit(prompt);
+			},
+			onClose: () => this.closeFlashcards(),
+			onFocusWorkingGoal: () => {
+				this.uiGoalEl?.focus();
+				this.uiGoalEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+			},
+		};
 	}
 
 	private closeFlashcards(): void {
