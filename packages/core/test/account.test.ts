@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { knowledgeSnapshot, mergeTutorMemoryFiles, parseKnowledgeSnapshot, presentGroundwork, refreshFirebaseSession, tutorMemoryFiles } from "../src/account";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AccountClient, knowledgeSnapshot, mergeTutorMemoryFiles, parseKnowledgeSnapshot, presentGroundwork, refreshFirebaseSession, tutorMemoryFiles } from "../src/account";
 import { MemoryVaultIO } from "../src/io";
 import { KnowledgeStore } from "../src/store";
 import { layoutGroundworkGraph } from "../src/groundwork-graph";
@@ -99,6 +99,21 @@ describe("groundwork graph", () => {
 		const labeled = graph.nodes.filter((n) => n.label).map((n) => n.id);
 		expect(labeled).toContain("conditional");
 		expect(labeled).toContain("eigen");
+	});
+});
+
+describe("AccountClient", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("rejects unreadable JSON from the website", async () => {
+		vi.stubGlobal(
+			"fetch",
+			async () => new Response("not json", { status: 500 }),
+		);
+		const client = new AccountClient("https://groundwork.test", "token");
+		await expect(client.getHostedMemory()).rejects.toThrow(/unreadable response/);
 	});
 });
 

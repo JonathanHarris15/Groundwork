@@ -373,7 +373,14 @@ export class AccountClient {
 			throw new AccountError(`Could not reach your account server. ${(e as Error).message}`, 0);
 		}
 		const text = await response.text();
-		const parsed = text ? (JSON.parse(text) as unknown) : {};
+		let parsed: unknown = {};
+		if (text) {
+			try {
+				parsed = JSON.parse(text) as unknown;
+			} catch {
+				throw new AccountError("The Groundwork website returned an unreadable response.", response.status || 0);
+			}
+		}
 		if (!response.ok) {
 			const message = parsed && typeof parsed === "object" && "error" in parsed && typeof (parsed as { error: unknown }).error === "string" ? (parsed as { error: string }).error : response.statusText;
 			throw new AccountError(message || "Account request failed.", response.status, parsed);

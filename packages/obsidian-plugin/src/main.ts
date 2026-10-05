@@ -171,7 +171,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	onunload(): void {
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
-		if (loadAccountToken(this.app)) void this.saveMemory(false);
+		if (loadAccountToken(this.app)) void this.saveMemory(false).catch(() => undefined);
 	}
 
 	deviceName(): string {

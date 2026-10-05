@@ -69,7 +69,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 		if (method === "POST" && path === "/v1/account/profile") {
 			const displayName = (body as { displayName?: unknown } | null)?.displayName;
-			if (typeof displayName !== "string") return { status: 400, json: { error: "Send a display name." } };
+			if (typeof displayName !== "string" || !displayName.trim()) return { status: 400, json: { error: "Send a display name." } };
 			return { status: 200, json: presentAccount(await deps.accounts.rename(uid, displayName)) };
 		}
 		if (method === "POST" && path === "/v1/account/plan") {

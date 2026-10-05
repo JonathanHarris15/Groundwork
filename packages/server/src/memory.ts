@@ -18,9 +18,14 @@ export interface TutorMemoryRecord {
 }
 
 /** Shared store so any server process can draw the dashboard. */
+export interface TutorMemoryWriteOptions {
+	/** When set, the write fails unless the stored `memory.updatedAt` matches (use `""` when none is stored yet). */
+	ifUpdatedAt?: string;
+}
+
 export interface TutorMemoryStore {
 	read(uid: string): Promise<TutorMemoryRecord | null>;
-	write(uid: string, record: TutorMemoryRecord): Promise<void>;
+	write(uid: string, record: TutorMemoryRecord, options?: TutorMemoryWriteOptions): Promise<void>;
 }
 
 /** The account changed since this device last loaded it. The save is refused so it can merge. */
@@ -68,9 +73,11 @@ export class MemoryDirectory {
 		const record = body && typeof body === "object" ? (body as { files?: unknown; knowledge?: unknown; baseUpdatedAt?: unknown }) : {};
 		const files = parseTutorMemoryFiles(record.files);
 		const knowledge = parseKnowledgeSnapshot(record.knowledge);
-		if (typeof record.baseUpdatedAt === "string") {
+		const ifUpdatedAt = typeof record.baseUpdatedAt === "string" ? record.baseUpdatedAt : undefined;
+		if (ifUpdatedAt !== undefined) {
 			const stored = await this.current(uid);
-			if (stored?.memory.updatedAt && stored.memory.updatedAt !== record.baseUpdatedAt) throw new MemoryConflict(stored.memory);
+			const currentAt = stored?.memory.updatedAt ?? "";
+			if (currentAt !== ifUpdatedAt) throw new MemoryConflict(stored?.memory ?? { updatedAt: currentAt, files: {} });
 		}
 		const updatedAt = new Date().toISOString();
 		knowledge.updatedAt = updatedAt;
@@ -79,7 +86,7 @@ export class MemoryDirectory {
 		this.revision.set(uid, revision);
 		this.memories.set(uid, memory);
 		this.maps.set(uid, knowledge);
-		if (this.store) await this.store.write(uid, { memory, knowledge });
+		if (this.store) await this.store.write(uid, { memory, knowledge }, ifUpdatedAt !== undefined ? { ifUpdatedAt } : undefined);
 		return memory;
 	}
 
