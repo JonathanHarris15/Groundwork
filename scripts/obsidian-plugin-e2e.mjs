@@ -261,7 +261,7 @@ async function waitSignedInLinked() {
 		},
 		{ timeout: 30_000 },
 	);
-	await page.locator(".gw-goalbar-label", { hasText: "Working goal" }).waitFor({ timeout: 15_000 });
+	await page.locator(".gw-goalbar-label", { hasText: "Working on:" }).waitFor({ timeout: 15_000 });
 	await page.waitForFunction(
 		() => (document.querySelector(".gw-goal-select")?.options?.length ?? 0) >= 1,
 		{ timeout: 30_000 },

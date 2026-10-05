@@ -242,7 +242,6 @@ export class ChatView extends ItemView implements ToolUI {
 		const brand = header.createDiv({ cls: "gw-brand" });
 		mountMark(brand);
 		brand.createSpan({ cls: "gw-brand-name", text: "GROUNDWORK" });
-		this.uiSessionEl = header.createDiv({ cls: "gw-session-title is-empty", attr: { "aria-hidden": "true" } });
 		const views = header.createDiv({ cls: "gw-views", attr: { role: "tablist", "aria-label": "Groundwork" } });
 		this.uiLearnBtn = this.viewTab(views, "learn", "Learn", `<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"></path><path d="M4 19V5"></path>`, "Learn");
 		this.uiMapBtn = this.viewTab(
@@ -256,6 +255,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiMapBtn.setAttr("data-testid", "gw-map-tab");
 		this.uiGoalsBtn.setAttr("data-testid", "gw-goals-tab");
 		const actions = header.createDiv({ cls: "gw-actions" });
+		this.uiSessionEl = actions.createDiv({ cls: "gw-session-title is-empty", attr: { "aria-hidden": "true" } });
 		const headerTools = actions.createDiv({ cls: "gw-actions-tools" });
 		this.iconButton(headerTools, "square-pen", "New session", () => this.newSession());
 		this.uiLibraryBtn = this.iconButton(headerTools, "library", "Library", () => void this.toggleLibrary());
@@ -268,7 +268,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiFlashBtn.setAttr("aria-expanded", "false");
 
 		const goalBar = root.createDiv({ cls: "gw-goalbar" });
-		goalBar.createSpan({ cls: "gw-goalbar-label", text: "Working goal" });
+		goalBar.createSpan({ cls: "gw-goalbar-label", text: "Working on:" });
 		this.uiGoalEl = goalBar.createEl("select", {
 			cls: "gw-goal-select",
 			attr: {
@@ -790,7 +790,10 @@ export class ChatView extends ItemView implements ToolUI {
 			text: "No goal pinned",
 			attr: { value: "", title: "The tutor follows what you bring in chat until you pick a goal" },
 		});
+		const seen = new Set<string>();
 		for (const choice of choices) {
+			if (seen.has(choice.id)) continue;
+			seen.add(choice.id);
 			this.uiGoalEl.createEl("option", { text: choice.title, attr: { value: choice.id } });
 		}
 		this.uiGoalEl.value = current && choices.some((c) => c.id === current.id) ? current.id : "";
@@ -1592,15 +1595,15 @@ export class ChatView extends ItemView implements ToolUI {
 		if (this.libraryTab === "concepts") {
 			const section = scroll.createDiv({ cls: "gw-lib-section" });
 			section.createDiv({
-				cls: "gw-lib-help",
-				text: "A concept is a reusable idea, like linear functions — not a lecture, a homework, or an exam. Quiz one or delete it. Deleting removes its note and quiz history.",
+				cls: "gw-lib-help gw-lib-help-concepts",
+				text: "Reusable ideas the tutor tracks. Hover a row to quiz or delete.",
 			});
 			const filter = section.createEl("input", {
 				cls: "gw-lib-filter",
 				attr: { type: "search", placeholder: "Filter concepts", "aria-label": "Filter concepts" },
 			});
 			filter.value = this.conceptQuery;
-			const conceptList = section.createDiv({ cls: "gw-lib-list" });
+			const conceptList = section.createDiv({ cls: "gw-lib-list gw-lib-list-concepts" });
 			const conceptRows = [...concepts.values()].sort((a, b) => a.title.localeCompare(b.title));
 			const drawConcepts = () => {
 				conceptList.empty();
