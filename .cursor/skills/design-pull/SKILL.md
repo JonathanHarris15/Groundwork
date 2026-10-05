@@ -51,7 +51,7 @@ Classify each one:
 
 | | Means | Test |
 | --- | --- | --- |
-| **Real** | It maps to something that exists | You can name the field, the collection, the component class, or the term in `CONTEXT.md` |
+| **Real** | It maps to something that exists | You can name the field, the collection, the component class, or the term in `GLOSSARY.md` |
 | **New** | A genuine change to what the feature does | Somebody can now do something they could not do before, or sees something the product did not show |
 | **Scaffolding** | Placeholder so the picture reads | Sample content, invented names, a list padded to look full |
 
@@ -70,7 +70,7 @@ Three traps decide most of the wrong answers:
   dead branch, or the half of a file the brief said was out of scope. Real means
   it maps to something that exists **and is the thing this feature uses**. Check
   where it came from before waving it through, and treat a term the design used
-  that `CONTEXT.md` does not carry as a finding either way: either the design
+  that `GLOSSARY.md` does not carry as a finding either way: either the design
   read stale code, or the model has drifted from the code and nobody noticed.
 
 Show the user **the list**. Not code, not a plan. Grouped by bucket, one line
