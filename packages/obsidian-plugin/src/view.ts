@@ -135,6 +135,22 @@ const TAB_ICONS: Record<PrimaryScreen, string> = {
 	flashcards: `<rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="11" width="7" height="10" rx="1"></rect><rect x="3" y="15" width="7" height="6" rx="1"></rect>`,
 };
 
+const PAPERCLIP_PATH = `<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.57 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>`;
+
+function paperclipIcon(doc: Document): SVGElement {
+	const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+	svg.setAttribute("viewBox", "0 0 24 24");
+	svg.setAttribute("fill", "none");
+	svg.setAttribute("stroke", "currentColor");
+	svg.setAttribute("stroke-width", "2");
+	svg.setAttribute("stroke-linecap", "round");
+	svg.setAttribute("stroke-linejoin", "round");
+	svg.setAttribute("aria-hidden", "true");
+	svg.classList.add("svg-icon");
+	appendSvgFragment(svg, PAPERCLIP_PATH);
+	return svg;
+}
+
 const TOOL_VERBS: Record<string, string> = {
 	get_learner_overview: "Reading your knowledge vault",
 	suggest_what_to_study: "Checking what you could study",
@@ -319,8 +335,12 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 		const row = box.createDiv({ cls: "gw-box-row" });
 		const tools = row.createDiv({ cls: "gw-box-tools" });
-		const attach = this.iconButton(tools, "paperclip", "Attach files", (e) => this.showAttachMenu(e));
-		attach.addClass("gw-attach");
+		const attach = tools.createEl("button", {
+			cls: "clickable-icon gw-icon-btn gw-attach",
+			attr: { "aria-label": "Attach files", title: "Attach files", type: "button" },
+		});
+		attach.append(paperclipIcon(tools.ownerDocument));
+		this.registerDomEvent(attach, "click", (e) => this.showAttachMenu(e));
 		this.uiFileInput = tools.createEl("input", { type: "file", attr: { multiple: "", hidden: "" } });
 		this.registerDomEvent(this.uiFileInput, "change", () => {
 			this.addFiles([...(this.uiFileInput.files ?? [])]);

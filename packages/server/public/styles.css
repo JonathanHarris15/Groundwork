@@ -1049,6 +1049,7 @@ label { font-size: 15px; font-weight: 500; }
 	background: rgba(0, 0, 0, 0.18);
 	border: 1px solid rgba(255, 255, 255, 0.06);
 	overflow: hidden;
+	overscroll-behavior: contain;
 }
 .graph-shell.is-fullscreen {
 	position: fixed;
@@ -1113,6 +1114,7 @@ body.graph-fullscreen-open {
 	height: 100%;
 	cursor: grab;
 	touch-action: none;
+	overscroll-behavior: contain;
 }
 .graph-host.is-panning .graph-canvas,
 .graph-host.is-panning .gw-force-canvas,

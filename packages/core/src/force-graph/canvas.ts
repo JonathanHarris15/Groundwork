@@ -20,6 +20,8 @@ export interface ForceGraphHandle {
 	setData(data: ForceGraphData): void;
 	/** Rolling average frame rate (for harnesses). */
 	getFps(): number;
+	/** Current camera scale (for harnesses). */
+	getScale(): number;
 }
 
 interface Camera {
@@ -39,6 +41,28 @@ const MAX_SCALE = 8;
 const LABEL_ZOOM_MIN = 0.45;
 const LABEL_ZOOM_FULL = 1.05;
 const LABEL_FONT_PX = 12;
+/**
+ * Wheel travel, in pixels, that doubles or halves the map.
+ * A mouse notch is about 100px (~5%). A trackpad sends many small deltas,
+ * so zoom follows finger travel instead of jumping 8% on every event.
+ */
+export const CONCEPT_MAP_WHEEL_PIXELS = 2000;
+/** Fraction of queued wheel zoom applied each frame. The rest eases in. */
+export const CONCEPT_MAP_WHEEL_EASE = 0.16;
+const WHEEL_ZOOM_EPSILON = 0.0004;
+
+/** Log-space zoom for one wheel event. Positive zooms in (scroll up). */
+export function conceptMapWheelZoom(deltaY: number, deltaMode = 0, viewportHeight = 800): number {
+	let pixels = deltaY;
+	if (deltaMode === 1) pixels *= 40;
+	else if (deltaMode === 2) pixels *= Math.max(1, viewportHeight);
+	const clamped = Math.max(-280, Math.min(280, pixels));
+	return -clamped / CONCEPT_MAP_WHEEL_PIXELS;
+}
+
+function prefersReducedMotion(): boolean {
+	return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options: ForceGraphMountOptions = {}): ForceGraphHandle {
 	const canvas = document.createElement("canvas");
@@ -69,6 +93,9 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 	let panVx = 0;
 	let panVy = 0;
 	let lastMoveAt = 0;
+	let wheelLog = 0;
+	let wheelX = width / 2;
+	let wheelY = height / 2;
 	let raf = 0;
 	let alive = true;
 	let layoutFitted = false;
@@ -132,6 +159,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 	});
 
 	const fit = () => {
+		wheelLog = 0;
 		if (!nodes.length) {
 			camera.scale = 1;
 			camera.tx = width / 2;
@@ -377,6 +405,16 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			panVy *= 0.9;
 		}
 
+		if (Math.abs(wheelLog) >= WHEEL_ZOOM_EPSILON) {
+			const step = wheelLog * (prefersReducedMotion() ? 1 : CONCEPT_MAP_WHEEL_EASE);
+			wheelLog -= step;
+			const beforeScale = camera.scale;
+			zoomBy(Math.exp(step), wheelX, wheelY);
+			if (camera.scale === beforeScale) wheelLog = 0;
+		} else {
+			wheelLog = 0;
+		}
+
 		const settling = layoutMode === "force" && (sim.alpha > 0.012 || dragged != null);
 		if (nodes.length && settling) {
 			simulationTick(nodes, links, sim, { width, height, dragId: dragged });
@@ -423,8 +461,11 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		e.preventDefault();
 		e.stopPropagation();
 		const rect = canvas.getBoundingClientRect();
-		const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
-		zoomBy(factor, e.clientX - rect.left, e.clientY - rect.top);
+		wheelX = e.clientX - rect.left;
+		wheelY = e.clientY - rect.top;
+		const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+		wheelLog += conceptMapWheelZoom(delta, e.deltaMode, rect.height);
+		wheelLog = Math.max(-1.2, Math.min(1.2, wheelLog));
 	};
 
 	const zoomBy = (factor: number, cx: number, cy: number) => {
@@ -435,6 +476,11 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		const after = screenToWorld(cx, cy);
 		camera.tx += (after.x - before.x) * camera.scale;
 		camera.ty += (after.y - before.y) * camera.scale;
+	};
+
+	const zoomByNow = (factor: number, cx: number, cy: number) => {
+		wheelLog = 0;
+		zoomBy(factor, cx, cy);
 	};
 
 	const setHover = (id: string | null) => {
@@ -457,6 +503,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		if (e.button !== 0) return;
 		panVx = 0;
 		panVy = 0;
+		wheelLog = 0;
 		const id = pick(e.clientX, e.clientY);
 		lastX = e.clientX;
 		lastY = e.clientY;
@@ -530,9 +577,10 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 
 	return {
 		fit,
-		zoomBy,
+		zoomBy: zoomByNow,
 		setData,
 		getFps: () => fpsValue,
+		getScale: () => camera.scale,
 		dispose: () => {
 			alive = false;
 			window.cancelAnimationFrame(raf);
