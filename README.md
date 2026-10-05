@@ -205,7 +205,9 @@ The plugin is laid out so it can be submitted:
 
 From the website, **Open Obsidian** opens Obsidian and connects this device. Manual install: [community plugin page](https://community.obsidian.md/plugins/groundwork).
 
-The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` unless you override `GROUNDWORK_API_URL` for local development).
+The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` in production builds).
+
+Local website + plugin against the same server: run `npm run server`, sign in on `http://127.0.0.1:8787`, then rebuild the plugin with `GROUNDWORK_API_URL=http://127.0.0.1:8787 npm run build` and reload it in Obsidian (or reinstall into the vault). The plugin reads `GROUNDWORK_API_URL` only at **build time** (esbuild inlines it); without that env var, the bundle talks to production.
 
 The Groundwork panel uses the website's dark look: Jost, and the red, amber, blue, and green status dots. Learn, Concept map, and Goals are three views of the same memory. A goal has a due date and a weight for each concept. The concept map is Groundwork's own map of that goal, not Obsidian's graph view. The rest of Obsidian keeps its theme.
 

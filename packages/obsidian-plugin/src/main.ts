@@ -373,7 +373,7 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 
-	/** ID token for the website, or the stored token when talking to a local server. */
+	/** ID token for the website after exchanging the stored refresh token. */
 	private async accountAccessToken(): Promise<string | null> {
 		const refresh = loadAccountToken(this.app);
 		if (!refresh) return null;

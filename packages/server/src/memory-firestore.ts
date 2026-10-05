@@ -67,11 +67,10 @@ export class FirestoreTutorMemoryStore implements TutorMemoryStore {
 		}
 		const payload = JSON.stringify(record);
 		const parts = Buffer.byteLength(payload) <= 900_000 ? [] : splitUtf8(payload, MAX_PART);
-		const writeOpts = snap.exists ? { lastUpdateTime: snap.updateTime } : undefined;
 		if (!parts.length) {
-			await ref.set({ payload, parts: 0, updatedAt: record.memory.updatedAt }, writeOpts);
+			await ref.set({ payload, parts: 0, updatedAt: record.memory.updatedAt });
 		} else {
-			await ref.set({ payload: "", parts: parts.length, updatedAt: record.memory.updatedAt }, writeOpts);
+			await ref.set({ payload: "", parts: parts.length, updatedAt: record.memory.updatedAt });
 			let batch = db.batch();
 			let ops = 0;
 			for (const [index, text] of parts.entries()) {
