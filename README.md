@@ -29,7 +29,7 @@ The plugin uses the network for these services:
 - **Stripe** — billing for the $9 and $20 plans happens on the website, not inside the plugin.
 - **Anthropic**, through Claude Code on this computer, runs the tutor when you use your own Claude subscription. Claude Code may reach Anthropic's API and related sign-in endpoints. On hosted Groundwork plans, model calls go through your account API instead. Bring-your-own-model keys saved on the account are used only on the Groundwork server (OpenRouter, Anthropic, Google, xAI, or OpenAI), not sent from the plugin.
 
-The plugin does not send telemetry. It does use a few paths outside the vault on the desktop: the Claude Code executable to run the tutor; `~/.config/groundwork/config.json` (vault path for the `groundwork` CLI); and the computer's host name as a default device label unless you set one in the panel. The separate `groundwork` CLI (not the plugin) can run `git` to sync the vault. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
+The plugin does not send telemetry. It does use a few paths outside the vault on the desktop: the Claude Code executable to run the tutor (via `child_process` inside the bundled Agent SDK); `~/.config/groundwork/config.json` (vault path for the `groundwork` CLI); and the vault folder path as Claude Code's working directory. Device labels default to **Obsidian** until you set one in the panel. The separate `groundwork` CLI (not the plugin) can run `git` to sync the vault. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
 
 The plugin is desktop-only.
 

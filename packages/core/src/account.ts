@@ -400,7 +400,14 @@ export async function refreshFirebaseSession(refreshToken: string, apiKey: strin
 		throw new AccountError(`Could not reach the website sign-in. ${(e as Error).message}`, 0);
 	}
 	const text = await response.text();
-	const parsed = text ? (JSON.parse(text) as { id_token?: unknown; refresh_token?: unknown; error?: { message?: unknown } }) : {};
+	let parsed: { id_token?: unknown; refresh_token?: unknown; error?: { message?: unknown } } = {};
+	if (text) {
+		try {
+			parsed = JSON.parse(text) as typeof parsed;
+		} catch {
+			throw new AccountError("The website sign-in returned an unreadable response. Try again in a moment.", response.status || 0);
+		}
+	}
 	const idToken = typeof parsed.id_token === "string" ? parsed.id_token : "";
 	if (!response.ok || !idToken) {
 		const message = typeof parsed.error?.message === "string" ? parsed.error.message : "The website session expired. Open Obsidian from the Groundwork website again.";

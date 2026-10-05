@@ -112,6 +112,11 @@ describe("website sign-in", () => {
 		const fetchImpl = async () => new Response(JSON.stringify({ error: { message: "TOKEN_EXPIRED" } }), { status: 400 });
 		await expect(refreshFirebaseSession("old", "web-key", fetchImpl as typeof fetch)).rejects.toThrow(/TOKEN_EXPIRED/);
 	});
+
+	it("rejects a non-JSON sign-in response", async () => {
+		const fetchImpl = async () => new Response("not json", { status: 502 });
+		await expect(refreshFirebaseSession("old", "web-key", fetchImpl as typeof fetch)).rejects.toThrow(/unreadable response/);
+	});
 });
 
 describe("plans", () => {

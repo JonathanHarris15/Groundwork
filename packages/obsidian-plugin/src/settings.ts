@@ -16,7 +16,7 @@ export const GROUNDWORK_SITE = "https://groundwork-6f9ca.web.app";
 export const GROUNDWORK_WEB_API_KEY = "AIzaSyCsQcpNESDt2wD72gyvjxBO_fXk0T5q0Dw";
 
 export function accountOrigin(): string {
-	const override = process.env.GROUNDWORK_API_URL?.trim();
+	const override = typeof __GW_API_ORIGIN__ === "string" ? __GW_API_ORIGIN__.trim() : "";
 	return (override || GROUNDWORK_SITE).replace(/\/+$/, "");
 }
 

@@ -8,8 +8,8 @@ export function mountMark(parent: HTMLElement, cls = "gw-mark"): HTMLElement {
 	hold.className = cls;
 	try {
 		hold.appendChild(parseSvgMarkup(MARK_SVG, parent.ownerDocument));
-	} catch (err) {
-		console.error("Groundwork mark", err);
+	} catch {
+		// The mark is decorative; a bad SVG should not spam the console.
 	}
 	parent.appendChild(hold);
 	return hold;
