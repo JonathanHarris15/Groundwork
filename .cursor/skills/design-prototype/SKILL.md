@@ -65,7 +65,7 @@ different things:
   `.claude/design.json`, or tell the user to use *Link local code* — then give a
   short table of **which file settles which question**. The screens being
   reworked, the modules holding the closed sets and the copy, the component
-  gallery, and the sections of `CONTEXT.md` that carry the domain language.
+  gallery, and the sections of `GLOSSARY.md` that carry the domain language.
   Point at the exact block where a file is big: *"the part being merged is the
   `managingSeries` block; the rest of that file is out of scope."*
 
@@ -80,7 +80,7 @@ have started doing the work you are supposed to be commissioning.
 
 **2. What is real — use these, do not invent.** The load-bearing section.
 
-List the actual domain nouns from `CONTEXT.md`, with their actual values:
+List the actual domain nouns from `GLOSSARY.md`, with their actual values:
 
 - Every value of a closed set, in full. Six tag names means all six, spelled the
   way the app spells them. Give it five and it will invent a sixth.

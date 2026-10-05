@@ -1,5 +1,7 @@
 # UI Prototype
 
+> **Groundwork:** not the default here. Follow [.cursor/rules/ui-prototype-first.mdc](../../rules/ui-prototype-first.mdc) (real page under `packages/server/public/`, or a standalone HTML prototype in `docs/design/prototypes/` for a brand-new feature). Use the `?variant=` flow below only when Jonathan asks for in-app variants.
+
 Generate **several radically different UI variations** on a single route, switchable from a floating bottom bar. The user flips between variants in the browser, picks one (or steals bits from each), then throws the rest away.
 
 If the question is about logic/state rather than what something looks like, this is the wrong branch. Use [LOGIC.md](LOGIC.md).

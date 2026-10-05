@@ -36,6 +36,8 @@ Use this template for writing the PR body:
 
 Skip all preambles and keep prose brief. Use the user's domain language from `GLOSSARY.md`.
 
+> **Groundwork:** add a `## Smoke test` section after Evidence, filled in per [.cursor/rules/smoke-test.mdc](../../rules/smoke-test.mdc). [.github/PULL_REQUEST_TEMPLATE.md](../../../.github/PULL_REQUEST_TEMPLATE.md) carries this shape with that section in place.
+
 ### Summary
 
 Pick the smallest view that makes the key point clear.
