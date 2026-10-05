@@ -29,7 +29,7 @@ The plugin uses the network for these services:
 - **Stripe** — billing for the $9 and $20 plans happens on the website, not inside the plugin.
 - **Anthropic**, through Claude Code on this computer, runs the tutor when you use your own Claude subscription. Claude Code may reach Anthropic's API and related sign-in endpoints. On hosted Groundwork plans, model calls go through your account API instead. Bring-your-own-model keys saved on the account are used only on the Groundwork server (OpenRouter, Anthropic, Google, xAI, or OpenAI), not sent from the plugin.
 
-The plugin does not send telemetry. It does use a few paths outside the vault on the desktop: the Claude Code executable to run the tutor; `~/.config/groundwork/config.json` (vault path for the `groundwork` CLI); and the computer's host name as a default device label unless you set one in the panel. The separate `groundwork` CLI (not the plugin) can run `git` to sync the vault. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
+The plugin does not send telemetry. It does use a few paths outside the vault on the desktop: the Claude Code executable to run the tutor (via `child_process` inside the bundled Agent SDK); `~/.config/groundwork/config.json` (vault path for the `groundwork` CLI); and the vault folder path as Claude Code's working directory. Device labels default to **Obsidian** until you set one in the panel. The separate `groundwork` CLI (not the plugin) can run `git` to sync the vault. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
 
 The plugin is desktop-only.
 
@@ -205,7 +205,7 @@ The plugin is laid out so it can be submitted:
 
 From the website, **Open Obsidian** opens Obsidian and connects this device. Manual install: [community plugin page](https://community.obsidian.md/plugins/groundwork).
 
-The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` unless you override `GROUNDWORK_API_URL` for local development).
+The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` in production builds).
 
 The Groundwork panel uses the website's dark look: Jost, and the red, amber, blue, and green status dots. Learn, Concept map, and Goals are three views of the same memory. A goal has a due date and a weight for each concept. The concept map is Groundwork's own map of that goal, not Obsidian's graph view. The rest of Obsidian keeps its theme.
 
@@ -219,7 +219,7 @@ npm run build            # plugin → packages/obsidian-plugin/dist, CLI → pac
 npm run dev:plugin       # rebuild the plugin on change; then `groundwork install-plugin` and reload Obsidian
 ```
 
-Local website + plugin against the same server: run `npm run server`, sign in on `http://127.0.0.1:8787`, then rebuild the plugin with `GROUNDWORK_API_URL=http://127.0.0.1:8787 npm run build` and reload it in Obsidian (or reinstall into the vault). Without that env var at build time, the plugin talks to production.
+Local website + plugin against the same server: run `npm run server`, sign in on `http://127.0.0.1:8787`, then rebuild the plugin with `GROUNDWORK_API_URL=http://127.0.0.1:8787 npm run build` and reload it in Obsidian (or reinstall into the vault). `GROUNDWORK_API_URL` is read only at **build time** (esbuild inlines `process.env.GROUNDWORK_API_URL` into the bundle); without it, the plugin talks to production.
 
 Sync details: evidence logs use git's `union` merge driver (`.gitattributes`), so both machines' answers survive a merge. Prose conflicts prefer the local side. After any merge that brings in changes, every concept's stats and every goal map are rebuilt from the merged evidence.
 

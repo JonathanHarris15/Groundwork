@@ -70,6 +70,7 @@ import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
 import type { GroundworkAppearance } from "./appearance";
 import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
+import { filesUnderFolderRoots } from "./vault-scope";
 
 export const VIEW_TYPE = "groundwork-chat";
 
@@ -596,7 +597,6 @@ export class ChatView extends ItemView implements ToolUI {
 				this.toolChips.delete(e.id);
 				// A failed call is feedback for the tutor, which retries or explains in its reply.
 				if (e.isError) {
-					console.debug(`Groundwork: ${e.name} failed (the tutor was told): ${e.text}`);
 					chip.remove();
 					break;
 				}
@@ -2553,8 +2553,7 @@ class VaultFileModal extends FuzzySuggestModal<TFile> {
 	getItems(): TFile[] {
 		const first = this.readFolders[0];
 		const inFirst = (f: TFile) => (first && (f.path === first || f.path.startsWith(`${first}/`)) ? 0 : 1);
-		return this.app.vault
-			.getFiles()
+		return filesUnderFolderRoots(this.app, this.readFolders)
 			.filter((f) => f.extension !== "md" && fileKind(f.path).kind !== "other" && pathInsideAny(f.path, this.readFolders))
 			.sort((a, b) => inFirst(a) - inFirst(b) || b.stat.mtime - a.stat.mtime);
 	}

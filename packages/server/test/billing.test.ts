@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { AccountDirectory } from "../src/accounts";
-import { applyStripeEvent, createBilling, escapeStripeSearch, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
+import { applyStripeEvent, createBilling, escapeStripeSearch, resetStripeEventDedupe, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
 
 const prices = { byom: "price_byom", included: "price_included" };
 
-function event(type: Stripe.Event["type"], object: object): Stripe.Event {
-	return { type, data: { object } } as Stripe.Event;
+beforeEach(() => {
+	resetStripeEventDedupe();
+});
+
+function event(type: Stripe.Event["type"], object: object, id = "evt_test"): Stripe.Event {
+	return { id, type, data: { object } } as Stripe.Event;
 }
 
 function stripeFake(opts: {
@@ -30,7 +34,25 @@ function stripeFake(opts: {
 }
 
 describe("stripe plan updates", () => {
+	it("ignores a replayed webhook event id", async () => {
+		resetStripeEventDedupe();
+		const accounts = new AccountDirectory();
+		const evt = event(
+			"checkout.session.completed",
+			{
+				metadata: { uid: "ada", plan: "included" },
+				client_reference_id: "ada",
+				customer: "cus_123",
+			},
+			"evt_replay",
+		);
+		await applyStripeEvent(accounts, evt);
+		await applyStripeEvent(accounts, evt);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
+	});
+
 	it("starts the paid plan when checkout completes", async () => {
+		resetStripeEventDedupe();
 		const accounts = new AccountDirectory();
 		await accounts.seen("ada", { email: "ada@example.com", name: "Ada" });
 		await applyStripeEvent(
@@ -169,6 +191,42 @@ describe("stripe membership sync", () => {
 
 	it("escapes a uid before searching Stripe", () => {
 		expect(escapeStripeSearch("ada'o\\b")).toBe("ada\\'o\\\\b");
+	});
+
+	it("refuses webhooks without a signature", async () => {
+		const accounts = new AccountDirectory();
+		const stripe = {
+			webhooks: {
+				constructEvent() {
+					throw new Error("should not run");
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.applyEvent("{}", undefined)).rejects.toMatchObject({ status: 400 });
+	});
+
+	it("verifies the Stripe signature before applying an event", async () => {
+		const accounts = new AccountDirectory();
+		let verified = false;
+		const stripe = {
+			webhooks: {
+				constructEvent(raw: string, sig: string, secret: string) {
+					expect(sig).toBe("sig");
+					expect(secret).toBe("whsec_test");
+					verified = true;
+					return event("checkout.session.completed", {
+						metadata: { uid: "ada", plan: "byom" },
+						customer: "cus_1",
+					});
+				},
+			},
+		} as unknown as Stripe;
+		resetStripeEventDedupe();
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await billing.applyEvent('{"id":"evt"}', "sig");
+		expect(verified).toBe(true);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "byom" });
 	});
 
 	it("caches a successful read and retries after Stripe fails", async () => {

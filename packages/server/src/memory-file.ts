@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseKnowledgeSnapshot, parseTutorMemoryFiles } from "@groundwork/core";
-import type { TutorMemoryRecord, TutorMemoryStore } from "./memory";
+import { MemoryConflict, type TutorMemoryRecord, type TutorMemoryStore, type TutorMemoryWriteOptions } from "./memory";
 
 interface FileDb {
 	users: Record<string, { memory: { updatedAt: string; files: Record<string, string> }; knowledge: unknown }>;
@@ -23,8 +23,14 @@ export class FileTutorMemoryStore implements TutorMemoryStore {
 		};
 	}
 
-	async write(uid: string, record: TutorMemoryRecord): Promise<void> {
+	async write(uid: string, record: TutorMemoryRecord, options?: TutorMemoryWriteOptions): Promise<void> {
 		await this.update((db) => {
+			if (options?.ifUpdatedAt !== undefined) {
+				const currentAt = db.users[uid]?.memory.updatedAt ?? "";
+				if (currentAt !== options.ifUpdatedAt) {
+					throw new MemoryConflict(db.users[uid]?.memory ?? { updatedAt: currentAt, files: {} });
+				}
+			}
 			db.users[uid] = { memory: record.memory, knowledge: record.knowledge };
 		});
 	}

@@ -17,6 +17,23 @@ export interface Billing {
 
 const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
 const SYNC_TTL_MS = 60_000;
+const EVENT_TTL_MS = 24 * 60 * 60 * 1000;
+const seenStripeEvents = new Map<string, number>();
+
+function rememberStripeEvent(id: string): boolean {
+	const now = Date.now();
+	for (const [key, until] of seenStripeEvents) {
+		if (until <= now) seenStripeEvents.delete(key);
+	}
+	if (seenStripeEvents.has(id)) return false;
+	seenStripeEvents.set(id, now + EVENT_TTL_MS);
+	return true;
+}
+
+/** Test hook: clear dedupe memory between cases. */
+export function resetStripeEventDedupe(): void {
+	seenStripeEvents.clear();
+}
 
 export interface SubscriptionLike {
 	status?: string | null;
@@ -122,6 +139,7 @@ export function createBilling(stripe: Stripe, prices: { byom: string; included: 
  * When `prices` is omitted, an entitled subscription still falls back to metadata.
  */
 export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event, prices?: { byom: string; included: string }): Promise<void> {
+	if (event.id && !rememberStripeEvent(event.id)) return;
 	if (event.type === "checkout.session.completed") {
 		const session = event.data.object;
 		const uid = session.metadata?.uid || session.client_reference_id || undefined;

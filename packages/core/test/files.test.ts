@@ -42,6 +42,14 @@ describe("vault files", () => {
 		expect(long.text!.length).toBe(LIMITS.textChars);
 	});
 
+	it("resolves unicode paths and deep folder trees inside read folders", async () => {
+		const io = new MemoryVaultIO();
+		const deep = "courses/日本語/第3回/notes.md";
+		io.files.set(deep, "# 極限");
+		expect(await resolveVaultFile(io, deep, ["courses/日本語"])).toBe(deep);
+		expect(await resolveVaultFile(io, "notes.md", ["courses/日本語/第3回"])).toBe(deep);
+	});
+
 	it("resolves paths, bare names in resources/, and names anywhere, but never hidden or escaping paths", async () => {
 		const { io } = vault();
 		expect(await resolveVaultFile(io, "resources/diagram.png")).toBe("resources/diagram.png");

@@ -1,12 +1,12 @@
 import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
 import { AccountClient, AccountError, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
-import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
 import { accountOrigin, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
+import { closeSettings, pluginManager } from "./obsidian-host";
 import { ChatView, VIEW_TYPE } from "./view";
 
 type SyncUiState = "idle" | "syncing" | "ok" | "offline" | "error" | "disabled";
@@ -85,8 +85,6 @@ export default class GroundworkPlugin extends Plugin {
 			if (reveal || !inMain) await this.activateView(reveal);
 		});
 
-		// Obsidian keeps running the loaded bundle after `update_groundwork.py` replaces it on disk.
-		console.log(`Groundwork build ${BUILD}`);
 		this.registerDomEvent(window, "focus", () => void this.checkForUpdate());
 		this.registerInterval(window.setInterval(() => void this.checkForUpdate(), 5 * 60_000));
 	}
@@ -165,20 +163,20 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 	async reloadSelf(): Promise<void> {
-		const plugins = (this.app as any).plugins;
 		const id = this.manifest.id;
-		await plugins.disablePlugin(id);
-		await plugins.enablePlugin(id);
+		await pluginManager(this.app).disablePlugin(id);
+		await pluginManager(this.app).enablePlugin(id);
 		new Notice(`Groundwork reloaded (build ${(await this.installedBuild()) ?? "unknown"}).`);
 	}
 
 	onunload(): void {
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
-		if (loadAccountToken(this.app)) void this.saveMemory(false);
+		if (loadAccountToken(this.app)) void this.saveMemory(false).catch(() => undefined);
 	}
 
 	deviceName(): string {
-		return this.settings?.deviceName || os.hostname() || "obsidian";
+		const name = this.settings?.deviceName?.trim();
+		return name || "Obsidian";
 	}
 
 	// ── provider ───────────────────────────────────────────────────────
@@ -337,7 +335,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	/** The real settings live in the Groundwork panel, not Obsidian's plugin tab. */
 	async openGroundworkSettings(): Promise<void> {
-		(this.app as any).setting?.close();
+		closeSettings(this.app);
 		const view = await this.activateView();
 		await view?.showSettings();
 	}
@@ -375,7 +373,7 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 
-	/** ID token for the website, or the stored token when talking to a local server. */
+	/** ID token for the website after exchanging the stored refresh token. */
 	private async accountAccessToken(): Promise<string | null> {
 		const refresh = loadAccountToken(this.app);
 		if (!refresh) return null;
@@ -448,8 +446,8 @@ export default class GroundworkPlugin extends Plugin {
 	async syncFlashcards(): Promise<void> {
 		try {
 			await syncFlashcards(this.store, this.settings.writeFolders);
-		} catch (e) {
-			console.error("Groundwork flashcards", e);
+		} catch {
+			// Flashcard sync is best-effort; the tutor still runs from account memory.
 		}
 	}
 
