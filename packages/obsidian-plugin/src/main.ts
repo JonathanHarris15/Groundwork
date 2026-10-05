@@ -7,6 +7,7 @@ import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
 import {
 	accountOrigin,
+	accountOriginIsLocal,
 	accountSignInUrl,
 	DEFAULT_SETTINGS,
 	GROUNDWORK_WEB_API_KEY,
@@ -36,6 +37,7 @@ export default class GroundworkPlugin extends Plugin {
 	private readonly layoutReady = new Promise<void>((resolve) => {
 		this.markLayoutReady = resolve;
 	});
+	private bootstrapPromise: Promise<void> | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -90,11 +92,7 @@ export default class GroundworkPlugin extends Plugin {
 
 		this.app.workspace.onLayoutReady(async () => {
 			this.markLayoutReady();
-			await this.bootstrapAccountToken();
-			await this.importE2eMemoryFixture();
-			await this.connectMemory();
-			await this.refreshTutorRoute();
-			await this.store.ensureLayout();
+			await this.runBootstrap();
 			const reveal = this.takeOpenRequest();
 			const open = this.app.workspace.getLeavesOfType(VIEW_TYPE);
 			const inMain = open.some((leaf) => leaf.getRoot() === this.app.workspace.rootSplit);
@@ -389,10 +387,11 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 
-	/** ID token for the website after exchanging the stored refresh token. */
+	/** ID token for the website after exchanging the stored refresh token. Local dev uses the stored token as-is. */
 	private async accountAccessToken(): Promise<string | null> {
 		const refresh = loadAccountToken(this.app);
 		if (!refresh) return null;
+		if (accountOriginIsLocal()) return refresh;
 		try {
 			const session = await refreshFirebaseSession(refresh, GROUNDWORK_WEB_API_KEY);
 			if (session.refreshToken !== refresh) saveAccountToken(this.app, session.refreshToken);
@@ -419,15 +418,26 @@ export default class GroundworkPlugin extends Plugin {
 		return new AccountClient(accountOrigin(), token);
 	}
 
-	/** Load tutor memory from the website. An empty account picks up notes already in this vault, once. */
-	/** Test harness: `e2e-memory.json` in the plugin folder seeds tutor memory without the website. */
-	async bootstrapForE2e(): Promise<void> {
+	/** Account token, hosted memory, and tutor route — once per plugin load. */
+	runBootstrap(): Promise<void> {
+		if (!this.bootstrapPromise) this.bootstrapPromise = this.doBootstrap();
+		return this.bootstrapPromise;
+	}
+
+	private async doBootstrap(): Promise<void> {
 		await this.bootstrapAccountToken();
 		await this.importE2eMemoryFixture();
+		await this.connectMemory();
 		await this.refreshTutorRoute();
+		await this.store.ensureLayout();
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
 			if (leaf.view instanceof ChatView) leaf.view.refreshAfterBootstrap();
 		}
+	}
+
+	/** Test harness: waits until account + memory bootstrap finished (same as layout ready path). */
+	async bootstrapForE2e(): Promise<void> {
+		await this.runBootstrap();
 	}
 
 	async importE2eMemoryFixture(): Promise<void> {

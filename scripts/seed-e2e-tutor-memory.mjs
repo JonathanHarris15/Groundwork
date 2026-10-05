@@ -62,11 +62,12 @@ async function seedMemory() {
 		};
 		await io.write(".groundwork/flashcards.json", JSON.stringify(lib, null, 2));
 		const chatId = "chat-e2e-seeded";
+		const chatNow = new Date();
 		const chat = {
 			id: chatId,
 			title: "Derivative intuition",
-			created: "2026-09-20T10:00:00.000Z",
-			updated: "2026-09-27T15:30:00.000Z",
+			created: new Date(chatNow.getTime() - 86_400_000).toISOString(),
+			updated: chatNow.toISOString(),
 			messages: [],
 			items: [
 				{ kind: "user", text: "Walk me through the derivative with a long example, code, and math." },

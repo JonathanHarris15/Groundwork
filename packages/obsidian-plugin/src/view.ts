@@ -218,7 +218,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 	getDisplayText(): string {
 		const title = this.record?.title?.trim();
-		if (title && title !== "New session" && this.record.items.length) {
+		if (title && title !== "New session" && (this.record?.items?.length ?? 0) > 0) {
 			return title.length > 28 ? `${title.slice(0, 26)}…` : title;
 		}
 		return "Groundwork";
@@ -265,16 +265,20 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiFlashBtn = this.iconButton(headerTools, "layers", "Flashcards", () => void this.toggleFlashcards());
 		this.uiSettingsBtn = this.iconButton(headerTools, "settings", "Settings", () => void this.toggleSettings());
 		this.iconButton(headerTools, "more-horizontal", "More actions", (e) => void this.showMoreMenu(e));
-		const chip = actions.createDiv({ cls: "gw-goalchip" });
-		chip.createSpan({ cls: "gw-goalchip-label", text: "Working goal" });
-		this.uiGoalEl = chip.createEl("select", {
+		this.uiLibraryBtn.setAttr("aria-expanded", "false");
+		this.uiSettingsBtn.setAttr("aria-expanded", "false");
+		this.uiFlashBtn.setAttr("aria-expanded", "false");
+
+		const goalBar = root.createDiv({ cls: "gw-goalbar" });
+		goalBar.createSpan({ cls: "gw-goalbar-label", text: "Working goal" });
+		this.uiGoalEl = goalBar.createEl("select", {
 			cls: "gw-goal-select",
 			attr: {
 				"aria-label": "Working goal — pin a goal for this session, or leave unset and study whatever you bring",
 				title: "Pin a goal for this session. Leave unset to follow the topic or files you open in chat.",
 			},
 		});
-		this.uiGoalDaysEl = chip.createSpan({ cls: "gw-goalchip-days" });
+		this.uiGoalDaysEl = goalBar.createSpan({ cls: "gw-goalbar-days" });
 		this.registerDomEvent(this.uiGoalEl, "change", () => {
 			if (this.refreshingGoalSelect) return;
 			const id = this.uiGoalEl.value;
@@ -326,9 +330,8 @@ export class ChatView extends ItemView implements ToolUI {
 			this.uiFileInput.value = "";
 		});
 
-		void this.plugin.bootstrapForE2e();
-		this.uiProviderEl = tools.createSpan({ cls: "gw-chip gw-chip-provider" });
-		this.uiContextEl = tools.createSpan({ cls: "gw-chip gw-chip-context" });
+		this.uiProviderEl = tools.createSpan({ cls: "gw-chip gw-chip-provider", attr: { hidden: "" } });
+		this.uiContextEl = tools.createSpan({ cls: "gw-chip gw-chip-context", attr: { hidden: "" } });
 		const openProviderSetup = () => {
 			const setup = this.plugin.providerLabel().setup;
 			if (!setup) return;
@@ -360,14 +363,30 @@ export class ChatView extends ItemView implements ToolUI {
 		this.trackStatusBar();
 		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
-		this.setupMargin(root);
 		root.setAttr("data-gw-ready", "true");
-		const last = await this.latestChat();
-		if (last) this.openChat(last);
-		else this.newSession();
-		await this.refreshGoalSelect();
-		this.refreshSyncIndicator();
-		this.syncPaneLayout();
+		void this.finishBootstrapOpen();
+		this.setupMargin(root);
+		return;
+	}
+
+	/** Account sync + seeded chat after the shell is painted (E2E waits on `data-gw-bootstrapped`). */
+	private async finishBootstrapOpen(): Promise<void> {
+		try {
+			await this.plugin.bootstrapForE2e();
+			const last = await this.latestChat();
+			if (last) this.openChat(last);
+			else this.newSession();
+			await this.refreshGoalSelect();
+			this.renderHeader();
+			this.refreshSyncIndicator();
+			this.syncPaneLayout();
+			this.contentEl.setAttr("data-gw-bootstrapped", "true");
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			console.error("Groundwork bootstrap failed", e);
+			this.contentEl.setAttr("data-gw-bootstrapped", "error");
+			this.contentEl.setAttr("data-gw-bootstrap-error", message.slice(0, 240));
+		}
 	}
 
 	async onClose(): Promise<void> {
@@ -408,7 +427,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.dropAgent();
 		this.dropAsides();
 		this.renderAll();
-		this.uiInputEl?.focus();
+		window.requestAnimationFrame(() => this.uiInputEl?.focus());
 	}
 
 	startPracticeTest(): void {
@@ -426,7 +445,11 @@ export class ChatView extends ItemView implements ToolUI {
 		this.closeLibrary();
 		this.closeSettings();
 		this.closeFlashcards();
-		this.record = record;
+		this.record = {
+			...record,
+			messages: record.messages ?? [],
+			items: record.items ?? [],
+		};
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
 		this.dropAgent();
 		this.dropAsides();
@@ -743,6 +766,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	refreshAfterBootstrap(): void {
+		if (!this.record) return;
 		this.renderHeader();
 		void this.refreshGoalSelect();
 		if (this.pane.overlay === "library") void this.renderLibrary();
@@ -856,6 +880,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private renderHeader(): void {
+		if (!this.record) return;
 		const title = this.record.items.length ? this.record.title : "New session";
 		const showTitle = this.pane.screen === "learn" && !this.pane.overlay && this.record.items.length > 0;
 		this.uiSessionEl?.toggleClass("is-empty", !showTitle);
@@ -863,6 +888,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiSessionEl?.setText(showTitle ? title : "");
 		const provider = this.plugin.providerLabel();
 		this.uiProviderEl?.setText(provider.label);
+		this.uiProviderEl?.toggleAttribute("hidden", !provider.label.trim());
 		this.uiProviderEl?.toggleClass("is-attention", !!provider.setup);
 		this.uiProviderEl?.toggleClass("is-clickable", !!provider.setup);
 		if (provider.setup) {
@@ -885,6 +911,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private renderAll(): void {
+		if (!this.record) return;
 		this.renderHeader();
 		this.uiMessagesEl.empty();
 		this.toolChips.clear();
@@ -1924,6 +1951,19 @@ export class ChatView extends ItemView implements ToolUI {
 		root.toggleClass("is-settings", flags.isSettings);
 		root.toggleClass("is-flashcards", flags.isFlashcards);
 		root.toggleClass("is-overlay", flags.isOverlay);
+		const overlay = this.pane.overlay;
+		this.uiLibraryBtn?.setAttr("aria-expanded", overlay === "library" ? "true" : "false");
+		this.uiSettingsBtn?.setAttr("aria-expanded", overlay === "settings" ? "true" : "false");
+		this.uiFlashBtn?.setAttr("aria-expanded", overlay === "flashcards" ? "true" : "false");
+		const libOn = overlay === "library";
+		const settingsOn = overlay === "settings";
+		const flashOn = overlay === "flashcards";
+		this.uiLibraryBtn?.toggleClass("is-active", libOn);
+		this.uiSettingsBtn?.toggleClass("is-active", settingsOn);
+		this.uiFlashBtn?.toggleClass("is-active", flashOn);
+		this.uiLibraryBtn?.setAttr("aria-pressed", libOn ? "true" : "false");
+		this.uiSettingsBtn?.setAttr("aria-pressed", settingsOn ? "true" : "false");
+		this.uiFlashBtn?.setAttr("aria-pressed", flashOn ? "true" : "false");
 		this.renderHeader();
 	}
 

@@ -62,6 +62,12 @@ function prepareVault(data) {
 
 async function startServer() {
 	if (!existsSync(serverEntry)) run("npm run build -w packages/server");
+	try {
+		execSync("fuser -k 8787/tcp 2>/dev/null || true", { stdio: "ignore" });
+	} catch {
+		/* ignore */
+	}
+	await sleep(300);
 	const log = "/tmp/groundwork-e2e-server.log";
 	appendFileSync(log, "\n--- server ---\n");
 	const child = spawn("node", [serverEntry], {
@@ -136,6 +142,7 @@ writeFileSync(
 					},
 				],
 				direction: "horizontal",
+				width: 900,
 			},
 			active: "gw-leaf",
 			lastOpenFiles: ["Welcome.md"],
@@ -185,6 +192,51 @@ async function shot(name) {
 	}
 }
 
+async function shotGroundwork(name) {
+	const file = path.join(outDir, `${prefix}${name}.png`);
+	await page.locator(".gw-root").screenshot({ path: file, timeout: 30_000 });
+}
+
+async function shotStatusBar(name) {
+	const file = path.join(outDir, `${prefix}${name}.png`);
+	await page.locator(".gw-statusbar").screenshot({ path: file, timeout: 15_000 });
+}
+
+async function shotGoalBar(name) {
+	const file = path.join(outDir, `${prefix}${name}.png`);
+	await page.locator(".gw-goalbar").screenshot({ path: file, timeout: 15_000 });
+}
+
+async function waitSignedInLinked() {
+	await page.waitForFunction(
+		() => /\bLinked\b/.test(document.querySelector(".gw-statusbar")?.textContent ?? ""),
+		{ timeout: 90_000 },
+	);
+	await page.waitForFunction(
+		() => {
+			const chip = document.querySelector(".gw-chip-provider");
+			if (!chip || chip.hasAttribute("hidden")) return true;
+			const text = chip.textContent ?? "";
+			return text.length > 0 && !/^Sign in$/i.test(text.trim());
+		},
+		{ timeout: 30_000 },
+	);
+	await page.locator(".gw-goalbar-label", { hasText: "Working goal" }).waitFor({ timeout: 15_000 });
+	await page.waitForFunction(
+		() => (document.querySelector(".gw-goal-select")?.options?.length ?? 0) >= 1,
+		{ timeout: 30_000 },
+	);
+	await page.waitForFunction(
+		() => {
+			const sel = document.querySelector(".gw-goal-select");
+			if (!sel || !("options" in sel) || sel.options.length < 1) return false;
+			const label = sel.options[sel.selectedIndex]?.text ?? "";
+			return /Calculus fluency|No goal pinned/.test(label);
+		},
+		{ timeout: 60_000 },
+	);
+}
+
 async function dismissStartupDialogs() {
 	for (const label of [/Turn on community plugins/i, /Trust author/i, /Enable community plugins/i, /^Open$/i]) {
 		const btn = page.getByRole("button", { name: label });
@@ -207,21 +259,26 @@ if (!(await page.locator(".gw-root").count())) {
 	await dismissStartupDialogs();
 }
 
+const rootSel = ".gw-root";
+
 await page.waitForSelector('.gw-root[data-gw-ready="true"]', { timeout: 60_000 });
+if (scenario === "signed-in") {
+	await page.waitForSelector('.gw-root[data-gw-bootstrapped="true"]', { timeout: 120_000 });
+}
 
 if (scenario === "signed-in") {
-	await page.waitForFunction(
-		() => !document.querySelector(".gw-chip-provider")?.textContent?.includes("Sign in"),
-		{ timeout: 45_000 },
-	).catch(() => {});
-	await sleep(2000);
+	await waitSignedInLinked();
+	await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 30_000 });
+	await sleep(800);
 }
 
 await shot("01-learn-1280-light");
+if (scenario === "signed-in") {
+	await shotGoalBar("00-working-goal-bar");
+	await shotStatusBar("00-status-bar-linked");
+}
 
-await page.setViewportSize({ width: 300, height: 800 });
-await sleep(700);
-await shot("02-sidebar-300");
+await shotGroundwork("02-groundwork-column-360");
 
 await page.setViewportSize({ width: 1280, height: 800 });
 await page.keyboard.press("Control+=");
@@ -229,49 +286,46 @@ await page.keyboard.press("Control+=");
 await sleep(500);
 await shot("03-zoom-in");
 
-const rootSel = ".gw-root";
-
 if (scenario === "signed-in") {
 	await page.keyboard.press("Escape");
 	await sleep(300);
 	await page.locator(`${rootSel} [data-testid="gw-library-btn"]`).click();
 	await page.waitForSelector(`${rootSel}.is-library`, { timeout: 15_000 });
-	await page
-		.waitForFunction(
-			(sel) => {
-				const scroll = document.querySelector(`${sel} .gw-library-scroll`);
-				if (!scroll) return false;
-				return scroll.querySelector(".gw-lib-row, .gw-lib-empty-block, .gw-error") != null;
-			},
-			rootSel,
-			{ timeout: 20_000 },
-		)
-		.catch(() => {});
-	await sleep(1200);
-	await shot("04-library");
+	await page.waitForSelector(`${rootSel} .gw-lib-name`, { hasText: /Calculus/i, timeout: 20_000 });
+	await sleep(800);
+	await shotGroundwork("04-library");
 
 	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Concepts/ }).click({ timeout: 10_000 }).catch(() => {});
 	await sleep(600);
 	await shot("05-library-concepts");
 
 	await page.keyboard.press("Escape");
-	await sleep(300);
+	await sleep(400);
 	await page.locator(`${rootSel} [data-testid="gw-map-tab"]`).click();
-	await sleep(2500);
-	await shot("06-map");
+	await page.waitForSelector(`${rootSel}.is-map`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel} .gw-concept-map, ${rootSel} .gw-map-empty`, { timeout: 20_000 });
+	await sleep(800);
+	await shotGroundwork("06-map");
 
 	await page.locator(`${rootSel} [data-testid="gw-goals-tab"]`).click();
-	await sleep(2500);
-	await sleep(800);
-	await shot("07-goals");
+	await page.waitForSelector(`${rootSel}.is-goals`, { timeout: 15_000 });
+	await sleep(1200);
+	await shotGroundwork("07-goals");
 
 	await page.locator(`${rootSel} button[aria-label="Flashcards"]`).click();
-	await sleep(1000);
-	await shot("08-flashcards");
+	await page.waitForSelector(`${rootSel}.is-flashcards`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel} .gw-fc-loading, ${rootSel} .gw-fc-empty, ${rootSel} .gw-fcard`, { timeout: 20_000 });
+	await sleep(800);
+	await shotGroundwork("08-flashcards");
 
+	await page.keyboard.press("Escape");
+	await sleep(400);
 	await page.locator(`${rootSel} button[aria-label="Settings"]`).click();
-	await sleep(1000);
-	await shot("09-settings");
+	await page.waitForSelector(`${rootSel}.is-settings`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel}.is-settings .gw-library-title`, { hasText: "Settings", timeout: 15_000 });
+	await page.waitForSelector(`${rootSel}.is-settings h3`, { timeout: 15_000 });
+	await sleep(600);
+	await shotGroundwork("09-settings");
 
 	await page.keyboard.press("Escape");
 	await sleep(400);
@@ -282,9 +336,11 @@ if (scenario === "signed-in") {
 	const openChat = page.locator(`${rootSel} button`, { hasText: "Open" }).first();
 	if (await openChat.count()) {
 		await openChat.click();
-		await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 20_000 }).catch(() => {});
-		await sleep(1500);
-		await shot("10-chat-seeded");
+		await page.waitForSelector(`${rootSel}:not(.is-overlay)`, { timeout: 15_000 });
+		await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 25_000 });
+		await page.waitForSelector(`${rootSel} .gw-assistant`, { timeout: 25_000 });
+		await sleep(800);
+		await shotGroundwork("10-chat-seeded");
 	}
 	await page.keyboard.press("Escape");
 	await sleep(400);
@@ -295,7 +351,10 @@ if (scenario === "signed-in") {
 	await sleep(500);
 	await page.keyboard.press("Escape");
 	await sleep(400);
-	await shot("11-dark-learn");
+	await page.waitForSelector(`${rootSel}:not(.is-overlay)`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 20_000 });
+	await sleep(600);
+	await shotGroundwork("11-dark-learn");
 	await page.locator(`${rootSel} button[aria-label="Library"]`).click();
 	await sleep(1000);
 	await shot("12-dark-library");
