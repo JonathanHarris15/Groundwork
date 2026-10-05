@@ -1881,6 +1881,26 @@
 
 .gw-statusbar {
 	cursor: default;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.gw-statusbar-dot {
+	display: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #f0565b;
+	flex: none;
+}
+.gw-statusbar.has-sync-glyph .gw-statusbar-dot {
+	display: inline-block;
+}
+.gw-statusbar[data-state="syncing"] .gw-statusbar-dot {
+	background: transparent;
+	border: 2px solid #f0565b;
+	border-top-color: transparent;
+	animation: gw-spin 0.9s linear infinite;
 }
 .gw-statusbar.is-actionable {
 	cursor: pointer;

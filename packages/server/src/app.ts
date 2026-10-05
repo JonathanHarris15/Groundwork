@@ -64,6 +64,11 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 		const view = await deps.accounts.seen(uid, { email: identity.email, name: identity.name });
 
+		if (method === "POST" && path === "/v1/auth/sign-out") {
+			await deps.auth.revokeRefreshTokens(uid);
+			return { status: 200, json: { ok: true } };
+		}
+
 		if (method === "GET" && path === "/v1/account") {
 			return { status: 200, json: presentAccount(view) };
 		}

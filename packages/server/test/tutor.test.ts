@@ -23,7 +23,7 @@ function billing(): Billing {
 }
 
 function deps(over: Partial<ServerDeps> = {}): ServerDeps {
-	const auth: Auth = { firebase: false, async uid() { return { uid: "local", email: "ada@example.com", name: "Ada" }; } };
+	const auth: Auth = { firebase: false, async uid() { return { uid: "local", email: "ada@example.com", name: "Ada" }; }, async revokeRefreshTokens() {} };
 	return {
 		auth,
 		accounts: new AccountDirectory(),

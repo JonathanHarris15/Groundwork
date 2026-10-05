@@ -888,7 +888,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiSessionEl?.setText(showTitle ? title : "");
 		const provider = this.plugin.providerLabel();
 		this.uiProviderEl?.setText(provider.label);
-		this.uiProviderEl?.toggleAttribute("hidden", !provider.label.trim());
+		this.uiProviderEl?.toggleAttribute("hidden", !this.plugin.showProviderChip());
 		this.uiProviderEl?.toggleClass("is-attention", !!provider.setup);
 		this.uiProviderEl?.toggleClass("is-clickable", !!provider.setup);
 		if (provider.setup) {

@@ -30,6 +30,8 @@ export default class GroundworkPlugin extends Plugin {
 	private accountPublishing = false;
 	private accountPublishAgain = false;
 	private statusEl!: HTMLElement;
+	private statusDotEl!: HTMLElement;
+	private statusTextEl!: HTMLElement;
 	private lastSync: Date | null = null;
 	/** Files and timestamp last loaded or saved. The next save is based on this, so another device is not wiped. */
 	private memoryBaseline: { files: Record<string, string>; updatedAt: string } | null = null;
@@ -52,6 +54,8 @@ export default class GroundworkPlugin extends Plugin {
 		this.addRibbonIcon("graduation-cap", "Open Groundwork tutor", () => void this.activateView());
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass("gw-statusbar");
+		this.statusDotEl = this.statusEl.createSpan({ cls: "gw-statusbar-dot", attr: { "aria-hidden": "true" } });
+		this.statusTextEl = this.statusEl.createSpan({ cls: "gw-statusbar-text" });
 		this.statusEl.addEventListener("click", () => void this.onStatusBarClick());
 		this.renderStatus();
 
@@ -332,6 +336,15 @@ export default class GroundworkPlugin extends Plugin {
 			};
 		}
 		return { label: route?.label ?? "Groundwork", demo: false, setup: null };
+	}
+
+	/** Composer provider chip: hide for hosted tutor (no setup action). */
+	showProviderChip(): boolean {
+		const provider = this.providerLabel();
+		if (!provider.label.trim()) return false;
+		if (provider.setup) return true;
+		if (this.tutorRoute?.action === "hosted") return false;
+		return true;
 	}
 
 	async useDemo(): Promise<void> {
@@ -654,7 +667,7 @@ export default class GroundworkPlugin extends Plugin {
 			this.lastSync && state === "ok"
 				? ` · ${this.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
 				: "";
-		this.statusEl.setText(`Groundwork · ${short[state]}${when}`);
+		this.statusTextEl.setText(`Groundwork · ${short[state]}${when}`);
 		const hint =
 			state === "offline"
 				? `${text} Open the Groundwork website, sign in, and choose Open Obsidian. Click to open sign-in.`
@@ -668,6 +681,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.statusEl.setAttr("title", hint);
 		this.statusEl.setAttr("aria-label", hint);
 		this.statusEl.setAttr("data-state", state);
+		this.statusEl.toggleClass("has-sync-glyph", state === "syncing" || state === "error" || state === "offline");
 		this.statusEl.toggleClass("is-actionable", state === "offline" || state === "error" || state === "ok");
 	}
 
