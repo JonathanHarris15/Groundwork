@@ -12,3 +12,4 @@ packages/server/public/force-graph.js
 firebase-service-account.json
 .firebase/
 test-results
+tmp/

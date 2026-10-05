@@ -69,6 +69,16 @@ import { enhanceGraphs } from "./graph-pane";
 import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
 import type { GroundworkAppearance } from "./appearance";
+import {
+	closeOverlay,
+	openOverlay,
+	paneRootClasses,
+	setScreen as setPaneScreen,
+	type GroundworkOverlay,
+	type GroundworkScreen,
+	type PaneLayoutState,
+} from "./pane-layout";
+import { trapFocus } from "./focus-trap";
 import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
 import { filesUnderFolderRoots } from "./vault-scope";
 
@@ -149,13 +159,13 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiProviderEl!: HTMLElement;
 	private uiContextEl!: HTMLElement;
 	private uiGoalDaysEl!: HTMLElement;
-	private uiSyncBtn!: HTMLElement;
+	private releaseOverlayFocus: (() => void) | null = null;
 	private uiLearnBtn!: HTMLElement;
 	private uiMapBtn!: HTMLElement;
 	private uiGoalsBtn!: HTMLElement;
 	private uiMapEl!: HTMLElement;
 	private uiGoalsEl!: HTMLElement;
-	private screen: "learn" | "map" | "goals" = "learn";
+	private pane: PaneLayoutState = { screen: "learn", overlay: null };
 	private mapScope: "path" | "all" = "path";
 	private showGhosts = true;
 	private selectedGoalId: string | null = null;
@@ -168,13 +178,10 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiFlashEl!: HTMLElement;
 	private uiFlashBtn!: HTMLElement;
 	private flashPane!: FlashcardsPane;
-	private flashOpen = false;
-	private libraryOpen = false;
 	private libraryTab: "goals" | "concepts" | "chats" = "goals";
 	private conceptQuery = "";
 	private uiSettingsEl!: HTMLElement;
 	private uiSettingsBtn!: HTMLElement;
-	private settingsOpen = false;
 	/** Unsaved learner file. Null means show what is saved in the vault. */
 	private learnerDraft: string | null = null;
 	private uiSendBtn!: HTMLButtonElement;
@@ -210,6 +217,10 @@ export class ChatView extends ItemView implements ToolUI {
 		return VIEW_TYPE;
 	}
 	getDisplayText(): string {
+		const title = this.record?.title?.trim();
+		if (title && title !== "New session" && (this.record?.items?.length ?? 0) > 0) {
+			return title.length > 28 ? `${title.slice(0, 26)}…` : title;
+		}
 		return "Groundwork";
 	}
 	getIcon(): string {
@@ -225,6 +236,7 @@ export class ChatView extends ItemView implements ToolUI {
 	async onOpen(): Promise<void> {
 		const root = this.contentEl;
 		root.empty();
+		root.removeAttribute("data-gw-ready");
 		root.addClass("gw-root");
 		this.applyAppearance(this.plugin.settings.appearance);
 
@@ -232,21 +244,41 @@ export class ChatView extends ItemView implements ToolUI {
 		const brand = header.createDiv({ cls: "gw-brand" });
 		mountMark(brand);
 		brand.createSpan({ cls: "gw-brand-name", text: "GROUNDWORK" });
+		this.uiSessionEl = header.createDiv({ cls: "gw-session-title is-empty", attr: { "aria-hidden": "true" } });
 		const views = header.createDiv({ cls: "gw-views", attr: { role: "tablist", "aria-label": "Groundwork" } });
-		this.uiLearnBtn = this.viewTab(views, "learn", "Learn", `<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"></path><path d="M4 19V5"></path>`);
-		this.uiMapBtn = this.viewTab(views, "map", "Concept map", `<circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><circle cx="10" cy="18" r="2.5"></circle><path d="M8 7l7.5 1M7 8l2.3 7.6M16.5 10l-5 6"></path>`);
-		this.uiGoalsBtn = this.viewTab(views, "goals", "Goals", `<path d="M5 21V4M5 4h11l-2 4 2 4H5"></path>`);
+		this.uiLearnBtn = this.viewTab(views, "learn", "Learn", `<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"></path><path d="M4 19V5"></path>`, "Learn");
+		this.uiMapBtn = this.viewTab(
+			views,
+			"map",
+			"Concept map",
+			`<circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><circle cx="10" cy="18" r="2.5"></circle><path d="M8 7l7.5 1M7 8l2.3 7.6M16.5 10l-5 6"></path>`,
+			"Map",
+		);
+		this.uiGoalsBtn = this.viewTab(views, "goals", "Goals", `<path d="M5 21V4M5 4h11l-2 4 2 4H5"></path>`, "Goals");
+		this.uiMapBtn.setAttr("data-testid", "gw-map-tab");
+		this.uiGoalsBtn.setAttr("data-testid", "gw-goals-tab");
 		const actions = header.createDiv({ cls: "gw-actions" });
-		this.iconButton(actions, "square-pen", "New session", () => this.newSession());
-		this.iconButton(actions, "history", "Past sessions", (e) => this.showHistory(e));
-		this.uiLibraryBtn = this.iconButton(actions, "library", "Library", () => void this.toggleLibrary());
-		this.uiFlashBtn = this.iconButton(actions, "layers", "Flashcards", () => void this.toggleFlashcards());
-		this.uiSettingsBtn = this.iconButton(actions, "settings", "Settings", () => void this.toggleSettings());
-		this.uiSyncBtn = this.iconButton(actions, "refresh-cw", "Save tutor memory", () => void this.plugin.saveMemory(true));
-		const chip = actions.createDiv({ cls: "gw-goalchip" });
-		setIcon(chip.createSpan({ cls: "gw-goalchip-icon" }), "flag");
-		this.uiGoalEl = chip.createEl("select", { cls: "gw-goal-select", attr: { "aria-label": "Goal you are working toward" } });
-		this.uiGoalDaysEl = chip.createSpan({ cls: "gw-goalchip-days" });
+		const headerTools = actions.createDiv({ cls: "gw-actions-tools" });
+		this.iconButton(headerTools, "square-pen", "New session", () => this.newSession());
+		this.uiLibraryBtn = this.iconButton(headerTools, "library", "Library", () => void this.toggleLibrary());
+		this.uiLibraryBtn.setAttr("data-testid", "gw-library-btn");
+		this.uiFlashBtn = this.iconButton(headerTools, "layers", "Flashcards", () => void this.toggleFlashcards());
+		this.uiSettingsBtn = this.iconButton(headerTools, "settings", "Settings", () => void this.toggleSettings());
+		this.iconButton(headerTools, "more-horizontal", "More actions", (e) => void this.showMoreMenu(e));
+		this.uiLibraryBtn.setAttr("aria-expanded", "false");
+		this.uiSettingsBtn.setAttr("aria-expanded", "false");
+		this.uiFlashBtn.setAttr("aria-expanded", "false");
+
+		const goalBar = root.createDiv({ cls: "gw-goalbar" });
+		goalBar.createSpan({ cls: "gw-goalbar-label", text: "Working goal" });
+		this.uiGoalEl = goalBar.createEl("select", {
+			cls: "gw-goal-select",
+			attr: {
+				"aria-label": "Working goal — pin a goal for this session, or leave unset and study whatever you bring",
+				title: "Pin a goal for this session. Leave unset to follow the topic or files you open in chat.",
+			},
+		});
+		this.uiGoalDaysEl = goalBar.createSpan({ cls: "gw-goalbar-days" });
 		this.registerDomEvent(this.uiGoalEl, "change", () => {
 			if (this.refreshingGoalSelect) return;
 			const id = this.uiGoalEl.value;
@@ -254,14 +286,11 @@ export class ChatView extends ItemView implements ToolUI {
 			void this.plugin.store.setWorkingGoal(id || null).then(() => this.refreshGoalSelect());
 		});
 
-		this.uiSessionEl = root.createDiv({ cls: "gw-session" });
 		this.uiMessagesEl = root.createDiv({ cls: "gw-messages" });
 		this.uiMapEl = root.createDiv({ cls: "gw-screen gw-map" });
 		this.uiGoalsEl = root.createDiv({ cls: "gw-screen gw-goals" });
 		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
-		this.uiLibraryEl.hide();
 		this.uiFlashEl = root.createDiv({ cls: "gw-flash" });
-		this.uiFlashEl.hide();
 		this.flashPane = new FlashcardsPane(this.uiFlashEl, {
 			app: this.app,
 			store: this.plugin.store,
@@ -276,7 +305,6 @@ export class ChatView extends ItemView implements ToolUI {
 			onClose: () => this.closeFlashcards(),
 		});
 		this.uiSettingsEl = root.createDiv({ cls: "gw-settings" });
-		this.uiSettingsEl.hide();
 		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
 			const a = (evt.target as HTMLElement).closest("a.internal-link") as HTMLAnchorElement | null;
 			if (!a) return;
@@ -301,8 +329,21 @@ export class ChatView extends ItemView implements ToolUI {
 			this.addFiles([...(this.uiFileInput.files ?? [])]);
 			this.uiFileInput.value = "";
 		});
-		this.uiProviderEl = tools.createSpan({ cls: "gw-chip" });
-		this.uiContextEl = tools.createSpan({ cls: "gw-chip" });
+
+		this.uiProviderEl = tools.createSpan({ cls: "gw-chip gw-chip-provider", attr: { hidden: "" } });
+		this.uiContextEl = tools.createSpan({ cls: "gw-chip gw-chip-context", attr: { hidden: "" } });
+		const openProviderSetup = () => {
+			const setup = this.plugin.providerLabel().setup;
+			if (!setup) return;
+			if (setup.website) window.open(this.plugin.signedIn() ? accountOrigin() : accountSignInUrl());
+			else void this.openSettings();
+		};
+		this.registerDomEvent(this.uiProviderEl, "click", () => openProviderSetup());
+		this.registerDomEvent(this.uiProviderEl, "keydown", (e) => {
+			if (e.key !== "Enter" && e.key !== " ") return;
+			e.preventDefault();
+			openProviderSetup();
+		});
 		this.uiSendBtn = row.createEl("button", { cls: "gw-send mod-cta", attr: { "aria-label": "Send" } });
 		setIcon(this.uiSendBtn, "arrow-up");
 		this.registerDomEvent(this.uiInputEl, "keydown", (e) => {
@@ -322,24 +363,50 @@ export class ChatView extends ItemView implements ToolUI {
 		this.trackStatusBar();
 		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
+		root.setAttr("data-gw-ready", "true");
+		void this.finishBootstrapOpen();
 		this.setupMargin(root);
+		return;
+	}
 
-		const last = await this.latestChat();
-		if (last) this.openChat(last);
-		else this.newSession();
-		await this.refreshGoalSelect();
-		this.refreshSyncIndicator();
+	/** Account sync + seeded chat after the shell is painted (E2E waits on `data-gw-bootstrapped`). */
+	private async finishBootstrapOpen(): Promise<void> {
+		try {
+			await this.plugin.bootstrapForE2e();
+			const last = await this.latestChat();
+			if (last) this.openChat(last);
+			else this.newSession();
+			await this.refreshGoalSelect();
+			this.renderHeader();
+			this.refreshSyncIndicator();
+			this.syncPaneLayout();
+			this.contentEl.setAttr("data-gw-bootstrapped", "true");
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			console.error("Groundwork bootstrap failed", e);
+			this.contentEl.setAttr("data-gw-bootstrapped", "error");
+			this.contentEl.setAttr("data-gw-bootstrap-error", message.slice(0, 240));
+		}
 	}
 
 	async onClose(): Promise<void> {
+		this.releaseOverlayFocus?.();
+		this.releaseOverlayFocus = null;
+		this.closeLibrary();
+		this.closeSettings();
+		this.closeFlashcards();
 		this.stop();
 		this.dropAgent();
 		this.dropAsides();
 	}
 
 	private iconButton(parent: HTMLElement, icon: string, label: string, onClick: (e: MouseEvent) => void): HTMLElement {
-		const b = parent.createEl("button", { cls: "clickable-icon gw-icon-btn", attr: { "aria-label": label } });
+		const b = parent.createEl("button", {
+			cls: "clickable-icon gw-icon-btn",
+			attr: { "aria-label": label, title: label, type: "button" },
+		});
 		setIcon(b, icon);
+		b.createSpan({ cls: "gw-icon-label", text: label });
 		this.registerDomEvent(b, "click", onClick);
 		return b;
 	}
@@ -347,11 +414,12 @@ export class ChatView extends ItemView implements ToolUI {
 	// ── session lifecycle ───────────────────────────────────────────────
 
 	newSession(): void {
-		this.screen = "learn";
-		this.contentEl.removeClass("is-map", "is-goals");
+		this.pane = setPaneScreen(this.pane, "learn");
+		this.syncPaneLayout();
 		this.syncViewTabs();
 		this.closeLibrary();
 		this.closeSettings();
+		this.closeFlashcards();
 		if (this.agent?.busy) this.stop();
 		const now = new Date().toISOString();
 		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
@@ -359,7 +427,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.dropAgent();
 		this.dropAsides();
 		this.renderAll();
-		this.uiInputEl?.focus();
+		window.requestAnimationFrame(() => this.uiInputEl?.focus());
 	}
 
 	startPracticeTest(): void {
@@ -371,12 +439,17 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private openChat(record: ChatRecord): void {
-		this.screen = "learn";
-		this.contentEl.removeClass("is-map", "is-goals");
+		this.pane = setPaneScreen(this.pane, "learn");
+		this.syncPaneLayout();
 		this.syncViewTabs();
 		this.closeLibrary();
 		this.closeSettings();
-		this.record = record;
+		this.closeFlashcards();
+		this.record = {
+			...record,
+			messages: record.messages ?? [],
+			items: record.items ?? [],
+		};
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
 		this.dropAgent();
 		this.dropAsides();
@@ -692,13 +765,27 @@ export class ChatView extends ItemView implements ToolUI {
 		void this.refreshGoalSelect();
 	}
 
+	refreshAfterBootstrap(): void {
+		if (!this.record) return;
+		this.renderHeader();
+		void this.refreshGoalSelect();
+		if (this.pane.overlay === "library") void this.renderLibrary();
+		if (this.pane.overlay === "settings") void this.renderSettings();
+		if (this.pane.screen === "map") void this.renderMap();
+		if (this.pane.screen === "goals") void this.renderGoals();
+		if (this.pane.screen === "learn" && !this.pane.overlay && !this.record.items.length) void this.renderEmpty();
+	}
+
 	private async refreshGoalSelect(): Promise<void> {
 		if (!this.uiGoalEl) return;
 		const choices = await this.plugin.store.goalChoices();
 		const current = await this.plugin.store.workingGoal();
 		this.refreshingGoalSelect = true;
 		this.uiGoalEl.empty();
-		this.uiGoalEl.createEl("option", { text: "You choose", attr: { value: "" } });
+		this.uiGoalEl.createEl("option", {
+			text: "No goal pinned",
+			attr: { value: "", title: "The tutor follows what you bring in chat until you pick a goal" },
+		});
 		for (const choice of choices) {
 			this.uiGoalEl.createEl("option", { text: choice.title, attr: { value: choice.id } });
 		}
@@ -793,15 +880,38 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private renderHeader(): void {
+		if (!this.record) return;
 		const title = this.record.items.length ? this.record.title : "New session";
-		this.uiSessionEl?.setText(title);
+		const showTitle = this.pane.screen === "learn" && !this.pane.overlay && this.record.items.length > 0;
+		this.uiSessionEl?.toggleClass("is-empty", !showTitle);
+		this.uiSessionEl?.setAttr("aria-hidden", showTitle ? "false" : "true");
+		this.uiSessionEl?.setText(showTitle ? title : "");
 		const provider = this.plugin.providerLabel();
 		this.uiProviderEl?.setText(provider.label);
+		this.uiProviderEl?.toggleAttribute("hidden", !provider.label.trim());
+		this.uiProviderEl?.toggleClass("is-attention", !!provider.setup);
+		this.uiProviderEl?.toggleClass("is-clickable", !!provider.setup);
+		if (provider.setup) {
+			this.uiProviderEl.setAttr("role", "button");
+			this.uiProviderEl.setAttr("tabindex", "0");
+			this.uiProviderEl.setAttr("title", `${provider.label} — ${provider.setup.title}`);
+		} else {
+			this.uiProviderEl.removeAttribute("role");
+			this.uiProviderEl.removeAttribute("tabindex");
+			this.uiProviderEl.setAttr("title", provider.label);
+		}
 		const folders = this.plugin.settings.readFolders;
-		this.uiContextEl?.setText(folders.length ? `Context: ${folders[0]}` : "No vault context");
+		if (folders.length) {
+			this.uiContextEl.show();
+			this.uiContextEl.setText(folders[0]);
+			this.uiContextEl.setAttr("title", `Vault folder the tutor can read: ${folders[0]}`);
+		} else {
+			this.uiContextEl.hide();
+		}
 	}
 
 	private renderAll(): void {
+		if (!this.record) return;
 		this.renderHeader();
 		this.uiMessagesEl.empty();
 		this.toolChips.clear();
@@ -872,29 +982,41 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private async renderEmpty(): Promise<void> {
 		const el = this.uiMessagesEl.createDiv({ cls: "gw-empty" });
-		const hero = el.createDiv({ cls: "gw-hero" });
-		setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
-		hero.createEl("h2", { text: "What are you studying?" });
-		hero.createEl("p", {
-			text: "Name the exam or topic, or attach a syllabus or practice test. The tutor probes what you already know, then teaches from there.",
-		});
-
 		const provider = this.plugin.providerLabel();
-		if (provider.setup) {
-			const warn = el.createDiv({ cls: "gw-setup" });
-			warn.createEl("strong", { text: provider.setup.title });
-			void MarkdownRenderer.render(this.app, provider.setup.detail, warn.createDiv({ cls: "gw-setup-detail" }), "", this);
-			const row = warn.createDiv({ cls: "gw-row" });
-			row.createEl("button", { cls: "mod-cta", text: provider.setup.action }).addEventListener("click", () => {
+		const needsSetup = !!provider.setup;
+
+		if (needsSetup) {
+			const start = el.createDiv({ cls: "gw-start" });
+			start.createEl("h2", { cls: "gw-start-title", text: provider.setup!.title });
+			void MarkdownRenderer.render(this.app, provider.setup!.detail, start.createDiv({ cls: "gw-start-detail" }), "", this);
+			const actions = start.createDiv({ cls: "gw-start-actions" });
+			const primary = actions.createEl("button", {
+				cls: "mod-cta gw-start-primary",
+				text: provider.setup!.action,
+				attr: { type: "button" },
+			});
+			primary.addEventListener("click", () => {
 				if (provider.setup?.website) window.open(this.plugin.signedIn() ? accountOrigin() : accountSignInUrl());
-				else this.plugin.openSettings();
+				else void this.openSettings();
 			});
 			if (this.plugin.signedIn()) {
-				row.createEl("button", { text: "Try the demo" }).addEventListener("click", async () => {
+				const demo = actions.createEl("button", {
+					cls: "gw-text-btn gw-start-demo",
+					text: "Preview with the demo tutor",
+					attr: { type: "button" },
+				});
+				demo.addEventListener("click", async () => {
 					await this.plugin.useDemo();
 					this.renderAll();
 				});
 			}
+		} else {
+			const hero = el.createDiv({ cls: "gw-hero" });
+			setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
+			hero.createEl("h2", { text: "What do you want to understand?" });
+			hero.createEl("p", {
+				text: "Say what you want to learn, or drop in a lecture, homework, or notes. The tutor checks what you already hold and teaches that.",
+			});
 		}
 
 		const store = this.plugin.store;
@@ -904,7 +1026,10 @@ export class ChatView extends ItemView implements ToolUI {
 		} catch {
 			overview = null;
 		}
-		const suggestions = el.createDiv({ cls: "gw-suggestions" });
+		const suggestions = el.createDiv({ cls: `gw-suggestions${needsSetup ? " is-deferred" : ""}` });
+		if (needsSetup) {
+			suggestions.createEl("h3", { cls: "gw-suggestions-kicker", text: "After you are connected" });
+		}
 		const suggest = (icon: string, label: string, detail: string, run: () => void) => {
 			const b = suggestions.createEl("button", { cls: "gw-suggestion" });
 			setIcon(b.createSpan({ cls: "gw-suggestion-icon" }), icon);
@@ -913,7 +1038,7 @@ export class ChatView extends ItemView implements ToolUI {
 			t.createDiv({ cls: "gw-suggestion-detail", text: detail });
 			b.addEventListener("click", run);
 		};
-		if (provider.demo) {
+		if (provider.demo && !needsSetup) {
 			suggest("play", "Run the demo lesson", "A scripted lesson on the derivative: recall, plan, quizzes, memory updates.", () => void this.submit("Teach me what a derivative really is."));
 		}
 		for (const g of overview?.activeGoals.slice(0, 3) ?? []) {
@@ -961,11 +1086,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	refreshSyncIndicator(): void {
-		if (!this.uiSyncBtn) return;
-		const s = this.plugin.syncStatus;
-		this.uiSyncBtn.toggleClass("is-syncing", s.state === "syncing");
-		this.uiSyncBtn.toggleClass("is-warning", s.state === "error" || s.state === "offline");
-		this.uiSyncBtn.setAttr("aria-label", `Tutor memory — ${s.text}`);
+		// Tutor memory sync lives on the Obsidian status bar (see GroundworkPlugin.renderStatus).
 	}
 
 	// ── attachments ─────────────────────────────────────────────────────
@@ -1160,7 +1281,22 @@ export class ChatView extends ItemView implements ToolUI {
 
 	// ── menus ───────────────────────────────────────────────────────────
 
-	private async showHistory(evt: MouseEvent): Promise<void> {
+	private showMoreMenu(evt: MouseEvent): void {
+		const menu = new Menu();
+		menu.addItem((i) =>
+			i.setTitle("Past sessions").setIcon("history").onClick(() => void this.showHistory(evt)),
+		);
+		const s = this.plugin.syncStatus;
+		menu.addItem((i) =>
+			i
+				.setTitle(`Save tutor memory — ${s.text}`)
+				.setIcon("refresh-cw")
+				.onClick(() => void this.plugin.saveMemory(true)),
+		);
+		menu.showAtMouseEvent(evt);
+	}
+
+	private async showHistory(evt?: MouseEvent): Promise<void> {
 		const menu = new Menu();
 		const chats = await this.listChats();
 		if (!chats.length) menu.addItem((i) => i.setTitle("No past sessions yet").setDisabled(true));
@@ -1175,7 +1311,23 @@ export class ChatView extends ItemView implements ToolUI {
 					}),
 			);
 		}
-		menu.showAtMouseEvent(evt);
+		if (evt) menu.showAtMouseEvent(evt);
+	}
+
+	private bindOverlayFocus(panel: HTMLElement, close: () => void, label: string): void {
+		this.releaseOverlayFocus?.();
+		panel.setAttr("role", "dialog");
+		panel.setAttr("aria-modal", "true");
+		panel.setAttr("aria-label", label);
+		this.releaseOverlayFocus = trapFocus(panel, close);
+	}
+
+	private clearOverlayFocus(panel: HTMLElement): void {
+		this.releaseOverlayFocus?.();
+		this.releaseOverlayFocus = null;
+		panel.removeAttribute("role");
+		panel.removeAttribute("aria-modal");
+		panel.removeAttribute("aria-label");
 	}
 
 	showFlashcards(): Promise<void> {
@@ -1183,27 +1335,48 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async toggleFlashcards(): Promise<void> {
-		if (this.flashOpen) this.closeFlashcards();
+		if (this.pane.overlay === "flashcards") this.closeFlashcards();
 		else await this.openFlashcards();
 	}
 
 	private async openFlashcards(): Promise<void> {
 		this.closeLibrary();
 		this.closeSettings();
+		this.pane = openOverlay(closeOverlay(this.pane), "flashcards");
+		if (!this.uiFlashEl?.isConnected) {
+			this.uiFlashEl =
+				(this.contentEl.querySelector(".gw-flash") as HTMLElement | null) ??
+				this.contentEl.createDiv({ cls: "gw-flash" });
+			this.flashPane = new FlashcardsPane(this.uiFlashEl, {
+				app: this.app,
+				store: this.plugin.store,
+				writeFolders: () => this.plugin.settings.writeFolders,
+				goalId: () => this.uiGoalEl?.value ?? "",
+				selection: () => this.selectedQuote(),
+				renderMarkdown: (el, md) => this.renderMd(el, md),
+				onQuiz: (prompt) => {
+					this.closeFlashcards();
+					void this.submit(prompt);
+				},
+				onClose: () => this.closeFlashcards(),
+			});
+		}
+		this.syncPaneLayout();
 		this.uiInputEl?.blur();
-		this.flashOpen = true;
-		this.contentEl.addClass("is-flashcards");
-		this.uiFlashBtn.addClass("is-active");
-		this.uiFlashEl.show();
 		await this.flashPane.show();
+		this.uiFlashBtn?.addClass("is-active");
+		this.uiLibraryBtn?.removeClass("is-active");
+		this.uiSettingsBtn?.removeClass("is-active");
+		this.bindOverlayFocus(this.uiFlashEl, () => this.closeFlashcards(), "Flashcards");
 	}
 
 	private closeFlashcards(): void {
-		this.flashOpen = false;
-		this.contentEl.removeClass("is-flashcards");
+		if (this.pane.overlay !== "flashcards") return;
+		this.clearOverlayFocus(this.uiFlashEl);
+		this.pane = closeOverlay(this.pane);
+		this.syncPaneLayout();
 		this.uiFlashBtn?.removeClass("is-active");
 		this.flashPane?.hide();
-		this.uiFlashEl?.hide();
 	}
 
 	private selectedQuote(): string {
@@ -1215,31 +1388,73 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async toggleLibrary(): Promise<void> {
-		if (this.libraryOpen) this.closeLibrary();
+		if (this.pane.overlay === "library") this.closeLibrary();
 		else await this.openLibrary();
+	}
+
+	openLibraryPanel(): Promise<void> {
+		return this.openLibrary();
 	}
 
 	private async openLibrary(): Promise<void> {
 		this.closeFlashcards();
 		this.closeSettings();
+		this.pane = openOverlay(closeOverlay(this.pane), "library");
+		if (!this.uiLibraryEl?.isConnected) {
+			this.uiLibraryEl =
+				(this.contentEl.querySelector(".gw-library") as HTMLElement | null) ?? this.uiLibraryEl;
+		}
+		this.paintLibraryShell();
+		this.syncPaneLayout();
 		this.uiInputEl?.blur();
-		this.libraryOpen = true;
-		this.contentEl.addClass("is-library");
-		this.uiLibraryBtn.addClass("is-active");
-		this.uiLibraryEl.show();
+		this.uiLibraryBtn?.addClass("is-active");
+		this.uiFlashBtn?.removeClass("is-active");
+		this.uiSettingsBtn?.removeClass("is-active");
 		await this.renderLibrary();
+		this.bindOverlayFocus(this.uiLibraryEl, () => this.closeLibrary(), "Library");
+	}
+
+	/** Immediate library chrome so the overlay is never an empty bar while data loads. */
+	private paintLibraryShell(): void {
+		if (!this.uiLibraryEl?.isConnected) {
+			this.uiLibraryEl =
+				(this.contentEl.querySelector(".gw-library") as HTMLElement | null) ??
+				this.contentEl.createDiv({ cls: "gw-library" });
+		}
+		this.uiLibraryEl.empty();
+		const top = this.uiLibraryEl.createDiv({ cls: "gw-library-top" });
+		this.panelHead(top, "Library", "Goals, concepts, and past chats.", "Close library", () => this.closeLibrary());
+		const tabs = top.createDiv({ cls: "gw-lib-tabs", attr: { role: "tablist", "aria-label": "Library" } });
+		this.uiLibraryEl.createDiv({ cls: "gw-library-scroll", attr: { "data-gw-library-scroll": "1" } });
+		const tab = (id: "goals" | "concepts" | "chats", label: string) => {
+			const button = tabs.createEl("button", {
+				cls: `gw-lib-tab${this.libraryTab === id ? " is-active" : ""}`,
+				attr: { type: "button", role: "tab", "aria-selected": this.libraryTab === id ? "true" : "false", title: label },
+			});
+			button.createSpan({ text: label });
+			button.createSpan({ cls: "gw-lib-count", text: "…" });
+			button.addEventListener("click", () => {
+				if (this.libraryTab === id) return;
+				this.libraryTab = id;
+				void this.renderLibrary();
+			});
+		};
+		tab("goals", "Goals");
+		tab("concepts", "Concepts");
+		tab("chats", "Chats");
 	}
 
 	private closeLibrary(): void {
-		this.libraryOpen = false;
-		this.contentEl.removeClass("is-library");
+		if (this.pane.overlay !== "library") return;
+		this.clearOverlayFocus(this.uiLibraryEl);
+		this.pane = closeOverlay(this.pane);
+		this.syncPaneLayout();
 		this.uiLibraryBtn?.removeClass("is-active");
-		this.uiLibraryEl?.hide();
 		this.uiLibraryEl?.empty();
 	}
 
 	private async toggleSettings(): Promise<void> {
-		if (this.settingsOpen) this.closeSettings();
+		if (this.pane.overlay === "settings") this.closeSettings();
 		else await this.openSettings();
 	}
 
@@ -1250,31 +1465,75 @@ export class ChatView extends ItemView implements ToolUI {
 	private async openSettings(): Promise<void> {
 		this.closeFlashcards();
 		this.closeLibrary();
-		this.uiInputEl?.blur();
+		this.pane = openOverlay(closeOverlay(this.pane), "settings");
+		if (!this.uiSettingsEl?.isConnected) {
+			this.uiSettingsEl =
+				(this.contentEl.querySelector(".gw-settings") as HTMLElement | null) ??
+				this.contentEl.createDiv({ cls: "gw-settings" });
+		}
 		await this.plugin.refreshTutorRoute();
-		this.settingsOpen = true;
-		this.contentEl.addClass("is-settings");
-		this.uiSettingsBtn.addClass("is-active");
-		this.uiSettingsEl.show();
 		await this.renderSettings();
+		this.syncPaneLayout();
+		this.uiInputEl?.blur();
+		this.uiSettingsBtn?.addClass("is-active");
+		this.uiLibraryBtn?.removeClass("is-active");
+		this.uiFlashBtn?.removeClass("is-active");
+		this.bindOverlayFocus(this.uiSettingsEl, () => this.closeSettings(), "Settings");
 	}
 
 	private closeSettings(): void {
-		this.settingsOpen = false;
-		this.contentEl.removeClass("is-settings");
+		if (this.pane.overlay !== "settings") return;
+		this.clearOverlayFocus(this.uiSettingsEl);
+		this.pane = closeOverlay(this.pane);
+		this.syncPaneLayout();
 		this.uiSettingsBtn?.removeClass("is-active");
-		this.uiSettingsEl?.hide();
 		this.uiSettingsEl?.empty();
 	}
 
 	/** Goals, concepts, and chats, one tab at a time. Nothing here opens a vault note. */
 	private async renderLibrary(): Promise<void> {
+		if (!this.uiLibraryEl?.isConnected) {
+			this.uiLibraryEl = this.contentEl.querySelector(".gw-library") ?? this.uiLibraryEl;
+		}
+		if (!this.uiLibraryEl.querySelector(".gw-library-top")) this.paintLibraryShell();
+		try {
+			await this.renderLibraryBody();
+		} catch (err) {
+			const scroll =
+				this.uiLibraryEl.querySelector(".gw-library-scroll") ??
+				this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
+			scroll.empty();
+			scroll.createDiv({
+				cls: "gw-error",
+				text: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	private async renderLibraryBody(): Promise<void> {
 		const store = this.plugin.store;
-		this.uiLibraryEl.empty();
-		const top = this.uiLibraryEl.createDiv({ cls: "gw-library-top" });
-		this.panelHead(top, "Library", "Goals, concepts, and past chats.", "Close library", () => this.closeLibrary());
-		const tabs = top.createDiv({ cls: "gw-lib-tabs", attr: { role: "tablist", "aria-label": "Library" } });
-		const scroll = this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
+		if (!this.uiLibraryEl.querySelector(".gw-library-top")) this.paintLibraryShell();
+		const top = this.uiLibraryEl.querySelector(".gw-library-top") as HTMLElement | null;
+		if (!top) return;
+		const tabs = top.querySelector(".gw-lib-tabs") as HTMLElement | null;
+		if (!tabs) return;
+		let scroll = this.uiLibraryEl.querySelector(".gw-library-scroll") as HTMLElement | null;
+		if (!scroll) scroll = this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
+		scroll.empty();
+
+		const tab = (id: "goals" | "concepts" | "chats", label: string, count: number | string) => {
+			const button = tabs.createEl("button", {
+				cls: `gw-lib-tab${this.libraryTab === id ? " is-active" : ""}`,
+				attr: { type: "button", role: "tab", "aria-selected": this.libraryTab === id ? "true" : "false", title: label },
+			});
+			button.createSpan({ text: label });
+			button.createSpan({ cls: "gw-lib-count", text: String(count) });
+			button.addEventListener("click", () => {
+				if (this.libraryTab === id) return;
+				this.libraryTab = id;
+				void this.renderLibrary();
+			});
+		};
 
 		let choices: Awaited<ReturnType<typeof store.goalChoices>> = [];
 		let goals: Awaited<ReturnType<typeof store.goals>> = [];
@@ -1287,19 +1546,7 @@ export class ChatView extends ItemView implements ToolUI {
 			return;
 		}
 
-		const tab = (id: "goals" | "concepts" | "chats", label: string, count: number) => {
-			const button = tabs.createEl("button", {
-				cls: `gw-lib-tab${this.libraryTab === id ? " is-active" : ""}`,
-				attr: { type: "button", role: "tab", "aria-selected": this.libraryTab === id ? "true" : "false" },
-			});
-			button.createSpan({ text: label });
-			button.createSpan({ cls: "gw-lib-count", text: String(count) });
-			button.addEventListener("click", () => {
-				if (this.libraryTab === id) return;
-				this.libraryTab = id;
-				void this.renderLibrary();
-			});
-		};
+		tabs.empty();
 		tab("goals", "Goals", goals.length);
 		tab("concepts", "Concepts", concepts.size);
 		tab("chats", "Chats", chats.length);
@@ -1311,10 +1558,21 @@ export class ChatView extends ItemView implements ToolUI {
 				text: "A goal can name a course or a file, like Lecture 1 note fluency. Its concepts stay abstract so they carry to the next goal. Work toward one, quiz it, or delete it. Deleting a goal leaves those concepts in place.",
 			});
 			const choiceIds = new Set(choices.map((c) => c.id));
-			if (!goals.length) section.createDiv({ cls: "gw-lib-empty", text: "No goals yet. Tell the tutor what you want to learn." });
+			if (!choices.length && !goals.length) {
+				this.libraryEmpty(
+					section,
+					"Goals name what you want built by a date. They stay here after you finish.",
+					"Tell the tutor your goal",
+					() => {
+						this.closeLibrary();
+						this.showScreen("learn");
+						void this.submit("I want to learn calculus fluency for my exam.");
+					},
+				);
+			}
 			for (const choice of choices) {
 				const row = this.libraryRow(section, choice.title, goalChoiceLabel(choice).replace(`${choice.title} → `, ""));
-				this.libraryButton(row, "Work toward", () => void this.workToward(choice.id));
+				this.libraryButton(row, "Work toward", () => void this.workToward(choice.id), true);
 				this.libraryButton(row, "Quiz", () => void this.quizGoal(choice.id, choice.title, true));
 				this.libraryDelete(row, () => this.deleteListedGoal(choice.id));
 			}
@@ -1345,7 +1603,15 @@ export class ChatView extends ItemView implements ToolUI {
 				const q = filter.value.trim().toLowerCase();
 				const shown = conceptRows.filter((c) => !q || c.title.toLowerCase().includes(q) || c.aliases.some((a) => a.toLowerCase().includes(q)));
 				if (!shown.length) {
-					conceptList.createDiv({ cls: "gw-lib-empty", text: conceptRows.length ? "No concepts match." : "No concepts yet." });
+					if (!conceptRows.length) {
+						this.libraryEmpty(section, "Concepts are reusable ideas the tutor quizzes and tracks.", "Ask the tutor to teach one", () => {
+							this.closeLibrary();
+							this.showScreen("learn");
+							void this.submit("Teach me what a derivative is.");
+						});
+					} else {
+						conceptList.createDiv({ cls: "gw-lib-empty", text: "No concepts match your filter." });
+					}
 					return;
 				}
 				for (const concept of shown) {
@@ -1370,7 +1636,13 @@ export class ChatView extends ItemView implements ToolUI {
 
 		const section = scroll.createDiv({ cls: "gw-lib-section" });
 		section.createDiv({ cls: "gw-lib-help", text: "Deleting a chat removes it from the tutor's history, including its session transcript." });
-		if (!chats.length) section.createDiv({ cls: "gw-lib-empty", text: "No past chats." });
+		if (!chats.length) {
+			this.libraryEmpty(section, "Past chats stay on your account. Open one to continue where you left off.", "Start a chat", () => {
+				this.closeLibrary();
+				this.showScreen("learn");
+				this.uiInputEl?.focus();
+			});
+		}
 		for (const chat of chats) {
 			const when = chat.updated?.slice(0, 10) || chat.created?.slice(0, 10) || "";
 			const row = this.libraryRow(section, chat.title || "Untitled", when);
@@ -1386,6 +1658,11 @@ export class ChatView extends ItemView implements ToolUI {
 	/** Learner file, a few preferences, and a vault reset. */
 	private async renderSettings(): Promise<void> {
 		const store = this.plugin.store;
+		if (!this.uiSettingsEl?.isConnected) {
+			this.uiSettingsEl =
+				(this.contentEl.querySelector(".gw-settings") as HTMLElement | null) ??
+				this.contentEl.createDiv({ cls: "gw-settings" });
+		}
 		this.uiSettingsEl.empty();
 		const top = this.uiSettingsEl.createDiv({ cls: "gw-library-top" });
 		this.panelHead(top, "Settings", "Vault folders, the tutor, and your account.", "Close settings", () => this.closeSettings());
@@ -1638,10 +1915,16 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 	}
 
-	private viewTab(parent: HTMLElement, id: "learn" | "map" | "goals", label: string, path: string): HTMLElement {
+	private viewTab(parent: HTMLElement, id: "learn" | "map" | "goals", label: string, path: string, shortLabel?: string): HTMLElement {
 		const button = parent.createEl("button", {
-			cls: `gw-view${id === this.screen ? " is-on" : ""}`,
-			attr: { type: "button", role: "tab", "aria-selected": id === this.screen ? "true" : "false" },
+			cls: `gw-view${id === this.pane.screen ? " is-on" : ""}`,
+			attr: {
+				type: "button",
+				role: "tab",
+				"aria-selected": id === this.pane.screen ? "true" : "false",
+				title: label,
+				"aria-label": label,
+			},
 		});
 		const icon = button.createSpan({ cls: "gw-view-icon" });
 		const svg = icon.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1654,24 +1937,52 @@ export class ChatView extends ItemView implements ToolUI {
 		svg.setAttribute("aria-hidden", "true");
 		appendSvgFragment(svg, path);
 		icon.append(svg);
-		button.createSpan({ text: label });
+		button.createSpan({ cls: "gw-view-label", text: shortLabel ?? label });
 		this.registerDomEvent(button, "click", () => this.showScreen(id));
 		return button;
 	}
 
-	private syncViewTabs(): void {
-		this.uiLearnBtn?.toggleClass("is-on", this.screen === "learn");
-		this.uiMapBtn?.toggleClass("is-on", this.screen === "map");
-		this.uiGoalsBtn?.toggleClass("is-on", this.screen === "goals");
+	private syncPaneLayout(): void {
+		const flags = paneRootClasses(this.pane);
+		const root = this.contentEl;
+		root.toggleClass("is-map", flags.isMap);
+		root.toggleClass("is-goals", flags.isGoals);
+		root.toggleClass("is-library", flags.isLibrary);
+		root.toggleClass("is-settings", flags.isSettings);
+		root.toggleClass("is-flashcards", flags.isFlashcards);
+		root.toggleClass("is-overlay", flags.isOverlay);
+		const overlay = this.pane.overlay;
+		this.uiLibraryBtn?.setAttr("aria-expanded", overlay === "library" ? "true" : "false");
+		this.uiSettingsBtn?.setAttr("aria-expanded", overlay === "settings" ? "true" : "false");
+		this.uiFlashBtn?.setAttr("aria-expanded", overlay === "flashcards" ? "true" : "false");
+		const libOn = overlay === "library";
+		const settingsOn = overlay === "settings";
+		const flashOn = overlay === "flashcards";
+		this.uiLibraryBtn?.toggleClass("is-active", libOn);
+		this.uiSettingsBtn?.toggleClass("is-active", settingsOn);
+		this.uiFlashBtn?.toggleClass("is-active", flashOn);
+		this.uiLibraryBtn?.setAttr("aria-pressed", libOn ? "true" : "false");
+		this.uiSettingsBtn?.setAttr("aria-pressed", settingsOn ? "true" : "false");
+		this.uiFlashBtn?.setAttr("aria-pressed", flashOn ? "true" : "false");
+		this.renderHeader();
 	}
 
-	private showScreen(screen: "learn" | "map" | "goals"): void {
+	private syncViewTabs(): void {
+		const screen = this.pane.screen;
+		this.uiLearnBtn?.toggleClass("is-on", screen === "learn");
+		this.uiMapBtn?.toggleClass("is-on", screen === "map");
+		this.uiGoalsBtn?.toggleClass("is-on", screen === "goals");
+		this.uiLearnBtn?.setAttr("aria-selected", screen === "learn" ? "true" : "false");
+		this.uiMapBtn?.setAttr("aria-selected", screen === "map" ? "true" : "false");
+		this.uiGoalsBtn?.setAttr("aria-selected", screen === "goals" ? "true" : "false");
+	}
+
+	private showScreen(screen: GroundworkScreen): void {
 		this.closeLibrary();
 		this.closeSettings();
-		this.screen = screen;
-		this.contentEl.removeClass("is-map", "is-goals");
-		if (screen === "map") this.contentEl.addClass("is-map");
-		if (screen === "goals") this.contentEl.addClass("is-goals");
+		this.closeFlashcards();
+		this.pane = setPaneScreen(this.pane, screen);
+		this.syncPaneLayout();
 		this.syncViewTabs();
 		if (screen === "map") void this.renderMap();
 		else if (screen === "goals") void this.renderGoals();
@@ -1679,9 +1990,9 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private refreshOpenScreen(): void {
-		if (this.libraryOpen || this.settingsOpen) return;
-		if (this.screen === "map") void this.renderMap();
-		else if (this.screen === "goals") void this.renderGoals();
+		if (this.pane.overlay) return;
+		if (this.pane.screen === "map") void this.renderMap();
+		else if (this.pane.screen === "goals") void this.renderGoals();
 	}
 
 	private learnerInitial(): string {
@@ -1773,6 +2084,7 @@ export class ChatView extends ItemView implements ToolUI {
 			},
 			onStart: (title: string) => void this.studyConcept(title, "start"),
 			onStudy: (title: string, action: "quiz" | "learn") => void this.studyConcept(title, action),
+			onOpenGoals: () => this.showScreen("goals"),
 		};
 	}
 
@@ -1840,8 +2152,6 @@ export class ChatView extends ItemView implements ToolUI {
 				// A finished goal stays unpinned.
 			}
 		}
-		this.screen = "learn";
-		this.contentEl.removeClass("is-map", "is-goals");
 		await this.refreshGoalSelect();
 		this.showScreen("learn");
 		const text = action === "quiz" ? `Quiz me on ${title}.` : action === "start" ? `Let's build ${title}.` : `Teach me ${title}.`;
@@ -1959,16 +2269,29 @@ export class ChatView extends ItemView implements ToolUI {
 		this.session = { id: this.record.id };
 		this.renderAll();
 		await this.refreshGoalSelect();
-		if (this.settingsOpen) await this.renderSettings();
+		if (this.pane.overlay === "settings") await this.renderSettings();
 		new Notice("Learning vault reset. Files in this Obsidian vault are still there.");
+	}
+
+	private libraryEmpty(parent: HTMLElement, detail: string, action: string, run: () => void): void {
+		const box = parent.createDiv({ cls: "gw-lib-empty-block" });
+		box.createDiv({ cls: "gw-lib-empty", text: detail });
+		const btn = box.createEl("button", { cls: "gw-lib-btn mod-cta", text: action, attr: { type: "button" } });
+		btn.addEventListener("click", run);
 	}
 
 	private panelHead(parent: HTMLElement, title: string, subtitle: string, closeLabel: string, onClose: () => void): void {
 		const head = parent.createDiv({ cls: "gw-library-head" });
-		const titles = head.createDiv();
+		const titles = head.createDiv({ cls: "gw-library-titles" });
 		titles.createDiv({ cls: "gw-library-title", text: title });
 		titles.createDiv({ cls: "gw-library-sub", text: subtitle });
-		const close = head.createEl("button", { cls: "clickable-icon gw-icon-btn", attr: { "aria-label": closeLabel, type: "button" } });
+		const closeRow = head.createDiv({ cls: "gw-panel-close-row" });
+		const closeText = closeRow.createEl("button", { cls: "gw-panel-close", text: "Close", attr: { type: "button" } });
+		closeText.addEventListener("click", onClose);
+		const close = closeRow.createEl("button", {
+			cls: "clickable-icon gw-icon-btn gw-panel-close-icon",
+			attr: { "aria-label": closeLabel, title: closeLabel, type: "button" },
+		});
 		setIcon(close, "x");
 		close.addEventListener("click", onClose);
 	}
@@ -1982,9 +2305,13 @@ export class ChatView extends ItemView implements ToolUI {
 		return row;
 	}
 
-	private libraryButton(row: HTMLElement, label: string, onClick: () => void): HTMLElement {
+	private libraryButton(row: HTMLElement, label: string, onClick: () => void, primary = false): HTMLElement {
 		const actions = row.querySelector(".gw-lib-actions") as HTMLElement;
-		const button = actions.createEl("button", { cls: "gw-lib-btn", text: label, attr: { type: "button" } });
+		const button = actions.createEl("button", {
+			cls: `gw-lib-btn${primary ? " is-primary" : ""}`,
+			text: label,
+			attr: { type: "button" },
+		});
 		button.addEventListener("click", onClick);
 		return button;
 	}
@@ -2050,7 +2377,7 @@ export class ChatView extends ItemView implements ToolUI {
 		try {
 			await this.plugin.store.deleteConcept(title);
 			await this.refreshGoalSelect();
-			if (this.libraryOpen) await this.renderLibrary();
+			if (this.pane.overlay === "library") await this.renderLibrary();
 		} catch (err) {
 			new Notice(err instanceof Error ? err.message : String(err));
 		}
@@ -2060,7 +2387,7 @@ export class ChatView extends ItemView implements ToolUI {
 		try {
 			await this.plugin.store.deleteGoal(id);
 			await this.refreshGoalSelect();
-			if (this.libraryOpen) await this.renderLibrary();
+			if (this.pane.overlay === "library") await this.renderLibrary();
 		} catch (err) {
 			new Notice(err instanceof Error ? err.message : String(err));
 		}
@@ -2078,7 +2405,7 @@ export class ChatView extends ItemView implements ToolUI {
 			this.newSession();
 			return;
 		}
-		if (this.libraryOpen) await this.renderLibrary();
+		if (this.pane.overlay === "library") await this.renderLibrary();
 	}
 
 	// ── margin threads ──────────────────────────────────────────────────

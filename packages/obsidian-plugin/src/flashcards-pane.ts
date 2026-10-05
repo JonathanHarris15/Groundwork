@@ -223,10 +223,12 @@ export class FlashcardsPane {
 		});
 		const meta = top.createDiv({ cls: "gw-fc-meta" });
 		if (this.deckId && this.goals.some((g) => g.id === this.deckId)) {
-			meta.createSpan({ cls: "gw-fc-chip", text: `Weighted for ${this.deckTitle()}` });
-			meta.createSpan({ cls: "gw-fc-chip", text: "All concepts in goal" });
+			meta.createSpan({ cls: "gw-fc-chip", text: `Goal deck · ${this.deckTitle()}` });
 		}
-		const close = top.createEl("button", { cls: "clickable-icon gw-icon-btn gw-fc-close", attr: { "aria-label": "Close flashcards", type: "button" } });
+		const close = top.createEl("button", {
+			cls: "clickable-icon gw-icon-btn gw-fc-close",
+			attr: { "aria-label": "Close flashcards", title: "Close flashcards", type: "button" },
+		});
 		setIcon(close, "x");
 		close.addEventListener("click", () => this.host.onClose());
 	}

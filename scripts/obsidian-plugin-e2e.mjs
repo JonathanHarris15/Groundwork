@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * Real Obsidian (AppImage extract + xvfb): screenshots via CDP.
- * Graph-focused: concept map tab, force canvas, sidebar widths, zoom, light/dark.
+ * Real Obsidian (AppImage + xvfb): local server, seeded account, CDP screenshots.
  */
 import { spawn, execSync } from "node:child_process";
-import { mkdirSync, copyFileSync, appendFileSync, writeFileSync, cpSync, existsSync } from "node:fs";
+import { mkdirSync, copyFileSync, appendFileSync, writeFileSync, cpSync, existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,50 +14,107 @@ const vault = "/workspace/tmp/gw-test-vault";
 const pluginDist = path.join(root, "packages/obsidian-plugin/dist");
 const pluginVault = path.join(vault, ".obsidian/plugins/groundwork");
 const outDir = "/opt/cursor/artifacts/obsidian-real";
-const port = 9333;
+const port = 8787;
 const obsidianConfig = "/home/ubuntu/.config/obsidian/obsidian.json";
+const serverEntry = path.join(root, "packages/server/dist/server.js");
 
-if (!existsSync(obsidianBin)) {
-	console.error(`Obsidian binary missing at ${obsidianBin}. Extract Obsidian 1.13.7 AppImage to that path first.`);
-	process.exit(1);
-}
+const scenario = process.argv.find((a) => a.startsWith("--scenario="))?.split("=")[1] ?? "signed-in";
 
 mkdirSync(outDir, { recursive: true });
-mkdirSync(path.dirname(obsidianConfig), { recursive: true });
-if (existsSync(vault)) {
-	execSync(`rm -rf ${JSON.stringify(vault)}`);
+
+function run(cmd, opts = {}) {
+	execSync(cmd, { stdio: "inherit", ...opts });
 }
-cpSync(vaultTemplate, vault, { recursive: true });
-execSync(`npx -y tsx ${JSON.stringify(path.join(root, "scripts/seed-obsidian-graph-vault.mjs"))} ${JSON.stringify(vault)}`, {
-	cwd: root,
-	stdio: "inherit",
-});
-mkdirSync(pluginVault, { recursive: true });
-for (const file of ["main.js", "styles.css", "manifest.json"]) {
-	copyFileSync(path.join(pluginDist, file), path.join(pluginVault, file));
+
+function pluginData(extra = {}) {
+	return {
+		provider: "claude-code",
+		claudePath: "",
+		claudeModel: "",
+		model: "claude-sonnet-4-5",
+		maxTokens: 8192,
+		deviceName: "cloud-test",
+		appearance: "obsidian",
+		readFolders: [],
+		writeFolders: [],
+		...extra,
+	};
 }
-writeFileSync(
-	path.join(vault, ".obsidian/appearance.json"),
-	JSON.stringify({ theme: "obsidian", baseFontSize: 16, accentColor: "" }, null, 2),
-);
-writeFileSync(
-	path.join(vault, ".obsidian/plugins/groundwork/data.json"),
-	JSON.stringify(
-		{
-			provider: "demo",
-			claudePath: "",
-			claudeModel: "",
-			model: "claude-sonnet-4-5",
-			maxTokens: 8192,
-			deviceName: "cloud-test",
-			appearance: "obsidian",
-			readFolders: [],
-			writeFolders: [],
+
+function prepareVault(data) {
+	if (existsSync(vault)) execSync(`rm -rf ${JSON.stringify(vault)}`);
+	cpSync(vaultTemplate, vault, { recursive: true });
+	mkdirSync(pluginVault, { recursive: true });
+	for (const file of ["main.js", "styles.css", "manifest.json"]) {
+		copyFileSync(path.join(pluginDist, file), path.join(pluginVault, file));
+	}
+	writeFileSync(path.join(pluginVault, "data.json"), JSON.stringify(data, null, 2));
+	if (data.accountToken) {
+		writeFileSync(path.join(pluginVault, "e2e-account-token"), `${data.accountToken}\n`);
+	}
+	const memDb = path.join(root, "packages/server/data/tutor-memory.json");
+	if (existsSync(memDb) && scenario !== "signed-out") {
+		const db = JSON.parse(readFileSync(memDb, "utf8"));
+		const files = db?.users?.local?.memory?.files;
+		if (files) writeFileSync(path.join(pluginVault, "e2e-memory.json"), JSON.stringify({ files }, null, 2));
+	}
+}
+
+async function startServer() {
+	if (!existsSync(serverEntry)) run("npm run build -w packages/server");
+	try {
+		execSync("fuser -k 8787/tcp 2>/dev/null || true", { stdio: "ignore" });
+	} catch {
+		/* ignore */
+	}
+	await sleep(300);
+	const log = "/tmp/groundwork-e2e-server.log";
+	appendFileSync(log, "\n--- server ---\n");
+	const child = spawn("node", [serverEntry], {
+		env: {
+			...process.env,
+			GROUNDWORK_PORT: String(port),
+			GROUNDWORK_TUTOR_STUB: "1",
+			GROUNDWORK_MEMORY_FILE: path.join(root, "packages/server/data/tutor-memory.json"),
+			GROUNDWORK_ACCOUNT_FILE: path.join(root, "packages/server/data/accounts.json"),
 		},
-		null,
-		2,
-	),
-);
+		stdio: ["ignore", "pipe", "pipe"],
+		detached: true,
+	});
+	child.stdout?.on("data", (d) => appendFileSync(log, d));
+	child.stderr?.on("data", (d) => appendFileSync(log, d));
+	for (let i = 0; i < 40; i++) {
+		try {
+			const res = await fetch(`http://127.0.0.1:${port}/v1/web-config`);
+			if (res.ok) return child;
+		} catch {
+			/* wait */
+		}
+		await sleep(250);
+	}
+	throw new Error("Local Groundwork server did not start");
+}
+
+function stopServer(child) {
+	try {
+		process.kill(-child.pid, "SIGTERM");
+	} catch {
+		child.kill("SIGTERM");
+	}
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+run(`GROUNDWORK_API_URL=http://127.0.0.1:${port} npm run build -w packages/obsidian-plugin`);
+
+if (scenario === "new-account") run("npx tsx scripts/seed-e2e-tutor-memory.mjs --empty");
+else run("npx tsx scripts/seed-e2e-tutor-memory.mjs");
+
+const token = scenario === "signed-out" ? undefined : "e2e-local-token";
+prepareVault(token ? pluginData({ accountToken: token }) : pluginData());
+if (scenario !== "signed-out") {
+	run(`npx -y tsx ${JSON.stringify(path.join(root, "scripts/seed-obsidian-graph-vault.mjs"))} ${JSON.stringify(vault)}`);
+}
 
 writeFileSync(
 	obsidianConfig,
@@ -88,7 +144,8 @@ writeFileSync(
 						state: { type: "groundwork-chat", state: {}, icon: "graduation-cap", title: "Groundwork" },
 					},
 				],
-				direction: "vertical",
+				direction: "horizontal",
+				width: 900,
 			},
 			active: "gw-leaf",
 			lastOpenFiles: ["Welcome.md"],
@@ -104,80 +161,83 @@ try {
 	/* ignore */
 }
 
+const serverChild = await startServer();
+const cdpPort = 9333;
 const log = "/tmp/obsidian-e2e.log";
-appendFileSync(log, "\n--- run ---\n");
+appendFileSync(log, `\n--- run ${scenario} ---\n`);
 const child = spawn(
 	"xvfb-run",
-	["-a", "--server-args=-screen 0 1280x800x24", obsidianBin, "--no-sandbox", "--disable-gpu", `--remote-debugging-port=${port}`, vault],
+	["-a", "--server-args=-screen 0 1280x800x24", obsidianBin, "--no-sandbox", "--disable-gpu", `--remote-debugging-port=${cdpPort}`, vault],
 	{ stdio: ["ignore", "pipe", "pipe"], detached: true },
 );
 child.stdout?.on("data", (d) => appendFileSync(log, d));
 child.stderr?.on("data", (d) => appendFileSync(log, d));
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 await sleep(18_000);
 
-const { chromium } = await import("@playwright/test");
-const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 45_000 });
+const { chromium } = await import("playwright");
+const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, { timeout: 45_000 });
 const page = browser.contexts()[0]?.pages()[0];
 if (!page) throw new Error("No Obsidian page from CDP");
 
-const rootSel = ".gw-root";
+const prefix = scenario === "signed-in" ? "" : `${scenario}-`;
 
 async function shot(name) {
-	await page.screenshot({ path: path.join(outDir, `${name}.png`) });
-}
-
-async function shotCanvas(name) {
-	const canvas = page.locator(`${rootSel} canvas.gw-force-canvas`).first();
-	if (!(await canvas.count())) {
-		await shot(name);
-		return;
-	}
-	const box = await canvas.boundingBox();
-	if (!box || box.width < 4 || box.height < 4) {
-		await shot(name);
-		return;
-	}
-	await page.screenshot({
-		path: path.join(outDir, `${name}.png`),
-		clip: { x: box.x, y: box.y, width: box.width, height: box.height },
-	});
-}
-
-/** Groundwork map column at a fixed width (toolbar + canvas + legend), not the Obsidian file tree. */
-async function shotMapColumn(name, columnWidth) {
-	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.evaluate((w) => {
-		const side = document.querySelector(".gw-root .gw-side");
-		const wrap = document.querySelector(".gw-root .gw-mapwrap");
-		if (side) side.style.display = "none";
-		if (wrap) {
-			wrap.style.width = `${w}px`;
-			wrap.style.maxWidth = `${w}px`;
-			wrap.style.minHeight = "480px";
+	const file = path.join(outDir, `${prefix}${name}.png`);
+	for (let attempt = 0; attempt < 5; attempt++) {
+		try {
+			await page.screenshot({ path: file });
+			return;
+		} catch (e) {
+			if (attempt === 4) throw e;
+			await sleep(400);
 		}
-	}, columnWidth);
-	await sleep(400);
-	const fitBtn = page.locator(`${rootSel} button[aria-label="Fit in window"]`).first();
-	if (await fitBtn.count()) {
-		await fitBtn.click({ force: true });
-		await sleep(500);
 	}
-	await page.locator(`${rootSel} .gw-mapwrap`).screenshot({ path: path.join(outDir, `${name}.png`) });
 }
 
-async function resetMapLayout() {
-	await page.evaluate(() => {
-		const side = document.querySelector(".gw-root .gw-side");
-		const wrap = document.querySelector(".gw-root .gw-mapwrap");
-		if (side) side.style.display = "";
-		if (wrap) {
-			wrap.style.width = "";
-			wrap.style.maxWidth = "";
-			wrap.style.minHeight = "";
-		}
-	});
+async function shotGroundwork(name) {
+	const file = path.join(outDir, `${prefix}${name}.png`);
+	await page.locator(".gw-root").screenshot({ path: file, timeout: 30_000 });
+}
+
+async function shotStatusBar(name) {
+	const file = path.join(outDir, `${prefix}${name}.png`);
+	await page.locator(".gw-statusbar").screenshot({ path: file, timeout: 15_000 });
+}
+
+async function shotGoalBar(name) {
+	const file = path.join(outDir, `${prefix}${name}.png`);
+	await page.locator(".gw-goalbar").screenshot({ path: file, timeout: 15_000 });
+}
+
+async function waitSignedInLinked() {
+	await page.waitForFunction(
+		() => /\bLinked\b/.test(document.querySelector(".gw-statusbar")?.textContent ?? ""),
+		{ timeout: 90_000 },
+	);
+	await page.waitForFunction(
+		() => {
+			const chip = document.querySelector(".gw-chip-provider");
+			if (!chip || chip.hasAttribute("hidden")) return true;
+			const text = chip.textContent ?? "";
+			return text.length > 0 && !/^Sign in$/i.test(text.trim());
+		},
+		{ timeout: 30_000 },
+	);
+	await page.locator(".gw-goalbar-label", { hasText: "Working goal" }).waitFor({ timeout: 15_000 });
+	await page.waitForFunction(
+		() => (document.querySelector(".gw-goal-select")?.options?.length ?? 0) >= 1,
+		{ timeout: 30_000 },
+	);
+	await page.waitForFunction(
+		() => {
+			const sel = document.querySelector(".gw-goal-select");
+			if (!sel || !("options" in sel) || sel.options.length < 1) return false;
+			const label = sel.options[sel.selectedIndex]?.text ?? "";
+			return /Calculus fluency|No goal pinned/.test(label);
+		},
+		{ timeout: 60_000 },
+	);
 }
 
 async function dismissStartupDialogs() {
@@ -190,8 +250,9 @@ async function dismissStartupDialogs() {
 	}
 }
 
-async function openTutor() {
-	if (await page.locator(rootSel).count()) return;
+await dismissStartupDialogs();
+
+if (!(await page.locator(".gw-root").count())) {
 	await page.keyboard.press("Control+p");
 	await sleep(400);
 	await page.keyboard.type("Groundwork: Open tutor", { delay: 15 });
@@ -201,110 +262,122 @@ async function openTutor() {
 	await dismissStartupDialogs();
 }
 
-async function openConceptMap() {
-	await page.locator(`${rootSel} button[role="tab"]`, { hasText: "Concept map" }).click();
-	await sleep(500);
-	await page.locator(rootSel).waitFor({ state: "visible" });
-	await sleep(2500);
-	const mapText = await page.locator(`${rootSel} .gw-map`).innerText().catch(() => "");
-	if (mapText.includes("Pin a goal")) {
-		await shot("00-map-empty-state");
-		throw new Error(`Concept map is empty: ${mapText.slice(0, 120)}`);
-	}
-	const err = await page.locator(`${rootSel} .gw-error`).first().textContent().catch(() => "");
-	if (err?.trim()) {
-		await shot("00-map-error");
-		throw new Error(`Concept map error: ${err.trim()}`);
-	}
-	await page.locator(`${rootSel} canvas.gw-force-canvas`).first().waitFor({ state: "attached", timeout: 35_000 });
-	await sleep(1000);
+const rootSel = ".gw-root";
+
+await page.waitForSelector('.gw-root[data-gw-ready="true"]', { timeout: 60_000 });
+if (scenario === "signed-in") {
+	await page.waitForSelector('.gw-root[data-gw-bootstrapped="true"]', { timeout: 120_000 });
 }
 
-async function runPalette(command) {
-	await page.keyboard.press("Control+p");
-	await sleep(350);
-	await page.keyboard.type(command, { delay: 12 });
-	await sleep(250);
-	await page.keyboard.press("Enter");
-	await sleep(900);
+if (scenario === "signed-in") {
+	await waitSignedInLinked();
+	await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 30_000 });
+	await sleep(800);
 }
 
-await dismissStartupDialogs();
-await openTutor();
-await page.waitForSelector(rootSel, { timeout: 30_000 });
-await sleep(4000);
-const goalSelect = page.locator(`${rootSel} .gw-goalchip select`);
-if (await goalSelect.count()) {
-	const options = await goalSelect.locator("option").allTextContents();
-	const pick = options.find((t) => t.includes("Midterm")) ?? options.find((t) => t && !/no goal/i.test(t));
-	if (pick) {
-		await goalSelect.selectOption({ label: pick });
-		await sleep(1500);
-	}
+await shot("01-learn-1280-light");
+if (scenario === "signed-in") {
+	await shotGoalBar("00-working-goal-bar");
+	await shotStatusBar("00-status-bar-linked");
 }
+
+await shotGroundwork("02-groundwork-column-360");
 
 await page.setViewportSize({ width: 1280, height: 800 });
-await openConceptMap();
-await shot("graph-main-tab-dark-1280");
-await shotCanvas("graph-canvas-main-dark-1280");
-
-for (const width of [280, 360]) {
-	await shotMapColumn(`graph-map-column-${width}-dark`, width);
-}
-await resetMapLayout();
-
-try {
-	await page.setViewportSize({ width: 1280, height: 800 });
-	await page.keyboard.press("Control+=");
-	await page.keyboard.press("Control+=");
-	await sleep(600);
-	await shotCanvas("graph-canvas-zoom-in-dark");
-	const fitBtn = page.locator(`${rootSel} button[aria-label="Fit in window"]`).first();
-	if (await fitBtn.count()) {
-		await fitBtn.click({ force: true });
-		await sleep(500);
-	}
-	const canvas = page.locator(`${rootSel} canvas.gw-force-canvas`).first();
-	const box = await canvas.boundingBox();
-	if (box) {
-		await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.42);
-		await sleep(400);
-		await shotCanvas("graph-canvas-hover-dark");
-		await page.mouse.down();
-		await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.38, { steps: 12 });
-		await page.mouse.up();
-		await sleep(800);
-		await shotCanvas("graph-canvas-drag-dark");
-	}
-} catch (e) {
-	console.warn("Zoom/hover/drag shots skipped:", e instanceof Error ? e.message : e);
-}
-
-await page.evaluate(() => {
-	const app = window.app;
-	if (!app) throw new Error("no app");
-	if (typeof app.changeTheme === "function") app.changeTheme("moonstone");
-	else if (typeof app.setTheme === "function") app.setTheme("moonstone");
-	else {
-		document.body.classList.remove("theme-dark");
-		document.body.classList.add("theme-light");
-	}
-});
-await sleep(1200);
-await openConceptMap();
-await shot("graph-main-tab-light-1280");
-await shotCanvas("graph-canvas-main-light-1280");
-for (const width of [280, 360]) {
-	await shotMapColumn(`graph-map-column-${width}-light`, width);
-}
-await shotMapColumn("graph-map-column-360-light-ghosts-on", 360);
-await page.locator(`${rootSel} button.gw-toggle`, { hasText: "Show concepts still ahead" }).click();
+await page.keyboard.press("Control+=");
+await page.keyboard.press("Control+=");
 await sleep(500);
-await shotMapColumn("graph-map-column-360-light-ghosts-off", 360);
-await page.locator(`${rootSel} .gw-seg button`, { hasText: "All concepts" }).click();
-await sleep(600);
-await shotMapColumn("graph-map-column-360-light-all-concepts", 360);
-await resetMapLayout();
+await shot("03-zoom-in");
+
+if (scenario === "signed-in") {
+	await page.keyboard.press("Escape");
+	await sleep(300);
+	await page.locator(`${rootSel} [data-testid="gw-library-btn"]`).click();
+	await page.waitForSelector(`${rootSel}.is-library`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel} .gw-lib-name`, { hasText: /Calculus/i, timeout: 20_000 });
+	await sleep(800);
+	await shotGroundwork("04-library");
+
+	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Concepts/ }).click({ timeout: 10_000 }).catch(() => {});
+	await sleep(600);
+	await shot("05-library-concepts");
+
+	await page.keyboard.press("Escape");
+	await sleep(400);
+	await page.locator(`${rootSel} [data-testid="gw-map-tab"]`).click();
+	await page.waitForSelector(`${rootSel}.is-map`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel} .gw-concept-map, ${rootSel} .gw-map-empty`, { timeout: 20_000 });
+	await sleep(800);
+	await shotGroundwork("06-map");
+
+	await page.locator(`${rootSel} [data-testid="gw-goals-tab"]`).click();
+	await page.waitForSelector(`${rootSel}.is-goals`, { timeout: 15_000 });
+	await sleep(1200);
+	await shotGroundwork("07-goals");
+
+	await page.locator(`${rootSel} button[aria-label="Flashcards"]`).click();
+	await page.waitForSelector(`${rootSel}.is-flashcards`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel} .gw-fc-loading, ${rootSel} .gw-fc-empty, ${rootSel} .gw-fcard`, { timeout: 20_000 });
+	await sleep(800);
+	await shotGroundwork("08-flashcards");
+
+	await page.keyboard.press("Escape");
+	await sleep(400);
+	await page.locator(`${rootSel} button[aria-label="Settings"]`).click();
+	await page.waitForSelector(`${rootSel}.is-settings`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel}.is-settings .gw-library-title`, { hasText: "Settings", timeout: 15_000 });
+	await page.waitForSelector(`${rootSel}.is-settings h3`, { timeout: 15_000 });
+	await sleep(600);
+	await shotGroundwork("09-settings");
+
+	await page.keyboard.press("Escape");
+	await sleep(400);
+	await page.locator(`${rootSel} button[aria-label="Library"]`).click();
+	await sleep(800);
+	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Chats/ }).click({ timeout: 15_000 });
+	await sleep(500);
+	const openChat = page.locator(`${rootSel} button`, { hasText: "Open" }).first();
+	if (await openChat.count()) {
+		await openChat.click();
+		await page.waitForSelector(`${rootSel}:not(.is-overlay)`, { timeout: 15_000 });
+		await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 25_000 });
+		await page.waitForSelector(`${rootSel} .gw-assistant`, { timeout: 25_000 });
+		await sleep(800);
+		await shotGroundwork("10-chat-seeded");
+	}
+	await page.keyboard.press("Escape");
+	await sleep(400);
+	await page.locator(`${rootSel} button[aria-label="Settings"]`).click();
+	await page.waitForSelector(`${rootSel}.is-settings`, { timeout: 15_000 });
+	await sleep(600);
+	await page.locator(`${rootSel} button.gw-appearance-btn`, { hasText: /^Dark$/ }).click({ timeout: 15_000 });
+	await sleep(500);
+	await page.keyboard.press("Escape");
+	await sleep(400);
+	await page.waitForSelector(`${rootSel}:not(.is-overlay)`, { timeout: 15_000 });
+	await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 20_000 });
+	await sleep(600);
+	await shotGroundwork("11-dark-learn");
+	await page.locator(`${rootSel} button[aria-label="Library"]`).click();
+	await sleep(1000);
+	await shot("12-dark-library");
+	await page.keyboard.press("Escape");
+	await sleep(300);
+	await page.locator(`${rootSel} button.gw-view[aria-label="Concept map"]`).click();
+	await sleep(1200);
+	await shot("13-dark-map");
+}
+
+if (scenario === "signed-out") {
+	await shot("04-signed-out-empty");
+}
+
+if (scenario === "new-account") {
+	await page.locator(`${rootSel} button[aria-label="Library"]`).click();
+	await sleep(1000);
+	await shot("04-new-account-library");
+	await page.keyboard.press("Escape");
+}
 
 await browser.close();
 try {
@@ -312,5 +385,6 @@ try {
 } catch {
 	child.kill("SIGTERM");
 }
+stopServer(serverChild);
 
-console.log(`Wrote Obsidian graph E2E screenshots to ${outDir}`);
+console.log(`Wrote Obsidian E2E (${scenario}) screenshots to ${outDir}`);

@@ -11,6 +11,7 @@ export interface MapPaneOptions {
 	onGhosts: (on: boolean) => void;
 	onStart?: (title: string) => void;
 	onStudy?: (title: string, action: "quiz" | "learn") => void;
+	onOpenGoals?: () => void;
 }
 
 function obsidianColor(doc: Document, cssVar: string, fallback: string): string {
@@ -25,6 +26,11 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	if (!model || !model.nodes.length) {
 		const empty = el(wrap, "div", "gw-map-empty");
 		empty.append("Pin a goal to see which concepts lead to it. Dashed nodes are still ahead on the path.");
+		const cta = el(empty, "button", "gw-next-btn");
+		cta.type = "button";
+		cta.textContent = "Open goals";
+		cta.setAttribute("title", "Choose or create a goal");
+		cta.addEventListener("click", () => options.onOpenGoals?.());
 		return;
 	}
 	const mapSlot = el(wrap, "div", "gw-force-map");

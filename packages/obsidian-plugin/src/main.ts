@@ -5,7 +5,17 @@ import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal, parseGroundworkConcept } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
-import { accountOrigin, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
+import {
+	accountOrigin,
+	accountOriginIsLocal,
+	accountSignInUrl,
+	DEFAULT_SETTINGS,
+	GROUNDWORK_WEB_API_KEY,
+	GroundworkSettingTab,
+	loadAccountToken,
+	saveAccountToken,
+	type GroundworkSettings,
+} from "./settings";
 import { closeSettings, pluginManager } from "./obsidian-host";
 import { ChatView, VIEW_TYPE } from "./view";
 
@@ -27,6 +37,7 @@ export default class GroundworkPlugin extends Plugin {
 	private readonly layoutReady = new Promise<void>((resolve) => {
 		this.markLayoutReady = resolve;
 	});
+	private bootstrapPromise: Promise<void> | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -41,7 +52,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.addRibbonIcon("graduation-cap", "Open Groundwork tutor", () => void this.activateView());
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass("gw-statusbar");
-		this.statusEl.addEventListener("click", () => void this.saveMemory(true));
+		this.statusEl.addEventListener("click", () => void this.onStatusBarClick());
 		this.renderStatus();
 
 		this.addCommand({ id: "open-tutor", name: "Open tutor", callback: () => void this.activateView() });
@@ -61,6 +72,11 @@ export default class GroundworkPlugin extends Plugin {
 			callback: async () => (await this.activateView())?.showFlashcards(),
 		});
 		this.addCommand({
+			id: "open-library",
+			name: "Open library",
+			callback: async () => (await this.activateView())?.openLibraryPanel(),
+		});
+		this.addCommand({
 			id: "recompute",
 			name: "Rebuild all mastery stats from evidence",
 			callback: async () => {
@@ -76,9 +92,7 @@ export default class GroundworkPlugin extends Plugin {
 
 		this.app.workspace.onLayoutReady(async () => {
 			this.markLayoutReady();
-			await this.connectMemory();
-			await this.refreshTutorRoute();
-			await this.store.ensureLayout();
+			await this.runBootstrap();
 			const reveal = this.takeOpenRequest();
 			const open = this.app.workspace.getLeavesOfType(VIEW_TYPE);
 			const inMain = open.some((leaf) => leaf.getRoot() === this.app.workspace.rootSplit);
@@ -375,10 +389,11 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 
-	/** ID token for the website after exchanging the stored refresh token. */
+	/** ID token for the website after exchanging the stored refresh token. Local dev uses the stored token as-is. */
 	private async accountAccessToken(): Promise<string | null> {
 		const refresh = loadAccountToken(this.app);
 		if (!refresh) return null;
+		if (accountOriginIsLocal()) return refresh;
 		try {
 			const session = await refreshFirebaseSession(refresh, GROUNDWORK_WEB_API_KEY);
 			if (session.refreshToken !== refresh) saveAccountToken(this.app, session.refreshToken);
@@ -405,7 +420,65 @@ export default class GroundworkPlugin extends Plugin {
 		return new AccountClient(accountOrigin(), token);
 	}
 
-	/** Load tutor memory from the website. An empty account picks up notes already in this vault, once. */
+	/** Account token, hosted memory, and tutor route — once per plugin load. */
+	runBootstrap(): Promise<void> {
+		if (!this.bootstrapPromise) this.bootstrapPromise = this.doBootstrap();
+		return this.bootstrapPromise;
+	}
+
+	private async doBootstrap(): Promise<void> {
+		await this.bootstrapAccountToken();
+		await this.importE2eMemoryFixture();
+		await this.connectMemory();
+		await this.refreshTutorRoute();
+		await this.store.ensureLayout();
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+			if (leaf.view instanceof ChatView) leaf.view.refreshAfterBootstrap();
+		}
+	}
+
+	/** Test harness: waits until account + memory bootstrap finished (same as layout ready path). */
+	async bootstrapForE2e(): Promise<void> {
+		await this.runBootstrap();
+	}
+
+	async importE2eMemoryFixture(): Promise<void> {
+		const paths = [
+			this.manifest.dir ? `${this.manifest.dir}/e2e-memory.json` : "",
+			".obsidian/plugins/groundwork/e2e-memory.json",
+		].filter(Boolean);
+		for (const path of paths) {
+			try {
+				const parsed = JSON.parse(await this.app.vault.adapter.read(path)) as { files?: unknown };
+				if (!parsed?.files || typeof parsed.files !== "object") continue;
+				replaceTutorMemoryFiles(this.memoryIO.files, { files: parseTutorMemoryFiles(parsed.files) });
+				this.store.invalidate();
+				return;
+			} catch {
+				/* try next path */
+			}
+		}
+	}
+
+	private async bootstrapAccountToken(): Promise<void> {
+		if (loadAccountToken(this.app)) return;
+		const paths = [
+			this.manifest.dir ? `${this.manifest.dir}/e2e-account-token` : "",
+			".obsidian/plugins/groundwork/e2e-account-token",
+		].filter(Boolean);
+		for (const path of paths) {
+			try {
+				const token = (await this.app.vault.adapter.read(path)).trim();
+				if (token) {
+					saveAccountToken(this.app, token);
+					return;
+				}
+			} catch {
+				/* try next path */
+			}
+		}
+	}
+
 	async connectMemory(): Promise<void> {
 		const client = await this.memoryClient();
 		if (!client) {
@@ -552,20 +625,60 @@ export default class GroundworkPlugin extends Plugin {
 		for (const v of this.views()) v.refreshSyncIndicator();
 	}
 
+	private onStatusBarClick(): void {
+		const { state } = this.syncStatus;
+		if (state === "offline") {
+			window.open(accountSignInUrl());
+			return;
+		}
+		if (state === "error") {
+			void this.connectMemory();
+			return;
+		}
+		if (state === "syncing") return;
+		void this.saveMemory(true);
+	}
+
 	private renderStatus(): void {
 		if (!this.statusEl) return;
 		const { state, text } = this.syncStatus;
-		const icon = { idle: "○", syncing: "↻", ok: "✓", offline: "⚠", error: "✕", disabled: "–" }[state];
-		const when = this.lastSync && state === "ok" ? ` ${this.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
-		this.statusEl.setText(`Groundwork ${icon}${when}`);
-		this.statusEl.setAttr("aria-label", `Tutor memory: ${text} (click to save to your account)`);
+		const short: Record<SyncUiState, string> = {
+			idle: "Starting",
+			syncing: "Syncing",
+			ok: "Linked",
+			offline: "Not linked",
+			error: "Sync failed",
+			disabled: "Sync off",
+		};
+		const when =
+			this.lastSync && state === "ok"
+				? ` · ${this.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+				: "";
+		this.statusEl.setText(`Groundwork · ${short[state]}${when}`);
+		const hint =
+			state === "offline"
+				? `${text} Open the Groundwork website, sign in, and choose Open Obsidian. Click to open sign-in.`
+				: state === "error"
+					? `${text} Click to try syncing tutor memory again.`
+					: state === "syncing"
+						? text
+						: state === "ok"
+							? `${text} Click to save tutor memory to your account now.`
+							: text;
+		this.statusEl.setAttr("title", hint);
+		this.statusEl.setAttr("aria-label", hint);
 		this.statusEl.setAttr("data-state", state);
+		this.statusEl.toggleClass("is-actionable", state === "offline" || state === "error" || state === "ok");
 	}
 
 	// ── settings ───────────────────────────────────────────────────────
 
 	async loadSettings(): Promise<void> {
-		const data = ((await this.loadData()) ?? {}) as Partial<GroundworkSettings> & { siteTheme?: unknown; provider?: string };
+		const data = ((await this.loadData()) ?? {}) as Partial<GroundworkSettings> & {
+			siteTheme?: unknown;
+			provider?: string;
+			accountToken?: string;
+		};
 		const appearance = appearanceFrom(data);
 		delete data.siteTheme;
 		if (data.provider !== "demo" && data.provider !== "claude-code") data.provider = "claude-code";
@@ -573,6 +686,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.settings.appearance = appearance;
 		this.settings.readFolders = cleanFolderList("readFolders" in data ? data.readFolders : DEFAULT_SETTINGS.readFolders);
 		this.settings.writeFolders = cleanFolderList("writeFolders" in data ? data.writeFolders : DEFAULT_SETTINGS.writeFolders);
+		delete (this.settings as { accountToken?: string }).accountToken;
 	}
 
 	async saveSettings(): Promise<void> {
