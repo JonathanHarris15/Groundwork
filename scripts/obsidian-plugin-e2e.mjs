@@ -343,7 +343,7 @@ if (scenario === "signed-in") {
 	await sleep(400);
 	await page.locator(`${rootSel} [data-testid="gw-map-tab"]`).click();
 	await page.waitForSelector(`${rootSel}.is-map`, { timeout: 15_000 });
-	await page.waitForSelector(`${rootSel} .gw-concept-map, ${rootSel} .gw-map-empty`, { timeout: 60_000 });
+	await page.waitForSelector(`${rootSel} .gw-force-map, ${rootSel} .gw-map-empty`, { timeout: 60_000 });
 	await sleep(800);
 	await shotGroundwork("06-map");
 
