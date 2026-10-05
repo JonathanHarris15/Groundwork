@@ -3,7 +3,7 @@ import type { ConceptStatus } from "../model";
 import type { GroundworkGraph } from "../groundwork-graph";
 import { GROUNDWORK_COLORS } from "../groundwork-graph";
 import { MASTERY_LABEL, MASTERY_TONES, masteryTone, STUDY_MOVE_HINT, studyMove } from "../mastery-tone";
-import { STATUS_COLORS, TONE_FALLBACK_COLORS } from "./colors";
+import { TONE_FALLBACK_COLORS } from "./colors";
 import type { ForceGraphData, ForceGraphLegendItem, ForceGraphLink, ForceGraphNode } from "./types";
 
 export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
@@ -69,18 +69,9 @@ export function buildFromGroundwork(
 	}
 	const nodes: ForceGraphNode[] = graph.nodes.map((node) => {
 		const status = statusOf.get(node.id) ?? "unassessed";
+		const tone = masteryTone(status);
 		const deg = degree.get(node.id) ?? 0;
-		const open = status === "unassessed";
 		const attention = status === "unassessed" || status === "shaky" || status === "rusty";
-		const hint = opts.studyHints
-			? `${MASTERY_LABEL[masteryTone(status)]} — ${STUDY_MOVE_HINT[studyMove(masteryTone(status))]}`
-			: status === "unassessed"
-				? "Not quizzed yet — find it in the list below"
-				: status === "shaky" || status === "rusty"
-					? "Needs review — find it in the list below"
-					: status === "learning"
-						? "Still building — see the list below"
-						: "Solid — see the list below";
 		const placed = graph.nodes.find((n) => n.id === node.id);
 		return {
 			id: node.id,
@@ -90,14 +81,15 @@ export function buildFromGroundwork(
 			vx: 0,
 			vy: 0,
 			radius: 5 + Math.min(12, Math.sqrt(deg + 1) * 2.4),
-			color: open ? node.color : STATUS_COLORS[status],
+			color: TONE_FALLBACK_COLORS[tone],
 			cluster: node.domain,
 			status,
-			tone: open ? undefined : masteryTone(status),
-			open,
+			tone,
+			open: tone === "unstarted",
 			label: deg >= 2 || graph.nodes.length <= 8 || attention,
 			needsAttention: attention && opts.attentionRings !== false,
-			actionHint: hint,
+			// The hover tip already names the state, so the hint only says what a click does.
+			actionHint: opts.studyHints ? STUDY_MOVE_HINT[studyMove(tone)] : "find it in the list below",
 		};
 	});
 	const links: ForceGraphLink[] = graph.edges.map((edge) => ({
@@ -106,9 +98,7 @@ export function buildFromGroundwork(
 		bridge: edge.bridge,
 	}));
 	const legend: ForceGraphLegendItem[] = [
-		...(graph.legend ?? []).map((item) => ({ key: item.domain, label: item.domain, color: item.color })),
-		{ key: "status-solid", label: "Solid", color: STATUS_COLORS.solid },
-		{ key: "status-open", label: "Not quizzed", color: STATUS_COLORS.unassessed },
+		...MASTERY_TONES.map((tone) => ({ key: tone, label: MASTERY_LABEL[tone], color: TONE_FALLBACK_COLORS[tone] })),
 		{ key: "edge-built", label: "Solid arrow — groundwork you build on", color: "#7f848e" },
 		{ key: "edge-bridge", label: "Dashed arrow — ties two subjects", color: "#a8adb6" },
 	];

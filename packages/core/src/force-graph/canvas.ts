@@ -1,3 +1,4 @@
+import { masteryLabel } from "../mastery-tone";
 import { createSimulationState, seedPositions, simulationTick } from "./simulation";
 import { readGraphTheme, withAlpha, type GraphPaintTheme } from "./theme";
 import type { ForceGraphData, ForceGraphLink, ForceGraphNode } from "./types";
@@ -444,7 +445,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			const node = nodes.find((n) => n.id === id);
 			if (node) {
 				const lines = [node.title];
-				if (node.status) lines.push(statusLabel(node.status));
+				if (node.status) lines.push(masteryLabel(node.status));
 				if (node.actionHint) lines.push(node.actionHint);
 				tip.textContent = lines.join(" · ");
 			} else tip.textContent = "";
@@ -550,12 +551,4 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 
 function cloneNode(node: ForceGraphNode): ForceGraphNode {
 	return { ...node, vx: 0, vy: 0, fixed: false };
-}
-
-function statusLabel(status: NonNullable<ForceGraphNode["status"]>): string {
-	if (status === "solid") return "Solid";
-	if (status === "learning") return "Learning";
-	if (status === "shaky") return "Shaky";
-	if (status === "rusty") return "Rusty";
-	return "Not quizzed";
 }
