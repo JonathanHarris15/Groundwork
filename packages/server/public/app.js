@@ -241,13 +241,13 @@ function showAccount() {
 		? ""
 		: account.hasBilling
 			? `<p class="hint">Billing portal is unavailable on this server.</p>`
-			: `<p class="hint">No active subscription. Use Change plan below to start checkout.</p>`;
+			: `<p class="hint">No paid subscription yet. Choose <strong>Change plan</strong> below to start checkout.</p>`;
 	show(`
 		<div class="account-shell">
 		${notice(true)}
 		<header class="page-head">
 			<h1>${greeting}</h1>
-			<p class="welcome-sub">${emptyRecord ? "Open Obsidian on this computer to start studying. Your record fills in after the first session." : "Goals, concepts, and plan usage from Obsidian show up here as you study."}</p>
+			<p class="welcome-sub">${emptyRecord ? "Choose <strong>Open Obsidian</strong> below to link the plugin on this computer. Goals and concepts appear here after you study." : "Goals, concepts, and plan usage from Obsidian show up here as you study."}</p>
 		</header>
 		${emptyRecord ? firstRunChecklist() : `${board()}<p class="account-actions"><button class="btn btn-ink" type="button" id="open-obsidian">Open Obsidian</button></p>`}
 		<div class="settings">
@@ -395,9 +395,9 @@ function firstRunChecklist() {
 		<section class="start-checklist" aria-labelledby="start-title">
 			<h2 id="start-title" class="start-title">First session</h2>
 			<ol class="start-steps">
-				<li><span class="start-step-num" aria-hidden="true">1</span><div><strong>Open Obsidian</strong><p>Groundwork connects this browser sign-in to the plugin on this computer.</p></div></li>
-				<li><span class="start-step-num" aria-hidden="true">2</span><div><strong>Install the plugin if asked</strong><p>Obsidian may open the Groundwork listing in the community catalog.</p></div></li>
-				<li><span class="start-step-num" aria-hidden="true">3</span><div><strong>Study in the vault</strong><p>Choose folders, set a goal, and quiz. Concepts and goals sync back here automatically.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">1</span><div><strong>Open Obsidian</strong><p>Press the button below. Obsidian opens and links this sign-in to the plugin.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">2</span><div><strong>Install Groundwork if prompted</strong><p>Obsidian may open the community plugin page. Enable the plugin once.</p></div></li>
+				<li><span class="start-step-num" aria-hidden="true">3</span><div><strong>Start studying</strong><p>In the Groundwork panel, name your exam or topic, or attach a syllabus. Quizzes sync concepts back here.</p></div></li>
 			</ol>
 			<div class="start-actions">
 				<button class="btn btn-ink btn-wide" type="button" id="open-obsidian">Open Obsidian</button>
