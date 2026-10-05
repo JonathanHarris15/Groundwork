@@ -1,9 +1,9 @@
 {
 	"id": "groundwork",
 	"name": "Groundwork",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"minAppVersion": "1.8.7",
-	"description": "Groundwork plans from first principles, quizzes what you know, and keeps memory on your Groundwork account. Obsidian is the study panel; the vault only holds files you ask to save.",
+	"description": "Plans from first principles, quizzes what you know, and keeps memory on your Groundwork account. Study in a side panel beside your notes; your vault only holds files you ask to save.",
 	"author": "Jonathan Harris",
 	"authorUrl": "https://github.com/JonathanHarris15",
 	"isDesktopOnly": true
