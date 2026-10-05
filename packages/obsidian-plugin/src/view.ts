@@ -1356,13 +1356,8 @@ export class ChatView extends ItemView implements ToolUI {
 			app: this.app,
 			store: this.plugin.store,
 			writeFolders: () => this.plugin.settings.writeFolders,
-			goalId: () => this.uiGoalEl?.value ?? "",
 			renderMarkdown: (el, md) => this.renderMd(el, md),
 			onManageCards: () => void this.openLibraryFlashcards(),
-			onFocusWorkingGoal: () => {
-				this.uiGoalEl?.focus();
-				this.uiGoalEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-			},
 		};
 	}
 
@@ -1504,9 +1499,7 @@ export class ChatView extends ItemView implements ToolUI {
 			await renderFlashcardsLibrary(scroll, {
 				store,
 				writeFolders: () => this.plugin.settings.writeFolders,
-				goals: () => store.goals(),
-				pinnedGoalId: () => this.uiGoalEl?.value ?? "",
-				onStudy: (goalId) => void this.studyDeck(goalId),
+				onStudy: (deckId) => void this.studyDeck(deckId),
 				renderMarkdown: (el, md) => this.renderMd(el, md),
 			});
 			return;
@@ -2149,15 +2142,9 @@ export class ChatView extends ItemView implements ToolUI {
 		this.startPracticeTest();
 	}
 
-	/** Pin a goal and open its deck in the Flashcards tab. */
-	private async studyDeck(goalId: string): Promise<void> {
-		try {
-			await this.plugin.store.setWorkingGoal(goalId);
-			await this.refreshGoalSelect();
-		} catch (err) {
-			new Notice(err instanceof Error ? err.message : String(err));
-			return;
-		}
+	/** Open a deck in the Flashcards tab. */
+	private async studyDeck(deckId: string): Promise<void> {
+		this.flashPane?.study(deckId);
 		await this.showScreen("flashcards");
 	}
 

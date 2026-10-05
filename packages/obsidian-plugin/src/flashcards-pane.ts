@@ -13,7 +13,6 @@ import {
 	type Concept,
 	type Flashcard,
 	type FlashcardLibrary,
-	type Goal,
 	type KnowledgeStore,
 	type MasteryTone,
 	slugify,
@@ -25,10 +24,8 @@ export interface FlashcardsHost {
 	app: App;
 	store: KnowledgeStore;
 	writeFolders: () => string[];
-	goalId: () => string;
 	renderMarkdown: RenderMarkdown;
 	onManageCards: () => void;
-	onFocusWorkingGoal?: () => void;
 }
 
 const RATINGS: Array<{ rating: CardRating; label: string; key: string }> = [
@@ -41,9 +38,9 @@ const RATINGS: Array<{ rating: CardRating; label: string; key: string }> = [
 export class FlashcardsPane {
 	private active = false;
 	private lib: FlashcardLibrary = emptyFlashcardLibrary();
-	private goals: Goal[] = [];
 	private concepts = new Map<string, Concept>();
 	private deckId = "";
+	private requestedDeckId = "";
 	private queue: Flashcard[] = [];
 	private history: CardRating[] = [];
 	private misses: Array<{ concept: string; front: string }> = [];
@@ -66,7 +63,7 @@ export class FlashcardsPane {
 		try {
 			this.lib = await syncFlashcards(this.host.store, this.host.writeFolders());
 			await this.loadContext();
-			this.syncDeckToWorkingGoal();
+			this.applyRequestedDeck();
 			this.startSession();
 			this.draw();
 			this.root.focus();
@@ -81,18 +78,44 @@ export class FlashcardsPane {
 		this.renderGen++;
 	}
 
-	/** Follows Working on. A new deck starts a new session; the same deck keeps the one in progress. */
+	/** Reload cards and keep the session on the deck already open. */
 	refresh(): void {
-		if (!this.active || this.pinnedGoalId() === this.deckId) return;
-		this.syncDeckToWorkingGoal();
-		this.startSession();
+		if (!this.active) return;
+		const gen = ++this.renderGen;
+		void this.reload(gen);
+	}
+
+	/** Open this deck the next time the pane is shown. If it is already showing, switch now. */
+	study(deckId: string): void {
+		const id = deckId.trim();
+		if (!id) return;
+		this.requestedDeckId = id;
+		if (this.active) this.refresh();
+	}
+
+	private async reload(gen: number): Promise<void> {
+		try {
+			this.lib = await syncFlashcards(this.host.store, this.host.writeFolders());
+			await this.loadContext();
+		} catch {
+			return;
+		}
+		if (!this.active || gen !== this.renderGen) return;
+		const before = this.deckId;
+		this.applyRequestedDeck();
+		if (this.deckId !== before) this.startSession();
+		else {
+			const live = new Map(this.scopedCards().map((card) => [card.id, card]));
+			this.queue = this.queue.flatMap((card) => {
+				const next = live.get(card.id);
+				return next ? [next] : [];
+			});
+		}
 		this.draw();
 	}
 
 	private async loadContext(): Promise<void> {
-		const [goals, concepts] = await Promise.all([this.host.store.goals(), this.host.store.concepts()]);
-		this.goals = goals;
-		this.concepts = concepts;
+		this.concepts = await this.host.store.concepts();
 	}
 
 	private startSession(): void {
@@ -103,21 +126,11 @@ export class FlashcardsPane {
 	}
 
 	private makeQueue(): Flashcard[] {
-		const goal = this.goals.find((g) => g.id === this.deckId);
-		const rank = new Map<string, number>();
-		if (goal) {
-			const targets = [...goal.targets].sort((a, b) => (this.concepts.get(a)?.stats.current ?? 1) - (this.concepts.get(b)?.stats.current ?? 1));
-			targets.forEach((id, i) => rank.set(id, i));
-			let n = rank.size;
-			for (const id of [...goal.nodes, ...goal.built]) if (!rank.has(id)) rank.set(id, n++);
-		}
-		return buildStudyQueue(cardsInDeck(this.lib, this.deckId, this.goals), new Date(), {
-			rank: (concept) => rank.get(slugify(concept)) ?? 1000,
-		});
+		return buildStudyQueue(this.scopedCards(), new Date());
 	}
 
 	private scopedCards(): Flashcard[] {
-		return cardsInDeck(this.lib, this.deckId, this.goals);
+		return cardsInDeck(this.lib, this.deckId);
 	}
 
 	private onKey(e: KeyboardEvent): void {
@@ -165,16 +178,16 @@ export class FlashcardsPane {
 		}
 	}
 
-	private pinnedGoalId(): string {
-		return this.host.goalId()?.trim() ?? "";
+	private sortedDecks() {
+		return [...this.lib.decks].sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
 	}
 
-	private syncDeckToWorkingGoal(): void {
-		this.deckId = this.pinnedGoalId();
-	}
-
-	private activeGoal(): Goal | undefined {
-		return this.goals.find((g) => g.id === this.deckId);
+	private applyRequestedDeck(): void {
+		const decks = this.sortedDecks();
+		const requested = this.requestedDeckId;
+		this.requestedDeckId = "";
+		if (requested && decks.some((deck) => deck.id === requested)) this.deckId = requested;
+		else if (!decks.some((deck) => deck.id === this.deckId)) this.deckId = decks[0]?.id ?? "";
 	}
 
 	private draw(): void {
@@ -182,8 +195,8 @@ export class FlashcardsPane {
 		const now = new Date();
 		this.root.empty();
 		this.root.toggleClass("is-revealed", this.revealed);
-		if (!this.deckId) {
-			this.drawUnpinned();
+		if (!this.deckId || !this.lib.decks.some((deck) => deck.id === this.deckId)) {
+			this.drawNoDeck();
 			return;
 		}
 		const body = this.root.createDiv({ cls: "gw-fc-body" });
@@ -194,32 +207,40 @@ export class FlashcardsPane {
 		if (gen !== this.renderGen) return;
 	}
 
-	private drawUnpinned(): void {
+	private drawNoDeck(): void {
 		const body = this.root.createDiv({ cls: "gw-fc-body gw-fc-unpinned" });
 		const main = body.createDiv({ cls: "gw-fc-main" });
 		const top = main.createDiv({ cls: "gw-fc-top" });
 		const deck = top.createDiv({ cls: "gw-deck" });
 		deck.createSpan({ cls: "gw-deck-k", text: "Flashcards" });
 		const empty = main.createDiv({ cls: "gw-fc-empty gw-fc-unpinned-empty" });
-		empty.createEl("h2", { cls: "gw-goals-unpinned-title", text: "Select a goal to review its cards" });
+		empty.createEl("h2", { cls: "gw-goals-unpinned-title", text: "No decks yet" });
 		const hint = empty.createEl("p", { cls: "gw-goals-unpinned-hint" });
-		hint.textContent = "Flashcards live on the goal you pin in Working on. Each goal has its own deck.";
-		const focus = empty.createEl("button", { cls: "gw-next-btn", text: "Choose in Working on", attr: { type: "button" } });
-		focus.addEventListener("click", () => this.host.onFocusWorkingGoal?.());
-		const manage = empty.createEl("button", { cls: "gw-text-btn", text: "Manage cards", attr: { type: "button", title: "Edit decks and cards in Library" } });
+		hint.textContent = "Make a deck in Library. Add cards yourself, or ask the tutor to make them.";
+		const manage = empty.createEl("button", { cls: "gw-next-btn", text: "Manage cards", attr: { type: "button", title: "Edit decks and cards in Library" } });
 		manage.addEventListener("click", () => this.host.onManageCards());
 	}
 
 	private deckTitle(): string {
-		return this.activeGoal()?.title ?? this.lib.decks.find((d) => d.id === this.deckId)?.title ?? "Goal deck";
+		return this.lib.decks.find((d) => d.id === this.deckId)?.title ?? "Deck";
 	}
 
 	private drawTop(parent: HTMLElement, now: Date): void {
 		const top = parent.createDiv({ cls: "gw-fc-top" });
 		const deck = top.createDiv({ cls: "gw-deck" });
-		deck.createSpan({ cls: "gw-deck-k", text: "Flashcards · goal deck" });
+		deck.createSpan({ cls: "gw-deck-k", text: "Flashcards" });
 		const titleRow = deck.createDiv({ cls: "gw-deck-title-row" });
-		titleRow.createEl("span", { cls: "gw-deck-t", text: this.deckTitle() });
+		const select = titleRow.createEl("select", { cls: "gw-deck-select", attr: { "aria-label": "Flashcard deck" } });
+		for (const item of this.sortedDecks()) {
+			const option = select.createEl("option", { text: item.title, attr: { value: item.id } });
+			if (item.id === this.deckId) option.selected = true;
+		}
+		select.addEventListener("change", () => {
+			if (select.value === this.deckId) return;
+			this.deckId = select.value;
+			this.startSession();
+			this.draw();
+		});
 		const meta = top.createDiv({ cls: "gw-fc-meta" });
 		const counts = flashcardCounts(this.scopedCards(), now);
 		for (const [n, label] of [
@@ -271,7 +292,7 @@ export class FlashcardsPane {
 				.sort((a, b) => a.due.localeCompare(b.due))[0];
 			empty.createDiv({
 				cls: "gw-fc-empty-sub",
-				text: next ? `Next card ${formatWhen(next.due, now)}.` : "New cards from teaching notes show up here. Manage cards in Library when you want to edit the deck.",
+				text: next ? `Next card ${formatWhen(next.due, now)}.` : "Nothing in this deck is due. Add cards in Library, or ask the tutor to make some.",
 			});
 			return;
 		}

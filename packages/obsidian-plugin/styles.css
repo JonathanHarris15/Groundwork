@@ -2853,10 +2853,6 @@ body .gw-root select.gw-goal-select {
 	min-width: 0;
 	overflow-wrap: anywhere;
 }
-.gw-fc-lib-deck-note {
-	font-size: 11px;
-	color: var(--gw-muted);
-}
 body .gw-root button.gw-fc-lib-deck {
 	height: auto;
 	white-space: normal;
@@ -2876,18 +2872,10 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 .gw-fc-lib-bar {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: flex-start;
 	flex-wrap: wrap;
-	gap: 10px 16px;
+	gap: 8px;
 	margin-bottom: 14px;
-}
-.gw-fc-lib-switch {
-	display: inline-flex;
-	align-items: center;
-	gap: 10px;
-	font-size: var(--font-ui-small);
-	color: var(--text-normal);
-	cursor: pointer;
 }
 .gw-fc-lib-main {
 	min-width: 0;
@@ -3039,8 +3027,25 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 	color: var(--text-normal);
 	background: transparent;
 	border: none;
-	padding: 0;
-	max-width: 100%;
+	padding: 0 1.4em 0 0;
+	max-width: min(100%, 28rem);
+	cursor: pointer;
+}
+body .gw-root select.gw-deck-select {
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	color: var(--text-normal);
+	font: inherit;
+	font-size: 20px;
+	font-weight: 500;
+	height: auto;
+	padding: 0 1.4em 0 0;
+	max-width: min(100%, 28rem);
+}
+body .gw-root select.gw-deck-select:focus-visible {
+	outline: 2px solid var(--gw-line-strong);
+	outline-offset: 2px;
 }
 .gw-deck-t {
 	font-size: 20px;

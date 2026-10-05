@@ -851,14 +851,14 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "save_flashcard",
 		description:
-			"Save one flashcard on the learner's account. It is not copied into the vault unless they ask to write the cards down. One concept, one atomic question, back is a few words (no comma lists). Pass deck as a goal title when the card belongs to that goal.",
+			"Save one flashcard on the learner's account when they asked for a card. It is not copied into the vault unless they ask to write the cards down. One concept, one atomic question, back is a few words (no comma lists). deck is any deck name. A new name creates that deck. Omit it for the Library deck.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				concept: str("Concept this card checks. The title of a concept you have already saved."),
 				front: str("One specific question with a single short answer (not “list all types of…”). Markdown and LaTeX allowed."),
 				back: str("A few words max — one atomic answer, no comma-separated lists."),
-				deck: str("Goal title this card belongs to. Omit for the Library deck."),
+				deck: str("Deck name. A name that does not exist yet creates that deck. Omit for the Library deck."),
 			},
 			required: ["concept", "front", "back"],
 		},
@@ -866,7 +866,7 @@ export const TOOLS: ToolDef[] = [
 			try {
 				const saved = await saveFlashcard(ctx.store, { concept, front, back, deck });
 				return {
-					text: `Saved a flashcard on ${saved.card.concept}. It stays on the account until the learner asks to write cards into the vault.`,
+					text: `Saved a flashcard on ${saved.card.concept} in ${saved.deckTitle}. It stays on the account until the learner asks to write cards into the vault.`,
 					summary: `Saved a flashcard on ${saved.card.concept}`,
 				};
 			} catch (err) {
@@ -877,16 +877,20 @@ export const TOOLS: ToolDef[] = [
 	},
 	{
 		name: "list_due_flashcards",
-		description: "Flashcards that are due now: new cards, cards in learning, and reviews whose interval has elapsed. Use this before offering a flashcard session.",
+		description:
+			"Decks on the account, and flashcards that are due now: new cards, cards in learning, and reviews whose interval has elapsed. Use this before offering a flashcard session or choosing a deck.",
 		inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50 } } },
 		async run({ limit }: { limit?: number }, { store }) {
 			const lib = await loadFlashcardLibrary(store.io);
+			const deckTitle = (id: string) => lib.decks.find((d) => d.id === id)?.title ?? id;
+			const names = [...lib.decks].sort((a, b) => a.title.localeCompare(b.title)).map((d) => d.title);
+			const deckLine = names.length ? `Decks: ${names.join(", ")}` : "Decks: none yet";
 			const due = buildStudyQueue(lib.cards, new Date());
 			const shown = due.slice(0, limit ?? 20);
-			if (!shown.length) return { text: "No flashcards are due.", summary: "No flashcards due" };
-			const lines = shown.map((c) => `- ${c.concept} [${c.state}] ${c.front.split("\n")[0]}`);
+			if (!shown.length) return { text: `No flashcards are due.\n${deckLine}`, summary: "No flashcards due" };
+			const lines = shown.map((c) => `- ${c.concept} · ${deckTitle(c.deckId)} [${c.state}] ${c.front.split("\n")[0]}`);
 			const more = due.length > shown.length ? `\n${due.length - shown.length} more due.` : "";
-			return { text: `${lines.join("\n")}${more}`, summary: `${due.length} flashcard${due.length === 1 ? "" : "s"} due` };
+			return { text: `${deckLine}\n${lines.join("\n")}${more}`, summary: `${due.length} flashcard${due.length === 1 ? "" : "s"} due` };
 		},
 	},
 	{
