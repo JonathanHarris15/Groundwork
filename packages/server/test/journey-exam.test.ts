@@ -31,7 +31,7 @@ function capture(reply: unknown, status = 200): { fetchImpl: typeof fetch; calls
 }
 
 function deps(over: Partial<ServerDeps> = {}): ServerDeps {
-	const auth: Auth = { firebase: false, async uid() { return { uid: "exam-learner", email: "learner@example.com", name: "Exam Learner" }; } };
+	const auth: Auth = { firebase: false, async uid() { return { uid: "exam-learner", email: "learner@example.com", name: "Exam Learner" }; }, async revokeRefreshTokens() {} };
 	return {
 		auth,
 		accounts: new AccountDirectory(),

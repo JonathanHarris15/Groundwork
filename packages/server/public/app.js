@@ -331,18 +331,36 @@ function renderChip() {
 	const photo = user.photoURL ? `<img alt="" src="${escapeAttr(user.photoURL)}" />` : letter;
 	chip.innerHTML = `<span class="avatar">${photo}</span><span class="who"><span class="who-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span><button class="link-btn chip-signout" id="sign-out" type="button" aria-label="Sign out">Sign out</button>`;
 	chip.querySelector("#sign-out").addEventListener("click", () => {
-		actionError = "";
-		if (user?._local) {
-			user = null;
-			account = null;
-			providers = null;
-			tutor = null;
-			groundwork = emptyGroundwork();
-			location.hash = "";
-			paint();
-			return;
-		}
-		firebaseAuth.signOut(auth);
+		void (async () => {
+			actionError = "";
+			if (user?._local) {
+				user = null;
+				account = null;
+				providers = null;
+				tutor = null;
+				groundwork = emptyGroundwork();
+				try {
+					localStorage.removeItem("groundwork-obsidian-linked");
+				} catch {
+					/* ignore */
+				}
+				location.hash = "";
+				paint();
+				return;
+			}
+			try {
+				const token = await authToken();
+				if (token) await send("/v1/auth/sign-out", {}, token);
+			} catch {
+				// Still sign out in the browser even if revocation fails.
+			}
+			try {
+				localStorage.removeItem("groundwork-obsidian-linked");
+			} catch {
+				/* ignore */
+			}
+			firebaseAuth.signOut(auth);
+		})();
 	});
 }
 
@@ -514,6 +532,10 @@ function obsidianStudyReady() {
 function obsidianStudyUrl(title) {
 	const q = encodeURIComponent(String(title ?? "").trim());
 	if (!q) return null;
+	const refresh = user?.refreshToken;
+	if (refresh) {
+		return `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}&concept=${q}`;
+	}
 	return `obsidian://groundwork?concept=${q}`;
 }
 
@@ -988,6 +1010,11 @@ function openObsidian() {
 		if (settled) return;
 		if (opened) {
 			stop();
+			try {
+				localStorage.setItem("groundwork-obsidian-linked", "1");
+			} catch {
+				/* ignore */
+			}
 			if (button && button.isConnected) {
 				button.disabled = false;
 				button.textContent = "Open Obsidian";

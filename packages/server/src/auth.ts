@@ -13,6 +13,8 @@ export interface Identity {
 export interface Auth {
 	/** Resolves the signed-in user. Local mode, before Firebase is attached, uses one shared id. */
 	uid(authorization: string | undefined): Promise<Identity>;
+	/** Invalidates refresh tokens so Obsidian and other devices must sign in again. */
+	revokeRefreshTokens(uid: string): Promise<void>;
 	readonly firebase: boolean;
 }
 
@@ -24,7 +26,15 @@ export function firebaseConfigured(): boolean {
 
 export function loadAuth(): Auth {
 	if (!firebaseConfigured()) {
-		return { firebase: false, async uid() { return { uid: LOCAL_UID }; } };
+		return {
+			firebase: false,
+			async uid() {
+				return { uid: LOCAL_UID };
+			},
+			async revokeRefreshTokens() {
+				/* local dev has no Firebase sessions to revoke */
+			},
+		};
 	}
 	const app = ensureApp();
 	const auth = getAuth(app);
@@ -36,6 +46,9 @@ export function loadAuth(): Auth {
 			const decoded = await auth.verifyIdToken(match[1]);
 			const name = typeof decoded.name === "string" ? decoded.name : undefined;
 			return { uid: decoded.uid, email: decoded.email, name };
+		},
+		async revokeRefreshTokens(uid) {
+			await auth.revokeRefreshTokens(uid);
 		},
 	};
 }

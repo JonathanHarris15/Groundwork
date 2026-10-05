@@ -32,7 +32,7 @@ function billing(over: Partial<Billing> = {}): Billing {
 }
 
 function deps(over: Partial<ServerDeps> = {}): ServerDeps {
-	const auth: Auth = { firebase: false, async uid() { return { uid: "local", email: "ada@example.com", name: "Ada" }; } };
+	const auth: Auth = { firebase: false, async uid() { return { uid: "local", email: "ada@example.com", name: "Ada" }; }, async revokeRefreshTokens() {} };
 	return {
 		auth,
 		accounts: new AccountDirectory(),
@@ -123,6 +123,7 @@ describe("account server", () => {
 		expect(site?.body).toContain('src="/force-graph.js?v=2"');
 		expect(site?.body).toContain('src="/app.js?v=16"');
 		expect(site?.body).toContain('href="/styles.css?v=5"');
+		expect(site?.body).toContain("Groundwork plans from first principles");
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
@@ -182,6 +183,7 @@ describe("account server", () => {
 				async uid() {
 					throw Object.assign(new Error("Sign in required."), { status: 401 });
 				},
+				async revokeRefreshTokens() {},
 			},
 		});
 		const prodConfig = await route("GET", "/v1/web-config", null, prodAuth);
@@ -336,6 +338,24 @@ describe("account server", () => {
 		expect(rejected.status).toBe(400);
 		expect(JSON.stringify(rejected.json)).toMatch(/not tutor memory/);
 		expect((await route("GET", "/v1/memory", null, server)).json).toMatchObject({ files: { "learner.md": "Learns by examples." } });
+	});
+
+	it("revokes refresh tokens on website sign-out", async () => {
+		const server = deps();
+		let revoked: string | null = null;
+		server.auth = {
+			firebase: true,
+			async uid() {
+				return { uid: "local", email: "ada@example.com", name: "Ada" };
+			},
+			async revokeRefreshTokens(uid) {
+				revoked = uid;
+			},
+		};
+		const out = await route("POST", "/v1/auth/sign-out", {}, server, "Bearer test-token");
+		expect(out.status).toBe(200);
+		expect(out.json).toEqual({ ok: true });
+		expect(revoked).toBe("local");
 	});
 
 	it("lets the plugin ack an Open Obsidian click before the page checks", async () => {

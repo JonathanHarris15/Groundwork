@@ -36,6 +36,7 @@ function multiAuth(users: Record<string, Identity>): Auth {
 			if (!user) throw Object.assign(new Error("Sign in required."), { status: 401 });
 			return user;
 		},
+		async revokeRefreshTokens() {},
 	};
 }
 
