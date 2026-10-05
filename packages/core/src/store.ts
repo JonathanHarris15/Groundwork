@@ -1165,7 +1165,7 @@ export class KnowledgeStore {
 			"```",
 			"",
 			"> [!info] Legend",
-			"> Hexagons are targets (not built yet). Rounded nodes are targets already built. Rectangles are steps on the way. Arrows point from a prerequisite to what it unlocks. Green = solid, amber = shaky, orange = learning, purple = rusty (review due), grey = not assessed yet.",
+			"> Hexagons are targets (not built yet). Rounded nodes are targets already built. Rectangles are steps on the way. Arrows point from a prerequisite to what it unlocks. Green = solid, orange = shaky, blue = learning, purple = rusty (review due), grey = not started.",
 			"",
 			`### Progress — ${describeGoalProgress(goal)}`,
 			"",

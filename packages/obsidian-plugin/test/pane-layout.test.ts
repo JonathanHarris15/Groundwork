@@ -1,53 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { closeOverlay, openOverlay, paneRootClasses, setScreen, type PaneLayoutState } from "../src/pane-layout";
+import { INITIAL_PANE, PRIMARY_TABS, paneRootClasses, setScreen, toggleUtility } from "../src/pane-layout";
 
-const learn: PaneLayoutState = { screen: "learn", overlay: null };
-
-describe("paneRootClasses", () => {
-	it("shows learn body only on the learn tab with no overlay", () => {
-		expect(paneRootClasses(learn)).toEqual({
-			isMap: false,
-			isGoals: false,
-			isLibrary: false,
-			isSettings: false,
-			isFlashcards: false,
-			isOverlay: false,
-		});
-	});
-
-	it("keeps map tab class while an overlay is open so closing returns to the map", () => {
-		const flags = paneRootClasses({ screen: "map", overlay: "library" });
-		expect(flags.isMap).toBe(true);
-		expect(flags.isLibrary).toBe(true);
-		expect(flags.isOverlay).toBe(true);
-		expect(flags.isFlashcards).toBe(false);
-	});
-
-	it("treats flashcards as a primary screen, not an overlay", () => {
-		const flags = paneRootClasses({ screen: "flashcards", overlay: null });
-		expect(flags.isFlashcards).toBe(true);
-		expect(flags.isOverlay).toBe(false);
-		expect(flags.isLibrary).toBe(false);
+describe("center tabs", () => {
+	it("lists Learn, Map, Goals, Flashcards in header order", () => {
+		expect(PRIMARY_TABS.map((tab) => tab.label)).toEqual(["Learn", "Map", "Goals", "Flashcards"]);
 	});
 });
 
-describe("overlay transitions", () => {
-	it("replaces the previous overlay", () => {
-		const withLibrary = openOverlay(learn, "library");
-		const withSettings = openOverlay(withLibrary, "settings");
-		expect(withSettings.overlay).toBe("settings");
-		expect(paneRootClasses(withSettings).isLibrary).toBe(false);
-		expect(paneRootClasses(withSettings).isSettings).toBe(true);
+describe("paneRootClasses", () => {
+	it("shows the learn body only on the learn tab", () => {
+		expect(paneRootClasses(INITIAL_PANE)).toEqual({
+			isMap: false,
+			isGoals: false,
+			isFlashcards: false,
+			isLibrary: false,
+			isSettings: false,
+		});
 	});
 
-	it("clears overlay when changing screen", () => {
-		const withLibrary = openOverlay({ screen: "flashcards", overlay: "library" }, "library");
-		const next = setScreen(withLibrary, "learn");
-		expect(next.overlay).toBeNull();
-		expect(next.screen).toBe("learn");
+	it("shows one screen at a time, Library included", () => {
+		const library = paneRootClasses(setScreen(setScreen(INITIAL_PANE, "map"), "library"));
+		expect(library.isLibrary).toBe(true);
+		expect(library.isMap).toBe(false);
+		expect(Object.values(library).filter(Boolean)).toHaveLength(1);
+	});
+});
+
+describe("utility screens", () => {
+	it("Library replaces Settings rather than stacking on it", () => {
+		const settings = setScreen(INITIAL_PANE, "settings");
+		const library = toggleUtility(settings, "library");
+		expect(library.screen).toBe("library");
+		expect(paneRootClasses(library).isSettings).toBe(false);
 	});
 
-	it("closeOverlay is idempotent", () => {
-		expect(closeOverlay(learn)).toEqual(learn);
+	it("pressing the Library button again returns to the tab it came from", () => {
+		const fromGoals = toggleUtility(setScreen(INITIAL_PANE, "goals"), "library");
+		expect(toggleUtility(fromGoals, "library").screen).toBe("goals");
+	});
+
+	it("a center tab leaves a utility screen", () => {
+		const library = toggleUtility(setScreen(INITIAL_PANE, "flashcards"), "library");
+		const learn = setScreen(library, "learn");
+		expect(learn.screen).toBe("learn");
+		expect(learn.lastPrimary).toBe("learn");
+	});
+
+	it("moving between utilities keeps the center tab to return to", () => {
+		const library = toggleUtility(setScreen(INITIAL_PANE, "map"), "library");
+		const settings = toggleUtility(library, "settings");
+		expect(toggleUtility(settings, "settings").screen).toBe("map");
 	});
 });

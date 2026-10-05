@@ -437,7 +437,8 @@ export function buildConceptMap(input: {
 	}
 	const width = Math.max(480, maxX - minX + 48);
 	const height = Math.max(320, maxY - minY + 36);
-	const inPlace = inGoal.filter((node) => built.has(node.id)).length;
+	/** Counted the way the nodes are painted, so the panel's count matches its solid marks. */
+	const inPlace = inGoal.filter((node) => masteryTone(node.status, built.has(node.id)) === "solid").length;
 	return {
 		nodes,
 		edges,

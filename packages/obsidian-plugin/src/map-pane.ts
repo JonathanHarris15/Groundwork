@@ -1,4 +1,5 @@
-import type { ConceptMapModel, ForceGraphData } from "@groundwork/core";
+import { masteryTone, MASTERY_HINT, MASTERY_TONES, STUDY_MOVE_HINT, studyMove, type ConceptMapModel, type ForceGraphData, type MasteryTone, type PathStep, type StudyMove } from "@groundwork/core";
+import { masteryDot, setTone, toneLabel } from "./mastery-ui";
 import { appendSvgFragment } from "./svg-fragment";
 import { mountConceptMapGraph, mountInteractiveGraph } from "./force-graph-host";
 
@@ -6,8 +7,7 @@ const NS = "http://www.w3.org/2000/svg";
 export interface MapPaneOptions {
 	goalTitle?: string;
 	emptyMessage?: string;
-	onStart?: (title: string) => void;
-	onStudy?: (title: string, action: "quiz" | "learn") => void;
+	onStudy?: (title: string, move: StudyMove) => void;
 	onOpenGoals?: () => void;
 }
 
@@ -24,42 +24,42 @@ export function renderStartedVaultMap(parent: HTMLElement, data: ForceGraphData,
 	const row = el(parent, "div", "gw-map-row gw-map-row-started");
 	const wrap = el(row, "div", "gw-mapwrap");
 	const mapHost = el(wrap, "div", "gw-force-map");
-	const slot = mapHost.createDiv({ cls: "gw-force-slot" });
+	const slot = el(mapHost, "div", "gw-force-slot");
+	const statusOf = new Map(data.nodes.map((node) => [node.id, node.status ?? "unassessed"] as const));
 	mountInteractiveGraph(slot, data, {
-		onNodeClick: (_id, title) => options.onStudy?.(title, "learn"),
+		onNodeClick: (id, title) => options.onStudy?.(title, studyMove(masteryTone(statusOf.get(id) ?? "unassessed"))),
 	});
 	const bar = el(wrap, "div", "gw-map-toolbar");
 	const hint = el(bar, "p", "gw-map-click-hint");
-	hint.textContent = "Only concepts you have started appear here. Pin a goal in Learn to see the full path to that goal.";
-	appendMapKey(wrap, parent.ownerDocument, { startedOnly: true });
+	hint.textContent = "Concepts you have started. Pin a goal in Working on to see the path to it. Click a concept to study it.";
+	appendMapKey(wrap, { tones: MASTERY_TONES.filter((tone) => tone !== "unstarted"), pinned: false });
 }
 
-function appendMapKey(parent: HTMLElement, doc: Document, opts: { startedOnly: boolean }): void {
+/** The legend draws the same marks the graph and the path panel do. */
+export function appendMapKey(parent: HTMLElement, opts: { tones?: readonly MasteryTone[]; pinned: boolean }): HTMLElement {
 	const key = el(parent, "div", "gw-map-key");
-	for (const [cssVar, fallback, label] of [
-		["--color-green", "#3CC56F", "Solid"],
-		["--color-blue", "#45A9F0", "Learning"],
-		["--color-orange", "#F7A93E", "Needs work"],
-	] as const) {
-		const item = el(key, "span");
-		const dot = el(item, "i", "gw-dot");
-		dot.style.background = obsidianColor(doc, cssVar, fallback);
-		item.append(label);
+	key.setAttribute("aria-label", "Map key");
+	for (const tone of opts.tones ?? MASTERY_TONES) {
+		const item = el(key, "span", "gw-key-item");
+		item.title = MASTERY_HINT[tone];
+		masteryDot(item, tone);
+		item.append(toneLabel(tone));
 	}
-	const ahead = el(key, "span");
-	el(ahead, "i", "gw-key-ghost");
-	ahead.append("Not started");
-	if (!opts.startedOnly) {
-		const solid = el(key, "span", "gw-key-edge is-solid");
-		solid.append("Solid arrow — next step on the path up");
-		const dashed = el(key, "span", "gw-key-edge is-dashed");
-		dashed.append("Dashed arrow — groundwork outside this goal");
-	}
-}
-
-function obsidianColor(doc: Document, cssVar: string, fallback: string): string {
-	const raw = doc.defaultView?.getComputedStyle(doc.body).getPropertyValue(cssVar).trim();
-	return raw || fallback;
+	if (!opts.pinned) return key;
+	const goal = el(key, "span", "gw-key-item");
+	masteryDot(goal, "goal");
+	goal.append("Goal");
+	const next = el(key, "span", "gw-key-item");
+	el(next, "i", "gw-key-next");
+	next.append("Next");
+	const off = el(key, "span", "gw-key-item");
+	off.title = "In this goal, but not on the chain up to its target";
+	const faded = masteryDot(off, "learning");
+	faded.classList.add("is-faded");
+	off.append("Off the path");
+	el(key, "span", "gw-key-edge", "Prerequisite → concept");
+	el(key, "span", "gw-key-edge is-dashed", "Outside the path");
+	return key;
 }
 
 export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null, options: MapPaneOptions): void {
@@ -77,14 +77,14 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 		return;
 	}
 	const mapSlot = el(wrap, "div", "gw-force-map");
-	mapSlot.createDiv({ cls: "gw-force-slot" });
-	mountConceptMapGraph(wrap, model, { onStart: options.onStart, onStudy: options.onStudy });
+	el(mapSlot, "div", "gw-force-slot");
+	mountConceptMapGraph(wrap, model, { onStudy: options.onStudy });
 	const bar = el(wrap, "div", "gw-map-toolbar");
 	const hint = el(bar, "p", "gw-map-click-hint");
-	hint.textContent = "Foundations sit at the bottom; your working goal is the red node on top. Click a concept to study it.";
-	const doc = parent.ownerDocument;
-	appendMapKey(wrap, doc, { startedOnly: false });
+	hint.textContent = "Foundations at the bottom, your goal on top. Click a concept to study it.";
+	appendMapKey(wrap, { pinned: true });
 
+	const doc = parent.ownerDocument;
 	const side = el(row, "aside", "gw-side");
 	const head = el(side, "div", "gw-side-head");
 	head.append("Path to your goal");
@@ -95,7 +95,7 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	el(body, "div", "gw-path-title", goal?.title ?? options.goalTitle ?? "Goal");
 	if (goal?.subtitle) {
 		const sub = el(body, "div", "gw-path-sub");
-		sub.append(flagIcon(sub.ownerDocument), document.createTextNode(goal.subtitle.replace(/^Goal · /, "")));
+		sub.append(flagIcon(doc), doc.createTextNode(goal.subtitle.replace(/^Goal · /, "")));
 	}
 	const prog = el(body, "div", "gw-prog");
 	const filled = Math.round(model.total ? (model.inPlace / model.total) * 6 : 0);
@@ -103,29 +103,37 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	const labels = el(body, "div", "gw-prog-label");
 	el(labels, "span", "", `${model.inPlace} of ${model.total} concepts in place`);
 	const steps = el(body, "div", "gw-steps");
-	for (const step of model.steps) {
-		const rowEl = el(steps, "div", `gw-step${step.visual === "ghost" ? " is-ghost" : ""}${step.meta === "next" ? " is-next" : ""}`);
-		rowEl.append(stepMark(parent.ownerDocument, step.visual, step.step, step.meta === "next"));
-		el(rowEl, "span", "gw-step-name", step.title);
-		el(rowEl, "span", "gw-step-meta", step.meta);
-	}
-	const next = model.steps.find((step) => step.meta === "next") ?? model.steps.find((step) => step.visual === "ghost");
-	if (next && options.onStart) {
+	for (const step of model.steps) drawStep(steps, step, options);
+	const next = model.steps.find((step) => step.label === "Next") ?? model.steps.find((step) => step.tone === "unstarted");
+	if (next && options.onStudy) {
 		const button = el(body, "button", "gw-next-btn");
 		button.type = "button";
-		button.append(`Start: ${next.title}`, arrowIcon(parent.ownerDocument));
-		button.addEventListener("click", () => options.onStart?.(next.title));
+		button.append(`Start: ${next.title}`, arrowIcon(doc));
+		button.addEventListener("click", () => options.onStudy?.(next.title, "start"));
 	}
-	el(body, "p", "gw-path-why", "You build a pyramid: simple concepts are the groundwork; each arrow is a step toward the goal on top.");
 }
 
-function stepMark(doc: Document, visual: string, step: number | undefined, next: boolean): HTMLElement {
+function drawStep(parent: HTMLElement, step: PathStep, options: MapPaneOptions): void {
+	const isNext = step.label === "Next";
+	const move = studyMove(step.tone, isNext);
+	const row = el(parent, "button", `gw-step${isNext ? " is-next" : ""}${step.offPath ? " is-off" : ""}`);
+	row.type = "button";
+	row.dataset.tone = step.tone;
+	row.title = `${step.label}${step.offPath ? " · off the path to the goal" : ""} — ${STUDY_MOVE_HINT[move]}`;
+	row.append(stepMark(parent.ownerDocument, step, isNext));
+	el(row, "span", "gw-step-name", step.title);
+	el(row, "span", "gw-step-meta", step.label);
+	row.addEventListener("click", () => options.onStudy?.(step.title, move));
+}
+
+/** The node's own mark: a filled disc in its tone, a dashed ring when not started, the red goal with a flag, and the next ring. */
+function stepMark(doc: Document, step: PathStep, next: boolean): HTMLElement {
 	const span = doc.createElement("span");
-	span.className = `gw-step-n is-${next ? "next" : visual === "known" ? "known" : visual === "shaky" || visual === "rusty" ? "shaky" : visual === "goal" ? "goal" : "ghost"}`;
-	if (visual === "known") span.append(checkIcon(doc));
-	else if (visual === "goal") span.append(flagIcon(doc));
-	else if (visual === "shaky" || visual === "rusty") span.textContent = "!";
-	else span.textContent = String(step ?? "");
+	span.className = `gw-step-n${next ? " is-next" : ""}`;
+	setTone(span, step.tone);
+	if (step.tone === "goal") span.append(flagIcon(doc));
+	else if (step.tone === "solid") span.append(checkIcon(doc));
+	else if (step.tone === "unstarted" && step.step) span.textContent = String(step.step);
 	return span;
 }
 

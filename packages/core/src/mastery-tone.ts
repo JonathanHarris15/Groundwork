@@ -37,3 +37,20 @@ export function masteryTone(status: ConceptStatus, built = false): MasteryTone {
 export function masteryLabel(status: ConceptStatus, built = false): string {
 	return MASTERY_LABEL[masteryTone(status, built)];
 }
+
+/** What clicking a concept does, the same on map nodes, path rows, and goal tables. */
+export type StudyMove = "start" | "learn" | "quiz" | "review";
+
+export function studyMove(tone: MasteryTone | "goal", next = false): StudyMove {
+	if (next || tone === "unstarted" || tone === "goal") return "start";
+	if (tone === "solid") return "review";
+	if (tone === "shaky" || tone === "rusty") return "quiz";
+	return "learn";
+}
+
+export const STUDY_MOVE_HINT: Record<StudyMove, string> = {
+	start: "click to start",
+	learn: "click to keep learning",
+	quiz: "click to quiz",
+	review: "click to review",
+};

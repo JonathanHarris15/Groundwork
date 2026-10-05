@@ -2,7 +2,7 @@ import type { ConceptMapModel } from "../goal-plan";
 import type { ConceptStatus } from "../model";
 import type { GroundworkGraph } from "../groundwork-graph";
 import { GROUNDWORK_COLORS } from "../groundwork-graph";
-import { MASTERY_LABEL, MASTERY_TONES, masteryTone } from "../mastery-tone";
+import { MASTERY_LABEL, MASTERY_TONES, masteryTone, STUDY_MOVE_HINT, studyMove } from "../mastery-tone";
 import { STATUS_COLORS, TONE_FALLBACK_COLORS } from "./colors";
 import type { ForceGraphData, ForceGraphLegendItem, ForceGraphLink, ForceGraphNode } from "./types";
 
@@ -15,13 +15,7 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 	const nodes: ForceGraphNode[] = model.nodes.map((node) => {
 		const tone = node.tone;
 		const state = tone === "goal" ? "Goal" : MASTERY_LABEL[tone];
-		const action = node.next
-			? "click to start here"
-			: tone === "unstarted" || tone === "goal"
-				? "click to begin"
-				: tone === "shaky" || tone === "rusty"
-					? "click to quiz"
-					: "click to study";
+		const action = STUDY_MOVE_HINT[studyMove(tone, node.next)];
 		return {
 			id: node.id,
 			title: node.title,
@@ -61,8 +55,8 @@ export function buildFromGroundwork(
 	concepts: Array<{ id: string; title: string; status: ConceptStatus }>,
 	graph: GroundworkGraph,
 	opts: {
-		/** Replaces the website's "see the list below" hover text, e.g. on a page with no list. */
-		clickHint?: string;
+		/** Hover text names the click's study move instead of the website's "see the list below". */
+		studyHints?: boolean;
 		/** Dashed warning rings around shaky, rusty, and open nodes. Off where a legend explains every mark. */
 		attentionRings?: boolean;
 	} = {},
@@ -78,8 +72,8 @@ export function buildFromGroundwork(
 		const deg = degree.get(node.id) ?? 0;
 		const open = status === "unassessed";
 		const attention = status === "unassessed" || status === "shaky" || status === "rusty";
-		const hint = opts.clickHint
-			? `${MASTERY_LABEL[masteryTone(status)]} — ${opts.clickHint}`
+		const hint = opts.studyHints
+			? `${MASTERY_LABEL[masteryTone(status)]} — ${STUDY_MOVE_HINT[studyMove(masteryTone(status))]}`
 			: status === "unassessed"
 				? "Not quizzed yet — find it in the list below"
 				: status === "shaky" || status === "rusty"

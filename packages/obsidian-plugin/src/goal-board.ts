@@ -2,11 +2,15 @@ import {
 	buildConceptMap,
 	conceptCompletion,
 	formatDue,
-	masteryVisual,
+	MASTERY_LABEL,
+	masteryTone,
 	sessionEstimate,
+	studyMove,
 	type ConceptMapModel,
 	type GoalSchedule,
 	type MapSourceNode,
+	type MasteryTone,
+	type StudyMove,
 } from "@groundwork/core";
 import type { GoalReport, StudyStep } from "@groundwork/core";
 
@@ -15,12 +19,13 @@ export interface GoalConceptRow {
 	title: string;
 	weight: number;
 	complete: number;
+	/** Learner-facing state, in the map legend's words. */
 	state: string;
-	color: string;
-	ghost: boolean;
+	tone: MasteryTone;
 	next: boolean;
 	known: boolean;
-	action: "start" | "quiz" | "learn" | "known";
+	/** What the row's button does. A solid concept is reviewed, never locked. */
+	action: StudyMove;
 }
 
 export interface GoalBoardView {
@@ -48,17 +53,6 @@ export interface GoalBoardView {
 	total: number;
 	map: ConceptMapModel;
 }
-
-const COLOR: Record<string, string> = {
-	known: "#3CC56F",
-	learning: "#45A9F0",
-	shaky: "#F7A93E",
-	rusty: "#9d8cf0",
-	ghost: "#8b8e94",
-	goal: "#F0565B",
-	beyond: "#5f6268",
-	dim: "#5f6268",
-};
 
 export function toBoard(
 	report: GoalReport,
@@ -88,50 +82,27 @@ export function toBoard(
 		nextId: nextNode?.id,
 		builtIds: built,
 	});
-	const drawn = new Map(map.nodes.map((node) => [node.id, node]));
 	const concepts: GoalConceptRow[] = report.nodes
 		.map((node) => {
-			const builtInGoal = built.has(node.id);
-			const visual = masteryVisual(node.status, builtInGoal);
-			const isNext = node.id === nextNode?.id && visual !== "known";
-			const known = visual === "known";
-			const ghost = visual === "ghost";
-			let action: GoalConceptRow["action"] = "learn";
-			if (known) action = "known";
-			else if (isNext) action = "start";
-			else if (visual === "shaky" || visual === "rusty") action = "quiz";
-			const state = known
-				? "Solid"
-				: isNext && ghost
-					? "Ghost · next"
-					: isNext
-						? "Next"
-						: ghost
-							? "Ghost"
-							: visual === "shaky"
-								? "Shaky"
-								: visual === "rusty"
-									? "Rusty"
-									: visual === "learning"
-										? "Learning"
-										: node.status;
+			const tone = masteryTone(node.status, built.has(node.id));
+			const known = tone === "solid";
+			const isNext = node.id === nextNode?.id && !known;
 			return {
 				id: node.id,
 				title: node.title,
 				weight: timing.weights[node.id] ?? 0,
 				complete: Math.round(conceptCompletion(node.status, node.current, built.has(node.id)) * 100),
-				state,
-				color: COLOR[visual] ?? COLOR.learning,
-				ghost,
+				state: isNext ? "Next" : MASTERY_LABEL[tone],
+				tone,
 				next: isNext,
 				known,
-				action,
+				action: studyMove(tone, isNext),
 			};
 		})
 		.sort((a, b) => b.weight - a.weight || a.title.localeCompare(b.title));
-	const shaky = concepts.filter((row) => row.state === "shaky" || row.state === "rusty").map((row) => row.title);
+	const shaky = concepts.filter((row) => row.tone === "shaky" || row.tone === "rusty").map((row) => row.title);
 	const heaviest = concepts.filter((row) => !row.known).sort((a, b) => b.weight - a.weight)[0];
-	const after = map.steps.find((step) => step.visual === "ghost" && step.id !== nextNode?.id);
+	const after = map.steps.find((step) => step.tone === "unstarted" && step.id !== nextNode?.id);
 	const schedule = timing.schedule;
 	return {
 		id: report.goal.id,
@@ -141,7 +112,7 @@ export function toBoard(
 		daysLeft: schedule?.daysLeft,
 		pace: schedule?.pace ?? "unset",
 		readiness: timing.readiness,
-		knownCount: map.inPlace,
+		knownCount: concepts.filter((row) => row.known).length,
 		conceptCount: map.total,
 		studiedDays: schedule?.studiedDays ?? 0,
 		elapsedDays: schedule?.elapsedDays ?? 0,

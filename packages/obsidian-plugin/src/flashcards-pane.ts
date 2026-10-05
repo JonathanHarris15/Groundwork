@@ -5,6 +5,7 @@ import {
 	emptyFlashcardLibrary,
 	flashcardCounts,
 	flashcardsDir,
+	masteryTone,
 	previewIntervals,
 	rateFlashcard,
 	syncFlashcards,
@@ -14,8 +15,10 @@ import {
 	type FlashcardLibrary,
 	type Goal,
 	type KnowledgeStore,
+	type MasteryTone,
 	slugify,
 } from "@groundwork/core";
+import { masteryDot } from "./mastery-ui";
 
 export interface FlashcardsHost {
 	app: App;
@@ -33,14 +36,6 @@ const RATINGS: Array<{ rating: CardRating; label: string; key: string }> = [
 	{ rating: "good", label: "Good", key: "3" },
 	{ rating: "easy", label: "Easy", key: "4" },
 ];
-
-const STATUS_COLOR: Record<string, string> = {
-	solid: "#3CC56F",
-	shaky: "#F7A93E",
-	learning: "#45A9F0",
-	rusty: "#F7A93E",
-	unassessed: "#8b8e94",
-};
 
 export class FlashcardsPane {
 	private active = false;
@@ -85,12 +80,11 @@ export class FlashcardsPane {
 		this.renderGen++;
 	}
 
-	/** Re-sync deck to Working on and redraw (e.g. after the pinned goal changes). */
+	/** Follows Working on. A new deck starts a new session; the same deck keeps the one in progress. */
 	refresh(): void {
-		if (!this.active) return;
+		if (!this.active || this.pinnedGoalId() === this.deckId) return;
 		this.syncDeckToWorkingGoal();
-		this.queue = this.makeQueue();
-		this.revealed = false;
+		this.startSession();
 		this.draw();
 	}
 
@@ -187,10 +181,8 @@ export class FlashcardsPane {
 		const now = new Date();
 		this.root.empty();
 		this.root.toggleClass("is-revealed", this.revealed);
-		this.syncDeckToWorkingGoal();
 		if (!this.deckId) {
 			this.drawUnpinned();
-			if (gen !== this.renderGen) return;
 			return;
 		}
 		const body = this.root.createDiv({ cls: "gw-fc-body" });
@@ -213,6 +205,8 @@ export class FlashcardsPane {
 		hint.textContent = "Flashcards live on the goal you pin in Working on. Each goal has its own deck.";
 		const focus = empty.createEl("button", { cls: "gw-next-btn", text: "Choose in Working on", attr: { type: "button" } });
 		focus.addEventListener("click", () => this.host.onFocusWorkingGoal?.());
+		const manage = empty.createEl("button", { cls: "gw-text-btn", text: "Manage cards", attr: { type: "button", title: "Edit decks and cards in Library" } });
+		manage.addEventListener("click", () => this.host.onManageCards());
 	}
 
 	private deckTitle(): string {
@@ -262,8 +256,7 @@ export class FlashcardsPane {
 		const left = this.queue.length ? this.history.length + 1 : this.history.length;
 		const total = this.history.length + this.queue.length;
 		labels.createSpan({ text: total ? `Card ${Math.min(left, total)} of ${total}` : "Nothing due" });
-		const minutes = Math.max(1, Math.round((this.queue.length * 20) / 60));
-		labels.createSpan({ text: this.queue.length ? `About ${minutes} min left` : "Caught up" });
+		labels.createSpan({ text: this.queue.length ? `${this.queue.length} to go` : "Caught up" });
 	}
 
 	private drawStage(parent: HTMLElement, now: Date): void {
@@ -291,8 +284,7 @@ export class FlashcardsPane {
 		});
 		const head = face.createDiv({ cls: "gw-fcard-head" });
 		const concept = head.createSpan({ cls: "gw-fcard-concept" });
-		const dot = concept.createSpan({ cls: "gw-dot" });
-		dot.style.background = this.conceptColor(card.concept);
+		masteryDot(concept, this.conceptTone(card.concept));
 		concept.createSpan({ text: card.concept });
 		head.createSpan({ cls: "gw-fcard-seen", text: seenLabel(card, now) });
 		const front = face.createDiv({ cls: "gw-fcard-front" });
@@ -319,11 +311,10 @@ export class FlashcardsPane {
 				void this.openPath(path);
 			});
 		}
-		if (this.concepts.has(slugify(card.concept))) {
-			const feeds = src.createSpan({ cls: "gw-fcard-feeds" });
-			const mark = feeds.createSpan({ cls: "gw-dot" });
-			mark.style.background = this.conceptColor(card.concept);
-			feeds.createSpan({ text: `Updates ${card.concept} on the map` });
+		if (this.concepts.get(slugify(card.concept))?.stats.attempts) {
+			const feeds = src.createSpan({ cls: "gw-fcard-feeds", attr: { title: "Ratings add a small, capped amount. A quiz is what makes a concept solid." } });
+			masteryDot(feeds, this.conceptTone(card.concept));
+			feeds.createSpan({ text: `Counts a little toward ${card.concept}` });
 		}
 		const rate = parent.createDiv({ cls: "gw-fc-rate" });
 		for (const item of RATINGS) {
@@ -350,9 +341,8 @@ export class FlashcardsPane {
 		});
 	}
 
-	private conceptColor(concept: string): string {
-		const status = this.concepts.get(slugify(concept))?.stats.status ?? "unassessed";
-		return STATUS_COLOR[status] ?? STATUS_COLOR.unassessed;
+	private conceptTone(concept: string): MasteryTone {
+		return masteryTone(this.concepts.get(slugify(concept))?.stats.status ?? "unassessed");
 	}
 
 	private deckPath(card: Flashcard): string {
