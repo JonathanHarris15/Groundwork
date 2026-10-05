@@ -69,6 +69,15 @@ import { enhanceGraphs } from "./graph-pane";
 import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
 import type { GroundworkAppearance } from "./appearance";
+import {
+	closeOverlay,
+	openOverlay,
+	paneRootClasses,
+	setScreen as setPaneScreen,
+	type GroundworkOverlay,
+	type GroundworkScreen,
+	type PaneLayoutState,
+} from "./pane-layout";
 import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
 import { filesUnderFolderRoots } from "./vault-scope";
 
@@ -155,7 +164,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiGoalsBtn!: HTMLElement;
 	private uiMapEl!: HTMLElement;
 	private uiGoalsEl!: HTMLElement;
-	private screen: "learn" | "map" | "goals" = "learn";
+	private pane: PaneLayoutState = { screen: "learn", overlay: null };
 	private mapScope: "path" | "all" = "path";
 	private showGhosts = true;
 	private selectedGoalId: string | null = null;
@@ -168,13 +177,10 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiFlashEl!: HTMLElement;
 	private uiFlashBtn!: HTMLElement;
 	private flashPane!: FlashcardsPane;
-	private flashOpen = false;
-	private libraryOpen = false;
 	private libraryTab: "goals" | "concepts" | "chats" = "goals";
 	private conceptQuery = "";
 	private uiSettingsEl!: HTMLElement;
 	private uiSettingsBtn!: HTMLElement;
-	private settingsOpen = false;
 	/** Unsaved learner file. Null means show what is saved in the vault. */
 	private learnerDraft: string | null = null;
 	private uiSendBtn!: HTMLButtonElement;
@@ -259,9 +265,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiMapEl = root.createDiv({ cls: "gw-screen gw-map" });
 		this.uiGoalsEl = root.createDiv({ cls: "gw-screen gw-goals" });
 		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
-		this.uiLibraryEl.hide();
 		this.uiFlashEl = root.createDiv({ cls: "gw-flash" });
-		this.uiFlashEl.hide();
 		this.flashPane = new FlashcardsPane(this.uiFlashEl, {
 			app: this.app,
 			store: this.plugin.store,
@@ -276,7 +280,6 @@ export class ChatView extends ItemView implements ToolUI {
 			onClose: () => this.closeFlashcards(),
 		});
 		this.uiSettingsEl = root.createDiv({ cls: "gw-settings" });
-		this.uiSettingsEl.hide();
 		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
 			const a = (evt.target as HTMLElement).closest("a.internal-link") as HTMLAnchorElement | null;
 			if (!a) return;
@@ -323,15 +326,27 @@ export class ChatView extends ItemView implements ToolUI {
 		this.registerDomEvent(this.uiSendBtn, "click", () => (this.agent?.busy ? this.stop() : void this.submit()));
 
 		this.setupMargin(root);
+		this.registerDomEvent(root, "keydown", (e) => {
+			if (e.key !== "Escape" || e.isComposing) return;
+			if (!this.pane.overlay) return;
+			e.preventDefault();
+			if (this.pane.overlay === "library") this.closeLibrary();
+			else if (this.pane.overlay === "settings") this.closeSettings();
+			else this.closeFlashcards();
+		});
 
 		const last = await this.latestChat();
 		if (last) this.openChat(last);
 		else this.newSession();
 		await this.refreshGoalSelect();
 		this.refreshSyncIndicator();
+		this.syncPaneLayout();
 	}
 
 	async onClose(): Promise<void> {
+		this.closeLibrary();
+		this.closeSettings();
+		this.closeFlashcards();
 		this.stop();
 		this.dropAgent();
 		this.dropAsides();
@@ -347,11 +362,12 @@ export class ChatView extends ItemView implements ToolUI {
 	// ── session lifecycle ───────────────────────────────────────────────
 
 	newSession(): void {
-		this.screen = "learn";
-		this.contentEl.removeClass("is-map", "is-goals");
+		this.pane = setPaneScreen(this.pane, "learn");
+		this.syncPaneLayout();
 		this.syncViewTabs();
 		this.closeLibrary();
 		this.closeSettings();
+		this.closeFlashcards();
 		if (this.agent?.busy) this.stop();
 		const now = new Date().toISOString();
 		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
@@ -371,11 +387,12 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private openChat(record: ChatRecord): void {
-		this.screen = "learn";
-		this.contentEl.removeClass("is-map", "is-goals");
+		this.pane = setPaneScreen(this.pane, "learn");
+		this.syncPaneLayout();
 		this.syncViewTabs();
 		this.closeLibrary();
 		this.closeSettings();
+		this.closeFlashcards();
 		this.record = record;
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
 		this.dropAgent();
@@ -1183,27 +1200,28 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async toggleFlashcards(): Promise<void> {
-		if (this.flashOpen) this.closeFlashcards();
+		if (this.pane.overlay === "flashcards") this.closeFlashcards();
 		else await this.openFlashcards();
 	}
 
 	private async openFlashcards(): Promise<void> {
 		this.closeLibrary();
 		this.closeSettings();
+		this.pane = openOverlay(closeOverlay(this.pane), "flashcards");
+		this.syncPaneLayout();
 		this.uiInputEl?.blur();
-		this.flashOpen = true;
-		this.contentEl.addClass("is-flashcards");
 		this.uiFlashBtn.addClass("is-active");
-		this.uiFlashEl.show();
+		this.uiLibraryBtn?.removeClass("is-active");
+		this.uiSettingsBtn?.removeClass("is-active");
 		await this.flashPane.show();
 	}
 
 	private closeFlashcards(): void {
-		this.flashOpen = false;
-		this.contentEl.removeClass("is-flashcards");
+		if (this.pane.overlay !== "flashcards") return;
+		this.pane = closeOverlay(this.pane);
+		this.syncPaneLayout();
 		this.uiFlashBtn?.removeClass("is-active");
 		this.flashPane?.hide();
-		this.uiFlashEl?.hide();
 	}
 
 	private selectedQuote(): string {
@@ -1215,31 +1233,32 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async toggleLibrary(): Promise<void> {
-		if (this.libraryOpen) this.closeLibrary();
+		if (this.pane.overlay === "library") this.closeLibrary();
 		else await this.openLibrary();
 	}
 
 	private async openLibrary(): Promise<void> {
 		this.closeFlashcards();
 		this.closeSettings();
+		this.pane = openOverlay(closeOverlay(this.pane), "library");
+		this.syncPaneLayout();
 		this.uiInputEl?.blur();
-		this.libraryOpen = true;
-		this.contentEl.addClass("is-library");
 		this.uiLibraryBtn.addClass("is-active");
-		this.uiLibraryEl.show();
+		this.uiFlashBtn?.removeClass("is-active");
+		this.uiSettingsBtn?.removeClass("is-active");
 		await this.renderLibrary();
 	}
 
 	private closeLibrary(): void {
-		this.libraryOpen = false;
-		this.contentEl.removeClass("is-library");
+		if (this.pane.overlay !== "library") return;
+		this.pane = closeOverlay(this.pane);
+		this.syncPaneLayout();
 		this.uiLibraryBtn?.removeClass("is-active");
-		this.uiLibraryEl?.hide();
 		this.uiLibraryEl?.empty();
 	}
 
 	private async toggleSettings(): Promise<void> {
-		if (this.settingsOpen) this.closeSettings();
+		if (this.pane.overlay === "settings") this.closeSettings();
 		else await this.openSettings();
 	}
 
@@ -1250,20 +1269,21 @@ export class ChatView extends ItemView implements ToolUI {
 	private async openSettings(): Promise<void> {
 		this.closeFlashcards();
 		this.closeLibrary();
+		this.pane = openOverlay(closeOverlay(this.pane), "settings");
+		this.syncPaneLayout();
 		this.uiInputEl?.blur();
 		await this.plugin.refreshTutorRoute();
-		this.settingsOpen = true;
-		this.contentEl.addClass("is-settings");
 		this.uiSettingsBtn.addClass("is-active");
-		this.uiSettingsEl.show();
+		this.uiLibraryBtn?.removeClass("is-active");
+		this.uiFlashBtn?.removeClass("is-active");
 		await this.renderSettings();
 	}
 
 	private closeSettings(): void {
-		this.settingsOpen = false;
-		this.contentEl.removeClass("is-settings");
+		if (this.pane.overlay !== "settings") return;
+		this.pane = closeOverlay(this.pane);
+		this.syncPaneLayout();
 		this.uiSettingsBtn?.removeClass("is-active");
-		this.uiSettingsEl?.hide();
 		this.uiSettingsEl?.empty();
 	}
 
@@ -1640,8 +1660,8 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private viewTab(parent: HTMLElement, id: "learn" | "map" | "goals", label: string, path: string): HTMLElement {
 		const button = parent.createEl("button", {
-			cls: `gw-view${id === this.screen ? " is-on" : ""}`,
-			attr: { type: "button", role: "tab", "aria-selected": id === this.screen ? "true" : "false" },
+			cls: `gw-view${id === this.pane.screen ? " is-on" : ""}`,
+			attr: { type: "button", role: "tab", "aria-selected": id === this.pane.screen ? "true" : "false" },
 		});
 		const icon = button.createSpan({ cls: "gw-view-icon" });
 		const svg = icon.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1654,24 +1674,38 @@ export class ChatView extends ItemView implements ToolUI {
 		svg.setAttribute("aria-hidden", "true");
 		appendSvgFragment(svg, path);
 		icon.append(svg);
-		button.createSpan({ text: label });
+		button.createSpan({ cls: "gw-view-label", text: label });
 		this.registerDomEvent(button, "click", () => this.showScreen(id));
 		return button;
 	}
 
-	private syncViewTabs(): void {
-		this.uiLearnBtn?.toggleClass("is-on", this.screen === "learn");
-		this.uiMapBtn?.toggleClass("is-on", this.screen === "map");
-		this.uiGoalsBtn?.toggleClass("is-on", this.screen === "goals");
+	private syncPaneLayout(): void {
+		const flags = paneRootClasses(this.pane);
+		const root = this.contentEl;
+		root.toggleClass("is-map", flags.isMap);
+		root.toggleClass("is-goals", flags.isGoals);
+		root.toggleClass("is-library", flags.isLibrary);
+		root.toggleClass("is-settings", flags.isSettings);
+		root.toggleClass("is-flashcards", flags.isFlashcards);
+		root.toggleClass("is-overlay", flags.isOverlay);
 	}
 
-	private showScreen(screen: "learn" | "map" | "goals"): void {
+	private syncViewTabs(): void {
+		const screen = this.pane.screen;
+		this.uiLearnBtn?.toggleClass("is-on", screen === "learn");
+		this.uiMapBtn?.toggleClass("is-on", screen === "map");
+		this.uiGoalsBtn?.toggleClass("is-on", screen === "goals");
+		this.uiLearnBtn?.setAttr("aria-selected", screen === "learn" ? "true" : "false");
+		this.uiMapBtn?.setAttr("aria-selected", screen === "map" ? "true" : "false");
+		this.uiGoalsBtn?.setAttr("aria-selected", screen === "goals" ? "true" : "false");
+	}
+
+	private showScreen(screen: GroundworkScreen): void {
 		this.closeLibrary();
 		this.closeSettings();
-		this.screen = screen;
-		this.contentEl.removeClass("is-map", "is-goals");
-		if (screen === "map") this.contentEl.addClass("is-map");
-		if (screen === "goals") this.contentEl.addClass("is-goals");
+		this.closeFlashcards();
+		this.pane = setPaneScreen(this.pane, screen);
+		this.syncPaneLayout();
 		this.syncViewTabs();
 		if (screen === "map") void this.renderMap();
 		else if (screen === "goals") void this.renderGoals();
@@ -1679,9 +1713,9 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private refreshOpenScreen(): void {
-		if (this.libraryOpen || this.settingsOpen) return;
-		if (this.screen === "map") void this.renderMap();
-		else if (this.screen === "goals") void this.renderGoals();
+		if (this.pane.overlay) return;
+		if (this.pane.screen === "map") void this.renderMap();
+		else if (this.pane.screen === "goals") void this.renderGoals();
 	}
 
 	private learnerInitial(): string {
@@ -1832,8 +1866,6 @@ export class ChatView extends ItemView implements ToolUI {
 				// A finished goal stays unpinned.
 			}
 		}
-		this.screen = "learn";
-		this.contentEl.removeClass("is-map", "is-goals");
 		await this.refreshGoalSelect();
 		this.showScreen("learn");
 		const text = action === "quiz" ? `Quiz me on ${title}.` : action === "start" ? `Let's build ${title}.` : `Teach me ${title}.`;
@@ -1951,7 +1983,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.session = { id: this.record.id };
 		this.renderAll();
 		await this.refreshGoalSelect();
-		if (this.settingsOpen) await this.renderSettings();
+		if (this.pane.overlay === "settings") await this.renderSettings();
 		new Notice("Learning vault reset. Files in this Obsidian vault are still there.");
 	}
 
@@ -2042,7 +2074,7 @@ export class ChatView extends ItemView implements ToolUI {
 		try {
 			await this.plugin.store.deleteConcept(title);
 			await this.refreshGoalSelect();
-			if (this.libraryOpen) await this.renderLibrary();
+			if (this.pane.overlay === "library") await this.renderLibrary();
 		} catch (err) {
 			new Notice(err instanceof Error ? err.message : String(err));
 		}
@@ -2052,7 +2084,7 @@ export class ChatView extends ItemView implements ToolUI {
 		try {
 			await this.plugin.store.deleteGoal(id);
 			await this.refreshGoalSelect();
-			if (this.libraryOpen) await this.renderLibrary();
+			if (this.pane.overlay === "library") await this.renderLibrary();
 		} catch (err) {
 			new Notice(err instanceof Error ? err.message : String(err));
 		}
@@ -2070,7 +2102,7 @@ export class ChatView extends ItemView implements ToolUI {
 			this.newSession();
 			return;
 		}
-		if (this.libraryOpen) await this.renderLibrary();
+		if (this.pane.overlay === "library") await this.renderLibrary();
 	}
 
 	// ── margin threads ──────────────────────────────────────────────────

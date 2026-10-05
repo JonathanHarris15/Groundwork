@@ -16,7 +16,7 @@
 	--gw-unassessed: #8b8e94;
 	--gw-radius: 12px;
 	/* Readable column in wide panes; the side padding grows instead of the text. */
-	--gw-column: 780px;
+	--gw-column: min(840px, 100%);
 	--gw-bottom-inset: 0px;
 	/* Obsidian appearance. Dark and Light override these on .gw-theme-dark / .gw-theme-light. */
 	--gw-paper: var(--background-primary);
@@ -1891,13 +1891,16 @@
 .gw-root.is-goals .gw-composer,
 .gw-root.is-library .gw-screen,
 .gw-root.is-settings .gw-screen,
-.gw-root.is-flashcards .gw-screen { display: none; }
-.gw-screen { display: none; flex: 1; min-height: 0; }
-.gw-root.is-map .gw-map,
-.gw-root.is-goals .gw-goals { display: flex; }
+.gw-root.is-flashcards .gw-screen,
+.gw-root.is-overlay .gw-messages,
+.gw-root.is-overlay .gw-composer,
+.gw-root.is-overlay .gw-screen { display: none; }
+.gw-screen { display: none; flex: 1; min-height: 0; min-width: 0; }
+.gw-root.is-map:not(.is-overlay) .gw-map,
+.gw-root.is-goals:not(.is-overlay) .gw-goals { display: flex; }
 
-.gw-messages { gap: 22px; padding: 22px 22px 10px; }
-.gw-msg-row { display: flex; gap: 14px; max-width: 720px; width: 100%; margin: 0 auto; }
+.gw-messages { gap: 22px; padding: 22px 22px 10px; min-width: 0; }
+.gw-msg-row { display: flex; gap: 14px; max-width: var(--gw-column); width: 100%; margin: 0 auto; }
 .gw-msg-row.is-me { flex-direction: row; }
 .gw-avatar {
 	width: 30px; height: 30px; border-radius: 8px; flex: none;
@@ -1927,7 +1930,7 @@
 .gw-option { background: transparent; color: var(--gw-ink); border-color: var(--gw-line-strong); }
 .gw-composer { border-top: 0; padding: 12px 22px 18px; background: var(--gw-paper); }
 .gw-box {
-	max-width: 720px;
+	max-width: var(--gw-column);
 	margin: 0 auto;
 	border: 1px solid var(--gw-line-strong);
 	border-radius: 14px;
@@ -2140,6 +2143,26 @@
 .gw-library, .gw-settings, .gw-lib-row, .gw-aside { background: var(--gw-paper); color: var(--gw-ink); }
 .gw-lib-row, .gw-aside { background: var(--gw-raised); border-color: var(--gw-line); }
 
+.gw-root .markdown-rendered {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.gw-root .markdown-rendered pre {
+	max-width: 100%;
+	overflow-x: auto;
+}
+.gw-root .markdown-rendered pre code {
+	white-space: pre;
+}
+.gw-root .markdown-rendered :is(img, svg, video) {
+	max-width: 100%;
+	height: auto;
+}
+.gw-root .math-block {
+	max-width: 100%;
+	overflow-x: auto;
+}
+
 @container (max-width: 860px) {
 	.gw-header { height: auto; min-height: 48px; flex-wrap: wrap; padding: 8px 12px; }
 	.gw-views { order: 3; width: 100%; }
@@ -2150,6 +2173,23 @@
 	.gw-goal-hero { grid-template-columns: 1fr; }
 	.gw-ring { border-left: 0; border-top: 1px solid var(--gw-line); padding-top: 12px; }
 	.gw-days b { font-size: 42px; }
+}
+@container (max-width: 520px) {
+	.gw-view-label { display: none; }
+	.gw-view { padding: 0 10px; }
+	.gw-goalchip-days { display: none; }
+	.gw-brand-name { display: none; }
+	.gw-messages.has-margin {
+		--gw-margin: 0px;
+		padding-right: max(14px, calc((100% - var(--gw-column)) / 2));
+	}
+	.gw-messages.has-margin .gw-asides {
+		position: static;
+		width: auto;
+		margin-left: 18px;
+		padding-left: 10px;
+		border-left: 2px solid color-mix(in srgb, var(--gw-shaky) 55%, transparent);
+	}
 }
 @media (prefers-reduced-motion: reduce) {
 	.gw-edge.is-ahead, .gw-goal-ring, .gw-next-ring { animation: none; }
