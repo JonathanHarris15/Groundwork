@@ -117,6 +117,7 @@
 	--gw-goal-bg: rgba(156, 47, 54, 0.1);
 	--gw-goal-line: rgba(156, 47, 54, 0.35);
 	--gw-map: #efeae3;
+	--gw-map-label: #1a1a1a;
 	--gw-user: #ffffff;
 	--gw-font: "Jost", system-ui, sans-serif;
 	--gw-edge-ahead: #8a847c;
@@ -2280,6 +2281,15 @@
 .gw-key-ghost { width: 10px; height: 10px; border-radius: 50%; border: 1.5px dashed var(--gw-muted); }
 .gw-key-built { width: 22px; border-top: 2.5px solid #3cc56f; }
 .gw-key-ahead { width: 22px; border-top: 2px dashed var(--gw-key-ahead); }
+.gw-key-edge { gap: 8px; }
+.gw-key-edge::before {
+	content: "";
+	display: inline-block;
+	width: 26px;
+	height: 0;
+	border-top: 2px solid var(--gw-muted);
+}
+.gw-key-edge.is-dashed::before { border-top-style: dashed; opacity: 0.75; }
 .gw-map-empty {
 	height: 100%; min-height: 220px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
 	gap: 14px; padding: 28px; color: var(--gw-muted); max-width: 46ch;

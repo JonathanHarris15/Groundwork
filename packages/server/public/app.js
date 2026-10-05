@@ -483,7 +483,7 @@ function conceptGraphHost(graph) {
 	return `${weakLine}
 		<div class="graph-shell" id="concept-graph-shell">
 			<div class="graph-toolbar">
-				<p class="graph-hint">Prerequisite arrows point forward. Dot color is mastery. Drag to rearrange, scroll to zoom, click a node to find it in the list below.</p>
+				<p class="graph-hint">Foundations sit at the bottom; harder ideas stack above. Solid arrows are the next step on that path; dashed arrows tie two subjects. Scroll to zoom, click a node to find it in the list below.</p>
 				<button class="btn btn-line btn-sm graph-expand" type="button" id="graph-expand" aria-label="Expand graph to fullscreen">Expand</button>
 			</div>
 			<div class="graph-host" id="concept-graph" role="region" aria-label="Interactive concept graph"></div>

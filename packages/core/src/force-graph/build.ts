@@ -34,7 +34,7 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 			color: MAP_VISUAL_COLORS[node.visual] ?? MAP_VISUAL_COLORS.dim,
 			cluster: node.visual === "goal" ? "Goal" : node.visual,
 			visual: node.visual,
-			label: node.visual === "goal" || node.next || attention || (degree.get(node.id) ?? 0) >= 2,
+			label: true,
 			needsAttention: attention,
 			isNext: node.next,
 			actionHint: hint,
@@ -44,15 +44,17 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 		from: edge.from,
 		to: edge.to,
 		kind: edge.kind,
-		bridge: edge.kind === "faint",
+		bridge: edge.kind === "dim" || edge.kind === "faint",
 	}));
 	const legend: ForceGraphLegendItem[] = [
-		{ key: "known", label: "Known", color: MAP_VISUAL_COLORS.known },
+		{ key: "known", label: "Solid — you have this groundwork", color: MAP_VISUAL_COLORS.known },
 		{ key: "learning", label: "Learning", color: MAP_VISUAL_COLORS.learning },
-		{ key: "ghost", label: "Not started", color: MAP_VISUAL_COLORS.ghost },
-		{ key: "goal", label: "Goal", color: MAP_VISUAL_COLORS.goal },
+		{ key: "ghost", label: "Not started yet", color: MAP_VISUAL_COLORS.ghost },
+		{ key: "goal", label: "Working goal", color: MAP_VISUAL_COLORS.goal },
+		{ key: "edge-built", label: "Solid arrow — the next step up", color: "#7f848e" },
+		{ key: "edge-bridge", label: "Dashed arrow — link across subjects", color: "#a8adb6" },
 	];
-	return { nodes, links, legend };
+	return { nodes, links, legend, layout: "layered" };
 }
 
 export function buildFromGroundwork(
@@ -78,11 +80,12 @@ export function buildFromGroundwork(
 					: status === "learning"
 						? "Still building — see the list below"
 						: "Solid — see the list below";
+		const placed = graph.nodes.find((n) => n.id === node.id);
 		return {
 			id: node.id,
 			title: node.title,
-			x: 0,
-			y: 0,
+			x: placed?.x ?? 0,
+			y: placed?.y ?? 0,
 			vx: 0,
 			vy: 0,
 			radius: 5 + Math.min(12, Math.sqrt(deg + 1) * 2.4),
@@ -104,8 +107,10 @@ export function buildFromGroundwork(
 		...(graph.legend ?? []).map((item) => ({ key: item.domain, label: item.domain, color: item.color })),
 		{ key: "status-solid", label: "Solid", color: STATUS_COLORS.solid },
 		{ key: "status-open", label: "Not quizzed", color: STATUS_COLORS.unassessed },
+		{ key: "edge-built", label: "Solid arrow — groundwork you build on", color: "#7f848e" },
+		{ key: "edge-bridge", label: "Dashed arrow — ties two subjects", color: "#a8adb6" },
 	];
-	return { nodes, links, legend };
+	return { nodes, links, legend, layout: "layered" };
 }
 
 type SyllabusCluster = {

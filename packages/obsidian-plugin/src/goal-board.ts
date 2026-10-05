@@ -84,8 +84,6 @@ export function toBoard(
 		dueLabel: report.goal.due ? formatDue(report.goal.due) : undefined,
 		nodes: sources,
 		weights: timing.weights,
-		scope: "path",
-		showGhosts: true,
 		nextId: nextNode?.id,
 		builtIds: built,
 	});

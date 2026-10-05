@@ -82,7 +82,7 @@ describe("website profile", () => {
 });
 
 describe("groundwork graph", () => {
-	it("clusters subjects and dashes the links between them", () => {
+	it("stacks concepts in a pyramid and dashes cross-subject links", () => {
 		const graph = layoutGroundworkGraph([
 			{ id: "prior", title: "Prior and posterior", prerequisites: [], domain: "Bayes" },
 			{ id: "conditional", title: "Conditional probability", prerequisites: ["prior"], domain: "Bayes" },
@@ -92,9 +92,9 @@ describe("groundwork graph", () => {
 		expect(graph.legend.map((item) => item.domain)).toEqual(["Bayes", "Linear algebra"]);
 		expect(graph.edges.find((e) => e.from === "prior" && e.to === "conditional")?.bridge).toBe(false);
 		expect(graph.edges.find((e) => e.from === "conditional" && e.to === "eigen")?.bridge).toBe(true);
-		const bayes = graph.nodes.filter((n) => n.domain === "Bayes");
-		const algebra = graph.nodes.filter((n) => n.domain === "Linear algebra");
-		expect(Math.max(...bayes.map((n) => n.x))).toBeLessThan(Math.min(...algebra.map((n) => n.x)));
+		const prior = graph.nodes.find((n) => n.id === "prior")!;
+		const basis = graph.nodes.find((n) => n.id === "basis")!;
+		expect(prior.y).toBeGreaterThan(basis.y);
 		expect(new Set(graph.nodes.map((n) => `${n.x},${n.y}`)).size).toBe(graph.nodes.length);
 		const labeled = graph.nodes.filter((n) => n.label).map((n) => n.id);
 		expect(labeled).toContain("conditional");

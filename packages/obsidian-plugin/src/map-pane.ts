@@ -4,11 +4,7 @@ import { mountConceptMapGraph } from "./force-graph-host";
 
 const NS = "http://www.w3.org/2000/svg";
 export interface MapPaneOptions {
-	scope: "path" | "all";
-	showGhosts: boolean;
 	goalTitle?: string;
-	onScope: (scope: "path" | "all") => void;
-	onGhosts: (on: boolean) => void;
 	onStart?: (title: string) => void;
 	onStudy?: (title: string, action: "quiz" | "learn") => void;
 	onOpenGoals?: () => void;
@@ -25,7 +21,7 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	const wrap = el(row, "div", "gw-mapwrap");
 	if (!model || !model.nodes.length) {
 		const empty = el(wrap, "div", "gw-map-empty");
-		empty.append("Pin a goal to see which concepts lead to it. Dashed nodes are still ahead on the path.");
+		empty.append("Pin a goal to see your whole vault stacked from groundwork at the bottom up to the goal.");
 		const cta = el(empty, "button", "gw-next-btn");
 		cta.type = "button";
 		cta.textContent = "Open goals";
@@ -37,20 +33,8 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	mapSlot.createDiv({ cls: "gw-force-slot" });
 	mountConceptMapGraph(wrap, model, { onStart: options.onStart, onStudy: options.onStudy });
 	const bar = el(wrap, "div", "gw-map-toolbar");
-	const seg = el(bar, "div", "gw-seg");
-	seg.append(
-		segBtn("All concepts", options.scope === "all", () => options.onScope("all")),
-		segBtn("Goal path", options.scope === "path", () => options.onScope("path")),
-	);
-	const toggle = el(bar, "button", "gw-toggle");
-	toggle.type = "button";
-	toggle.setAttribute("aria-pressed", options.showGhosts ? "true" : "false");
-	const sw = el(toggle, "span", `gw-switch-ui${options.showGhosts ? " is-on" : ""}`);
-	sw.setAttribute("aria-hidden", "true");
-	toggle.append("Show concepts still ahead");
-	toggle.addEventListener("click", () => options.onGhosts(!options.showGhosts));
 	const hint = el(bar, "p", "gw-map-click-hint");
-	hint.textContent = "Click a node to study or quiz it in chat.";
+	hint.textContent = "Foundations sit at the bottom; your working goal is the red node on top. Click a concept to study it.";
 	const doc = parent.ownerDocument;
 	const key = el(wrap, "div", "gw-map-key");
 	for (const [cssVar, fallback, label] of [
@@ -66,10 +50,14 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	const ahead = el(key, "span");
 	el(ahead, "i", "gw-key-ghost");
 	ahead.append("Not started");
+	const solid = el(key, "span", "gw-key-edge is-solid");
+	solid.append("Solid arrow — next step on the path up");
+	const dashed = el(key, "span", "gw-key-edge is-dashed");
+	dashed.append("Dashed arrow — groundwork outside this goal");
 
 	const side = el(row, "aside", "gw-side");
 	const head = el(side, "div", "gw-side-head");
-	head.append("Goal path");
+	head.append("Path to your goal");
 	const body = el(side, "div", "gw-path");
 	const goal = model.nodes.find((node) => node.id === model.goalNodeId);
 	const kicker = el(body, "div", "gw-kicker");
@@ -98,7 +86,7 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 		button.append(`Start: ${next.title}`, arrowIcon(parent.ownerDocument));
 		button.addEventListener("click", () => options.onStart?.(next.title));
 	}
-	el(body, "p", "gw-path-why", "Solid nodes mean a quiz showed you know them. Start with the highlighted next step.");
+	el(body, "p", "gw-path-why", "You build a pyramid: simple concepts are the groundwork; each arrow is a step toward the goal on top.");
 }
 
 function stepMark(doc: Document, visual: string, step: number | undefined, next: boolean): HTMLElement {
@@ -109,15 +97,6 @@ function stepMark(doc: Document, visual: string, step: number | undefined, next:
 	else if (visual === "shaky" || visual === "rusty") span.textContent = "!";
 	else span.textContent = String(step ?? "");
 	return span;
-}
-
-function segBtn(label: string, on: boolean, click: () => void): HTMLButtonElement {
-	const button = document.createElement("button");
-	button.type = "button";
-	button.className = on ? "is-on" : "";
-	button.textContent = label;
-	button.addEventListener("click", click);
-	return button;
 }
 
 function flagIcon(doc: Document): SVGElement {

@@ -53,6 +53,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 
 	let nodes: ForceGraphNode[] = data.nodes.map(cloneNode);
 	let links: ForceGraphLink[] = data.links.map((link) => ({ ...link }));
+	let layoutMode: "force" | "layered" = data.layout ?? "force";
 	const sim = createSimulationState();
 	let width = options.width ?? (host.clientWidth || 640);
 	let height = options.height ?? (host.clientHeight || 360);
@@ -345,6 +346,10 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			const { text } = measureLabel(ctx, node.title);
 			ctx.globalAlpha = layout.alpha * (fade && node.id !== hovered && !neighbors?.has(node.id) ? 0.35 : 1);
 			ctx.fillStyle = theme.label;
+			ctx.strokeStyle = theme.labelHalo;
+			ctx.lineWidth = 3;
+			ctx.lineJoin = "round";
+			ctx.strokeText(text, layout.x, layout.y);
 			ctx.fillText(text, layout.x, layout.y);
 		}
 		ctx.restore();
@@ -367,10 +372,10 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			panVy *= 0.9;
 		}
 
-		const settling = sim.alpha > 0.012 || dragged != null;
+		const settling = layoutMode === "force" && (sim.alpha > 0.012 || dragged != null);
 		if (nodes.length && settling) {
 			simulationTick(nodes, links, sim, { width, height, dragId: dragged });
-		} else if (!layoutFitted && options.fit !== false && sim.alpha < 0.025) {
+		} else if (!layoutFitted && options.fit !== false && (layoutMode === "layered" || sim.alpha < 0.025)) {
 			fit();
 		}
 
@@ -380,6 +385,12 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 
 	const relayout = () => {
 		invalidateNeighbors();
+		if (layoutMode === "layered") {
+			sim.alpha = 0;
+			sim.tick = 0;
+			layoutFitted = false;
+			return;
+		}
 		seedPositions(nodes, width, height);
 		sim.alpha = 1;
 		sim.tick = 0;
@@ -387,6 +398,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 	};
 
 	const setData = (next: ForceGraphData) => {
+		layoutMode = next.layout ?? "force";
 		nodes = next.nodes.map(cloneNode);
 		links = next.links.map((link) => ({ ...link }));
 		relayout();
@@ -449,8 +461,8 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		if (id) {
 			dragged = id;
 			const node = nodes.find((n) => n.id === id);
-			if (node) node.fixed = true;
-			sim.alpha = Math.max(sim.alpha, 0.55);
+			if (node && layoutMode === "force") node.fixed = true;
+			if (layoutMode === "force") sim.alpha = Math.max(sim.alpha, 0.55);
 			canvas.setPointerCapture(e.pointerId);
 			host.classList.add("is-dragging-node");
 		} else {
@@ -476,7 +488,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 				node.y = w.y;
 				node.vx = 0;
 				node.vy = 0;
-				sim.alpha = Math.max(sim.alpha, 0.5);
+				if (layoutMode === "force") sim.alpha = Math.max(sim.alpha, 0.5);
 			}
 			return;
 		}
@@ -494,10 +506,10 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
 		if (dragged) {
 			const node = nodes.find((n) => n.id === dragged);
-			if (node) node.fixed = false;
+			if (node && layoutMode === "force") node.fixed = false;
 			if (moved < 6) options.onNodeClick?.(dragged);
 			dragged = null;
-			sim.alpha = Math.max(sim.alpha, 0.35);
+			if (layoutMode === "force") sim.alpha = Math.max(sim.alpha, 0.35);
 		}
 		panning = false;
 		host.classList.remove("is-dragging-node", "is-panning");

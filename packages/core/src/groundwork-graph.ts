@@ -1,3 +1,5 @@
+import { conceptLayerRanks, placePyramidLayout } from "./force-graph/pyramid-layout";
+
 /** A concept the graph can place. Mastery and note text stay out. */
 export interface GraphConcept {
 	id: string;
@@ -40,29 +42,18 @@ export interface GroundworkGraph {
 
 export const EMPTY_GROUNDWORK_GRAPH: GroundworkGraph = { width: 0, height: 0, nodes: [], edges: [], legend: [] };
 
-interface Point {
-	x: number;
-	y: number;
-}
-
 /**
- * Place learned concepts as one connected graph: a cluster per subject,
- * solid links inside a subject, dashed links across subjects.
+ * Place every concept in one stacked pyramid: foundations at the bottom,
+ * complex ideas above. Solid links stay inside a subject; dashed links cross subjects.
  */
-export function layoutGroundworkGraph(concepts: GraphConcept[]): GroundworkGraph {
+export function layoutGroundworkGraph(concepts: GraphConcept[], pinTopId?: string): GroundworkGraph {
 	if (!concepts.length) return EMPTY_GROUNDWORK_GRAPH;
 	const byId = new Map(concepts.map((c) => [c.id, c]));
 	const domainOf = assignDomains(concepts);
-	const groups = new Map<string, GraphConcept[]>();
-	for (const c of concepts) {
-		const domain = domainOf.get(c.id) ?? c.title;
-		const row = groups.get(domain) ?? [];
-		row.push(c);
-		groups.set(domain, row);
-	}
-	const domains = [...groups.keys()].sort((a, b) => {
-		const size = (groups.get(b)?.length ?? 0) - (groups.get(a)?.length ?? 0);
-		return size || a.localeCompare(b);
+	const domains = [...new Set(concepts.map((c) => domainOf.get(c.id) ?? c.title))].sort((a, b) => {
+		const countA = concepts.filter((c) => (domainOf.get(c.id) ?? c.title) === a).length;
+		const countB = concepts.filter((c) => (domainOf.get(c.id) ?? c.title) === b).length;
+		return countB - countA || a.localeCompare(b);
 	});
 	const colorOf = new Map(domains.map((domain, i) => [domain, GROUNDWORK_COLORS[i % GROUNDWORK_COLORS.length]!]));
 	const legend = domains.filter((domain) => domain !== "Concepts").map((domain) => ({ domain, color: colorOf.get(domain) ?? GROUNDWORK_COLORS[0] }));
@@ -80,43 +71,26 @@ export function layoutGroundworkGraph(concepts: GraphConcept[]): GroundworkGraph
 	}
 	edges.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
 
-	const placed = new Map<string, Point>();
-	let cursor = 36;
-	let height = 180;
-	for (const domain of domains) {
-		const members = groups.get(domain) ?? [];
-		const localEdges = edges.filter((e) => !e.bridge && members.some((m) => m.id === e.from) && members.some((m) => m.id === e.to));
-		const local = layoutCluster(members, localEdges);
-		let minX = Infinity;
-		let minY = Infinity;
-		let maxX = -Infinity;
-		let maxY = -Infinity;
-		for (const p of local.values()) {
-			minX = Math.min(minX, p.x);
-			minY = Math.min(minY, p.y);
-			maxX = Math.max(maxX, p.x);
-			maxY = Math.max(maxY, p.y);
-		}
-		if (!Number.isFinite(minX)) {
-			minX = 0;
-			minY = 0;
-			maxX = 0;
-			maxY = 0;
-		}
-		const padX = 70;
-		const padTop = 24;
-		const padBottom = 48;
-		for (const [id, p] of local) {
-			placed.set(id, { x: cursor + (p.x - minX) + padX, y: padTop + (p.y - minY) });
-		}
-		cursor += maxX - minX + padX * 2 + 36;
-		height = Math.max(height, padTop + (maxY - minY) + padBottom);
-	}
+	const ranks = conceptLayerRanks(
+		concepts.map((c) => ({ id: c.id, title: c.title, prerequisites: c.prerequisites })),
+		pinTopId,
+	);
+	const maxLayer = Math.max(0, ...ranks.values());
+	const perLayer = new Map<number, number>();
+	for (const layer of ranks.values()) perLayer.set(layer, (perLayer.get(layer) ?? 0) + 1);
+	const widest = Math.max(1, ...perLayer.values());
+	const width = Math.max(480, 112 + widest * 88);
+	const height = Math.max(320, 96 + maxLayer * 92);
+	const placed = placePyramidLayout(
+		concepts.map((c) => ({ id: c.id, title: c.title })),
+		ranks,
+		{ width, height, rowGap: 88 },
+	);
 
 	const labeled = labelIds(concepts, edges, domainOf);
 	const nodes: GroundworkGraphNode[] = concepts.map((c) => {
 		const domain = domainOf.get(c.id) ?? c.title;
-		const p = placed.get(c.id) ?? { x: 36, y: height / 2 };
+		const p = placed.get(c.id) ?? { x: width / 2, y: height - 48 };
 		return {
 			id: c.id,
 			title: c.title,
@@ -128,7 +102,7 @@ export function layoutGroundworkGraph(concepts: GraphConcept[]): GroundworkGraph
 		};
 	});
 	dropOverlappingLabels(nodes, labeled);
-	return { width: round1(Math.max(cursor, 280)), height: round1(height), nodes, edges, legend };
+	return { width: round1(width), height: round1(height), nodes, edges, legend };
 }
 
 function dropOverlappingLabels(nodes: GroundworkGraphNode[], priority: string[]): void {
@@ -245,87 +219,6 @@ function componentName(ids: string[], byId: Map<string, GraphConcept>, neighbors
 	return ranked[0]?.title ?? ids[0] ?? "Concepts";
 }
 
-function layoutCluster(members: GraphConcept[], edges: GroundworkGraphEdge[]): Map<string, Point> {
-	const pos = new Map<string, Point>();
-	const n = members.length;
-	members.forEach((c, i) => {
-		if (n === 1) {
-			pos.set(c.id, { x: 0, y: 0 });
-			return;
-		}
-		const turn = ((hash(c.id) % 100) / 100) * 0.55;
-		const angle = (i / n) * Math.PI * 2 + turn;
-		const ring = 28 + 15 * Math.sqrt(n);
-		pos.set(c.id, { x: Math.cos(angle) * ring, y: Math.sin(angle) * ring });
-	});
-	const ids = members.map((c) => c.id);
-	const attract = new Set(edges.map((e) => `${e.from}\0${e.to}`));
-	for (let iter = 0; iter < 140; iter++) {
-		const force = new Map<string, Point>(ids.map((id) => [id, { x: 0, y: 0 }]));
-		for (let i = 0; i < ids.length; i++) {
-			for (let j = i + 1; j < ids.length; j++) {
-				const a = pos.get(ids[i]!)!;
-				const b = pos.get(ids[j]!)!;
-				let dx = a.x - b.x;
-				let dy = a.y - b.y;
-				const dist = Math.hypot(dx, dy) || 0.01;
-				dx /= dist;
-				dy /= dist;
-				const push = 520 / (dist * dist);
-				const fa = force.get(ids[i]!)!;
-				const fb = force.get(ids[j]!)!;
-				fa.x += dx * push;
-				fa.y += dy * push;
-				fb.x -= dx * push;
-				fb.y -= dy * push;
-				if (attract.has(`${ids[i]}\0${ids[j]}`) || attract.has(`${ids[j]}\0${ids[i]}`)) {
-					const pull = (dist - 46) * 0.045;
-					fa.x += dx * pull * -1;
-					fa.y += dy * pull * -1;
-					fb.x += dx * pull;
-					fb.y += dy * pull;
-				}
-			}
-		}
-		for (const id of ids) {
-			const p = pos.get(id)!;
-			const f = force.get(id)!;
-			f.x += -p.x * 0.012;
-			f.y += -p.y * 0.012;
-			p.x += f.x * 0.18;
-			p.y += f.y * 0.18;
-		}
-	}
-	separate(pos, 30);
-	return pos;
-}
-
-function separate(pos: Map<string, Point>, minDist: number): void {
-	const ids = [...pos.keys()];
-	for (let pass = 0; pass < 50; pass++) {
-		let moved = false;
-		for (let i = 0; i < ids.length; i++) {
-			for (let j = i + 1; j < ids.length; j++) {
-				const a = pos.get(ids[i]!)!;
-				const b = pos.get(ids[j]!)!;
-				let dx = b.x - a.x;
-				let dy = b.y - a.y;
-				const dist = Math.hypot(dx, dy) || 0.01;
-				if (dist >= minDist) continue;
-				dx /= dist;
-				dy /= dist;
-				const shift = (minDist - dist) / 2;
-				a.x -= dx * shift;
-				a.y -= dy * shift;
-				b.x += dx * shift;
-				b.y += dy * shift;
-				moved = true;
-			}
-		}
-		if (!moved) break;
-	}
-}
-
 /** Every concept, busiest first. Overlapping names are dropped later so the dots stay readable. */
 function labelIds(concepts: GraphConcept[], edges: GroundworkGraphEdge[], domainOf: Map<string, string>): string[] {
 	const degree = new Map<string, number>();
@@ -338,12 +231,6 @@ function labelIds(concepts: GraphConcept[], edges: GroundworkGraphEdge[], domain
 		.slice()
 		.sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || (domainOf.get(a.id) ?? "").localeCompare(domainOf.get(b.id) ?? "") || a.title.localeCompare(b.title))
 		.map((concept) => concept.id);
-}
-
-function hash(value: string): number {
-	let h = 2166136261;
-	for (let i = 0; i < value.length; i++) h = Math.imul(h ^ value.charCodeAt(i), 16777619);
-	return h >>> 0;
 }
 
 function round1(n: number): number {
