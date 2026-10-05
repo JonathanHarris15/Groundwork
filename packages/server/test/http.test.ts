@@ -120,9 +120,9 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/force-graph.js?v=2"');
-		expect(site?.body).toContain('src="/app.js?v=16"');
-		expect(site?.body).toContain('href="/styles.css?v=5"');
+		expect(site?.body).toContain('src="/force-graph.js?v=3"');
+		expect(site?.body).toContain('src="/app.js?v=17"');
+		expect(site?.body).toContain('href="/styles.css?v=6"');
 		expect(site?.body).toContain("Groundwork plans from first principles");
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");

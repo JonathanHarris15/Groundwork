@@ -17,7 +17,7 @@ export function mountSiteGraph(
 	payload: SiteGraphPayload,
 	options: { onSelect?: (id: string) => void } = {},
 ): ForceGraphHandle {
-	const data = buildFromGroundwork(payload.concepts, payload.graph);
+	const data = buildFromGroundwork(payload.concepts, payload.graph, { attentionRings: false });
 	return mountForceGraph(host, data, {
 		className: "graph-canvas",
 		onNodeClick: (id) => options.onSelect?.(id),
