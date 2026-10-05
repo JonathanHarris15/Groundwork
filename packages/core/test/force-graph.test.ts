@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { goalMermaid, type GraphNode } from "../src/graph";
 import { buildFromGroundwork, buildSyntheticGraph } from "../src/force-graph/build";
 import { forceGraphFromGoalMermaid, parseGoalMermaid } from "../src/force-graph/parse-mermaid";
-import { runSimulation } from "../src/force-graph/simulation";
+import { clusterCentroids, runSimulation } from "../src/force-graph/simulation";
 import { layoutGroundworkGraph } from "../src/groundwork-graph";
 
 describe("force graph", () => {
@@ -20,14 +20,25 @@ describe("force graph", () => {
 		expect(data?.nodes.find((n) => n.title === "Chain rule")?.isTarget).toBe(true);
 	});
 
-	it("lays out a large synthetic graph without overlapping piles", () => {
+	it("lays out a large synthetic graph into separated domain islands", () => {
 		const data = buildSyntheticGraph(240, 2);
-		const ticks = runSimulation(data.nodes, data.links, { width: 900, height: 600 }, 200);
+		const ticks = runSimulation(data.nodes, data.links, { width: 900, height: 600 }, 280);
 		expect(ticks).toBeGreaterThan(10);
 		const xs = data.nodes.map((n) => n.x);
 		const ys = data.nodes.map((n) => n.y);
-		expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(80);
-		expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(80);
+		expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(200);
+		expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(200);
+		const cents = [...clusterCentroids(data.nodes).entries()];
+		expect(cents.length).toBeGreaterThan(2);
+		let minDist = Infinity;
+		for (let i = 0; i < cents.length; i++) {
+			for (let j = i + 1; j < cents.length; j++) {
+				const a = cents[i]![1];
+				const b = cents[j]![1];
+				minDist = Math.min(minDist, Math.hypot(a.x - b.x, a.y - b.y));
+			}
+		}
+		expect(minDist).toBeGreaterThan(60);
 	});
 
 	it("maps website groundwork data", () => {

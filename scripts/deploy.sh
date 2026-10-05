@@ -56,6 +56,8 @@ gcloud config set project "$PROJECT" --quiet
 
 gcloud run deploy "$SERVICE" --source . --region "$REGION" --project "$PROJECT" --quiet
 
+npm run build -w packages/server
+
 GOOGLE_APPLICATION_CREDENTIALS="$imp" npx -y firebase-tools@14 deploy --only hosting --project "$PROJECT" --non-interactive
 
 health=$(curl -fsS https://groundworklearn.com/health)

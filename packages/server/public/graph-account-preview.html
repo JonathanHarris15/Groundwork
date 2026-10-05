@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Account graph preview (200 concepts)</title>
+		<link rel="stylesheet" href="/styles.css?v=3" />
+		<style>
+			body { margin: 0; padding: 24px; background: #16181d; color: #ececec; font-family: Jost, system-ui, sans-serif; }
+			.sky { max-width: 1100px; margin: 0 auto; }
+		</style>
+		<script type="module" src="/force-graph.js?v=2"></script>
+	</head>
+	<body>
+		<div class="sky">
+			<div class="sky-head">
+				<span class="sky-title">Concepts (200-node account preview)</span>
+			</div>
+			<div class="graph-shell" id="concept-graph-shell">
+				<div class="graph-toolbar">
+					<p class="graph-hint">Same container sizing as the signed-in dashboard. Pan, zoom, and expand to fullscreen.</p>
+					<button class="btn btn-line btn-sm graph-expand" type="button" id="graph-expand" aria-label="Expand graph to fullscreen">Expand</button>
+				</div>
+				<div class="graph-host" id="concept-graph" role="region" aria-label="Interactive concept graph"></div>
+			</div>
+		</div>
+		<script type="module">
+			const data = window.GroundworkGraph.buildSyntheticGraph(200);
+			const host = document.querySelector("#concept-graph");
+			const handle = window.GroundworkGraph.mount(host, {
+				concepts: data.nodes.map((n) => ({ id: n.id, title: n.title, status: n.status ?? "learning" })),
+				graph: {
+					width: 0,
+					height: 0,
+					nodes: data.nodes.map((n) => ({ id: n.id, title: n.title, domain: n.cluster, color: n.color })),
+					edges: data.links,
+					legend: data.legend.map((l) => ({ domain: l.label, color: l.color })),
+				},
+			});
+			let fullscreen = false;
+			const shell = document.querySelector("#concept-graph-shell");
+			const expand = document.querySelector("#graph-expand");
+			expand.addEventListener("click", () => {
+				fullscreen = !fullscreen;
+				shell.classList.toggle("is-fullscreen", fullscreen);
+				document.body.classList.toggle("graph-fullscreen-open", fullscreen);
+				expand.textContent = fullscreen ? "Close" : "Expand";
+				requestAnimationFrame(() => handle.fit());
+			});
+		</script>
+	</body>
+</html>

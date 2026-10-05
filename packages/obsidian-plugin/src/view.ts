@@ -1821,6 +1821,13 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 	}
 
+	/** Open the tutor on a concept title from obsidian://groundwork?concept=… */
+	async studyConceptFromDeepLink(title: string): Promise<void> {
+		const safe = title.trim();
+		if (!safe) return;
+		await this.studyConcept(safe, "start");
+	}
+
 	private async studyConcept(title: string, action: "start" | "quiz" | "learn"): Promise<void> {
 		if (this.agent?.busy) {
 			new Notice("Groundwork: wait for the tutor to finish, then ask again.");

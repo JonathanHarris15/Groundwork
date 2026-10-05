@@ -6,19 +6,29 @@ const hash = (value: string): number => {
 	return h >>> 0;
 };
 
-/** Seed positions in a loose ring so the first tick is not a pile at 0,0. */
+/** Place each cluster on its own island before the sim runs. */
 export function seedPositions(nodes: ForceGraphNode[], width: number, height: number): void {
+	const clusters = [...new Set(nodes.map((n) => n.cluster))].sort();
 	const cx = width / 2;
 	const cy = height / 2;
-	const ring = Math.min(width, height) * 0.32;
-	nodes.forEach((node, i) => {
-		const turn = ((hash(node.id) % 100) / 100) * 0.6;
-		const angle = (i / Math.max(1, nodes.length)) * Math.PI * 2 + turn;
-		node.x = cx + Math.cos(angle) * ring * (0.65 + (hash(node.title) % 17) / 40);
-		node.y = cy + Math.sin(angle) * ring * (0.65 + (hash(node.cluster) % 13) / 40);
+	const orbit = Math.min(width, height) * (0.28 + Math.min(0.12, clusters.length * 0.02));
+	const centers = new Map<string, { x: number; y: number }>();
+	clusters.forEach((cluster, i) => {
+		const turn = ((hash(cluster) % 100) / 100) * 0.5;
+		const angle = (i / Math.max(1, clusters.length)) * Math.PI * 2 + turn;
+		centers.set(cluster, { x: cx + Math.cos(angle) * orbit, y: cy + Math.sin(angle) * orbit });
+	});
+	for (const node of nodes) {
+		const center = centers.get(node.cluster) ?? { x: cx, y: cy };
+		const members = nodes.filter((n) => n.cluster === node.cluster).length;
+		const spread = 28 + Math.sqrt(members) * 14;
+		const angle = ((hash(node.id) % 1000) / 1000) * Math.PI * 2;
+		const dist = spread * (0.35 + ((hash(node.title) % 100) / 100) * 0.65);
+		node.x = center.x + Math.cos(angle) * dist;
+		node.y = center.y + Math.sin(angle) * dist;
 		node.vx = 0;
 		node.vy = 0;
-	});
+	}
 }
 
 export function clusterCentroids(nodes: ForceGraphNode[]): Map<string, { x: number; y: number; n: number }> {
@@ -45,18 +55,23 @@ export function createSimulationState(): SimulationState {
 	return { alpha: 1, tick: 0 };
 }
 
+export interface SimulationTickOptions extends ForceSimulationOptions {
+	/** When set, linked nodes are gently pulled toward this point (drag). */
+	dragId?: string | null;
+}
+
 /**
- * One force-directed step: repulsion, link springs, weak cluster pull, center gravity.
+ * One force-directed step: repulsion, link springs, cluster islands, center gravity.
  * Pure — safe to unit test without a DOM.
  */
 export function simulationTick(
 	nodes: ForceGraphNode[],
 	links: ForceGraphLink[],
 	state: SimulationState,
-	opts: ForceSimulationOptions,
+	opts: SimulationTickOptions,
 ): boolean {
 	const { width, height } = opts;
-	const alphaMin = opts.alphaMin ?? 0.02;
+	const alphaMin = opts.alphaMin ?? 0.008;
 	if (state.alpha < alphaMin) return false;
 
 	const n = nodes.length;
@@ -64,14 +79,14 @@ export function simulationTick(
 	const centroids = clusterCentroids(nodes);
 	const cx = width / 2;
 	const cy = height / 2;
+	const charge = 720 + Math.sqrt(n) * 40;
+	const stride = n > 160 ? 3 : n > 90 ? 2 : 1;
 
 	for (const node of nodes) {
 		node.vx = 0;
 		node.vy = 0;
 	}
 
-	// Repulsion — sample when large to stay smooth.
-	const stride = n > 120 ? 2 : 1;
 	for (let i = 0; i < n; i += stride) {
 		const a = nodes[i]!;
 		for (let j = i + 1; j < n; j += stride) {
@@ -82,7 +97,8 @@ export function simulationTick(
 			const dist = Math.sqrt(dist2);
 			dx /= dist;
 			dy /= dist;
-			const repulse = (520 * state.alpha) / dist2;
+			const sameCluster = a.cluster === b.cluster;
+			const repulse = (charge * state.alpha) / dist2 / (sameCluster ? 1.15 : 0.85);
 			if (!a.fixed) {
 				a.vx += dx * repulse;
 				a.vy += dy * repulse;
@@ -103,8 +119,10 @@ export function simulationTick(
 		const dist = Math.hypot(dx, dy) || 0.01;
 		dx /= dist;
 		dy /= dist;
-		const want = link.bridge ? 72 : 52;
-		const pull = ((dist - want) * 0.045 * state.alpha) / (link.bridge ? 1.4 : 1);
+		const bridge = link.bridge || a.cluster !== b.cluster;
+		const want = bridge ? 110 : 42 + (a.radius + b.radius);
+		const strength = (bridge ? 0.018 : 0.065) * state.alpha;
+		const pull = (dist - want) * strength;
 		if (!a.fixed) {
 			a.vx += dx * pull;
 			a.vy += dy * pull;
@@ -115,28 +133,51 @@ export function simulationTick(
 		}
 	}
 
+	const dragId = opts.dragId;
+	if (dragId) {
+		const dragged = byId.get(dragId);
+		if (dragged) {
+			for (const link of links) {
+				if (link.from !== dragId && link.to !== dragId) continue;
+				const otherId = link.from === dragId ? link.to : link.from;
+				const other = byId.get(otherId);
+				if (!other || other.fixed) continue;
+				let dx = dragged.x - other.x;
+				let dy = dragged.y - other.y;
+				const dist = Math.hypot(dx, dy) || 0.01;
+				dx /= dist;
+				dy /= dist;
+				const pull = Math.min(2.2, dist / 80) * 0.35 * state.alpha;
+				other.vx += dx * pull;
+				other.vy += dy * pull;
+			}
+		}
+	}
+
 	for (const node of nodes) {
 		if (node.fixed) continue;
 		const c = centroids.get(node.cluster);
 		if (c && c.n > 1) {
-			node.vx += (c.x - node.x) * 0.004 * state.alpha;
-			node.vy += (c.y - node.y) * 0.004 * state.alpha;
+			node.vx += (c.x - node.x) * 0.028 * state.alpha;
+			node.vy += (c.y - node.y) * 0.028 * state.alpha;
 		}
-		node.vx += (cx - node.x) * 0.0012 * state.alpha;
-		node.vy += (cy - node.y) * 0.0012 * state.alpha;
+		const members = nodes.filter((m) => m.cluster === node.cluster).length;
+		const clusterRepel = members > 1 ? 0.006 : 0.0012;
+		node.vx += (cx - node.x) * clusterRepel * state.alpha;
+		node.vy += (cy - node.y) * clusterRepel * state.alpha;
 	}
 
 	for (const node of nodes) {
 		if (node.fixed) continue;
-		node.vx *= 0.6;
-		node.vy *= 0.6;
-		node.x += node.vx * 0.22;
-		node.y += node.vy * 0.22;
+		node.vx *= 0.58;
+		node.vy *= 0.58;
+		node.x += node.vx * 0.24;
+		node.y += node.vy * 0.24;
 	}
 
-	separate(nodes, 22 + state.alpha * 6);
+	separate(nodes, 20 + state.alpha * 8);
 	state.tick += 1;
-	state.alpha *= 0.985;
+	state.alpha *= 0.988;
 	return state.alpha >= alphaMin;
 }
 
@@ -150,7 +191,7 @@ function separate(nodes: ForceGraphNode[], minDist: number): void {
 				let dx = b.x - a.x;
 				let dy = b.y - a.y;
 				const dist = Math.hypot(dx, dy) || 0.01;
-				const need = minDist + a.radius + b.radius - 8;
+				const need = minDist + a.radius + b.radius - 6;
 				if (dist >= need) continue;
 				dx /= dist;
 				dy /= dist;
@@ -175,7 +216,7 @@ export function runSimulation(
 	nodes: ForceGraphNode[],
 	links: ForceGraphLink[],
 	opts: ForceSimulationOptions,
-	maxTicks = 240,
+	maxTicks = 320,
 ): number {
 	const state = createSimulationState();
 	seedPositions(nodes, opts.width, opts.height);

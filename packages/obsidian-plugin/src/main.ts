@@ -3,7 +3,7 @@ import { AccountClient, AccountError, CLAUDE_SETUP, cleanFolderList, GroundworkP
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import * as os from "node:os";
 import { BUILD, readBuildStamp } from "./build";
-import { groundworkOpenedSignal } from "./open-link";
+import { groundworkOpenedSignal, parseGroundworkConcept } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
 import { accountOrigin, DEFAULT_SETTINGS, GROUNDWORK_WEB_API_KEY, GroundworkSettingTab, loadAccountToken, saveAccountToken, type GroundworkSettings } from "./settings";
@@ -138,7 +138,9 @@ export default class GroundworkPlugin extends Plugin {
 			await this.reloadSelf();
 			return;
 		}
-		await this.activateView(true);
+		const view = await this.activateView(true);
+		const concept = parseGroundworkConcept(params.concept);
+		if (concept) await view?.studyConceptFromDeepLink(concept);
 	}
 
 	private async signalOpened(opened: string | undefined): Promise<void> {
