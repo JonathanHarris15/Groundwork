@@ -126,7 +126,7 @@ export default class GroundworkPlugin extends Plugin {
 		const refresh = typeof params.refresh === "string" ? params.refresh.trim() : "";
 		if (refresh) {
 			saveAccountToken(this.app, refresh);
-			new Notice("Groundwork: this device is connected to your account.");
+			new Notice("Groundwork: this device is linked to your account.");
 		}
 		await this.signalOpened(typeof params.opened === "string" ? params.opened : undefined);
 		await this.connectMemory();
@@ -284,7 +284,7 @@ export default class GroundworkPlugin extends Plugin {
 			return {
 				label: "Sign in",
 				demo: false,
-				setup: { title: "Sign in to start.", detail: SIGN_IN_DETAIL, action: "Sign in", website: true },
+				setup: { title: "Sign in to start the tutor.", detail: SIGN_IN_DETAIL, action: "Open website", website: true },
 			};
 		}
 		const { provider } = this.settings;
@@ -297,7 +297,7 @@ export default class GroundworkPlugin extends Plugin {
 				label: route?.action === "blocked" ? "Tutor paused" : runtime.website ? "Account" : "Claude Code not found",
 				demo: false,
 				setup: {
-					title: runtime.website ? "Finish setup on the website." : "Connect your Claude subscription to start.",
+					title: runtime.website ? "Finish setup on the website." : "Install Claude Code to use your subscription.",
 					detail: runtime.detail ?? SIGN_IN_DETAIL,
 					action: runtime.website ? "Open website" : "Open settings",
 					website: runtime.website,
@@ -312,7 +312,7 @@ export default class GroundworkPlugin extends Plugin {
 				demo: false,
 				setup: {
 					title: "Connect your Claude subscription to start.",
-					detail: "Groundwork runs the tutor through Claude Code, so it uses your Pro or Max plan instead of an API key. Install Claude Code, run `claude` once in a terminal and type /login, then check the connection in settings.",
+					detail: "Install Claude Code, run `claude` once in a terminal and sign in (/login), then press Check connection in Groundwork settings.",
 					action: "Open settings",
 				},
 			};
@@ -393,13 +393,13 @@ export default class GroundworkPlugin extends Plugin {
 	private disconnectAccount(): void {
 		saveAccountToken(this.app, "");
 		this.tutorRoute = null;
-		this.setSync("offline", "open the website and choose Open Obsidian");
+		this.setSync("offline", "choose Open Obsidian on the Groundwork website");
 	}
 
 	private async memoryClient(): Promise<AccountClient | null> {
 		const token = await this.accountAccessToken();
 		if (!token) {
-			if (!loadAccountToken(this.app)) this.setSync("offline", "open the website and choose Open Obsidian");
+			if (!loadAccountToken(this.app)) this.setSync("offline", "choose Open Obsidian on the Groundwork website");
 			return null;
 		}
 		return new AccountClient(accountOrigin(), token);
@@ -434,7 +434,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	private scheduleMemorySave(): void {
 		if (!loadAccountToken(this.app)) {
-			this.setSync("offline", "open the website and choose Open Obsidian");
+			this.setSync("offline", "choose Open Obsidian on the Groundwork website");
 			return;
 		}
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
@@ -457,13 +457,13 @@ export default class GroundworkPlugin extends Plugin {
 	async saveMemory(manual: boolean): Promise<void> {
 		const client = await this.memoryClient();
 		if (!client) {
-			if (manual) new Notice("Groundwork: open the website and choose Open Obsidian. Tutor memory is kept on that account.");
+			if (manual) new Notice("Groundwork: sign in on the website and choose Open Obsidian. Tutor memory stays on your account.");
 			return;
 		}
 		if (!this.memoryBaseline) {
 			if (!manual) return;
 			await this.connectMemory();
-			if (!this.memoryBaseline) new Notice("Groundwork: could not load tutor memory from your account.");
+			if (!this.memoryBaseline) new Notice("Groundwork: could not load tutor memory. Check the network, then choose Open Obsidian on the website again.");
 			return;
 		}
 		if (this.accountPublishing) {

@@ -122,7 +122,7 @@ function showSignIn() {
 		<div class="hero">
 			<div>
 				<h1>Sign in to study.</h1>
-				<p class="lede">Manage your plan and model keys here. After sign-in, use Open Obsidian on the account page to connect the plugin on this computer.</p>
+				<p class="lede">Manage your plan and model keys on this site. After sign-in, open the account page and choose <strong>Open Obsidian</strong> to connect the plugin on this computer.</p>
 				${notice(false)}
 				<div class="signin"><button class="btn btn-ink" id="google" type="button" ${config.firebase ? "" : "disabled"}>Sign in with Google</button></div>
 			</div>
@@ -136,10 +136,10 @@ function showPlans() {
 	site.classList.remove("is-study");
 	dotfield.hidden = true;
 	const credit = account.needsPlan
-		? "Choose a plan to start."
+		? "Pick Free, Bring your own model, or Groundwork to start the tutor."
 		: account.ownModel
-			? "This plan uses your model. Groundwork does not meter it."
-			: "You can change plans below.";
+			? "This plan uses your Claude subscription or a saved provider key. Groundwork does not track that usage."
+			: "You can switch plans below.";
 	show(`
 		${notice(true)}
 		<h1>Choose a plan.</h1>
@@ -279,7 +279,7 @@ function board() {
 	const usage = account.ownModel ? `
 			<span class="big">Your model</span>
 			<span class="tile-label">Plan usage</span>
-			<p class="tile-note">This plan uses your model. Groundwork does not meter it.</p>` : usageTile();
+			<p class="tile-note">This plan uses your Claude subscription or a saved provider key. Groundwork does not track that usage.</p>` : usageTile();
 	return `
 		<section class="board" aria-labelledby="board-title">
 			<div class="blobs"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
@@ -432,7 +432,7 @@ function hostedTutorSection() {
 	return `
 		<section class="section">
 			<h2><span class="node green"></span>Tutor</h2>
-			<p>On Free and Groundwork plans, the tutor runs on Groundwork's model. One shared key on our side; you do not paste one. The monthly budget caps tutor usage. Jev grades written answers on our key and does not count against that budget.</p>
+			<p>On Free and Groundwork plans, Groundwork runs the tutor model for you. You do not paste an API key. The monthly usage bar on this page is the tutor limit. Written quiz answers are graded on our servers and do not use that bar.</p>
 		</section>`;
 }
 
@@ -443,7 +443,7 @@ function keysSection() {
 	return `
 		<section class="section">
 			<h2><span class="node blue"></span>Your model</h2>
-			<p>This plan uses a model you already pay for. Groundwork does not meter it.</p>
+			<p>This plan uses your Claude subscription or a provider key you save on the website. Groundwork does not track that usage.</p>
 			<h3>Claude subscription</h3>
 			<p>The simplest path. The login stays on this computer. Groundwork never stores it.</p>
 			<ol class="setup-list">${steps.map((step) => `<li><strong>${escapeHtml(step.title)}</strong><p>${escapeHtml(step.detail)}</p></li>`).join("")}</ol>
@@ -457,7 +457,7 @@ function keysSection() {
 				<div class="actions"><button class="btn btn-ink" type="submit">Save tutor</button></div>
 			</form>
 			<h3>Or paste a provider key</h3>
-			<p>The key stays on this account. The tutor calls that provider through Groundwork, so it is not written into the vault. Jev stays on our server and is not a key you paste.</p>
+			<p>The key stays on this account. The tutor calls that provider through Groundwork, not from files in your vault. Written quiz answers are graded on the Groundwork website; that is not a key you paste.</p>
 			<ul class="keys" aria-label="Saved keys">${keyList()}</ul>
 			<form id="key" autocomplete="off">
 				<div class="row">
@@ -712,9 +712,9 @@ async function readJson(res) {
 	try {
 		body = text ? JSON.parse(text) : {};
 	} catch {
-		throw new Error("The account server did not answer.");
+		throw new Error("The account server did not answer. Check that Groundwork is running, then reload this page.");
 	}
-	if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);
+	if (!res.ok) throw new Error(body.error || `That request failed (${res.status}). Try again, or sign out and sign in.`);
 	return body;
 }
 

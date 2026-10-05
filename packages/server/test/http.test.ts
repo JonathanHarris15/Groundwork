@@ -120,7 +120,7 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/app.js?v=13"');
+		expect(site?.body).toContain('src="/app.js?v=15"');
 		expect(site?.body).toContain('href="/styles.css?v=3"');
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
@@ -150,7 +150,8 @@ describe("account server", () => {
 		expect(signIn).toContain("Sign in with Google");
 		expect(signIn).not.toContain("planGrid");
 		expect(script).toContain("Claude subscription on this computer");
-		expect(script).toContain("One shared key on our side");
+		expect(script).toContain("Written quiz answers are graded");
+		expect(script).not.toMatch(/\bJev\b/);
 		expect(script).not.toMatch(/\$3|\$8 of/);
 		const tile = script.slice(script.indexOf("function usageTile"), script.indexOf("function keysSection"));
 		expect(tile).toContain("Resets at the end of the month.");
