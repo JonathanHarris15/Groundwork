@@ -15,6 +15,7 @@ export interface Billing {
 	sync?(uid: string, email?: string): Promise<void>;
 }
 
+/** Stripe-standard grace: past_due keeps paid entitlements until canceled, unpaid, or deleted. */
 const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
 const SYNC_TTL_MS = 60_000;
 const EVENT_TTL_MS = 24 * 60 * 60 * 1000;

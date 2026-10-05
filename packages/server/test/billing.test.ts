@@ -117,6 +117,23 @@ describe("stripe plan updates", () => {
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
 	});
 
+	it("downgrades to free when Stripe marks a subscription unpaid", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.setPlan("ada", "included");
+		await accounts.attachCustomer("ada", "cus_123");
+		await applyStripeEvent(
+			accounts,
+			event("customer.subscription.updated", {
+				customer: "cus_123",
+				metadata: { uid: "ada", plan: "included" },
+				status: "unpaid",
+				items: { data: [{ price: "price_included" }] },
+			}),
+			prices,
+		);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "free" });
+	});
+
 	it("returns the account to free when the subscription ends", async () => {
 		const accounts = new AccountDirectory();
 		await accounts.setPlan("ada", "included");
