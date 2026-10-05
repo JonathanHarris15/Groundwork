@@ -234,7 +234,15 @@ async function shot(name) {
 
 async function shotGroundwork(name) {
 	const file = path.join(outDir, `${prefix}${name}.png`);
-	await page.locator(".gw-root").screenshot({ path: file, timeout: 30_000 });
+	for (let attempt = 0; attempt < 5; attempt++) {
+		try {
+			await page.locator(".gw-root").screenshot({ path: file, timeout: 30_000 });
+			return;
+		} catch (e) {
+			if (attempt === 4) throw e;
+			await sleep(400);
+		}
+	}
 }
 
 async function shotStatusBar(name) {
@@ -372,6 +380,15 @@ if (scenario === "signed-in") {
 	await page.waitForSelector(`${rootSel}.is-goals`, { timeout: 15_000 });
 	await sleep(1200);
 	await shotGroundwork("07-goals");
+	await page.locator(`${rootSel} .gw-concept-list`).scrollIntoViewIfNeeded();
+	const clipped = await page.evaluate((sel) => {
+		const list = document.querySelector(`${sel} .gw-concept-list`);
+		const edge = list?.getBoundingClientRect().right ?? 0;
+		return [...(list?.querySelectorAll(".gw-row-action") ?? [])].filter((b) => b.getBoundingClientRect().right > edge + 1).length;
+	}, rootSel);
+	if (clipped) throw new Error(`${clipped} Goals row action(s) sit past the edge of the concept list`);
+	await sleep(400);
+	await shotGroundwork("07b-goals-concepts");
 
 	await tab("flashcards").click();
 	await page.waitForSelector(`${rootSel}.is-flashcards`, { timeout: 15_000 });

@@ -394,6 +394,17 @@ body.theme-light .gw-root.gw-theme-obsidian {
 	color: var(--text-normal);
 	border-bottom-color: var(--interactive-accent);
 }
+body .gw-root button.gw-lib-tab {
+	height: auto;
+	border: none;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+}
+body .gw-root button.gw-lib-tab.is-active {
+	border-bottom-color: var(--interactive-accent);
+}
 .gw-lib-count {
 	font-weight: 500;
 	font-variant-numeric: tabular-nums;
@@ -2526,6 +2537,23 @@ body .gw-root button.gw-step.is-off { color: var(--gw-muted); }
 	border-radius: 999px; border: 1px solid var(--gw-line-strong); background: transparent; color: var(--gw-ink); font-size: 12px; cursor: pointer;
 }
 .gw-row-action svg { width: 12px; height: 12px; }
+/* Five columns need about 600px; narrower, each concept takes two lines so its action stays on screen. */
+.gw-concept-list { container: gwconcepts / inline-size; }
+@container gwconcepts (max-width: 600px) {
+	.gw-concept-head { display: none; }
+	.gw-concept-head + .gw-concept-row { border-top: 0; }
+	.gw-concept-row {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		grid-template-areas: "name name action" "weight complete state";
+		row-gap: 8px;
+	}
+	.gw-concept-name { grid-area: name; }
+	.gw-weight { grid-area: weight; }
+	.gw-weight::before { content: "Weight"; margin-right: 4px; }
+	.gw-complete { grid-area: complete; }
+	.gw-state { grid-area: state; justify-self: end; }
+	.gw-row-action { grid-area: action; }
+}
 .gw-row-action.is-primary { background: var(--gw-cta-bg); color: var(--gw-cta-ink); border-color: var(--gw-cta-bg); }
 .gw-row-action.is-known {
 	color: var(--gw-tone-solid-ink);
@@ -2554,6 +2582,20 @@ body .gw-root button.gw-step.is-off { color: var(--gw-muted); }
 	margin-top: 4px;
 }
 .gw-text-btn { background: transparent; border: 0; color: var(--gw-muted); font-size: 12px; cursor: pointer; text-align: left; padding: 0; }
+body .gw-root button.gw-text-btn {
+	height: auto;
+	padding: 2px 0;
+	border: 0;
+	background: transparent;
+	color: var(--gw-muted);
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+	text-underline-offset: 3px;
+}
+body .gw-root button.gw-text-btn:hover {
+	color: var(--gw-ink-strong);
+	background: transparent;
+}
 .gw-library, .gw-settings, .gw-lib-row, .gw-aside { background: var(--gw-paper); color: var(--gw-ink); }
 .gw-lib-row, .gw-aside { background: var(--gw-raised); border-color: var(--gw-line); }
 
@@ -2577,15 +2619,35 @@ body .gw-root button.gw-step.is-off { color: var(--gw-muted); }
 	overflow-x: auto;
 }
 
-@container (max-width: 340px) {
+/* Four tabs do not fit between the brand and the tools in a narrow pane, so they take their own row. */
+@container (max-width: 640px) {
+	.gw-root.gw-theme-dark .gw-header,
+	.gw-root.gw-theme-light .gw-header,
+	.gw-root.gw-theme-obsidian .gw-header { grid-template-columns: auto minmax(0, 1fr); row-gap: 6px; }
+	.gw-root.gw-theme-dark .gw-views,
+	.gw-root.gw-theme-light .gw-views,
+	.gw-root.gw-theme-obsidian .gw-views { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
+	.gw-root.gw-theme-dark .gw-actions,
+	.gw-root.gw-theme-light .gw-actions,
+	.gw-root.gw-theme-obsidian .gw-actions { grid-column: 2; }
+	.gw-view { flex: 1 1 0; justify-content: center; min-width: 0; }
+}
+@container (max-width: 420px) {
+	.gw-view-icon { display: none; }
+}
+@container (max-width: 300px) {
+	.gw-view-icon { display: inline-flex; }
 	.gw-view-label { display: none; }
 }
 @container (max-width: 860px) {
 	.gw-header { height: auto; min-height: 48px; flex-wrap: wrap; padding: 8px 12px; }
-	.gw-views { order: 3; width: 100%; }
 	.gw-map-row, .gw-goals-row { flex-direction: column; overflow: auto; }
-	.gw-side { width: auto; border-left: 0; border-top: 1px solid var(--gw-line); }
-	.gw-mapwrap { min-height: 360px; flex: none; }
+	/* Stacked, the row scrolls as one; a flexible main column would be squeezed to a sliver by the rail. */
+	.gw-goals-row > .gw-goals { flex: none; overflow: visible; }
+	.gw-side { width: auto; flex: none; border-left: 0; border-top: 1px solid var(--gw-line); }
+	.gw-mapwrap { min-height: 360px; flex: none; display: flex; flex-direction: column; }
+	.gw-mapwrap > .gw-force-map { position: relative; inset: auto; height: auto; flex: 1 1 auto; min-height: 320px; }
+	.gw-map-key { position: static; margin: 0 12px 12px; }
 	.gw-goal-hero { grid-template-columns: 1fr; }
 	.gw-ring { border-left: 0; border-top: 1px solid var(--gw-line); padding-top: 12px; }
 	.gw-days b { font-size: 42px; }
@@ -2848,10 +2910,13 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 	flex-wrap: wrap;
 	margin-bottom: 12px;
 }
-.gw-fc-lib-head h3 {
+.gw-lib-section .gw-fc-lib-head h3 {
 	margin: 0;
 	font-size: 16px;
 	font-weight: 500;
+	letter-spacing: 0;
+	text-transform: none;
+	color: var(--text-normal);
 }
 .gw-fc-lib-tools {
 	display: flex;
@@ -2948,6 +3013,7 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 .gw-fc-chip {
 	display: inline-flex;
 	align-items: center;
+	gap: 4px;
 	height: 26px;
 	padding: 0 10px;
 	border-radius: 999px;
@@ -3004,13 +3070,13 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 	flex-direction: column;
 	gap: 8px;
 }
+/* Sized by the front card, so the cards stacked behind it peek out by their offset and no more. */
 .gw-fc-stack {
 	position: relative;
 	width: min(640px, 100%);
 	max-width: 100%;
-	margin: 0 auto;
-	flex: 1;
-	min-height: 280px;
+	margin: 0 auto 20px;
+	flex: none;
 }
 .gw-ghostcard {
 	position: absolute;
