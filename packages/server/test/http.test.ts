@@ -133,6 +133,7 @@ describe("account server", () => {
 		expect(script).toContain("https://community.obsidian.md/plugins/groundwork");
 		expect(script).toContain("Open Obsidian");
 		expect(script).toContain("/v1/groundwork");
+		expect(script).toContain("/v1/auth/sign-out");
 		const board = script.slice(script.indexOf("function board"), script.indexOf("function statBig"));
 		expect(board).toContain("goals.length");
 		expect(board).toContain("concepts.length");
