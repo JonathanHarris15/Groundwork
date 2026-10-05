@@ -1874,9 +1874,11 @@ body .gw-root button.gw-lib-tab.is-active {
 	height: 34px;
 	min-width: 34px;
 	padding: 0;
+	border: 0;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	cursor: pointer;
 }
 .gw-attach .gw-icon-label {
 	display: none;
@@ -2744,11 +2746,17 @@ body .gw-root button.gw-attach {
 	height: 34px;
 	min-width: 34px;
 	padding: 0;
+	border: 0;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	overflow: hidden;
 	color: var(--gw-muted);
+	cursor: pointer;
+}
+body .gw-root button.gw-attach:focus-visible {
+	outline: 2px solid var(--text-accent, #7cbcf2);
+	outline-offset: 2px;
 }
 body .gw-root button.gw-attach .gw-icon-label {
 	display: none;
