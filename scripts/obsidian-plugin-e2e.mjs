@@ -8,19 +8,34 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const obsidianBin = "/workspace/tmp/obsidian-install/squashfs-root/obsidian";
+const obsidianBin =
+	process.env.OBSIDIAN_BIN?.trim() ||
+	path.join(root, "tmp/obsidian-install/squashfs-root/obsidian");
 const vaultTemplate = path.join(root, "scripts/fixtures/obsidian-test-vault");
-const vault = "/workspace/tmp/gw-test-vault";
+const vault = process.env.GROUNDWORK_OBSIDIAN_VAULT?.trim() || path.join(root, "tmp/gw-test-vault");
 const pluginDist = path.join(root, "packages/obsidian-plugin/dist");
 const pluginVault = path.join(vault, ".obsidian/plugins/groundwork");
-const outDir = "/opt/cursor/artifacts/obsidian-real";
+const outDir =
+	process.env.GROUNDWORK_OBSIDIAN_E2E_OUT?.trim() ||
+	(process.env.CI ? path.join(root, "artifacts/obsidian-real") : "/opt/cursor/artifacts/obsidian-real");
 const port = 8787;
-const obsidianConfig = "/home/ubuntu/.config/obsidian/obsidian.json";
+const obsidianConfig = path.join(process.env.HOME ?? "/tmp", ".config/obsidian/obsidian.json");
 const serverEntry = path.join(root, "packages/server/dist/server.js");
 
 const scenario = process.argv.find((a) => a.startsWith("--scenario="))?.split("=")[1] ?? "signed-in";
+const skipIfMissing = process.argv.includes("--skip-if-missing-obsidian");
 
 mkdirSync(outDir, { recursive: true });
+
+if (!existsSync(obsidianBin)) {
+	const msg = `Obsidian binary not found at ${obsidianBin}. Run: bash scripts/install-obsidian-appimage.sh`;
+	if (skipIfMissing) {
+		console.log(`SKIP: ${msg}`);
+		process.exit(0);
+	}
+	console.error(msg);
+	process.exit(2);
+}
 
 function run(cmd, opts = {}) {
 	execSync(cmd, { stdio: "inherit", ...opts });
@@ -116,6 +131,7 @@ if (scenario !== "signed-out") {
 	run(`npx -y tsx ${JSON.stringify(path.join(root, "scripts/seed-obsidian-graph-vault.mjs"))} ${JSON.stringify(vault)}`);
 }
 
+mkdirSync(path.dirname(obsidianConfig), { recursive: true });
 writeFileSync(
 	obsidianConfig,
 	JSON.stringify({
@@ -167,8 +183,20 @@ const log = "/tmp/obsidian-e2e.log";
 appendFileSync(log, `\n--- run ${scenario} ---\n`);
 const child = spawn(
 	"xvfb-run",
-	["-a", "--server-args=-screen 0 1280x800x24", obsidianBin, "--no-sandbox", "--disable-gpu", `--remote-debugging-port=${cdpPort}`, vault],
-	{ stdio: ["ignore", "pipe", "pipe"], detached: true },
+	[
+		"-a",
+		"--server-args=-screen 0 1280x800x24",
+		obsidianBin,
+		"--no-sandbox",
+		"--disable-gpu",
+		`--remote-debugging-port=${cdpPort}`,
+		vault,
+	],
+	{
+		stdio: ["ignore", "pipe", "pipe"],
+		detached: true,
+		env: { ...process.env, ELECTRON_DISABLE_GPU: "1", LIBGL_ALWAYS_SOFTWARE: "1" },
+	},
 );
 child.stdout?.on("data", (d) => appendFileSync(log, d));
 child.stderr?.on("data", (d) => appendFileSync(log, d));
@@ -176,7 +204,16 @@ child.stderr?.on("data", (d) => appendFileSync(log, d));
 await sleep(18_000);
 
 const { chromium } = await import("playwright");
-const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, { timeout: 45_000 });
+let browser;
+for (let attempt = 0; attempt < 6; attempt++) {
+	try {
+		browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, { timeout: 45_000 });
+		break;
+	} catch (e) {
+		if (attempt === 5) throw e;
+		await sleep(5000);
+	}
+}
 const page = browser.contexts()[0]?.pages()[0];
 if (!page) throw new Error("No Obsidian page from CDP");
 
@@ -306,7 +343,7 @@ if (scenario === "signed-in") {
 	await sleep(400);
 	await page.locator(`${rootSel} [data-testid="gw-map-tab"]`).click();
 	await page.waitForSelector(`${rootSel}.is-map`, { timeout: 15_000 });
-	await page.waitForSelector(`${rootSel} .gw-concept-map, ${rootSel} .gw-map-empty`, { timeout: 20_000 });
+	await page.waitForSelector(`${rootSel} .gw-force-map, ${rootSel} .gw-map-empty`, { timeout: 60_000 });
 	await sleep(800);
 	await shotGroundwork("06-map");
 
