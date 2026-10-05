@@ -373,9 +373,9 @@ if (scenario === "signed-in") {
 	await sleep(800);
 	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Chats/ }).click({ timeout: 15_000 });
 	await sleep(500);
-	const openChat = page.locator(`${rootSel} button`, { hasText: "Open" }).first();
+	const openChat = page.locator(`${rootSel}.is-library .gw-library-scroll button.gw-lib-btn`).filter({ hasText: /^Open$/ });
 	if (await openChat.count()) {
-		await openChat.click();
+		await openChat.first().click({ timeout: 15_000 });
 		await page.waitForSelector(`${rootSel}:not(.is-overlay)`, { timeout: 15_000 });
 		await page.waitForSelector(`${rootSel} .gw-msg-row`, { timeout: 25_000 });
 		await page.waitForSelector(`${rootSel} .gw-assistant`, { timeout: 25_000 });
