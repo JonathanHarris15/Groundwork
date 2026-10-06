@@ -499,7 +499,7 @@ function decodePng(buf: Buffer): { width: number; height: number; data: Uint8Arr
 	return { width, height, data: out };
 }
 
-const COLLECT = /(?:google-analytics\.com|www\.google\.com)\/g\/collect/;
+const COLLECT = /(?:google-analytics\.com|analytics\.google\.com|www\.google\.com)\/g\/collect/;
 
 async function countEvents(page: Page, name: string): Promise<number> {
 	return page.evaluate((eventName) => {
