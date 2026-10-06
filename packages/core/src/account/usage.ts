@@ -153,6 +153,14 @@ export function setStripeCustomer(record: AccountRecord, customerId: string): Ac
 	return { ...record, stripeCustomerId: customerId };
 }
 
+/** Drop a Stripe customer id that does not exist in the current mode. */
+export function clearStripeCustomer(record: AccountRecord): AccountRecord {
+	if (!record.stripeCustomerId) return record;
+	const next = { ...record };
+	delete next.stripeCustomerId;
+	return next;
+}
+
 export function setTutorChoice(record: AccountRecord, choice: { via: "claude" | "key"; provider?: string | null }, now: Date = new Date()): AccountRecord {
 	const current = currentAccount(record, now);
 	if (choice.via === "claude") return { ...current, tutorVia: "claude" };

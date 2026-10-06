@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { AccountDirectory } from "../src/accounts";
-import { applyStripeEvent, createBilling, escapeStripeSearch, planFromSubscription, resetStripeEventDedupe, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
+import { applyStripeEvent, createBilling, escapeStripeSearch, isMissingStripeCustomer, planFromSubscription, resetStripeEventDedupe, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
 
 const prices = { byom: "price_byom", included: "price_included" };
 
@@ -335,5 +335,222 @@ describe("stripe membership sync", () => {
 		await billing.sync!("ada");
 		expect(searches).toBe(2);
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "byom" });
+	});
+});
+
+function missingCustomer(message = "No such customer: 'cus_test'"): Error {
+	return Object.assign(new Error(message), { code: "resource_missing", param: "customer", status: 404 });
+}
+
+describe("test-mode customer ids after a live key", () => {
+	it("recognizes a missing customer and leaves a missing price alone", () => {
+		expect(isMissingStripeCustomer(missingCustomer())).toBe(true);
+		expect(
+			isMissingStripeCustomer(
+				missingCustomer("No such customer: 'cus_test'; a similar object exists in test mode, but a live mode key was used to make this request."),
+			),
+		).toBe(true);
+		expect(isMissingStripeCustomer(Object.assign(new Error("No such customer: 'cus_test'"), { code: "resource_missing" }))).toBe(true);
+		expect(
+			isMissingStripeCustomer(Object.assign(new Error("No such price: 'price_byom'"), { code: "resource_missing", param: "line_items[0][price]" })),
+		).toBe(false);
+		expect(isMissingStripeCustomer(new Error("stripe down"))).toBe(false);
+	});
+
+	it("clears a missing customer, creates a live one, and retries checkout once", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		await accounts.attachCustomer("ada", "cus_test");
+		const sessions: string[] = [];
+		let created = 0;
+		const stripe = {
+			customers: {
+				async create(params: { email?: string; metadata?: { uid?: string } }) {
+					created++;
+					expect(params).toMatchObject({ email: "ada@example.com", metadata: { uid: "ada" } });
+					return { id: "cus_live" };
+				},
+			},
+			checkout: {
+				sessions: {
+					async create(params: { customer?: string }) {
+						sessions.push(params.customer ?? "");
+						if (params.customer === "cus_test") throw missingCustomer();
+						return { url: "https://checkout.stripe.test/live" };
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.checkout("ada", "ada@example.com", "included", "https://groundwork.test")).resolves.toBe(
+			"https://checkout.stripe.test/live",
+		);
+		expect(sessions).toEqual(["cus_test", "cus_live"]);
+		expect(created).toBe(1);
+		await expect(accounts.customerId("ada")).resolves.toBe("cus_live");
+	});
+
+	it("does not replace the customer when a different Stripe resource is missing", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.attachCustomer("ada", "cus_test");
+		let created = 0;
+		const stripe = {
+			customers: {
+				async create() {
+					created++;
+					return { id: "cus_live" };
+				},
+			},
+			checkout: {
+				sessions: {
+					async create() {
+						throw Object.assign(new Error("No such price: 'price_byom'"), { code: "resource_missing", param: "line_items[0][price]" });
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.checkout("ada", "ada@example.com", "byom", "https://groundwork.test")).rejects.toThrow(/No such price/);
+		expect(created).toBe(0);
+		await expect(accounts.customerId("ada")).resolves.toBe("cus_test");
+	});
+
+	it("stops after one replacement when the new customer is also missing", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.attachCustomer("ada", "cus_test");
+		let created = 0;
+		let sessions = 0;
+		const stripe = {
+			customers: {
+				async create() {
+					created++;
+					return { id: "cus_live" };
+				},
+			},
+			checkout: {
+				sessions: {
+					async create() {
+						sessions++;
+						throw missingCustomer();
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.checkout("ada", "ada@example.com", "byom", "https://groundwork.test")).rejects.toMatchObject({ code: "resource_missing" });
+		expect(sessions).toBe(2);
+		expect(created).toBe(1);
+		await expect(accounts.customerId("ada")).resolves.toBe("cus_live");
+	});
+
+	it("opens the portal on a fresh customer when the stored one is missing", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		await accounts.attachCustomer("ada", "cus_test");
+		const used: string[] = [];
+		const stripe = {
+			customers: {
+				async create() {
+					return { id: "cus_live" };
+				},
+			},
+			billingPortal: {
+				sessions: {
+					async create(params: { customer?: string }) {
+						used.push(params.customer ?? "");
+						if (params.customer === "cus_test") throw missingCustomer();
+						return { url: "https://billing.stripe.test/portal" };
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.portal("ada", "https://groundwork.test")).resolves.toBe("https://billing.stripe.test/portal");
+		expect(used).toEqual(["cus_test", "cus_live"]);
+		await expect(accounts.customerId("ada")).resolves.toBe("cus_live");
+	});
+
+	it("still refuses the portal when the account has never had a customer", async () => {
+		const accounts = new AccountDirectory();
+		let created = 0;
+		const stripe = {
+			customers: {
+				async create() {
+					created++;
+					return { id: "cus_live" };
+				},
+			},
+			billingPortal: {
+				sessions: {
+					async create() {
+						throw new Error("should not run");
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.portal("ada", "https://groundwork.test")).rejects.toMatchObject({
+			status: 400,
+			message: "No billing account yet. Choose a paid plan first.",
+		});
+		expect(created).toBe(0);
+	});
+
+	it("drops a sandbox paid plan when the stored customer is missing, and does not keep erroring", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.setPlan("ada", "included");
+		await accounts.attachCustomer("ada", "cus_test");
+		let lists = 0;
+		let searches = 0;
+		const stripe = stripeFake({});
+		stripe.subscriptions.list = async () => {
+			lists++;
+			throw missingCustomer();
+		};
+		const search = stripe.customers.search;
+		stripe.customers.search = async (args) => {
+			searches++;
+			return search(args);
+		};
+		await syncStripeMembership(stripe, prices, accounts, "ada");
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "free", hasBilling: false });
+		await expect(accounts.customerId("ada")).resolves.toBeUndefined();
+		await syncStripeMembership(stripe, prices, accounts, "ada");
+		expect(lists).toBe(1);
+		expect(searches).toBe(1);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "free" });
+
+		const logged: unknown[] = [];
+		const original = console.error;
+		console.error = (...args: unknown[]) => {
+			logged.push(args);
+		};
+		try {
+			const again = new AccountDirectory();
+			await again.setPlan("ada", "byom");
+			await again.attachCustomer("ada", "cus_test");
+			const billing = createBilling(
+				{
+					customers: {
+						async search() {
+							return { data: [] };
+						},
+					},
+					subscriptions: {
+						async list() {
+							throw missingCustomer();
+						},
+					},
+				} as unknown as Stripe,
+				prices,
+				"whsec",
+				again,
+			);
+			await billing.sync!("ada");
+			await expect(again.get("ada")).resolves.toMatchObject({ plan: "free", hasBilling: false });
+			expect(logged).toEqual([]);
+		} finally {
+			console.error = original;
+		}
 	});
 });
