@@ -41,7 +41,11 @@ async function seedMemory() {
 		const lib = {
 			updatedAt: fixedNow().toISOString(),
 			addFromTeachingNotes: true,
-			decks: [{ id: "deck-calc", title: "Calculus fluency", goalId: report.goal.id, fileName: "Calculus-fluency.md" }],
+			decks: [
+				{ id: "deck-calc", title: "Calculus fluency", goalId: report.goal.id, fileName: "Calculus-fluency.md" },
+				{ id: "library", title: "Library" },
+				{ id: "scratch", title: "Scratch pad" },
+			],
 			cards: [
 				{
 					id: "card-1",
@@ -56,6 +60,21 @@ async function seedMemory() {
 					intervalMinutes: 24 * 60,
 					ease: 2.5,
 					reps: 2,
+					lapses: 0,
+				},
+				{
+					id: "card-scratch",
+					deckId: "scratch",
+					concept: "Secant line",
+					front: "What is a secant?",
+					back: "A line.",
+					createdAt: fixedNow().toISOString(),
+					updatedAt: fixedNow().toISOString(),
+					state: "new",
+					due: fixedNow().toISOString(),
+					intervalMinutes: 0,
+					ease: 2.5,
+					reps: 0,
 					lapses: 0,
 				},
 			],

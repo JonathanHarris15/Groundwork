@@ -3187,11 +3187,48 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 }
 .gw-fc-lib-head {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	justify-content: space-between;
 	gap: 12px;
 	flex-wrap: wrap;
 	margin-bottom: 12px;
+}
+.gw-fc-lib-title {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.gw-fc-lib-note {
+	margin: 0;
+	max-width: 36rem;
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--text-muted);
+}
+.gw-fc-lib-head.is-renaming .gw-fc-lib-tools {
+	display: none;
+}
+.gw-fc-lib-rename {
+	display: flex;
+	flex: 1 1 100%;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+}
+.gw-fc-lib-rename-row {
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: center;
+	gap: 8px;
+}
+body .gw-root button.gw-lib-btn.is-danger {
+	color: var(--text-error, #e07070);
+}
+.gw-fc-lib-rename .gw-fc-input {
+	flex: 1 1 10rem;
+	width: auto;
+	min-width: 0;
 }
 .gw-lib-section .gw-fc-lib-head h3 {
 	margin: 0;
@@ -3215,6 +3252,7 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 	display: flex;
 	align-items: flex-start;
 	justify-content: space-between;
+	flex-wrap: wrap;
 	gap: 12px;
 	padding: 10px 12px;
 	border: 1px solid var(--gw-line);
@@ -3594,6 +3632,7 @@ body .gw-root select.gw-deck-select:focus-visible {
 	display: flex;
 	flex-shrink: 0;
 	gap: 6px;
+	margin-left: auto;
 }
 .gw-fc-rate {
 	display: grid;

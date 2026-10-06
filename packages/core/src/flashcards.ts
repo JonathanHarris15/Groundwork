@@ -3,6 +3,7 @@
  * They are written into the vault only when the learner asks: `exportFlashcards`
  * copies them as plain Markdown into `flashcards/` inside the folders they chose.
  * A hand edit of an exported card is pulled back onto the account by `syncFlashcards`.
+ * Deleting a deck or a card leaves those notes in the vault and does not pull them back.
  * The account copy owns the schedule.
  */
 
@@ -13,6 +14,13 @@ import type { Outcome } from "./model";
 import { PATHS, type KnowledgeStore } from "./store";
 
 export const FLASHCARDS_DIR = "flashcards";
+
+/** Stable id for cards that were not put in a named deck. Exported notes still say `deck: library`. */
+export const DEFAULT_DECK_ID = "library";
+/** Shown in the Library pane. Older accounts stored this deck as "Library". */
+export const DEFAULT_DECK_TITLE = "Unsorted";
+const LEGACY_DEFAULT_DECK_TITLE = "Library";
+const RETIRED_CAP = 5000;
 
 export type CardRating = "again" | "hard" | "good" | "easy";
 export type CardState = "new" | "learning" | "review";
@@ -56,6 +64,10 @@ export interface FlashcardLibrary {
 	addFromTeachingNotes: boolean;
 	decks: FlashDeck[];
 	cards: Flashcard[];
+	/** Deck ids the learner deleted, until that deck is created again. */
+	retiredDeckIds: string[];
+	/** Card ids the learner deleted. A leftover export must not bring the card back. */
+	retiredCardIds: string[];
 }
 
 const RATINGS: CardRating[] = ["again", "hard", "good", "easy"];
@@ -69,7 +81,14 @@ export function flashcardsDir(writeFolder: string): string {
 }
 
 export function emptyFlashcardLibrary(now = new Date()): FlashcardLibrary {
-	return { updatedAt: now.toISOString(), addFromTeachingNotes: false, decks: [], cards: [] };
+	return {
+		updatedAt: now.toISOString(),
+		addFromTeachingNotes: false,
+		decks: [],
+		cards: [],
+		retiredDeckIds: [],
+		retiredCardIds: [],
+	};
 }
 
 const FLASHCARD_BACK_MAX_WORDS = 8;
@@ -240,6 +259,54 @@ function asState(value: unknown): CardState {
 	return value === "learning" || value === "review" || value === "new" ? value : "new";
 }
 
+function idList(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	const out: string[] = [];
+	for (const item of value) {
+		if (typeof item !== "string") continue;
+		const id = item.trim();
+		if (!id || id.length > 200 || out.includes(id)) continue;
+		out.push(id);
+		if (out.length >= RETIRED_CAP) break;
+	}
+	return out;
+}
+
+function rememberRetired(list: readonly string[] | undefined, ids: readonly string[]): string[] {
+	const next = [...(list ?? [])];
+	for (const raw of ids) {
+		const id = raw.trim();
+		if (!id || next.includes(id)) continue;
+		next.push(id);
+	}
+	return next.length > RETIRED_CAP ? next.slice(next.length - RETIRED_CAP) : next;
+}
+
+/** Older accounts called the catch-all deck "Library", which is this pane's name. */
+function settleDefaultDeckTitle(lib: FlashcardLibrary): void {
+	const deck = lib.decks.find((d) => d.id === DEFAULT_DECK_ID);
+	if (!deck || deck.title !== LEGACY_DEFAULT_DECK_TITLE) return;
+	const taken = (title: string) => lib.decks.some((d) => d !== deck && d.title.toLowerCase() === title.toLowerCase());
+	let title = DEFAULT_DECK_TITLE;
+	if (taken(title)) title = "Unsorted cards";
+	let n = 2;
+	while (taken(title)) {
+		title = `Unsorted cards ${n}`;
+		n += 1;
+	}
+	deck.title = title;
+}
+
+function assertDeckTitle(title: string): string {
+	const name = title.trim();
+	if (!name) throw new Error("A deck needs a name.");
+	if (name.length > 120) throw new Error("That deck name is too long.");
+	if (name.toLowerCase() === LEGACY_DEFAULT_DECK_TITLE.toLowerCase()) {
+		throw new Error("Library is this pane. Name the deck something else.");
+	}
+	return name;
+}
+
 export function parseFlashcardLibrary(value: unknown): FlashcardLibrary {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Flashcards file is not an object.");
 	const raw = value as Record<string, unknown>;
@@ -269,7 +336,7 @@ export function parseFlashcardLibrary(value: unknown): FlashcardLibrary {
 		const createdAt = typeof c.createdAt === "string" ? c.createdAt : new Date(0).toISOString();
 		cards.push({
 			id: c.id.trim(),
-			deckId: typeof c.deckId === "string" && c.deckId.trim() ? c.deckId.trim() : "library",
+			deckId: typeof c.deckId === "string" && c.deckId.trim() ? c.deckId.trim() : DEFAULT_DECK_ID,
 			concept: c.concept.trim(),
 			front: c.front.trim(),
 			back: c.back.trim(),
@@ -292,12 +359,18 @@ export function parseFlashcardLibrary(value: unknown): FlashcardLibrary {
 					: flashcardQualityIssue(c.front.trim(), c.back.trim()) ?? undefined,
 		});
 	}
-	return {
+	const liveCards = new Set(cards.map((card) => card.id));
+	const liveDecks = new Set(decks.map((deck) => deck.id));
+	const lib: FlashcardLibrary = {
 		updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : "",
 		addFromTeachingNotes: raw.addFromTeachingNotes === true,
 		decks,
 		cards,
+		retiredDeckIds: idList(raw.retiredDeckIds).filter((id) => id !== DEFAULT_DECK_ID && !liveDecks.has(id)),
+		retiredCardIds: idList(raw.retiredCardIds).filter((id) => !liveCards.has(id)),
 	};
+	settleDefaultDeckTitle(lib);
+	return lib;
 }
 
 export function serializeFlashcardLibrary(lib: FlashcardLibrary): string {
@@ -311,7 +384,13 @@ export async function loadFlashcardLibrary(io: VaultIO): Promise<FlashcardLibrar
 	return lib;
 }
 
+function unretireDeck(lib: FlashcardLibrary, id: string): void {
+	if (!lib.retiredDeckIds.includes(id)) return;
+	lib.retiredDeckIds = lib.retiredDeckIds.filter((deckId) => deckId !== id);
+}
+
 export function ensureDeck(lib: FlashcardLibrary, id: string, title: string): FlashDeck {
+	unretireDeck(lib, id);
 	let deck = lib.decks.find((d) => d.id === id);
 	if (!deck) {
 		deck = { id, title: title.trim() || "Deck" };
@@ -324,7 +403,13 @@ function deckMatching(lib: FlashcardLibrary, wanted: string): FlashDeck | undefi
 	const name = wanted.trim();
 	const slug = slugify(name);
 	const lower = name.toLowerCase();
-	return lib.decks.find((d) => d.id === name || (slug !== "" && d.id === slug) || d.title.toLowerCase() === lower);
+	return lib.decks.find((d) => {
+		if (d.id === name || d.title.toLowerCase() === lower) return true;
+		if (!slug || d.id !== slug) return false;
+		// The catch-all id stays "library" after its title moved to Unsorted.
+		if (d.id === DEFAULT_DECK_ID && slugify(d.title) !== slug) return false;
+		return true;
+	});
 }
 
 function nextDeckId(lib: FlashcardLibrary, base: string): string {
@@ -335,10 +420,13 @@ function nextDeckId(lib: FlashcardLibrary, base: string): string {
 	return `${stem}-${n}`;
 }
 
-/** Find a deck by name or id, or create one. An empty name is the Library deck. */
+/** Find a deck by name or id, or create one. An empty name, or the old name "Library", is the catch-all deck. */
 function resolveDeck(lib: FlashcardLibrary, wanted: string): FlashDeck {
 	const name = wanted.trim();
-	if (!name) return ensureDeck(lib, "library", "Library");
+	if (!name || name.toLowerCase() === LEGACY_DEFAULT_DECK_TITLE.toLowerCase()) {
+		const existing = lib.decks.find((d) => d.id === DEFAULT_DECK_ID);
+		return existing ?? ensureDeck(lib, DEFAULT_DECK_ID, DEFAULT_DECK_TITLE);
+	}
 	const found = deckMatching(lib, name);
 	if (found) return found;
 	return ensureDeck(lib, nextDeckId(lib, slugify(name) || "deck"), name);
@@ -438,9 +526,11 @@ export interface ParsedCardFile {
 	source?: string;
 }
 
-export function parseCardFile(text: string): ParsedCardFile | { kind: "deck" } | null {
+export function parseCardFile(text: string): ParsedCardFile | { kind: "deck"; id: string } | null {
 	const { frontmatter, body } = parseNote(text);
-	if (frontmatter.groundwork === "flashcard-deck") return { kind: "deck" };
+	if (frontmatter.groundwork === "flashcard-deck") {
+		return { kind: "deck", id: typeof frontmatter.id === "string" ? frontmatter.id.trim() : "" };
+	}
 	if (frontmatter.groundwork !== "flashcard") return null;
 	const lines = body.replace(/^\uFEFF/, "").split("\n");
 	let frontStart = 0;
@@ -458,7 +548,7 @@ export function parseCardFile(text: string): ParsedCardFile | { kind: "deck" } |
 	return {
 		kind: "card",
 		id: typeof frontmatter.id === "string" ? frontmatter.id.trim() : "",
-		deckId: typeof frontmatter.deck === "string" && frontmatter.deck.trim() ? frontmatter.deck.trim() : "library",
+		deckId: typeof frontmatter.deck === "string" && frontmatter.deck.trim() ? frontmatter.deck.trim() : DEFAULT_DECK_ID,
 		concept: typeof frontmatter.concept === "string" ? frontmatter.concept.trim() : "",
 		front,
 		back,
@@ -498,7 +588,8 @@ export async function adoptVaultEdits(vault: VaultIO, writeFolders: readonly str
 			const fileName = path.split("/").pop();
 			const existing = lib.cards.find((c) => c.id === id);
 			if (!existing) {
-				const deckTitle = parsed.deckId === "library" ? "Library" : parsed.deckId;
+				if (lib.retiredCardIds.includes(id) || lib.retiredDeckIds.includes(parsed.deckId)) continue;
+				const deckTitle = parsed.deckId === DEFAULT_DECK_ID ? DEFAULT_DECK_TITLE : parsed.deckId;
 				ensureDeck(lib, parsed.deckId, deckTitle);
 				const card = makeCard({ id, deckId: parsed.deckId, concept: parsed.concept, front: parsed.front, back: parsed.back, source: parsed.source, now });
 				card.fileName = fileName;
@@ -523,6 +614,37 @@ export async function adoptVaultEdits(vault: VaultIO, writeFolders: readonly str
 	return changed;
 }
 
+function leavesRetiredExport(parsed: ParsedCardFile | { kind: "deck"; id: string }, lib: FlashcardLibrary): boolean {
+	const retiredCards = lib.retiredCardIds ?? [];
+	const retiredDecks = lib.retiredDeckIds ?? [];
+	if (parsed.kind === "deck") return Boolean(parsed.id && retiredDecks.includes(parsed.id));
+	if (parsed.id && retiredCards.includes(parsed.id)) return true;
+	return Boolean(parsed.deckId && retiredDecks.includes(parsed.deckId));
+}
+
+async function holdsRetiredExport(vault: VaultIO, path: string, lib: FlashcardLibrary): Promise<boolean> {
+	if (!(await vault.exists(path))) return false;
+	try {
+		const parsed = parseCardFile(await vault.read(path));
+		return Boolean(parsed && leavesRetiredExport(parsed, lib));
+	} catch {
+		return false;
+	}
+}
+
+async function claimExportName(vault: VaultIO, dir: string, fileName: string, taken: Set<string>, lib: FlashcardLibrary): Promise<string> {
+	const stem = fileName.replace(/\.md$/i, "").replace(/ \d+$/, "");
+	let name = fileName;
+	let n = 2;
+	while (taken.has(name) || (await holdsRetiredExport(vault, `${dir}/${name}`, lib))) {
+		name = `${stem} ${n}.md`;
+		n += 1;
+		if (n > 50) break;
+	}
+	taken.add(name);
+	return name;
+}
+
 export async function mirrorFlashcards(vault: VaultIO, writeFolders: readonly string[], lib: FlashcardLibrary): Promise<string[]> {
 	const folders = cleanFolderList(writeFolders);
 	assignFlashcardFiles(lib);
@@ -534,8 +656,10 @@ export async function mirrorFlashcards(vault: VaultIO, writeFolders: readonly st
 		if (!lib.cards.length && !exists) continue;
 		if (lib.cards.length) await ensureDir(vault, dir);
 		const keep = new Set<string>();
+		const taken = new Set<string>();
 		for (const card of lib.cards) {
 			if (!card.fileName) continue;
+			card.fileName = await claimExportName(vault, dir, card.fileName, taken, lib);
 			const deck = lib.decks.find((d) => d.id === card.deckId);
 			const path = `${dir}/${card.fileName}`;
 			await vault.write(path, serializeCardMarkdown(card, deck?.title ?? card.deckId));
@@ -543,6 +667,7 @@ export async function mirrorFlashcards(vault: VaultIO, writeFolders: readonly st
 		}
 		for (const deck of lib.decks) {
 			if (!deck.fileName) continue;
+			deck.fileName = await claimExportName(vault, dir, deck.fileName, taken, lib);
 			const cards = lib.cards.filter((c) => c.deckId === deck.id);
 			const path = `${dir}/${deck.fileName}`;
 			await vault.write(path, serializeDeckMarkdown(deck, cards));
@@ -563,7 +688,9 @@ export async function mirrorFlashcards(vault: VaultIO, writeFolders: readonly st
 				continue;
 			}
 			const parsed = parseCardFile(text);
-			if (parsed) await vault.remove(path);
+			if (!parsed) continue;
+			if (leavesRetiredExport(parsed, lib)) continue;
+			await vault.remove(path);
 		}
 		mirrored.push(dir);
 	}
@@ -597,6 +724,8 @@ export async function removeFlashcardMirrors(vault: VaultIO, writeFolders: reado
 function fingerprint(lib: FlashcardLibrary): string {
 	return JSON.stringify({
 		addFromTeachingNotes: lib.addFromTeachingNotes,
+		retiredDeckIds: lib.retiredDeckIds ?? [],
+		retiredCardIds: lib.retiredCardIds ?? [],
 		decks: lib.decks.map((d) => ({ id: d.id, title: d.title, goalId: d.goalId ?? null, fileName: d.fileName ?? null })),
 		cards: lib.cards.map((c) => ({
 			id: c.id,
@@ -620,7 +749,20 @@ function fingerprint(lib: FlashcardLibrary): string {
 	});
 }
 
+async function diskHasLegacyLibraryTitle(io: VaultIO): Promise<boolean> {
+	if (!(await io.exists(PATHS.flashcards))) return false;
+	try {
+		const raw = JSON.parse(await io.read(PATHS.flashcards)) as { decks?: Array<{ id?: string; title?: string }> };
+		return Array.isArray(raw.decks) && raw.decks.some((deck) => deck?.id === DEFAULT_DECK_ID && deck?.title === LEGACY_DEFAULT_DECK_TITLE);
+	} catch {
+		return false;
+	}
+}
+
 async function persist(store: KnowledgeStore, lib: FlashcardLibrary, now: Date): Promise<void> {
+	if (!lib.retiredDeckIds) lib.retiredDeckIds = [];
+	if (!lib.retiredCardIds) lib.retiredCardIds = [];
+	settleDefaultDeckTitle(lib);
 	assignFlashcardFiles(lib);
 	for (const card of lib.cards) card.contentKey = flashcardContentKey(card.concept, card.front, card.back);
 	let prev: FlashcardLibrary | null = null;
@@ -631,7 +773,8 @@ async function persist(store: KnowledgeStore, lib: FlashcardLibrary, now: Date):
 			prev = null;
 		}
 	}
-	if (!prev || fingerprint(prev) !== fingerprint(lib)) {
+	const legacyTitle = await diskHasLegacyLibraryTitle(store.io);
+	if (!prev || fingerprint(prev) !== fingerprint(lib) || legacyTitle) {
 		lib.updatedAt = now.toISOString();
 		await store.writeFile(PATHS.flashcards, serializeFlashcardLibrary(lib));
 	}
@@ -650,17 +793,47 @@ export async function exportFlashcards(store: KnowledgeStore, writeFolders: read
 	const lib = await loadFlashcardLibrary(store.io);
 	await adoptVaultEdits(store.context, writeFolders, lib, now);
 	await persist(store, lib, now);
-	return mirrorFlashcards(store.context, writeFolders, lib);
+	const written = await mirrorFlashcards(store.context, writeFolders, lib);
+	await persist(store, lib, now);
+	return written;
 }
 
 export async function createDeck(store: KnowledgeStore, title: string, now = new Date()): Promise<FlashDeck> {
-	const name = title.trim();
-	if (!name) throw new Error("A deck needs a name.");
-	if (name.length > 120) throw new Error("That deck name is too long.");
+	const name = assertDeckTitle(title);
 	const lib = await loadFlashcardLibrary(store.io);
 	const deck = resolveDeck(lib, name);
 	await persist(store, lib, now);
 	return deck;
+}
+
+export async function renameDeck(store: KnowledgeStore, deckId: string, title: string, now = new Date()): Promise<FlashDeck> {
+	const name = assertDeckTitle(title);
+	const id = deckId.trim();
+	const lib = await loadFlashcardLibrary(store.io);
+	const deck = lib.decks.find((d) => d.id === id);
+	if (!deck) throw new Error("That deck is already gone.");
+	if (deck.title === name) return deck;
+	if (lib.decks.some((d) => d.id !== id && d.title.toLowerCase() === name.toLowerCase())) {
+		throw new Error("A deck already has that name.");
+	}
+	deck.title = name;
+	await persist(store, lib, now);
+	return deck;
+}
+
+/** Remove a deck and its cards from the account. Exported vault notes are left in place. */
+export async function deleteDeck(store: KnowledgeStore, deckId: string, now = new Date()): Promise<void> {
+	const id = deckId.trim();
+	const lib = await loadFlashcardLibrary(store.io);
+	const deck = lib.decks.find((d) => d.id === id);
+	if (!deck) throw new Error("That deck is already gone.");
+	if (id === DEFAULT_DECK_ID) throw new Error(`${deck.title} stays. Cards that aren't put in a deck go there.`);
+	const gone = lib.cards.filter((card) => card.deckId === id).map((card) => card.id);
+	lib.decks = lib.decks.filter((d) => d.id !== id);
+	lib.cards = lib.cards.filter((card) => card.deckId !== id);
+	lib.retiredDeckIds = rememberRetired(lib.retiredDeckIds, [id]);
+	lib.retiredCardIds = rememberRetired(lib.retiredCardIds, gone);
+	await persist(store, lib, now);
 }
 
 export async function createFlashcard(
@@ -675,8 +848,12 @@ export async function createFlashcard(
 	const issue = flashcardQualityIssue(front, back);
 	if (issue) throw new Error(issue);
 	const lib = await loadFlashcardLibrary(store.io);
-	const deckId = input.deckId?.trim() || "library";
-	const deckTitle = input.deckTitle?.trim() || (deckId === "library" ? "Library" : deckId);
+	const deckId = input.deckId?.trim() || DEFAULT_DECK_ID;
+	const requested = input.deckTitle?.trim() || "";
+	const existing = lib.decks.find((deck) => deck.id === deckId);
+	const deckTitle =
+		existing?.title ||
+		(deckId === DEFAULT_DECK_ID && (!requested || requested.toLowerCase() === "library") ? DEFAULT_DECK_TITLE : requested || deckId);
 	ensureDeck(lib, deckId, deckTitle);
 	const card = makeCard({ deckId, concept, front, back, source: input.source, now });
 	lib.cards.push(card);
@@ -686,9 +863,10 @@ export async function createFlashcard(
 
 export async function deleteFlashcard(store: KnowledgeStore, id: string, now = new Date()): Promise<void> {
 	const lib = await loadFlashcardLibrary(store.io);
-	const next = lib.cards.filter((c) => c.id !== id);
-	if (next.length === lib.cards.length) throw new Error("That card is already gone.");
-	lib.cards = next;
+	const card = lib.cards.find((c) => c.id === id);
+	if (!card) throw new Error("That card is already gone.");
+	lib.cards = lib.cards.filter((c) => c.id !== id);
+	lib.retiredCardIds = rememberRetired(lib.retiredCardIds, [card.id]);
 	await persist(store, lib, now);
 }
 
@@ -784,7 +962,7 @@ export function dueByConcept(cards: Flashcard[], now: Date): Array<{ concept: st
 		.sort((a, b) => b.count - a.count || a.concept.localeCompare(b.concept));
 }
 
-/** Save or replace one card. `deck` is any deck name. A new name creates that deck. Omit it for the Library deck. */
+/** Save or replace one card. `deck` is any deck name. A new name creates that deck. Omit it, or pass "Library", for the Unsorted deck. */
 export async function saveFlashcard(
 	store: KnowledgeStore,
 	input: { concept: string; front: string; back: string; deck?: string },

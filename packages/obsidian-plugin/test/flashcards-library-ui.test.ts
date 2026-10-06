@@ -2,11 +2,65 @@
  * @vitest-environment jsdom
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { KnowledgeStore, MemoryVaultIO } from "@groundwork/core";
+import { createFlashcard, KnowledgeStore, MemoryVaultIO } from "@groundwork/core";
 
 vi.mock("obsidian", () => ({
 	Notice: class {
 		constructor(public message: string) {}
+	},
+	Modal: class {
+		app: unknown;
+		containerEl: HTMLElement;
+		titleEl: HTMLElement;
+		contentEl: HTMLElement;
+		constructor(app: unknown) {
+			this.app = app;
+			this.containerEl = document.createElement("div");
+			this.containerEl.className = "modal-container";
+			this.titleEl = document.createElement("div");
+			this.titleEl.className = "modal-title";
+			this.contentEl = document.createElement("div");
+			this.contentEl.className = "modal-content";
+			this.containerEl.append(this.titleEl, this.contentEl);
+			document.body.append(this.containerEl);
+		}
+		setTitle(title: string) {
+			this.titleEl.textContent = title;
+			return this;
+		}
+		open() {
+			(this as { onOpen?: () => void }).onOpen?.();
+		}
+		close() {
+			(this as { onClose?: () => void }).onClose?.();
+			this.containerEl.remove();
+		}
+	},
+	Menu: class {
+		items: { title: string; click: () => void }[] = [];
+		addItem(cb: (item: { setTitle: (title: string) => unknown; onClick: (fn: () => void) => unknown }) => void) {
+			const item = {
+				title: "",
+				click: () => {},
+				setTitle(title: string) {
+					item.title = title;
+					return item;
+				},
+				setIcon() {
+					return item;
+				},
+				onClick(fn: () => void) {
+					item.click = fn;
+					return item;
+				},
+			};
+			cb(item);
+			this.items.push(item);
+			return this;
+		}
+		showAtMouseEvent() {
+			(globalThis as { __gwLastMenu?: unknown }).__gwLastMenu = this;
+		}
 	},
 }));
 
@@ -63,16 +117,18 @@ function click(root: ParentNode, label: string): void {
 	button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
+const app = {} as never;
+
+function host(store: KnowledgeStore, studied: string[] = []) {
+	return { app, store, writeFolders: () => [] as string[], onStudy: (deckId: string) => studied.push(deckId) };
+}
+
 describe("flashcard library", () => {
 	it("lets the learner make a deck and a card, with no teaching-notes toggle", async () => {
 		const parent = document.createElement("div");
 		document.body.append(parent);
 		const studied: string[] = [];
-		await renderFlashcardsLibrary(parent, {
-			store: store(),
-			writeFolders: () => [],
-			onStudy: (deckId) => studied.push(deckId),
-		});
+		await renderFlashcardsLibrary(parent, host(store(), studied));
 
 		expect(parent.textContent).not.toContain("Make cards from teaching notes");
 		expect(parent.textContent).not.toContain("One deck per goal");
@@ -107,7 +163,7 @@ describe("flashcard library", () => {
 		const memory = store();
 		const library = document.createElement("div");
 		document.body.append(library);
-		await renderFlashcardsLibrary(library, { store: memory, writeFolders: () => [], onStudy: () => {} });
+		await renderFlashcardsLibrary(library, host(memory));
 		click(library, "New deck");
 		library.querySelector<HTMLInputElement>("input[aria-label='Deck name']")!.value = "Nightly drills";
 		click(library, "Create");
@@ -161,5 +217,98 @@ describe("flashcard library", () => {
 		expect(again?.querySelector(".gw-rb-when")?.textContent).toMatch(/^in /);
 		library.remove();
 		root.remove();
+	});
+
+	it("renames a deck, and deletes it only after the modal says how many cards go with it", async () => {
+		const parent = document.createElement("div");
+		document.body.append(parent);
+		const memory = store();
+		const counts: number[] = [];
+		await renderFlashcardsLibrary(parent, { ...host(memory), onCardsChanged: (count) => counts.push(count) });
+		click(parent, "New deck");
+		parent.querySelector<HTMLInputElement>("input[aria-label='Deck name']")!.value = "Nightly drills";
+		click(parent, "Create");
+		await vi.waitFor(() => expect(parent.querySelector("h3")?.textContent).toBe("Nightly drills"));
+		click(parent, "Add card");
+		parent.querySelector<HTMLInputElement>("input[aria-label='Concept']")!.value = "Base rates";
+		parent.querySelector<HTMLTextAreaElement>("textarea[aria-label='Question']")!.value = "Why 9%?";
+		parent.querySelector<HTMLTextAreaElement>("textarea[aria-label='Answer']")!.value = "False alarms.";
+		click(parent, "Save");
+		await vi.waitFor(() => expect(parent.textContent).toContain("Why 9%?"));
+		expect(parent.querySelector(".gw-fc-lib-card button")?.textContent).toBe("Edit");
+		expect(parent.querySelector(".gw-fc-card-row-tools")?.textContent).toContain("Delete");
+
+		click(parent, "Rename");
+		const name = parent.querySelector<HTMLInputElement>(".gw-fc-lib-rename input[aria-label='Deck name']");
+		expect(name?.value).toBe("Nightly drills");
+		name!.value = "Morning drills";
+		click(parent.querySelector(".gw-fc-lib-rename")!, "Save");
+		await vi.waitFor(() => expect(parent.querySelector("h3")?.textContent).toBe("Morning drills"));
+
+		const row = [...parent.querySelectorAll(".gw-fc-lib-deck")].find((el) => el.textContent?.includes("Morning drills"));
+		row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+		const menu = (globalThis as { __gwLastMenu?: { items: { title: string; click: () => void }[] } }).__gwLastMenu;
+		expect(menu?.items.map((item) => item.title)).toEqual(["Rename", "Delete"]);
+
+		click(parent, "New deck");
+		parent.querySelector<HTMLInputElement>("input[aria-label='Deck name']")!.value = "Exam morning";
+		click(parent, "Create");
+		await vi.waitFor(() => expect(parent.querySelector("h3")?.textContent).toBe("Exam morning"));
+		[...parent.querySelectorAll(".gw-fc-lib-deck")].find((el) => el.textContent?.includes("Morning drills"))?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		expect(parent.querySelector("h3")?.textContent).toBe("Morning drills");
+
+		click(parent.querySelector(".gw-fc-lib-head")!, "Delete");
+		const modal = document.querySelector(".modal-container");
+		expect(modal?.textContent).toContain("Delete this deck?");
+		expect(modal?.textContent).toContain("1 card");
+		expect(modal?.textContent).toContain("Notes already in the vault stay there");
+		click(modal!, "Cancel");
+		expect(document.querySelector(".modal-container")).toBeNull();
+		expect(parent.textContent).toContain("Morning drills");
+
+		click(parent.querySelector(".gw-fc-lib-card")!, "Delete");
+		expect(document.querySelector(".modal-title")?.textContent).toBe("Delete this card?");
+		expect(document.body.textContent).toContain("the note stays in your vault");
+		click(document.body, "Delete card");
+		await vi.waitFor(() => expect(parent.textContent).toContain("No cards in this deck yet."));
+
+		click(parent.querySelector(".gw-fc-lib-head")!, "Delete");
+		expect(document.body.textContent).toContain("no cards");
+		click(document.body, "Delete deck");
+		await vi.waitFor(() => expect(parent.textContent).not.toContain("Morning drills"));
+		expect(parent.querySelector("h3")?.textContent).toBe("Exam morning");
+
+		click(parent.querySelector(".gw-fc-lib-head")!, "Delete");
+		click(document.body, "Delete deck");
+		await vi.waitFor(() => expect(parent.textContent).toContain("No decks yet."));
+		expect(parent.textContent).toContain("Make a deck, then add cards to it.");
+		expect(counts.at(-1)).toBe(0);
+		expect(counts).toContain(1);
+		parent.remove();
+	});
+
+	it("hides delete on Unsorted and still lets you rename it", async () => {
+		const parent = document.createElement("div");
+		document.body.append(parent);
+		const memory = store();
+		await createFlashcard(memory, { concept: "Odds", front: "What is odds?", back: "A ratio." });
+		await renderFlashcardsLibrary(parent, host(memory));
+		expect(parent.querySelector("h3")?.textContent).toBe("Unsorted");
+		expect(parent.querySelector(".gw-fc-lib-note")?.textContent).toContain("aren't put in a deck");
+		expect(parent.querySelector(".gw-fc-lib-head")?.textContent).not.toContain("Delete");
+		expect(parent.querySelector(".gw-fc-card-row-tools")?.textContent).toContain("Delete");
+
+		const row = parent.querySelector(".gw-fc-lib-deck");
+		row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+		const menu = (globalThis as { __gwLastMenu?: { items: { title: string }[] } }).__gwLastMenu;
+		expect(menu?.items.map((item) => item.title)).toEqual(["Rename"]);
+
+		click(parent, "Rename");
+		parent.querySelector<HTMLInputElement>(".gw-fc-lib-rename input")!.value = "Inbox";
+		click(parent.querySelector(".gw-fc-lib-rename")!, "Save");
+		await vi.waitFor(() => expect(parent.querySelector("h3")?.textContent).toBe("Inbox"));
+		expect(parent.querySelector(".gw-fc-lib-note")?.textContent).toContain("aren't put in a deck");
+		expect(parent.querySelector(".gw-fc-lib-head")?.textContent).not.toContain("Delete");
+		parent.remove();
 	});
 });

@@ -409,8 +409,66 @@ if (scenario === "signed-in") {
 
 	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Flashcards/ }).click({ timeout: 10_000 });
 	await page.waitForSelector(`${rootSel} .gw-fc-lib-layout`, { timeout: 20_000 });
+	await page.locator(`${rootSel} .gw-fc-lib-deck`, { hasText: "Unsorted" }).waitFor({ timeout: 20_000 });
 	await sleep(600);
 	await shotGroundwork("05b-library-flashcards");
+
+	await page.locator(`${rootSel} .gw-fc-lib-deck`, { hasText: "Unsorted" }).click();
+	await page.locator(`${rootSel} .gw-fc-lib-note`, { hasText: "aren't put in a deck" }).waitFor({ timeout: 10_000 });
+	if (await page.locator(`${rootSel} .gw-fc-lib-head button`, { hasText: /^Delete$/ }).count()) {
+		throw new Error("Unsorted should not offer Delete");
+	}
+	await page.locator(`${rootSel} .gw-fc-lib-deck`, { hasText: "Scratch pad" }).click();
+	await page.locator(`${rootSel} .gw-fc-lib-card button`, { hasText: /^Edit$/ }).waitFor({ timeout: 10_000 });
+	await page.locator(`${rootSel} .gw-fc-lib-card button`, { hasText: /^Delete$/ }).waitFor({ timeout: 10_000 });
+	await page.locator(`${rootSel} .gw-fc-lib-head button`, { hasText: /^Rename$/ }).click();
+	const deckName = page.locator(`${rootSel} .gw-fc-lib-rename input[aria-label='Deck name']`);
+	await deckName.fill("Drill pad");
+	await page.locator(`${rootSel} .gw-fc-lib-rename button`, { hasText: /^Save$/ }).click();
+	await page.locator(`${rootSel} h3`, { hasText: "Drill pad" }).waitFor({ timeout: 10_000 });
+	const deleteBtn = page.locator(`${rootSel} .gw-fc-lib-head button[aria-label="Delete Drill pad"]`);
+	await deleteBtn.waitFor({ timeout: 10_000 });
+	const pageErrors = [];
+	page.on("pageerror", (err) => pageErrors.push(String(err)));
+	// Pointer clicks from CDP sometimes land beside this button under xvfb. A DOM click still runs the handler.
+	await deleteBtn.evaluate((el) => {
+		window.__gwDeleteClicks = 0;
+		el.addEventListener("click", () => {
+			window.__gwDeleteClicks += 1;
+		});
+		el.click();
+	});
+	try {
+		await page.locator(".modal").waitFor({ timeout: 10_000 });
+	} catch (err) {
+		const info = await page.evaluate(() => ({
+			clicks: window.__gwDeleteClicks ?? 0,
+			modals: document.querySelectorAll(".modal").length,
+			containers: document.querySelectorAll(".modal-container").length,
+			head: document.querySelector(".gw-fc-lib-head")?.innerText ?? "",
+			notices: [...document.querySelectorAll(".notice")].map((node) => node.textContent),
+		}));
+		const pages = page.context().pages();
+		const elsewhere = [];
+		for (const other of pages) {
+			elsewhere.push({ url: other.url(), modals: await other.locator(".modal-container").count() });
+		}
+		await shot("05c-delete-failed");
+		throw new Error(
+			`Delete did not open a modal (${JSON.stringify({ ...info, elsewhere, pageErrors })}): ${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
+	const confirmText = await page.locator(".modal").innerText();
+	if (!/1 card/.test(confirmText) || !/vault/i.test(confirmText)) {
+		throw new Error(`Delete confirmation did not explain the card count and the vault notes: ${confirmText}`);
+	}
+	await shot("05c-delete-deck-confirm");
+	await page.locator(".modal button", { hasText: "Delete deck" }).click();
+	await page.waitForFunction(() => !document.querySelector(".gw-root")?.textContent?.includes("Drill pad"), { timeout: 10_000 });
+	await page.locator(`${rootSel} .gw-lib-tab[title="Flashcards"] .gw-lib-count`, { hasText: /^1$/ }).waitFor({ timeout: 10_000 });
+	await page.locator(`${rootSel} h3`, { hasText: /Calculus fluency|Unsorted/ }).waitFor({ timeout: 10_000 });
+	await sleep(400);
+	await shotGroundwork("05d-deck-deleted");
 
 	await tab("map").click();
 	await page.waitForSelector(`${rootSel}.is-map:not(.is-library)`, { timeout: 15_000 });

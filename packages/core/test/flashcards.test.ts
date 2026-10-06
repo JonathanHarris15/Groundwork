@@ -7,6 +7,10 @@ import {
 	cardsInDeck,
 	createDeck,
 	createFlashcard,
+	DEFAULT_DECK_ID,
+	DEFAULT_DECK_TITLE,
+	deleteDeck,
+	deleteFlashcard,
 	emptyFlashcardLibrary,
 	exportFlashcards,
 	flashcardContentKey,
@@ -18,6 +22,7 @@ import {
 	previewIntervals,
 	rateFlashcard,
 	removeFlashcardMirrors,
+	renameDeck,
 	scheduledMinutes,
 	saveFlashcard,
 	serializeCardMarkdown,
@@ -328,6 +333,176 @@ describe("named decks", () => {
 		expect(cardsInDeck(lib, "g1").map((c) => c.id)).toEqual(["own"]);
 		expect(cardsInDeck(lib, "deck-calc").map((c) => c.id)).toEqual(["linked"]);
 		expect(cardsInDeck(lib, "other").map((c) => c.id)).toEqual(["elsewhere"]);
+	});
+});
+
+describe("deck rename and delete", () => {
+	it("renames a deck and keeps its id and cards", async () => {
+		const { store } = pair();
+		const deck = await createDeck(store, "Nightly drills", NOW);
+		const card = await createFlashcard(
+			store,
+			{ concept: "Odds", front: "What is odds?", back: "A ratio.", deckId: deck.id, deckTitle: deck.title },
+			NOW,
+		);
+		const renamed = await renameDeck(store, deck.id, "Morning drills", NOW);
+		expect(renamed).toMatchObject({ id: "nightly-drills", title: "Morning drills" });
+		const lib = await loadFlashcardLibrary(store.io);
+		expect(lib.cards.map((c) => c.id)).toEqual([card.id]);
+		expect(lib.cards[0].deckId).toBe("nightly-drills");
+		expect(lib.decks.map((d) => d.title)).toEqual(["Morning drills"]);
+	});
+
+	it("rejects an empty name, a duplicate name, the pane name, and a missing deck", async () => {
+		const { store } = pair();
+		const deck = await createDeck(store, "Nightly drills", NOW);
+		await createDeck(store, "Exam morning", NOW);
+		await expect(renameDeck(store, deck.id, "  ", NOW)).rejects.toThrow(/name/);
+		await expect(renameDeck(store, deck.id, "Exam morning", NOW)).rejects.toThrow(/already has that name/);
+		await expect(renameDeck(store, deck.id, "Library", NOW)).rejects.toThrow(/pane/);
+		await expect(renameDeck(store, "missing", "Something else", NOW)).rejects.toThrow(/already gone/);
+		await expect(createDeck(store, "Library", NOW)).rejects.toThrow(/pane/);
+		const lib = await loadFlashcardLibrary(store.io);
+		expect(lib.decks.find((d) => d.id === deck.id)?.title).toBe("Nightly drills");
+	});
+
+	it("removes the deck and its cards from the account and leaves exported notes in the vault", async () => {
+		const { vault, store } = pair();
+		const card = await createFlashcard(
+			store,
+			{ concept: "Base rates", front: "Why 9%?", back: "False alarms.", deckId: "exam-2", deckTitle: "Exam 2" },
+			NOW,
+		);
+		await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio.", deckId: "keep", deckTitle: "Keep" }, NOW);
+		await exportFlashcards(store, ["Groundwork"], NOW);
+		const path = "Groundwork/flashcards/Base rates.md";
+		const note = await vault.read(path);
+		await deleteDeck(store, "exam-2", NOW);
+		const lib = await loadFlashcardLibrary(store.io);
+		expect(lib.decks.map((d) => d.id)).toEqual(["keep"]);
+		expect(lib.cards.map((c) => c.deckId)).toEqual(["keep"]);
+		expect(lib.retiredDeckIds).toContain("exam-2");
+		expect(lib.retiredCardIds).toContain(card.id);
+		expect(await vault.read(path)).toBe(note);
+	});
+
+	it("does not bring a deleted deck or its cards back on sync or export", async () => {
+		const { vault, store } = pair();
+		const card = await createFlashcard(
+			store,
+			{ concept: "Base rates", front: "Why 9%?", back: "False alarms.", deckId: "exam-2", deckTitle: "Exam 2" },
+			NOW,
+		);
+		const kept = await createFlashcard(
+			store,
+			{ concept: "Odds", front: "What is odds?", back: "A ratio.", deckId: "keep", deckTitle: "Keep" },
+			NOW,
+		);
+		await exportFlashcards(store, ["Groundwork"], NOW);
+		const path = "Groundwork/flashcards/Base rates.md";
+		const edited = (await vault.read(path)).replace("False alarms.", "Rare cases.");
+		await vault.write(path, edited);
+		await deleteDeck(store, "exam-2", NOW);
+
+		const synced = await syncFlashcards(store, ["Groundwork"], NOW);
+		expect(synced.decks.map((d) => d.id)).toEqual(["keep"]);
+		expect(synced.cards.map((c) => c.id)).toEqual([kept.id]);
+		expect(await vault.read(path)).toContain("Rare cases.");
+		expect(await vault.read(path)).toContain(card.id);
+
+		await exportFlashcards(store, ["Groundwork"], NOW);
+		const after = await loadFlashcardLibrary(store.io);
+		expect(after.decks.map((d) => d.id)).toEqual(["keep"]);
+		expect(after.cards.map((c) => c.id)).toEqual([kept.id]);
+		expect(vault.files.has(path)).toBe(true);
+		expect(await vault.read(path)).toContain(card.id);
+	});
+
+	it("starts a fresh deck when the same name is saved again, and still ignores the old notes", async () => {
+		const { vault, store } = pair();
+		const old = await createFlashcard(
+			store,
+			{ concept: "Base rates", front: "Why 9%?", back: "False alarms.", deckId: "exam-2", deckTitle: "Exam 2" },
+			NOW,
+		);
+		await exportFlashcards(store, ["Groundwork"], NOW);
+		const path = "Groundwork/flashcards/Base rates.md";
+		await deleteDeck(store, "exam-2", NOW);
+		const saved = await toolByName("save_flashcard")!.run(
+			{ concept: "Base rates", front: "What swamps the signal?", back: "False alarms.", deck: "Exam 2" },
+			{ store },
+		);
+		expect(saved.isError).toBeFalsy();
+		expect(saved.text).toContain("Exam 2");
+		const lib = await syncFlashcards(store, ["Groundwork"], NOW);
+		expect(lib.decks.map((d) => d.title)).toEqual(["Exam 2"]);
+		expect(lib.cards).toHaveLength(1);
+		expect(lib.cards[0].id).not.toBe(old.id);
+		expect(lib.cards[0].front).toBe("What swamps the signal?");
+		expect(lib.retiredCardIds).toContain(old.id);
+		expect(await vault.read(path)).toContain(old.id);
+		await exportFlashcards(store, ["Groundwork"], NOW);
+		expect(await vault.read(path)).toContain(old.id);
+		const again = await loadFlashcardLibrary(store.io);
+		expect(again.cards).toHaveLength(1);
+		expect(again.cards[0].front).toBe("What swamps the signal?");
+	});
+
+	it("does not bring a deleted card back from its exported note", async () => {
+		const { vault, store } = pair();
+		const card = await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio.", deckId: "keep", deckTitle: "Keep" }, NOW);
+		await exportFlashcards(store, ["Groundwork"], NOW);
+		const path = "Groundwork/flashcards/Odds.md";
+		await deleteFlashcard(store, card.id, NOW);
+		const lib = await syncFlashcards(store, ["Groundwork"], NOW);
+		expect(lib.cards).toHaveLength(0);
+		expect(lib.decks.map((d) => d.id)).toEqual(["keep"]);
+		expect(await vault.read(path)).toContain(card.id);
+	});
+
+	it("renames the old Library deck to Unsorted and will not delete it", async () => {
+		const { memory, store } = pair();
+		const seeded = emptyFlashcardLibrary(NOW);
+		seeded.decks.push({ id: DEFAULT_DECK_ID, title: "Library" });
+		seeded.cards.push(makeCard({ id: "fc_loose", deckId: DEFAULT_DECK_ID, concept: "Odds", front: "What is odds?", back: "A ratio.", now: NOW }));
+		await memory.write(PATHS.flashcards, serializeFlashcardLibrary(seeded));
+		const lib = await syncFlashcards(store, ["Groundwork"], NOW);
+		expect(lib.decks.find((d) => d.id === DEFAULT_DECK_ID)?.title).toBe(DEFAULT_DECK_TITLE);
+		const disk = JSON.parse(await memory.read(PATHS.flashcards)) as { decks: Array<{ title: string }> };
+		expect(disk.decks[0].title).toBe("Unsorted");
+		await expect(deleteDeck(store, DEFAULT_DECK_ID, NOW)).rejects.toThrow(/stays/);
+		expect((await loadFlashcardLibrary(store.io)).cards).toHaveLength(1);
+		const renamed = await renameDeck(store, DEFAULT_DECK_ID, "Inbox", NOW);
+		expect(renamed).toMatchObject({ id: DEFAULT_DECK_ID, title: "Inbox" });
+		const saved = await saveFlashcard(store, { concept: "Odds", front: "What is a payoff?", back: "A ratio.", deck: "Library" }, NOW);
+		expect(saved.deckTitle).toBe("Inbox");
+		expect(saved.card.deckId).toBe(DEFAULT_DECK_ID);
+	});
+
+	it("keeps a catch-all the learner already renamed, and avoids a title clash", async () => {
+		const { memory, store } = pair();
+		const named = emptyFlashcardLibrary(NOW);
+		named.decks.push({ id: DEFAULT_DECK_ID, title: "Inbox" });
+		await memory.write(PATHS.flashcards, serializeFlashcardLibrary(named));
+		expect((await syncFlashcards(store, [], NOW)).decks[0].title).toBe("Inbox");
+
+		const clash = emptyFlashcardLibrary(NOW);
+		clash.decks.push({ id: DEFAULT_DECK_ID, title: "Library" }, { id: "other", title: "Unsorted" });
+		await memory.write(PATHS.flashcards, serializeFlashcardLibrary(clash));
+		const lib = await syncFlashcards(store, [], NOW);
+		expect(lib.decks.find((d) => d.id === DEFAULT_DECK_ID)?.title).toBe("Unsorted cards");
+		expect(lib.decks.find((d) => d.id === "other")?.title).toBe("Unsorted");
+	});
+
+	it("sends a card with no deck to Unsorted", async () => {
+		const { store } = pair();
+		const saved = await toolByName("save_flashcard")!.run({ concept: "Odds", front: "What is odds?", back: "A ratio." }, { store });
+		expect(saved.isError).toBeFalsy();
+		expect(saved.text).toContain("Unsorted");
+		const due = await toolByName("list_due_flashcards")!.run({}, { store });
+		expect(due.text).toContain("Decks: Unsorted");
+		const lib = await loadFlashcardLibrary(store.io);
+		expect(lib.decks[0]).toMatchObject({ id: DEFAULT_DECK_ID, title: DEFAULT_DECK_TITLE });
 	});
 });
 
