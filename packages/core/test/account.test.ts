@@ -138,10 +138,10 @@ describe("plans", () => {
 	it("gives the free plan $3 of hosted credit and keeps Jev off the key list", () => {
 		expect(PLANS.free.hostedCreditUsd).toBe(3);
 		expect(PLANS.free.priceUsdPerMonth).toBe(0);
-		expect(PLANS.byom.priceUsdPerMonth).toBe(9);
+		expect(PLANS.byom.priceUsdPerMonth).toBe(4);
 		expect(PLANS.byom.hostedCreditUsd).toBe(0);
 		expect(PLANS.byom.ownModel).toBe(true);
-		expect(PLANS.included.priceUsdPerMonth).toBe(20);
+		expect(PLANS.included.priceUsdPerMonth).toBe(15);
 		expect(PLANS.included.hostedCreditUsd).toBe(8);
 		expect(USER_KEY_PROVIDERS).not.toContain("jev");
 		expect(USER_KEY_PROVIDERS).not.toContain("typesafe");
@@ -156,8 +156,8 @@ describe("plans", () => {
 			expect(shown.summary).not.toMatch(/\$\d/);
 			expect(JSON.stringify(shown)).not.toMatch(/creditUsd|hostedCredit/);
 		}
-		expect(publicPlan(PLANS.byom).priceUsdPerMonth).toBe(9);
-		expect(publicPlan(PLANS.included).priceUsdPerMonth).toBe(20);
+		expect(publicPlan(PLANS.byom).priceUsdPerMonth).toBe(4);
+		expect(publicPlan(PLANS.included).priceUsdPerMonth).toBe(15);
 		const shown = presentAccount(viewAccount(choosePlan(emptyAccount("u"), "free")));
 		expect(shown).not.toHaveProperty("creditUsd");
 		expect(shown).not.toHaveProperty("remainingUsd");
