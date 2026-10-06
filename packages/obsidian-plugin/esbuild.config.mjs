@@ -58,7 +58,7 @@ const ctx = await esbuild.context({
 	format: "cjs",
 	platform: "browser",
 	target: "es2022",
-	external: ["obsidian", "electron", "@codemirror/*", "@lezer/*", ...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
+	external: ["obsidian", "electron", "pyodide", "@codemirror/*", "@lezer/*", ...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
 	// The Agent SDK calls createRequire(import.meta.url) at load time; CJS has no import.meta, so give it a real file URL.
 	define: {
 		"import.meta.url": "__gw_import_meta_url",

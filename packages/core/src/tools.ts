@@ -950,7 +950,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "show_figure",
 		description:
-			"Show a figure in the left margin of this turn. Use a plate (plot, plot3d, story, conjugation, sentence, or a rough map) when the shape is exact. For a real place, pass kind image with a public image url, or kind geo with a GeoJSON url plus markers drawn on top. kind svg is a drawing you write, including an animated SVG. kind program is Python that writes figure.svg, figure.png, figure.gif, or figure.webp. The learner sees it immediately. In your next sentence, say what to look at. Do not paste the picture into the chat.",
+			"Show a figure in the left margin of this turn. Use a plate (plot, plot3d, story, conjugation, sentence, or a rough map) when the shape is exact. For a real place, pass kind image with a public image url, or kind geo with a GeoJSON url plus markers drawn on top. kind svg is a drawing you write, including an animated SVG. kind program is Python that writes figure.svg, figure.png, figure.gif, or figure.webp. Python runs inside Groundwork. The learner sees it immediately. In your next sentence, say what to look at. Do not paste the picture into the chat.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -965,7 +965,7 @@ export const TOOLS: ToolDef[] = [
 				credit: str("Where an image or map came from."),
 				markup: str("SVG markup for kind svg. No scripts."),
 				geojson: { type: "object", description: "GeoJSON for kind geo, when you already have it. Otherwise pass url." },
-				source: str("Python source for kind program. Write figure.svg, figure.png, figure.gif, or figure.webp."),
+				source: str("Python source for kind program. Groundwork runs it. Write figure.svg, figure.png, figure.gif, or figure.webp."),
 				xLabel: str("Horizontal axis name."),
 				yLabel: str("Vertical axis name."),
 				zLabel: str("Height axis name, for plot3d."),

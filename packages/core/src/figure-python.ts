@@ -1,7 +1,3 @@
-import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { sanitizeSvg } from "./figure-svg";
 import { bytesToBase64, sniffBytes } from "./figure-net";
 
@@ -17,14 +13,101 @@ export interface PythonRun {
 	stdout: string;
 	stderr: string;
 	timedOut: boolean;
-	files: Map<string, Buffer>;
+	files: Map<string, Uint8Array>;
 }
 
-/** Runs one script in an empty directory and returns the figure file it wrote. */
+/** Runs one script and returns the figure file it wrote. */
 export type PythonSpawn = (source: string, signal?: AbortSignal) => Promise<PythonRun>;
 
 const OUTPUTS = ["figure.svg", "figure.png", "figure.gif", "figure.webp"] as const;
-const TIMEOUT_MS = 20_000;
+const RUN_MS = 20_000;
+const LOAD_MS = 90_000;
+/** Pyodide build pinned for the plugin worker and the Node tests. */
+export const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.29.5/full/";
+
+const PREPARE = `
+import os
+os.environ.clear()
+for _name in ("figure.svg", "figure.png", "figure.gif", "figure.webp"):
+    try:
+        os.remove(_name)
+    except FileNotFoundError:
+        pass
+`;
+
+const COLLECT = `
+import importlib
+_os = importlib.import_module("os")
+_b64 = importlib.import_module("base64")
+_json = importlib.import_module("json")
+_found = {}
+for _name in ("figure.svg", "figure.png", "figure.gif", "figure.webp"):
+    if _os.path.isfile(_name):
+        _fd = _os.open(_name, _os.O_RDONLY)
+        _parts = []
+        while True:
+            _chunk = _os.read(_fd, 65536)
+            if not _chunk:
+                break
+            _parts.append(_chunk)
+        _os.close(_fd)
+        _found[_name] = _b64.b64encode(b"".join(_parts)).decode("ascii")
+_found_json = _json.dumps(_found)
+_found_json
+`;
+
+interface PyodideLike {
+	runPython(code: string): unknown;
+	setStdout(options: { batched: (output: string) => void }): void;
+	setStderr(options: { batched: (output: string) => void }): void;
+	loadPackagesFromImports(code: string): Promise<void>;
+}
+
+/**
+ * The worker source. Pyodide runs in the tutor window, so the program stays on
+ * the learner's computer. Groundwork does not send it to a server. The runtime
+ * is fetched from a pinned build the first time a figure needs Python.
+ */
+export const PYTHON_WORKER_SOURCE = `
+let py = null;
+function clip(current, chunk) {
+  const text = String(chunk);
+  if (current.length >= 8000) return current;
+  return current + text.slice(0, 8000 - current.length);
+}
+self.onmessage = async (event) => {
+  const msg = event.data || {};
+  try {
+    if (msg.type === "load") {
+      importScripts(String(msg.indexURL || "") + "pyodide.js");
+      py = await loadPyodide({ indexURL: msg.indexURL });
+      self.postMessage({ type: "ready" });
+      return;
+    }
+    if (!py || msg.type !== "run") return;
+    let stdout = "";
+    let stderr = "";
+    py.setStdout({ batched: (chunk) => { stdout = clip(stdout, chunk); } });
+    py.setStderr({ batched: (chunk) => { stderr = clip(stderr, chunk); } });
+    py.runPython(${JSON.stringify(PREPARE)});
+    try { await py.loadPackagesFromImports(String(msg.source || "")); }
+    catch (loadErr) { stderr = clip(stderr, (loadErr && loadErr.message) || loadErr); }
+    self.postMessage({ type: "exec" });
+    let code = 0;
+    try { py.runPython(String(msg.source || "")); }
+    catch (runErr) {
+      code = 1;
+      stderr = clip(stderr, (runErr && runErr.message) || runErr);
+    }
+    let files = {};
+    try { files = JSON.parse(String(py.runPython(${JSON.stringify(COLLECT)}) || "{}")); }
+    catch (readErr) { stderr = clip(stderr, (readErr && readErr.message) || readErr); }
+    self.postMessage({ type: "done", code: code, stdout: stdout, stderr: stderr, files: files });
+  } catch (err) {
+    self.postMessage({ type: "error", message: String((err && err.message) || err) });
+  }
+};
+`;
 
 export async function runPythonFigure(source: string, spawnImpl: PythonSpawn = defaultPythonSpawn, signal?: AbortSignal): Promise<{ svg: string; media?: FigureMedia }> {
 	const text = source.replace(/^\uFEFF/, "");
@@ -37,15 +120,12 @@ export async function runPythonFigure(source: string, spawnImpl: PythonSpawn = d
 		const stdout = run.stdout.trim();
 		if (stdout.includes("<svg")) return { svg: sanitizeSvg(stdout) };
 		const detail = run.stderr.trim().split("\n").slice(-3).join(" ").slice(0, 400);
-		if (/ENOENT|python3: not found|No such file/i.test(detail)) {
-			throw new Error("Python is not installed on this computer. Draw an SVG, or use a public image.");
-		}
 		throw new Error(detail ? `Python did not write figure.svg, figure.png, figure.gif, or figure.webp. ${detail}` : "Python did not write figure.svg, figure.png, figure.gif, or figure.webp.");
 	}
 	return mediaFrom(produced);
 }
 
-export function mediaFrom(bytes: Buffer | Uint8Array): { svg: string; media?: FigureMedia } {
+export function mediaFrom(bytes: Uint8Array): { svg: string; media?: FigureMedia } {
 	const raw = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 	const sniffed = sniffBytes(raw);
 	if (sniffed.kind === "svg") {
@@ -59,74 +139,189 @@ export function mediaFrom(bytes: Buffer | Uint8Array): { svg: string; media?: Fi
 	};
 }
 
-async function defaultPythonSpawn(source: string, signal?: AbortSignal): Promise<PythonRun> {
-	const cwd = await mkdtemp(path.join(tmpdir(), "gw-figure-"));
-	const files = new Map<string, Buffer>();
+/** Shared by the Node runtime. The worker carries the same prepare and collect steps. */
+export async function runOnPyodide(py: PyodideLike, source: string): Promise<PythonRun> {
+	let stdout = "";
+	let stderr = "";
+	const take = (current: string, chunk: string) => (current.length >= 8_000 ? current : current + chunk.slice(0, 8_000 - current.length));
+	py.setStdout({ batched: (chunk) => {
+		stdout = take(stdout, chunk);
+	} });
+	py.setStderr({ batched: (chunk) => {
+		stderr = take(stderr, chunk);
+	} });
+	py.runPython(PREPARE);
 	try {
-		await writeFile(path.join(cwd, "figure.py"), source, "utf8");
-		const bin = process.env.GROUNDWORK_PYTHON?.trim() || "python3";
-		const run = await execPython(bin, cwd, signal);
-		for (const name of OUTPUTS) {
-			try {
-				files.set(name, await readFile(path.join(cwd, name)));
-			} catch {
-				/* the script may have written a different one */
-			}
-		}
-		return { ...run, files };
+		await py.loadPackagesFromImports(source);
 	} catch (err) {
-		const message = (err as NodeJS.ErrnoException).code === "ENOENT" ? "python3: not found" : (err as Error).message;
-		return { code: null, stdout: "", stderr: message, timedOut: false, files };
-	} finally {
-		await rm(cwd, { recursive: true, force: true });
+		stderr = take(stderr, err instanceof Error ? err.message : String(err));
 	}
+	let code = 0;
+	try {
+		py.runPython(source);
+	} catch (err) {
+		code = 1;
+		stderr = take(stderr, err instanceof Error ? err.message : String(err));
+	}
+	const files = new Map<string, Uint8Array>();
+	try {
+		const raw = py.runPython(COLLECT);
+		const parsed = JSON.parse(String(raw ?? "{}")) as Record<string, string>;
+		for (const name of OUTPUTS) {
+			const encoded = parsed[name];
+			if (!encoded) continue;
+			const bytes = decode64(encoded);
+			if (bytes.byteLength) files.set(name, bytes);
+		}
+	} catch (err) {
+		stderr = take(stderr, err instanceof Error ? err.message : String(err));
+	}
+	return { code, stdout, stderr, timedOut: false, files };
 }
 
-function execPython(bin: string, cwd: string, signal?: AbortSignal): Promise<Omit<PythonRun, "files">> {
-	return new Promise((resolve) => {
-		let stdout = "";
-		let stderr = "";
-		let timedOut = false;
-		const child = spawn(bin, ["-I", "figure.py"], {
-			cwd,
-			env: {
-				PATH: process.env.PATH ?? "",
-				LANG: process.env.LANG || "C.UTF-8",
-				HOME: cwd,
-				TMPDIR: cwd,
-				MPLCONFIGDIR: cwd,
-				PYTHONUNBUFFERED: "1",
-				PYTHONDONTWRITEBYTECODE: "1",
-				PYTHONNOUSERSITE: "1",
-			},
-			stdio: ["ignore", "pipe", "pipe"],
+async function defaultPythonSpawn(source: string, signal?: AbortSignal): Promise<PythonRun> {
+	if (signal?.aborted) return { code: null, stdout: "", stderr: "", timedOut: true, files: new Map() };
+	if (typeof Worker === "function" && typeof document !== "undefined") return browserSpawn(source, signal);
+	return nodeSpawn(source, signal);
+}
+
+let nodeReady: Promise<PyodideLike> | null = null;
+
+async function nodeSpawn(source: string, signal?: AbortSignal): Promise<PythonRun> {
+	const py = await loadNodePyodide();
+	if (signal?.aborted) return { code: null, stdout: "", stderr: "", timedOut: true, files: new Map() };
+	return runOnPyodide(py, source);
+}
+
+function loadNodePyodide(): Promise<PyodideLike> {
+	if (!nodeReady) {
+		nodeReady = (async () => {
+			// A computed specifier stays out of the Obsidian bundle. Node tests resolve the package.
+			const spec = ["py", "odide"].join("");
+			const mod = (await import(/* @vite-ignore */ spec)) as { loadPyodide: () => Promise<PyodideLike> };
+			return mod.loadPyodide();
+		})().catch((err: unknown) => {
+			nodeReady = null;
+			throw err instanceof Error ? err : new Error(String(err));
 		});
-		const timer = setTimeout(() => {
-			timedOut = true;
-			child.kill("SIGKILL");
-		}, TIMEOUT_MS);
-		const stop = () => {
-			timedOut = true;
-			child.kill("SIGKILL");
+	}
+	return nodeReady;
+}
+
+let workerTail: Promise<void> = Promise.resolve();
+let workerBox: { worker: Worker } | null = null;
+
+function browserSpawn(source: string, signal?: AbortSignal): Promise<PythonRun> {
+	const run = workerTail.then(() => runInBrowserWorker(source, signal));
+	workerTail = run.then(() => undefined, () => undefined);
+	return run;
+}
+
+async function runInBrowserWorker(source: string, signal?: AbortSignal): Promise<PythonRun> {
+	const worker = await browserWorker();
+	return new Promise((resolve, reject) => {
+		let execTimer = 0;
+		let settled = false;
+		const finish = (run: PythonRun) => {
+			if (settled) return;
+			settled = true;
+			window.clearTimeout(overall);
+			window.clearTimeout(execTimer);
+			signal?.removeEventListener("abort", onAbort);
+			resolve(run);
 		};
-		signal?.addEventListener("abort", stop, { once: true });
-		child.stdout.setEncoding("utf8");
-		child.stderr.setEncoding("utf8");
-		child.stdout.on("data", (chunk: string) => {
-			if (stdout.length < 8_000) stdout += chunk.slice(0, 8_000 - stdout.length);
-		});
-		child.stderr.on("data", (chunk: string) => {
-			if (stderr.length < 8_000) stderr += chunk.slice(0, 8_000 - stderr.length);
-		});
-		child.on("error", (err) => {
-			clearTimeout(timer);
-			signal?.removeEventListener("abort", stop);
-			resolve({ code: null, stdout, stderr: err.message, timedOut: false });
-		});
-		child.on("close", (code) => {
-			clearTimeout(timer);
-			signal?.removeEventListener("abort", stop);
-			resolve({ code, stdout, stderr, timedOut });
-		});
+		const fail = (err: unknown) => {
+			if (settled) return;
+			settled = true;
+			window.clearTimeout(overall);
+			window.clearTimeout(execTimer);
+			signal?.removeEventListener("abort", onAbort);
+			dropWorker();
+			reject(err instanceof Error ? err : new Error("The figure runtime couldn't start."));
+		};
+		const stop = () => {
+			dropWorker();
+			finish({ code: null, stdout: "", stderr: "", timedOut: true, files: new Map() });
+		};
+		const overall = window.setTimeout(stop, LOAD_MS);
+		const onAbort = () => stop();
+		signal?.addEventListener("abort", onAbort, { once: true });
+		worker.onmessage = (event: MessageEvent) => {
+			const data = event.data as { type?: string; message?: string; code?: number | null; stdout?: string; stderr?: string; files?: Record<string, string> };
+			if (data?.type === "exec") {
+				window.clearTimeout(execTimer);
+				execTimer = window.setTimeout(stop, RUN_MS);
+				return;
+			}
+			if (data?.type === "error") {
+				fail(new Error(data.message || "The figure runtime couldn't start."));
+				return;
+			}
+			if (data?.type !== "done") return;
+			const files = new Map<string, Uint8Array>();
+			for (const name of OUTPUTS) {
+				const encoded = data.files?.[name];
+				if (!encoded) continue;
+				const bytes = decode64(encoded);
+				if (bytes.byteLength) files.set(name, bytes);
+			}
+			finish({
+				code: data.code ?? null,
+				stdout: data.stdout ?? "",
+				stderr: data.stderr ?? "",
+				timedOut: false,
+				files,
+			});
+		};
+		worker.onerror = () => fail(new Error("The figure runtime couldn't start."));
+		worker.postMessage({ type: "run", source });
 	});
+}
+
+function browserWorker(): Promise<Worker> {
+	if (workerBox) return Promise.resolve(workerBox.worker);
+	const blob = new Blob([PYTHON_WORKER_SOURCE], { type: "text/javascript" });
+	const url = URL.createObjectURL(blob);
+	const worker = new Worker(url);
+	return new Promise((resolve, reject) => {
+		const timer = window.setTimeout(() => {
+			worker.terminate();
+			URL.revokeObjectURL(url);
+			reject(new Error("The figure runtime couldn't start."));
+		}, LOAD_MS);
+		worker.onmessage = (event: MessageEvent) => {
+			const data = event.data as { type?: string; message?: string };
+			if (data?.type === "ready") {
+				window.clearTimeout(timer);
+				URL.revokeObjectURL(url);
+				workerBox = { worker };
+				resolve(worker);
+				return;
+			}
+			if (data?.type === "error") {
+				window.clearTimeout(timer);
+				worker.terminate();
+				URL.revokeObjectURL(url);
+				reject(new Error(data.message || "The figure runtime couldn't start."));
+			}
+		};
+		worker.onerror = () => {
+			window.clearTimeout(timer);
+			URL.revokeObjectURL(url);
+			reject(new Error("The figure runtime couldn't start."));
+		};
+		worker.postMessage({ type: "load", indexURL: PYODIDE_INDEX });
+	});
+}
+
+function dropWorker(): void {
+	workerBox?.worker.terminate();
+	workerBox = null;
+}
+
+function decode64(encoded: string): Uint8Array {
+	const bin = atob(encoded);
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+	return bytes;
 }
