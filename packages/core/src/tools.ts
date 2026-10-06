@@ -366,7 +366,7 @@ export const TOOLS: ToolDef[] = [
 					note: r.goal.path,
 					status: r.goal.status,
 					...(await goalCalendarFields(store, r)),
-					progress: describeGoalProgress(r.goal),
+					progress: describeGoalProgress(r.nodes),
 					targets: r.goal.targets.map(titleOf),
 					built: r.goal.built.map(titleOf),
 					next: r.next ?? null,
@@ -378,7 +378,7 @@ export const TOOLS: ToolDef[] = [
 					mermaid: r.mermaid,
 					judgments: r.judgmentNotes ?? [],
 				}),
-				summary: `Saved goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
+				summary: `Saved goal “${r.goal.title}” — ${describeGoalProgress(r.nodes)}`,
 			};
 		},
 	},
@@ -397,7 +397,7 @@ export const TOOLS: ToolDef[] = [
 					status: r.goal.status,
 					objective: r.goal.objective,
 					...(await goalCalendarFields(store, r)),
-					progress: describeGoalProgress(r.goal),
+					progress: describeGoalProgress(r.nodes),
 					targets: r.goal.targets.map(titleOf),
 					built: r.goal.built.map(titleOf),
 					next: next ?? r.next ?? null,
@@ -422,7 +422,7 @@ export const TOOLS: ToolDef[] = [
 					sources: r.goal.sources,
 					mermaid: r.mermaid,
 				}),
-				summary: `Checked goal “${r.goal.title}” — ${describeGoalProgress(r.goal)}`,
+				summary: `Checked goal “${r.goal.title}” — ${describeGoalProgress(r.nodes)}`,
 			};
 		},
 	},
@@ -453,9 +453,9 @@ export const TOOLS: ToolDef[] = [
 		async run({ goal }: { goal: string }, { store, ui }) {
 			const pinned = await store.setWorkingGoal(goal);
 			ui?.focusGoal?.(pinned?.title ?? null);
-			if (!pinned) return { text: 'The goal dropdown is now "you choose".', summary: "Goal dropdown → you choose" };
+			if (!pinned) return { text: "No goal is pinned. Teach whatever they ask.", summary: "No goal pinned" };
 			const left = pinned.left === 1 ? "1 concept left" : `${pinned.left} concepts left`;
-			return { text: `The goal dropdown is now "${pinned.title}" (${left}). Teach toward it.`, summary: `Goal dropdown → ${pinned.title}` };
+			return { text: `Working on "${pinned.title}" (${left}). Teach toward it.`, summary: `Working on “${pinned.title}”` };
 		},
 	},
 	{
@@ -479,7 +479,7 @@ export const TOOLS: ToolDef[] = [
 				text: json({
 					goal: report.goal.title,
 					status: report.goal.status,
-					progress: describeGoalProgress(report.goal),
+					progress: describeGoalProgress(report.nodes),
 					targets: report.goal.targets.map(titleOf),
 					built: report.goal.built.map(titleOf),
 					workingGoal: pinned?.title ?? null,
@@ -728,7 +728,7 @@ export const TOOLS: ToolDef[] = [
 					goal: r.goal
 						? {
 								title: r.goal.goal.title,
-								progress: describeGoalProgress(r.goal.goal),
+								progress: describeGoalProgress(r.goal.nodes),
 								targets: r.goal.goal.targets.map((id) => r.goal!.nodes.find((n) => n.id === id)?.title ?? id),
 								built: r.goal.goal.built.map((id) => r.goal!.nodes.find((n) => n.id === id)?.title ?? id),
 								frontier: r.goal.analysis.frontier.map((n) => n.title),

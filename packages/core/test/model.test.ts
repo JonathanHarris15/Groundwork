@@ -46,6 +46,18 @@ describe("computeStats", () => {
 		expect(s.ceiling).toBe(4);
 	});
 
+	it("a miss after a gap does not make the concept look more ready", () => {
+		const prior = [ev(0, "correct", 3), ev(1, "correct", 3), ev(2, "partial", 3)];
+		const before = computeStats(prior, new Date(day(6)));
+		const missed = computeStats([...prior, ev(6, "incorrect", 3)], new Date(day(6)));
+		const blank = computeStats([...prior, ev(6, "dont_know", 3, { familiarity: 0 })], new Date(day(6)));
+		expect(before.current).toBeLessThan(before.mastery);
+		expect(missed.ability).toBeLessThan(before.ability);
+		expect(missed.mastery).toBeLessThan(before.mastery);
+		expect(missed.current).toBeLessThan(before.current);
+		expect(blank.current).toBeLessThanOrEqual(before.current);
+	});
+
 	it("decays over time and becomes rusty", () => {
 		const evidence = [ev(0, "correct", 4), ev(3, "correct", 4), ev(10, "correct", 5)];
 		const fresh = computeStats(evidence, new Date(day(10)));
