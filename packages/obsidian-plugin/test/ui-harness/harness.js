@@ -62,15 +62,17 @@ function shell(screen) {
 
 const pill = (tone, text) => `<span class="gw-status" data-tone="${tone}">${text}</span>`;
 const dot = (tone, extra = "") => `<i class="gw-tone-dot${extra}" data-tone="${tone}"></i>`;
+const goalMark = () =>
+  `<svg class="gw-goal-mark" viewBox="0 0 24 24" aria-hidden="true" data-tone="goal"><circle cx="12" cy="12" r="10" fill="#2a1a1d" stroke="#E5484D" stroke-width="2"></circle><path d="M9 17V7h6l-1.4 2.5L15 12H9" fill="rgba(229,72,77,.35)" stroke="#E5484D" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></path></svg>`;
 
 function legend(pinned) {
   const tones = TONES.map(([tone, label]) => `<span class="gw-key-item">${dot(tone)}${label}</span>`).join("");
   if (!pinned) return `<div class="gw-map-key">${tones}</div>`;
-  return `<div class="gw-map-key">${tones}<span class="gw-key-item">${dot("goal")}Goal</span><span class="gw-key-item"><i class="gw-key-next"></i>Next</span><span class="gw-key-item">${dot("learning", " is-faded")}Off the path</span><span class="gw-key-edge">Prerequisite → concept</span><span class="gw-key-edge is-dashed">Outside the path</span></div>`;
+  return `<div class="gw-map-key">${tones}<span class="gw-key-item">${goalMark()}Goal</span><span class="gw-key-item"><i class="gw-key-next"></i>Next</span><span class="gw-key-item">${dot("learning", " is-faded")}Off the path</span><span class="gw-key-edge">Prerequisite → concept</span><span class="gw-key-edge is-dashed">Outside the path</span></div>`;
 }
 
 const STEPS = [
-  { tone: "goal", title: "Spectral theorem", label: "Goal", mark: "⚑" },
+  { tone: "goal", title: "Spectral theorem", label: "Goal", mark: "goal" },
   { tone: "unstarted", title: "Diagonalization", label: "Next", next: true, mark: "3" },
   { tone: "learning", title: "Eigenvalues", label: "Learning" },
   { tone: "shaky", title: "Determinants", label: "Shaky" },
@@ -82,7 +84,7 @@ const STEPS = [
 function steps() {
   return STEPS.map(
     (s) =>
-      `<button type="button" class="gw-step${s.next ? " is-next" : ""}${s.off ? " is-off" : ""}" data-tone="${s.tone}"><span class="gw-step-n${s.next ? " is-next" : ""}" data-tone="${s.tone}">${s.mark ?? ""}</span><span class="gw-step-name">${s.title}</span><span class="gw-step-meta">${s.label}</span></button>`,
+      `<button type="button" class="gw-step${s.next ? " is-next" : ""}${s.off ? " is-off" : ""}" data-tone="${s.tone}"><span class="gw-step-n${s.next ? " is-next" : ""}" data-tone="${s.tone}">${s.mark === "goal" ? goalMark() : (s.mark ?? "")}</span><span class="gw-step-name">${s.title}</span><span class="gw-step-meta">${s.label}</span></button>`,
   ).join("");
 }
 

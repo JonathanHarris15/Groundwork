@@ -60,7 +60,9 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	const hero = el(main, "div", "gw-goal-hero");
 	const copy = el(hero, "div");
 	const kicker = el(copy, "div", "gw-kicker");
-	kicker.append(icon(kicker, `<path d="M5 21V4M5 4h11l-2 4 2 4H5"></path>`));
+	const flag = icon(kicker, `<path d="M5 21V4M5 4h11l-2 4 2 4H5"></path>`);
+	flag.classList.add("gw-goal-flag");
+	kicker.append(flag);
 	kicker.append(board.due ? `Goal · due ${board.dueLabel}` : "Goal · needs a due date");
 	el(copy, "div", "gw-goal-title", board.title);
 	const days = el(copy, "div", "gw-days");

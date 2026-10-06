@@ -59,8 +59,15 @@ describe("map legend", () => {
 	it("shows tones, the goal, next, and off-path marks when a goal is pinned", () => {
 		const parent = document.createElement("div");
 		renderMapPane(parent, model, {});
-		const tones = [...parent.querySelectorAll<HTMLElement>(".gw-map-key .gw-tone-dot")].map((el) => el.dataset.tone);
+		const tones = [...parent.querySelectorAll<HTMLElement>(".gw-map-key [data-tone]")].map((el) => el.dataset.tone);
 		expect(tones).toEqual(["solid", "shaky", "learning", "rusty", "unstarted", "goal", "learning"]);
+		const goal = parent.querySelector(".gw-map-key .gw-goal-mark");
+		expect(goal?.querySelector("circle")?.getAttribute("fill")).toBe("#2a1a1d");
+		expect(goal?.querySelector("circle")?.getAttribute("stroke")).toBe("#E5484D");
+		expect(goal?.querySelector("path")?.getAttribute("d")).toBe("M9 17V7h6l-1.4 2.5L15 12H9");
+		const step = [...parent.querySelectorAll(".gw-step")].find((el) => el.textContent?.includes("Eigenvalues"));
+		expect(step?.querySelector(".gw-goal-mark path")?.getAttribute("d")).toBe("M9 17V7h6l-1.4 2.5L15 12H9");
+		expect(parent.querySelector(".gw-path-sub .gw-goal-flag path")?.getAttribute("d")).toBe("M5 21V4M5 4h11l-2 4 2 4H5");
 		expect(parent.querySelector(".gw-map-key")!.textContent).toContain("Off the path");
 		expect(parent.querySelector(".gw-prog-label")!.textContent).toBe(describeConceptProgress(model.inPlace, model.total));
 	});
