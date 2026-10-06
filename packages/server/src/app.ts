@@ -7,6 +7,7 @@ import { SecretDirectory, SecretError } from "./secrets";
 import { completeTutor, describeTutor } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
 import { attributionFromHeader } from "./tracking";
+import { allowCheckoutAmount } from "./public-limit";
 import { webConfig } from "./web-config";
 
 export interface ServerDeps {
@@ -34,6 +35,8 @@ export interface RouteMeta {
 	/** URI-encoded JSON of utm_* and gclid, sent by the site after a landing. */
 	attribution?: string;
 	sessionId?: string;
+	/** Client address for the public checkout-amount limit. */
+	ip?: string;
 }
 
 export async function route(method: string, path: string, body: unknown, deps: ServerDeps, authorization?: string, meta: RouteMeta = {}): Promise<RouteResult> {
@@ -54,6 +57,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { received: true } };
 		}
 		if (method === "GET" && path === "/v1/billing/checkout-amount") {
+			if (meta.ip && !allowCheckoutAmount(meta.ip)) return { status: 429, json: { error: "Too many requests." } };
 			const amountUsd = await deps.billing.checkoutAmount?.(meta.sessionId ?? "");
 			if (amountUsd == null) return { status: 404, json: { error: "Unknown checkout." } };
 			return { status: 200, json: { amountUsd, currency: "USD" } };

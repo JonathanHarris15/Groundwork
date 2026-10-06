@@ -94,8 +94,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		origin,
 		attribution: header(req, "x-groundwork-attribution"),
 		sessionId: url.searchParams.get("session_id") ?? undefined,
+		ip: clientIp(req),
 	});
 	send(res, result.status, result.json);
+}
+
+function clientIp(req: IncomingMessage): string {
+	const forwarded = header(req, "x-forwarded-for")?.split(",")[0]?.trim();
+	return forwarded || req.socket.remoteAddress || "unknown";
 }
 
 function header(req: IncomingMessage, name: string): string | undefined {

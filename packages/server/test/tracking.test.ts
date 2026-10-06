@@ -106,6 +106,8 @@ describe("ads tracking", () => {
 			expect(body).not.toContain("public profile");
 		}
 		expect(readSite("/quizzes-flashcards")?.body).toContain("Quiz yourself in Obsidian on your own notes and lecture slides");
+		expect(readSite("/quizzes-flashcards")?.body).toContain("You can export a deck to your vault as plain Markdown.");
+		expect(readSite("/quizzes-flashcards")?.body).toContain('height="1756"');
 		expect(readSite("/quizzes-flashcards")?.body).toContain("Quiz cards can come straight from the notes and lecture slides already in your vault.");
 		expect(readSite("/exam-prep")?.body).toContain("for a midterm or final");
 		expect(readSite("/exam-prep")?.body).toContain("plans in Obsidian");
@@ -134,6 +136,9 @@ describe("ads tracking", () => {
 		expect(home).toContain("/shots/quiz-768.webp");
 		expect(home).toContain("/shots/flashcards-768.webp");
 		expect(home).toContain("/shots/goals-768.webp");
+		expect(home).toContain("Reviews count a little; quiz cards set the marks.");
+		expect(home).toContain("December 8, with 15 days left");
+		expect(home).toContain('content="https://groundworklearn.com/og.png"');
 		expect(home).toContain("$15/month");
 		expect(home).not.toContain("G-F4236HGZSM");
 		expect(home).not.toContain("$20");

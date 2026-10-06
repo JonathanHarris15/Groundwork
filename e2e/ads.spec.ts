@@ -256,6 +256,33 @@ test("purchase fires once per checkout session", async ({ page }) => {
 	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toContain("cs_test_1");
 });
 
+test("gtag.js sends purchase to /g/collect for a full price and a free promotion", async ({ page }) => {
+	const hits: string[] = [];
+	await page.addInitScript(() => {
+		localStorage.setItem("gw-consent", "granted");
+	});
+	await page.route("**/v1/web-config", async (route) => {
+		const response = await route.fetch();
+		const json = await response.json();
+		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: null } });
+	});
+	await page.route("**/v1/billing/checkout-amount**", async (route) => {
+		const sessionId = new URL(route.request().url()).searchParams.get("session_id") ?? "";
+		const amountUsd = sessionId.includes("free") ? 0 : 15;
+		await route.fulfill({ json: { amountUsd, currency: "USD" } });
+	});
+	await page.route(COLLECT, async (route) => {
+		const request = route.request();
+		hits.push(`${request.url()} ${request.postData() ?? ""}`);
+		await route.abort();
+	});
+	await page.goto("/?billing=success&session_id=cs_full_price&plan=included");
+	await expect.poll(() => hits.some((hit) => hit.includes("en=purchase") && hit.includes("epn.value=15") && hit.includes("cu=USD") && hit.includes("cs_full_price"))).toBe(true);
+	const before = hits.length;
+	await page.goto("/?billing=success&session_id=cs_free_promo&plan=included");
+	await expect.poll(() => hits.slice(before).some((hit) => hit.includes("en=purchase") && hit.includes("epn.value=0") && hit.includes("cu=USD") && hit.includes("cs_free_promo"))).toBe(true);
+});
+
 test("a free promotion still fires purchase with the amount paid", async ({ page }) => {
 	await page.route("**/v1/billing/checkout-amount**", async (route) => {
 		await route.fulfill({ json: { amountUsd: 0, currency: "USD" } });
@@ -274,7 +301,7 @@ test("gtag.js sends page_view and sign_up to /g/collect", async ({ page }) => {
 		const json = await response.json();
 		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: null } });
 	});
-	await page.route(/google-analytics\.com\/g\/collect/, async (route) => {
+	await page.route(COLLECT, async (route) => {
 		const request = route.request();
 		hits.push(`${request.url()} ${request.postData() ?? ""}`);
 		await route.abort();
@@ -471,6 +498,8 @@ function decodePng(buf: Buffer): { width: number; height: number; data: Uint8Arr
 	}
 	return { width, height, data: out };
 }
+
+const COLLECT = /(?:google-analytics\.com|www\.google\.com)\/g\/collect/;
 
 async function countEvents(page: Page, name: string): Promise<number> {
 	return page.evaluate((eventName) => {

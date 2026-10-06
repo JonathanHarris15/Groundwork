@@ -118,14 +118,18 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<meta property="og:description" content="${escapeAttr(spec.description)}" />
 		<meta property="og:url" content="${url}" />
 		<meta property="og:type" content="website" />
-		<meta name="twitter:card" content="summary" />
+		<meta property="og:image" content="https://groundworklearn.com/og.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:image" content="https://groundworklearn.com/og.png" />
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
 		<link rel="stylesheet" href="/styles.css?v=13" />
-		<script src="/tracking.js?v=4"></script>
+		<script src="/tracking.js?v=5"></script>
 	</head>
 	<body>
 		<div class="page mkt">
@@ -205,8 +209,8 @@ function examPage(): string {
 			${cta("/#signin", "Start free")}
 			${shotFigure({
 				base: "/shots/exam-chat",
-				width: 1563,
-				height: 1272,
+				width: 1553,
+				height: 1260,
 				eager: true,
 				alt: "Tutor chat after attaching MATH-151-practice-exam.md. Groundwork saved the goal Prepare for MATH 151 practice, due in just over three weeks, with 4 of 14 concepts solid.",
 			})}
@@ -215,7 +219,7 @@ function examPage(): string {
 			${section("Foundations first, then the exam", ["The plan is built from first principles: the concepts the exam material depends on come first, and the exam topics sit at the top of your concept map as red flags. You can see which topics are solid and which are still shaky."], shotFigure({
 				base: "/shots/exam-map",
 				width: 2700,
-				height: 1923,
+				height: 1914,
 				alt: "Concept map for a calculus exam. Derivative of cosine, derivative of sine, quotient rule, and chain rule are goals, drawn as dark circles with a red flag. The concepts below are marked solid, shaky, learning, rusty, or not started. The next concept to study is ringed.",
 			}))}
 			${section("Quiz until the gaps show up", ["Diagnostic quiz cards test each topic at levels 1 to 5. A careless slip isn’t counted as a gap, and misconceptions are tracked, so you find the real weak spots before the exam does."])}
@@ -237,7 +241,7 @@ function conceptPage(): string {
 			${shotFigure({
 				base: "/hero/concept-map",
 				width: 2700,
-				height: 1923,
+				height: 1914,
 				eager: true,
 				phone: { base: "/hero/concept-map-phone" },
 				alt: "Concept map for Derivatives for Calc I. Goals are dark circles with a red flag. The concepts below are marked solid, shaky, learning, rusty, or not started. The next concept to study is ringed.",
@@ -263,8 +267,8 @@ function quizzesPage(): string {
 			${cta("/#signin", "Start free")}
 			${shotFigure({
 				base: "/shots/quiz",
-				width: 1860,
-				height: 1959,
+				width: 1852,
+				height: 1949,
 				eager: true,
 				alt: "Quiz card for the power rule at level 3 of 5. The question is the derivative of x cubed. 3x squared is marked correct, and 3x is marked wrong as a misconception that drops the exponent too far.",
 			})}
@@ -272,10 +276,10 @@ function quizzesPage(): string {
 			${section("Diagnostic, levels 1 to 5", ["Each quiz card targets a concept at a level from 1 to 5. The point is to find where your understanding stops, which is the edge worth working on."])}
 			${section("A slip isn’t a gap", ["Everyone mistypes or rushes sometimes. A careless slip isn’t counted as a gap in what you know, so one bad answer doesn’t knock a solid concept back to shaky."])}
 			${section("Misconceptions get tracked", ["When an answer shows a wrong idea rather than a missing one, Groundwork tracks it as a misconception, separately from a simple gap."])}
-			${section("Flashcard decks", ["Study decks with Again, Hard, Good, and Easy. Use them for terms, formulas, and anything you want at your fingertips."], shotFigure({
+			${section("Flashcard decks", ["Use flashcard decks for terms, formulas, and anything you want at your fingertips. Flashcard reviews count a little toward a concept; quiz cards set the marks. You can export a deck to your vault as plain Markdown."], shotFigure({
 				base: "/shots/flashcards",
 				width: 2343,
-				height: 1875,
+				height: 1756,
 				alt: "Flashcard for the power rule, asking for the derivative of x to the n. The answer is n x to the n minus 1.",
 			}))}
 			${section("More than a flashcard app", ["Quiz results feed your concept map, so you can see which concepts are solid, shaky, or rusty. Math renders in LaTeX on cards and in tutor chat."])}
@@ -295,10 +299,10 @@ function goalsPage(): string {
 			${cta("/#signin", "Start free")}
 			${shotFigure({
 				base: "/shots/goals",
-				width: 2103,
-				height: 1884,
+				width: 2450,
+				height: 2195,
 				eager: true,
-				alt: "Goal Derivatives for Calc I, due Tuesday, October 27, with 21 days left and marked on pace. The bar shows study days up to the exam, and 4 of 14 concepts are solid.",
+				alt: "Goal Derivatives for Calc I, due Tuesday, December 8, with 15 days left and marked on pace. The bar shows study days up to the exam, and 4 of 14 concepts are solid.",
 			})}
 			${section("Planned from the foundations up", ["Tell Groundwork what you want to learn. It works out the concepts the goal depends on and orders them so the foundations come first."])}
 			${section("Every goal has a due date", ["Attach a date to each goal, whether it’s an exam, a project, or a self-imposed deadline. If you don’t name a date, a new goal is due in 14 days. The Goals tab shows each goal, its date, and how far along you are."])}

@@ -44,6 +44,11 @@ export function readSite(urlPath: string): { body: string | Buffer; type: string
 	if (rendered) return rendered;
 	const hero = readImage(normalized, "hero", HERO_FILE) ?? readImage(normalized, "shots", SHOT_FILE);
 	if (hero) return hero;
+	if (normalized === "/og.png") {
+		const file = path.join(publicDir, "og.png");
+		if (!existsSync(file)) return null;
+		return { body: readFileSync(file), type: "image/png" };
+	}
 	const hit = FILES[normalized];
 	if (!hit) return null;
 	return { body: readFileSync(path.join(publicDir, hit.file), "utf8"), type: hit.type };

@@ -8,6 +8,7 @@ import { FileAccountStore } from "../src/account-store";
 import { route, type ServerDeps } from "../src/app";
 import type { Auth } from "../src/auth";
 import type { Billing } from "../src/billing";
+import { resetCheckoutAmountLimits } from "../src/public-limit";
 import { readSite } from "../src/static";
 import { MemoryDirectory } from "../src/memory";
 import { FileTutorMemoryStore } from "../src/memory-file";
@@ -255,6 +256,14 @@ describe("account server", () => {
 		expect(zero).toEqual({ status: 200, json: { amountUsd: 0, currency: "USD" } });
 		const unknown = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "nope" });
 		expect(unknown.status).toBe(404);
+		resetCheckoutAmountLimits();
+		let limited = 0;
+		for (let n = 0; n < 31; n++) {
+			const hit = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "cs_free", ip: "203.0.113.8" });
+			if (hit.status === 429) limited++;
+		}
+		expect(limited).toBe(1);
+		expect(readSite("/og.png")?.type).toBe("image/png");
 		const direct = await route("POST", "/v1/account/plan", { plan: "included" }, checkoutServer);
 		expect(direct.status).toBe(402);
 

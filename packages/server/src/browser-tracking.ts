@@ -86,7 +86,8 @@ function eventParams(extra?: Record<string, unknown>): Record<string, unknown> {
 }
 
 function event(name: string, params?: Record<string, unknown>): void {
-	gtag("event", name, eventParams(params));
+	const payload = eventParams(params);
+	void tagReady.then(() => gtag("event", name, payload));
 }
 
 function applyConsent(choice: ConsentChoice): void {
@@ -142,7 +143,36 @@ function capture(): void {
 	if (next && hasClientAttribution(next)) writeAttribution(next);
 }
 
+/** Resolves once `js` + `config` are queued (or there is no tag). gtag.js drops events queued before `config`. */
+let markTagReady: () => void = () => {};
+const tagReady = new Promise<void>((resolve) => {
+	markTagReady = resolve;
+});
+
+/** Purchase ids stay out of localStorage until the event is actually queued for gtag.js. */
+const pendingPurchases: string[] = [];
+let persistPurchases = false;
+
+function flushPurchases(): void {
+	if (!persistPurchases || pendingPurchases.length === 0) return;
+	const already = readJson<string[]>(PURCHASE_KEY) ?? [];
+	const next = [...already];
+	for (const id of pendingPurchases) {
+		if (!next.includes(id)) next.push(id);
+	}
+	pendingPurchases.length = 0;
+	writeJson(PURCHASE_KEY, next.slice(-50));
+}
+
 async function bootTag(): Promise<void> {
+	try {
+		await loadTag();
+	} finally {
+		markTagReady();
+	}
+}
+
+async function loadTag(): Promise<void> {
 	let config: { ga4MeasurementId?: string | null; googleAdsId?: string | null; contactEmail?: string } | null = null;
 	try {
 		const res = await fetch("/v1/web-config");
@@ -159,15 +189,23 @@ async function bootTag(): Promise<void> {
 	}
 	const ids = { ga4: config?.ga4MeasurementId ?? null, ads: config?.googleAdsId ?? null };
 	const src = tagScriptUrl(ids);
-	if (!src) return;
+	if (!src) {
+		persistPurchases = true;
+		return;
+	}
+	let loaded = false;
 	await new Promise<void>((resolve) => {
 		const script = document.createElement("script");
 		script.async = true;
 		script.src = src;
-		script.onload = () => resolve();
+		script.onload = () => {
+			loaded = true;
+			resolve();
+		};
 		script.onerror = () => resolve();
 		document.head.appendChild(script);
 	});
+	if (!loaded) return;
 	gtag("js", new Date());
 	const attr = readAttribution() ?? {};
 	const campaign: Record<string, string> = {};
@@ -178,10 +216,16 @@ async function bootTag(): Promise<void> {
 	if (attr.utm_content) campaign.campaign_content = attr.utm_content;
 	if (attr.gclid) campaign.gclid = attr.gclid;
 	configureMeasurementTags(gtag, ids, campaign);
+	persistPurchases = true;
 }
 
 const ga4Client: Ga4EventClient = {
-	gtag,
+	gtag: (...args: unknown[]) => {
+		void tagReady.then(() => {
+			gtag(...args);
+			flushPurchases();
+		});
+	},
 	attribution: () => readAttribution() ?? {},
 	signUpAlreadyFired() {
 		try {
@@ -197,10 +241,9 @@ const ga4Client: Ga4EventClient = {
 			/* ignore */
 		}
 	},
-	recordedPurchases: () => readJson<string[]>(PURCHASE_KEY) ?? [],
+	recordedPurchases: () => [...(readJson<string[]>(PURCHASE_KEY) ?? []), ...pendingPurchases],
 	rememberPurchase(id) {
-		const already = readJson<string[]>(PURCHASE_KEY) ?? [];
-		writeJson(PURCHASE_KEY, [...already, id].slice(-50));
+		if (!pendingPurchases.includes(id)) pendingPurchases.push(id);
 	},
 };
 
