@@ -152,7 +152,47 @@ describe("flashcard library", () => {
 		select!.dispatchEvent(new Event("change", { bubbles: true }));
 		expect(root.textContent).toContain("What is odds?");
 		expect(root.textContent).not.toContain("Why 9%?");
+		expect(root.textContent).not.toContain("Nothing due");
+		expect(root.textContent).not.toContain("Again");
+		expect(root.textContent).not.toMatch(/in \d+ day/);
+
+		root.querySelector<HTMLButtonElement>(".gw-fc-show")!.click();
+		expect(root.classList.contains("is-revealed")).toBe(true);
+		click(root, "Next card");
+		expect(root.textContent).toContain("That's the deck");
 		library.remove();
 		root.remove();
+	});
+
+	it("deletes a deck and the cards in it", async () => {
+		const memory = store();
+		const parent = document.createElement("div");
+		document.body.append(parent);
+		await renderFlashcardsLibrary(parent, { store: memory, writeFolders: () => [], onStudy: () => {} });
+		click(parent, "New deck");
+		parent.querySelector<HTMLInputElement>("input[aria-label='Deck name']")!.value = "Nightly drills";
+		click(parent, "Create");
+		await vi.waitFor(() => expect(parent.textContent).toContain("Nightly drills"));
+		click(parent, "Add card");
+		parent.querySelector<HTMLInputElement>("input[aria-label='Concept']")!.value = "Base rates";
+		parent.querySelector<HTMLTextAreaElement>("textarea[aria-label='Question']")!.value = "Why 9%?";
+		parent.querySelector<HTMLTextAreaElement>("textarea[aria-label='Answer']")!.value = "False alarms.";
+		click(parent, "Save");
+		await vi.waitFor(() => expect(parent.textContent).toContain("Why 9%?"));
+
+		click(parent, "New deck");
+		parent.querySelector<HTMLInputElement>("input[aria-label='Deck name']")!.value = "Exam morning";
+		click(parent, "Create");
+		await vi.waitFor(() => expect(parent.querySelector("h3")?.textContent).toBe("Exam morning"));
+
+		const nightly = [...parent.querySelectorAll("button.gw-fc-lib-deck")].find((el) => el.querySelector(".gw-fc-lib-deck-name")?.textContent === "Nightly drills");
+		nightly?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		await vi.waitFor(() => expect(parent.querySelector("h3")?.textContent).toBe("Nightly drills"));
+		click(parent, "Delete deck");
+		click(parent, "Delete deck and cards?");
+		await vi.waitFor(() => expect(parent.textContent).not.toContain("Nightly drills"));
+		expect(parent.querySelector("h3")?.textContent).toBe("Exam morning");
+		expect(parent.textContent).not.toContain("Why 9%?");
+		parent.remove();
 	});
 });

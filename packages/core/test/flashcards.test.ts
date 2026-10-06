@@ -1,24 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { isTutorMemoryPath } from "../src/account";
 import {
-	applyRating,
 	auditFlashcardLibrary,
 	buildStudyQueue,
 	cardsInDeck,
 	createDeck,
 	createFlashcard,
+	deleteDeck,
 	emptyFlashcardLibrary,
 	exportFlashcards,
 	flashcardContentKey,
 	flashcardQualityIssue,
-	formatInterval,
 	loadFlashcardLibrary,
 	makeCard,
 	parseCardFile,
-	previewIntervals,
-	rateFlashcard,
+	parseFlashcardLibrary,
 	removeFlashcardMirrors,
-	scheduledMinutes,
 	saveFlashcard,
 	serializeCardMarkdown,
 	serializeFlashcardLibrary,
@@ -26,7 +23,6 @@ import {
 	updateFlashcard,
 } from "../src/flashcards";
 import { MemoryVaultIO } from "../src/io";
-import { FLASHCARD_CREDIT } from "../src/model";
 import { KnowledgeStore, PATHS } from "../src/store";
 import { toolByName } from "../src/tools";
 
@@ -39,40 +35,37 @@ function pair() {
 	return { memory, vault, store };
 }
 
-describe("flashcard schedule", () => {
-	it("shows again in a minute, hard in ten, and a review good in days", () => {
+describe("flashcard decks", () => {
+	it("makes a card with no due date", () => {
 		const card = makeCard({ deckId: "library", concept: "Base rates", front: "Why?", back: "False alarms.", now: NOW });
-		expect(previewIntervals(card).map((p) => p.label)).toEqual(["in 1 min", "in 10 min", "in 1 day", "in 4 days"]);
-		const review = { ...card, state: "review" as const, intervalMinutes: 24 * 60, ease: 2 };
-		expect(formatInterval(scheduledMinutes(review, "good"))).toBe("in 2 days");
-		expect(scheduledMinutes(review, "again")).toBe(1);
+		expect(card).not.toHaveProperty("due");
+		expect(card).not.toHaveProperty("state");
+		expect(serializeCardMarkdown(card, "Library")).not.toMatch(/due:|intervalMinutes:|ease:/);
 	});
 
-	it("sends a miss back to learning and keeps an easy card in review", () => {
-		const card = makeCard({ deckId: "exam-2", concept: "Base rates", front: "Why?", back: "False alarms.", now: NOW });
-		const learned = applyRating(card, "good", NOW);
-		expect(learned.state).toBe("review");
-		expect(learned.intervalMinutes).toBe(24 * 60);
-		const missed = applyRating(learned, "again", NOW);
-		expect(missed.state).toBe("learning");
-		expect(missed.lapses).toBe(1);
-		expect(missed.intervalMinutes).toBe(1);
-		const easy = applyRating(learned, "easy", NOW);
-		expect(easy.state).toBe("review");
-		expect(easy.reps).toBe(2);
+	it("studies every card, including one an older file marked due later", () => {
+		const later = makeCard({ id: "later", deckId: "d", concept: "Zed", front: "Later?", back: "Now.", now: NOW });
+		const sooner = makeCard({ id: "sooner", deckId: "d", concept: "Aye", front: "Soon?", back: "Yes.", now: NOW });
+		const lib = parseFlashcardLibrary({
+			decks: [{ id: "d", title: "Deck" }],
+			cards: [
+				{ ...later, due: "2099-01-01T00:00:00.000Z", state: "review", intervalMinutes: 99_999, ease: 2.5 },
+				sooner,
+			],
+		});
+		expect(lib.cards[0]).not.toHaveProperty("due");
+		expect(buildStudyQueue(lib.cards).map((c) => c.id)).toEqual(["sooner", "later"]);
 	});
 
-	it("studies learning cards before reviews, and caps new cards", () => {
-		const learning = { ...makeCard({ id: "l", deckId: "d", concept: "A", front: "a", back: "a", now: NOW }), state: "learning" as const, due: NOW.toISOString() };
-		const review = { ...makeCard({ id: "r", deckId: "d", concept: "B", front: "b", back: "b", now: NOW }), state: "review" as const, due: NOW.toISOString() };
-		const fresh = Array.from({ length: 3 }, (_, i) => makeCard({ id: `n${i}`, deckId: "d", concept: `N${i}`, front: "q", back: "a", now: NOW }));
-		const queue = buildStudyQueue([review, ...fresh, learning], NOW, { limitNew: 2 });
-		expect(queue.map((c) => c.id)).toEqual(["l", "r", "n0", "n1"]);
+	it("leaves a card with a bad answer out of the deck session", () => {
+		const ok = makeCard({ id: "ok", deckId: "d", concept: "Odds", front: "What is odds?", back: "A ratio.", now: NOW });
+		const bad = makeCard({ id: "bad", deckId: "d", concept: "Calc", front: "Types?", back: "min, max, saddle", now: NOW });
+		expect(buildStudyQueue([bad, ok]).map((c) => c.id)).toEqual(["ok"]);
 	});
 });
 
 describe("flashcard vault mirror", () => {
-	it("keeps the schedule on the account and copies markdown only when asked", async () => {
+	it("keeps cards on the account and copies markdown only when asked", async () => {
 		const { memory, vault, store } = pair();
 		await store.upsertConcept({ title: "Base rates", summary: "A positive test is often a false alarm when the disease is rare." });
 		const card = await createFlashcard(
@@ -179,82 +172,14 @@ describe("flashcard vault mirror", () => {
 	});
 });
 
-describe("flashcard mastery credit", () => {
-	const HOUR = 3_600_000;
-	const at = (ms: number) => new Date(NOW.getTime() + ms);
-
-	async function quizzed(store: KnowledgeStore) {
-		await store.upsertConcept({ title: "Base rates" });
-		await store.recordEvidence("Base rates", { kind: "check", outcome: "correct", difficulty: 3, ts: NOW.toISOString() });
-		await store.recordEvidence("Base rates", { kind: "check", outcome: "partial", difficulty: 3, ts: at(60_000).toISOString() });
-		return createFlashcard(store, { concept: "Base rates", front: "Why is a positive test often wrong?", back: "False alarms." }, NOW);
-	}
-
-	it("gives a quizzed concept a small nudge and never counts as a quiz attempt", async () => {
-		const { store } = pair();
-		const card = await quizzed(store);
-		const before = (await store.concepts()).get("base-rates")!.stats;
-		await rateFlashcard(store, card.id, "good", at(HOUR));
-		const after = (await store.concepts()).get("base-rates")!.stats;
-		expect(after.ability).toBeGreaterThan(before.ability);
-		expect(after.ability - before.ability).toBeLessThanOrEqual(FLASHCARD_CREDIT.windowCap + 1e-9);
-		expect(after.attempts).toBe(before.attempts);
-		expect(after.lastEvidence).toBe(before.lastEvidence);
-		const events = await store.evidenceFor("base-rates");
-		expect(events.filter((e) => e.source === "flashcard")).toHaveLength(1);
-	});
-
-	it("caps a burst of ratings inside any 4-hour window", async () => {
-		const { store } = pair();
-		const card = await quizzed(store);
-		const before = (await store.concepts()).get("base-rates")!.stats;
-		for (let i = 0; i < 40; i++) await rateFlashcard(store, card.id, i % 2 ? "easy" : "good", at(HOUR + i * 5 * 60_000));
-		const after = (await store.concepts()).get("base-rates")!.stats;
-		expect(after.ability - before.ability).toBeLessThanOrEqual(FLASHCARD_CREDIT.windowCap + 1e-9);
-		expect(after.status).not.toBe("solid");
-	});
-
-	it("cannot complete a concept even when spread across many windows", async () => {
-		const { store } = pair();
-		const card = await quizzed(store);
-		for (let w = 0; w < 30; w++) {
-			for (let i = 0; i < 5; i++) await rateFlashcard(store, card.id, "easy", at(HOUR + w * 5 * HOUR + i * 60_000));
-		}
-		const stats = (await store.concepts()).get("base-rates")!.stats;
-		expect(stats.mastery).toBeLessThan(0.8);
-		expect(stats.status).not.toBe("solid");
-	});
-
-	it("leaves an unquizzed concept unassessed and skips Again", async () => {
-		const { store } = pair();
-		await store.upsertConcept({ title: "Odds" });
-		const card = await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio." }, NOW);
-		for (let i = 0; i < 10; i++) await rateFlashcard(store, card.id, "easy", at(i * 60_000));
-		await rateFlashcard(store, card.id, "again", at(HOUR));
-		expect((await store.concepts()).get("odds")!.stats.status).toBe("unassessed");
-		expect((await store.evidenceFor("odds")).filter((e) => e.source === "flashcard")).toHaveLength(10);
-	});
-
-	it("keeps flashcard ratings out of the concept's quiz history", async () => {
-		const { memory, store } = pair();
-		const card = await quizzed(store);
-		await rateFlashcard(store, card.id, "good", at(HOUR));
-		const note = await memory.read((await store.concepts()).get("base-rates")!.path);
-		expect(note).toContain("Quiz history");
-		expect(note).not.toContain("Why is a positive test often wrong?");
-	});
-});
-
 describe("flashcard editing", () => {
-	it("changes the wording and keeps the schedule", async () => {
+	it("changes the wording and does not add a due date", async () => {
 		const { store } = pair();
 		const card = await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio." }, NOW);
-		const rated = await rateFlashcard(store, card.id, "good", NOW);
 		const edited = await updateFlashcard(store, card.id, { concept: "Odds", front: "What formula gives the odds of an event with probability p?", back: "p / (1 − p)." }, NOW);
+		expect(edited.id).toBe(card.id);
 		expect(edited.front).toBe("What formula gives the odds of an event with probability p?");
-		expect(edited.state).toBe(rated.state);
-		expect(edited.due).toBe(rated.due);
-		expect(edited.reps).toBe(rated.reps);
+		expect(edited).not.toHaveProperty("due");
 		const saved = await loadFlashcardLibrary(store.io);
 		expect(saved.cards).toHaveLength(1);
 		expect(saved.cards[0].back).toBe("p / (1 − p).");
@@ -268,7 +193,7 @@ describe("flashcard editing", () => {
 });
 
 describe("flashcard tools", () => {
-	it("saves a card on the account and lists it when due", async () => {
+	it("saves a card on the account and lists the deck", async () => {
 		const { vault, store } = pair();
 		const saved = await toolByName("save_flashcard")!.run(
 			{ concept: "Base rates", front: "Why 9%?", back: "False alarms.", deck: "Exam 2" },
@@ -277,9 +202,10 @@ describe("flashcard tools", () => {
 		expect(saved.isError).toBeFalsy();
 		expect(saved.text).toContain("stays on the account");
 		expect(vault.files.has("Groundwork/flashcards/Base rates.md")).toBe(false);
-		const due = await toolByName("list_due_flashcards")!.run({}, { store });
-		expect(due.text).toContain("Why 9%?");
-		expect(due.text).toContain("Decks: Exam 2");
+		const listed = await toolByName("list_flashcards")!.run({}, { store });
+		expect(listed.text).toContain("Why 9%?");
+		expect(listed.text).toContain("Decks: Exam 2 (1)");
+		expect(listed.text).not.toMatch(/due/i);
 		const lib = await loadFlashcardLibrary(store.io);
 		expect(lib.decks[0]).toMatchObject({ id: "exam-2", title: "Exam 2" });
 		expect(lib.decks[0].goalId).toBeUndefined();
@@ -331,11 +257,27 @@ describe("named decks", () => {
 	});
 });
 
-describe("flashcard interval cap", () => {
-	it("keeps compounding easy ratings inside a valid date", () => {
-		let card = makeCard({ deckId: "library", concept: "Odds", front: "What is odds?", back: "A ratio.", now: NOW });
-		for (let i = 0; i < 60; i++) card = applyRating(card, "easy", NOW);
-		expect(Number.isNaN(Date.parse(card.due))).toBe(false);
-		expect(card.intervalMinutes).toBe(36_500 * 24 * 60);
+describe("delete a deck", () => {
+	it("removes the deck and its cards, and does not restore exported notes", async () => {
+		const { vault, store } = pair();
+		const deck = await createDeck(store, "Nightly drills", NOW);
+		const kept = await createDeck(store, "Exam morning", NOW);
+		await createFlashcard(store, { concept: "Base rates", front: "Why 9%?", back: "False alarms.", deckId: deck.id, deckTitle: deck.title }, NOW);
+		await createFlashcard(store, { concept: "Odds", front: "What is odds?", back: "A ratio.", deckId: kept.id, deckTitle: kept.title }, NOW);
+		await exportFlashcards(store, ["Groundwork"], NOW);
+		expect(vault.files.has("Groundwork/flashcards/Base rates.md")).toBe(true);
+
+		await deleteDeck(store, deck.id, ["Groundwork"], NOW);
+		const lib = await syncFlashcards(store, ["Groundwork"], NOW);
+		expect(lib.decks.map((d) => d.id)).toEqual(["exam-morning"]);
+		expect(lib.cards.map((c) => c.concept)).toEqual(["Odds"]);
+		expect(vault.files.has("Groundwork/flashcards/Base rates.md")).toBe(false);
+		expect(vault.files.has("Groundwork/flashcards/Nightly drills deck.md") || vault.files.has("Groundwork/flashcards/Nightly drills.md")).toBe(false);
+		expect(await vault.read("Groundwork/flashcards/Odds.md")).toContain("A ratio.");
+	});
+
+	it("refuses a deck that is already gone", async () => {
+		const { store } = pair();
+		await expect(deleteDeck(store, "missing", [], NOW)).rejects.toThrow(/already gone/);
 	});
 });

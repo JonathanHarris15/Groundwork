@@ -23,7 +23,7 @@ import {
 import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
 import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
 import { isBuilt } from "./graph";
-import { buildStudyQueue, loadFlashcardLibrary, saveFlashcard } from "./flashcards";
+import { cardsInDeck, loadFlashcardLibrary, saveFlashcard } from "./flashcards";
 import { daysLeftPhrase } from "./goal-plan";
 import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalReport, type GoalStatus, type KnowledgeStore } from "./store";
 
@@ -876,21 +876,25 @@ export const TOOLS: ToolDef[] = [
 		},
 	},
 	{
-		name: "list_due_flashcards",
+		name: "list_flashcards",
 		description:
-			"Decks on the account, and flashcards that are due now: new cards, cards in learning, and reviews whose interval has elapsed. Use this before offering a flashcard session or choosing a deck.",
+			"Decks on the account and the cards in them. Decks are optional collections with no due dates. Use this when you need the deck names, or when the learner asks what cards they have.",
 		inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50 } } },
 		async run({ limit }: { limit?: number }, { store }) {
 			const lib = await loadFlashcardLibrary(store.io);
 			const deckTitle = (id: string) => lib.decks.find((d) => d.id === id)?.title ?? id;
-			const names = [...lib.decks].sort((a, b) => a.title.localeCompare(b.title)).map((d) => d.title);
-			const deckLine = names.length ? `Decks: ${names.join(", ")}` : "Decks: none yet";
-			const due = buildStudyQueue(lib.cards, new Date());
-			const shown = due.slice(0, limit ?? 20);
-			if (!shown.length) return { text: `No flashcards are due.\n${deckLine}`, summary: "No flashcards due" };
-			const lines = shown.map((c) => `- ${c.concept} · ${deckTitle(c.deckId)} [${c.state}] ${c.front.split("\n")[0]}`);
-			const more = due.length > shown.length ? `\n${due.length - shown.length} more due.` : "";
-			return { text: `${deckLine}\n${lines.join("\n")}${more}`, summary: `${due.length} flashcard${due.length === 1 ? "" : "s"} due` };
+			const decks = [...lib.decks].sort((a, b) => a.title.localeCompare(b.title));
+			const deckLine = decks.length
+				? `Decks: ${decks.map((d) => `${d.title} (${cardsInDeck(lib, d.id).length})`).join(", ")}`
+				: "Decks: none yet";
+			const cards = [...lib.cards].sort(
+				(a, b) => a.concept.localeCompare(b.concept) || a.front.localeCompare(b.front) || a.id.localeCompare(b.id),
+			);
+			const shown = cards.slice(0, limit ?? 20);
+			if (!shown.length) return { text: `No flashcards yet.\n${deckLine}`, summary: "No flashcards" };
+			const lines = shown.map((c) => `- ${c.concept} · ${deckTitle(c.deckId)}: ${c.front.split("\n")[0]}`);
+			const more = cards.length > shown.length ? `\n${cards.length - shown.length} more.` : "";
+			return { text: `${deckLine}\n${lines.join("\n")}${more}`, summary: `${cards.length} flashcard${cards.length === 1 ? "" : "s"}` };
 		},
 	},
 	{

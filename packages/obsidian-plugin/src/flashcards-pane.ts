@@ -1,15 +1,11 @@
-import { Notice, type App } from "obsidian";
+import { type App } from "obsidian";
 import {
 	buildStudyQueue,
 	cardsInDeck,
 	emptyFlashcardLibrary,
-	flashcardCounts,
 	flashcardsDir,
 	masteryTone,
-	previewIntervals,
-	rateFlashcard,
 	syncFlashcards,
-	type CardRating,
 	type Concept,
 	type Flashcard,
 	type FlashcardLibrary,
@@ -28,24 +24,15 @@ export interface FlashcardsHost {
 	onManageCards: () => void;
 }
 
-const RATINGS: Array<{ rating: CardRating; label: string; key: string }> = [
-	{ rating: "again", label: "Again", key: "1" },
-	{ rating: "hard", label: "Hard", key: "2" },
-	{ rating: "good", label: "Good", key: "3" },
-	{ rating: "easy", label: "Easy", key: "4" },
-];
-
 export class FlashcardsPane {
 	private active = false;
 	private lib: FlashcardLibrary = emptyFlashcardLibrary();
 	private concepts = new Map<string, Concept>();
 	private deckId = "";
 	private requestedDeckId = "";
-	private queue: Flashcard[] = [];
-	private history: CardRating[] = [];
-	private misses: Array<{ concept: string; front: string }> = [];
+	private cards: Flashcard[] = [];
+	private index = 0;
 	private revealed = false;
-	private busy = false;
 	private renderGen = 0;
 
 	constructor(
@@ -102,14 +89,14 @@ export class FlashcardsPane {
 		}
 		if (!this.active || gen !== this.renderGen) return;
 		const before = this.deckId;
+		const currentId = this.cards[this.index]?.id;
 		this.applyRequestedDeck();
 		if (this.deckId !== before) this.startSession();
 		else {
-			const live = new Map(this.scopedCards().map((card) => [card.id, card]));
-			this.queue = this.queue.flatMap((card) => {
-				const next = live.get(card.id);
-				return next ? [next] : [];
-			});
+			this.cards = this.makeQueue();
+			const next = currentId ? this.cards.findIndex((card) => card.id === currentId) : -1;
+			this.index = next >= 0 ? next : Math.min(this.index, this.cards.length);
+			if (this.index >= this.cards.length) this.revealed = false;
 		}
 		this.draw();
 	}
@@ -119,14 +106,13 @@ export class FlashcardsPane {
 	}
 
 	private startSession(): void {
-		this.history = [];
-		this.misses = [];
 		this.revealed = false;
-		this.queue = this.makeQueue();
+		this.index = 0;
+		this.cards = this.makeQueue();
 	}
 
 	private makeQueue(): Flashcard[] {
-		return buildStudyQueue(this.scopedCards(), new Date());
+		return buildStudyQueue(this.scopedCards());
 	}
 
 	private scopedCards(): Flashcard[] {
@@ -134,21 +120,19 @@ export class FlashcardsPane {
 	}
 
 	private onKey(e: KeyboardEvent): void {
-		if (!this.active || this.busy) return;
+		if (!this.active) return;
 		const target = e.target as HTMLElement | null;
-		if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
-		if (e.key === " " || e.key === "Enter") {
-			if (!this.revealed && this.queue.length) {
-				this.reveal();
-				e.preventDefault();
-			}
+		if (target && (target.closest("input, textarea, select, button") || target.isContentEditable)) return;
+		if (e.key !== " " && e.key !== "Enter" && e.key !== "ArrowRight") return;
+		if (!this.cards.length || this.index >= this.cards.length) return;
+		if (!this.revealed) {
+			if (e.key === "ArrowRight") return;
+			this.reveal();
+			e.preventDefault();
 			return;
 		}
-		const rating = RATINGS.find((r) => r.key === e.key)?.rating;
-		if (rating && this.revealed) {
-			e.preventDefault();
-			void this.rate(rating);
-		}
+		this.advance();
+		e.preventDefault();
 	}
 
 	private reveal(): void {
@@ -156,26 +140,11 @@ export class FlashcardsPane {
 		this.root.addClass("is-revealed");
 	}
 
-	private async rate(rating: CardRating): Promise<void> {
-		const card = this.queue[0];
-		if (!card || this.busy || !this.revealed) return;
-		this.busy = true;
-		try {
-			const updated = await rateFlashcard(this.host.store, card.id, rating);
-			const index = this.lib.cards.findIndex((c) => c.id === updated.id);
-			if (index >= 0) this.lib.cards[index] = updated;
-			this.queue.shift();
-			if (updated.intervalMinutes <= 10) this.queue.push(updated);
-			this.history.push(rating);
-			if (rating === "again" || rating === "hard") this.misses.push({ concept: updated.concept, front: updated.front });
-			this.revealed = false;
-			this.concepts = await this.host.store.concepts();
-			this.draw();
-		} catch (err) {
-			new Notice(err instanceof Error ? err.message : String(err));
-		} finally {
-			this.busy = false;
-		}
+	private advance(): void {
+		if (!this.revealed || this.index >= this.cards.length) return;
+		this.index += 1;
+		this.revealed = false;
+		this.draw();
 	}
 
 	private sortedDecks() {
@@ -192,18 +161,17 @@ export class FlashcardsPane {
 
 	private draw(): void {
 		const gen = ++this.renderGen;
-		const now = new Date();
 		this.root.empty();
-		this.root.toggleClass("is-revealed", this.revealed);
+		this.root.toggleClass("is-revealed", this.revealed && this.index < this.cards.length);
 		if (!this.deckId || !this.lib.decks.some((deck) => deck.id === this.deckId)) {
 			this.drawNoDeck();
 			return;
 		}
 		const body = this.root.createDiv({ cls: "gw-fc-body" });
 		const main = body.createDiv({ cls: "gw-fc-main" });
-		this.drawTop(main, now);
+		this.drawTop(main);
 		this.drawProgress(main);
-		this.drawStage(main, now);
+		this.drawStage(main);
 		if (gen !== this.renderGen) return;
 	}
 
@@ -225,7 +193,7 @@ export class FlashcardsPane {
 		return this.lib.decks.find((d) => d.id === this.deckId)?.title ?? "Deck";
 	}
 
-	private drawTop(parent: HTMLElement, now: Date): void {
+	private drawTop(parent: HTMLElement): void {
 		const top = parent.createDiv({ cls: "gw-fc-top" });
 		const deck = top.createDiv({ cls: "gw-deck" });
 		deck.createSpan({ cls: "gw-deck-k", text: "Flashcards" });
@@ -242,16 +210,10 @@ export class FlashcardsPane {
 			this.draw();
 		});
 		const meta = top.createDiv({ cls: "gw-fc-meta" });
-		const counts = flashcardCounts(this.scopedCards(), now);
-		for (const [n, label] of [
-			[counts.fresh, "New"],
-			[counts.learning, "Learning"],
-			[counts.review, "Review"],
-		] as const) {
-			const chip = meta.createSpan({ cls: "gw-fc-chip" });
-			chip.createEl("b", { text: String(n) });
-			chip.append(` ${label}`);
-		}
+		const count = this.scopedCards().length;
+		const chip = meta.createSpan({ cls: "gw-fc-chip" });
+		chip.createEl("b", { text: String(count) });
+		chip.append(count === 1 ? " card" : " cards");
 		const manage = top.createEl("button", {
 			cls: "gw-lib-btn gw-fc-manage",
 			text: "Manage cards",
@@ -263,52 +225,65 @@ export class FlashcardsPane {
 	private drawProgress(parent: HTMLElement): void {
 		const wrap = parent.createDiv({ cls: "gw-fc-seq-wrap" });
 		const seq = wrap.createDiv({ cls: "gw-seq" });
-		const cells: string[] = [...this.history];
-		if (this.queue.length) cells.push("cur");
-		while (cells.length < 18) cells.push("");
-		for (const cell of cells.slice(-18)) {
-			const pip = seq.createEl("i");
-			if (cell === "cur") pip.addClass("cur");
-			else if (cell === "again") pip.addClass("a");
-			else if (cell === "hard") pip.addClass("h");
-			else if (cell === "good") pip.addClass("g");
-			else if (cell === "easy") pip.addClass("e");
+		const total = this.cards.length;
+		const done = this.index >= total;
+		const cells = Math.max(total, 1);
+		const width = Math.min(18, cells);
+		for (let i = 0; i < width; i++) {
+			const pip = seq.createEl("i", { attr: { "aria-hidden": "true" } });
+			const at = total <= 18 ? i : Math.floor((i / width) * total);
+			if (done || at < this.index) pip.addClass("seen");
+			else if (at === this.index) pip.addClass("cur");
 		}
 		const labels = wrap.createDiv({ cls: "gw-seq-l" });
-		const left = this.queue.length ? this.history.length + 1 : this.history.length;
-		const total = this.history.length + this.queue.length;
-		labels.createSpan({ text: total ? `Card ${Math.min(left, total)} of ${total}` : "Nothing due" });
-		labels.createSpan({ text: this.queue.length ? `${this.queue.length} to go` : "Caught up" });
+		if (!total) labels.createSpan({ text: this.scopedCards().length ? "Nothing to study" : "No cards" });
+		else if (done) labels.createSpan({ text: `All ${total} cards` });
+		else labels.createSpan({ text: `Card ${this.index + 1} of ${total}` });
+		labels.createSpan({ text: this.deckTitle() });
 	}
 
-	private drawStage(parent: HTMLElement, now: Date): void {
-		const card = this.queue[0];
+	private drawStage(parent: HTMLElement): void {
 		const stage = parent.createDiv({ cls: "gw-fc-stage" });
+		const card = this.index < this.cards.length ? this.cards[this.index] : undefined;
 		if (!card) {
 			const empty = stage.createDiv({ cls: "gw-fc-empty" });
-			empty.createDiv({ cls: "gw-deck-t", text: "Nothing due" });
-			const next = this.scopedCards()
-				.filter((c) => c.state !== "new" && Date.parse(c.due) > now.getTime())
-				.sort((a, b) => a.due.localeCompare(b.due))[0];
-			empty.createDiv({
-				cls: "gw-fc-empty-sub",
-				text: next ? `Next card ${formatWhen(next.due, now)}.` : "Nothing in this deck is due. Add cards in Library, or ask the tutor to make some.",
+			if (!this.scopedCards().length) {
+				empty.createDiv({ cls: "gw-deck-t", text: "No cards yet" });
+				empty.createDiv({
+					cls: "gw-fc-empty-sub",
+					text: "Add cards in Library, or ask the tutor to make some.",
+				});
+				return;
+			}
+			if (!this.cards.length) {
+				empty.createDiv({ cls: "gw-deck-t", text: "Nothing to study" });
+				empty.createDiv({
+					cls: "gw-fc-empty-sub",
+					text: "Edit the cards in Library. A card needs one short answer.",
+				});
+				return;
+			}
+			empty.createDiv({ cls: "gw-deck-t", text: "That's the deck" });
+			empty.createDiv({ cls: "gw-fc-empty-sub", text: "Go through it again whenever you want." });
+			const again = empty.createEl("button", { cls: "gw-next-btn", text: "Start again", attr: { type: "button" } });
+			again.addEventListener("click", () => {
+				this.startSession();
+				this.draw();
 			});
 			return;
 		}
 		const stack = stage.createDiv({ cls: "gw-fc-stack" });
-		if (this.queue.length > 2) stack.createDiv({ cls: "gw-ghostcard gw-gc2" });
-		if (this.queue.length > 1) stack.createDiv({ cls: "gw-ghostcard gw-gc1" });
+		if (this.cards.length - this.index > 2) stack.createDiv({ cls: "gw-ghostcard gw-gc2" });
+		if (this.cards.length - this.index > 1) stack.createDiv({ cls: "gw-ghostcard gw-gc1" });
 		const face = stack.createDiv({ cls: "gw-fcard" });
 		face.addEventListener("click", (e) => {
 			if ((e.target as HTMLElement).closest("a, button")) return;
-			this.reveal();
+			if (!this.revealed) this.reveal();
 		});
 		const head = face.createDiv({ cls: "gw-fcard-head" });
 		const concept = head.createSpan({ cls: "gw-fcard-concept" });
 		masteryDot(concept, this.conceptTone(card.concept));
 		concept.createSpan({ text: card.concept });
-		head.createSpan({ cls: "gw-fcard-seen", text: seenLabel(card, now) });
 		const front = face.createDiv({ cls: "gw-fcard-front" });
 		this.paintCardFace(front, card.front);
 		const show = face.createEl("button", { cls: "gw-fc-show", attr: { type: "button" } });
@@ -333,21 +308,9 @@ export class FlashcardsPane {
 				void this.openPath(path);
 			});
 		}
-		if (this.concepts.get(slugify(card.concept))?.stats.attempts) {
-			const feeds = src.createSpan({ cls: "gw-fcard-feeds", attr: { title: "Ratings add a small, capped amount. A quiz is what makes a concept solid." } });
-			masteryDot(feeds, this.conceptTone(card.concept));
-			feeds.createSpan({ text: `Counts a little toward ${card.concept}` });
-		}
 		const rate = parent.createDiv({ cls: "gw-fc-rate" });
-		for (const item of RATINGS) {
-			const preview = previewIntervals(card).find((p) => p.rating === item.rating)!;
-			const button = rate.createEl("button", { cls: `gw-rb gw-rb-${item.rating}`, attr: { type: "button" } });
-			const label = button.createEl("b");
-			label.createSpan({ text: item.label });
-			label.createEl("kbd", { text: item.key });
-			button.createSpan({ text: preview.label });
-			button.addEventListener("click", () => void this.rate(item.rating));
-		}
+		const next = rate.createEl("button", { cls: "gw-next-btn gw-fc-next", text: "Next card", attr: { type: "button" } });
+		next.addEventListener("click", () => this.advance());
 	}
 
 	private paintCardFace(el: HTMLElement, markdown: string): void {
@@ -374,22 +337,4 @@ export class FlashcardsPane {
 	private async openPath(path: string): Promise<void> {
 		await this.host.app.workspace.openLinkText(path, "", false);
 	}
-}
-
-function seenLabel(card: Flashcard, now: Date): string {
-	const state = card.state === "new" ? "New" : card.state === "learning" ? "Learning" : "Review";
-	if (!card.lastReviewed) return state;
-	const days = Math.floor((now.getTime() - Date.parse(card.lastReviewed)) / 86_400_000);
-	const when = days <= 0 ? "last seen today" : days === 1 ? "last seen yesterday" : `last seen ${days} days ago`;
-	return `${state} · ${when}`;
-}
-
-function formatWhen(iso: string, now: Date): string {
-	const ms = Date.parse(iso) - now.getTime();
-	const minutes = Math.max(1, Math.round(ms / 60_000));
-	if (minutes < 60) return `in ${minutes} min`;
-	const hours = Math.round(minutes / 60);
-	if (hours < 24) return hours === 1 ? "in 1 hour" : `in ${hours} hours`;
-	const days = Math.round(hours / 24);
-	return days === 1 ? "tomorrow" : `in ${days} days`;
 }

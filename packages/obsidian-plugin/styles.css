@@ -2789,7 +2789,7 @@ body .gw-root select.gw-goal-select {
 	color: var(--text-normal, var(--gw-ink));
 }
 .gw-appearance { display: flex; flex-wrap: wrap; gap: 8px; }
-/* flashcards — review deck. Cards are on the account and mirrored into flashcards/. */
+/* flashcards — optional decks. Cards are on the account and mirrored into flashcards/. */
 .gw-flash {
 	display: none;
 	flex: 1;
@@ -2798,14 +2798,6 @@ body .gw-root select.gw-goal-select {
 	outline: none;
 	container-type: inline-size;
 	container-name: gwflash;
-	--gw-again: var(--gw-tone-goal);
-	--gw-hard: var(--gw-tone-shaky);
-	--gw-good: var(--gw-tone-solid);
-	--gw-easy: var(--gw-tone-learning);
-	--gw-again-ink: var(--gw-tone-goal-ink);
-	--gw-hard-ink: var(--gw-tone-shaky-ink);
-	--gw-good-ink: var(--gw-tone-solid-ink);
-	--gw-easy-ink: var(--gw-tone-learning-ink);
 	--gw-fc-card: var(--background-secondary);
 	--gw-fc-ink: var(--text-normal);
 	--gw-fc-muted: var(--text-muted);
@@ -3082,10 +3074,7 @@ body .gw-root select.gw-deck-select:focus-visible {
 	background: var(--background-modifier-border);
 	display: block;
 }
-.gw-seq i.g { background: var(--gw-good); }
-.gw-seq i.h { background: var(--gw-hard); }
-.gw-seq i.a { background: var(--gw-again); }
-.gw-seq i.e { background: var(--gw-easy); }
+.gw-seq i.seen { background: var(--text-muted); }
 .gw-seq i.cur { background: var(--text-normal); }
 .gw-seq-l {
 	display: flex;
@@ -3311,40 +3300,14 @@ body .gw-root select.gw-deck-select:focus-visible {
 	gap: 6px;
 }
 .gw-fc-rate {
-	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 10px;
+	display: flex;
+	justify-content: center;
 	width: min(640px, 100%);
 	margin: 0 auto;
 }
-.gw-rb {
-	border-radius: 12px;
-	border: 1px solid var(--gw-fc-line);
-	background: var(--background-primary);
-	padding: 10px 12px;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 2px;
-	cursor: pointer;
-	color: inherit;
+.gw-fc-next {
+	min-width: 140px;
 }
-.gw-rb b {
-	font-size: 15px;
-	font-weight: 500;
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-.gw-rb span { font-size: 12px; color: var(--gw-fc-muted); }
-.gw-rb-again { border-color: color-mix(in srgb, var(--gw-again) 45%, var(--gw-fc-line)); }
-.gw-rb-again b { color: var(--gw-again-ink); }
-.gw-rb-hard { border-color: color-mix(in srgb, var(--gw-hard) 45%, var(--gw-fc-line)); }
-.gw-rb-hard b { color: var(--gw-hard-ink); }
-.gw-rb-good { border-color: color-mix(in srgb, var(--gw-good) 45%, var(--gw-fc-line)); }
-.gw-rb-good b { color: var(--gw-good-ink); }
-.gw-rb-easy { border-color: color-mix(in srgb, var(--gw-easy) 45%, var(--gw-fc-line)); }
-.gw-rb-easy b { color: var(--gw-easy-ink); }
 @container gwflash (max-width: 860px) {
 	.gw-fc-main { padding: 16px 16px 12px; }
 	.gw-fcard-front { font-size: 18px; padding-left: 18px; padding-right: 18px; }

@@ -1,21 +1,18 @@
 /**
  * Flashcards live on the account (`.groundwork/flashcards.json`).
+ * A deck is an optional collection the learner opens when they want.
+ * Cards have no due date and no review schedule.
  * They are written into the vault only when the learner asks: `exportFlashcards`
  * copies them as plain Markdown into `flashcards/` inside the folders they chose.
  * A hand edit of an exported card is pulled back onto the account by `syncFlashcards`.
- * The account copy owns the schedule.
  */
 
 import { cleanFolderList } from "./access";
 import { ensureDir, type VaultIO } from "./io";
 import { parseNote, safeFileName, serializeNote, slugify } from "./markdown";
-import type { Outcome } from "./model";
 import { PATHS, type KnowledgeStore } from "./store";
 
 export const FLASHCARDS_DIR = "flashcards";
-
-export type CardRating = "again" | "hard" | "good" | "easy";
-export type CardState = "new" | "learning" | "review";
 
 export interface Flashcard {
 	id: string;
@@ -23,20 +20,12 @@ export interface Flashcard {
 	concept: string;
 	front: string;
 	back: string;
-	/** Set when the card fails atomic Q/A rules — hidden from review until fixed. */
+	/** Set when the card fails atomic Q/A rules — hidden from study until fixed. */
 	qualityIssue?: string;
 	/** Account concept path, when the card was made from a teaching note. */
 	source?: string;
 	createdAt: string;
 	updatedAt: string;
-	state: CardState;
-	due: string;
-	intervalMinutes: number;
-	ease: number;
-	reps: number;
-	lapses: number;
-	lastRating?: CardRating;
-	lastReviewed?: string;
 	/** Stable name inside `flashcards/`. */
 	fileName?: string;
 	/** Hash of concept + front + back last written to the vault. */
@@ -57,12 +46,6 @@ export interface FlashcardLibrary {
 	decks: FlashDeck[];
 	cards: Flashcard[];
 }
-
-const RATINGS: CardRating[] = ["again", "hard", "good", "easy"];
-const DAY_MINUTES = 24 * 60;
-const EASE_START = 2.5;
-/** Compounding easy ratings would otherwise overflow a Date. */
-const MAX_INTERVAL_MINUTES = 36_500 * DAY_MINUTES;
 
 export function flashcardsDir(writeFolder: string): string {
 	return `${writeFolder}/${FLASHCARDS_DIR}`;
@@ -103,92 +86,6 @@ function newId(prefix: string): string {
 	return prefix + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function clampEase(ease: number): number {
-	return Math.round(Math.min(3, Math.max(1.3, ease)) * 100) / 100;
-}
-
-export function scheduledMinutes(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">, rating: CardRating): number {
-	return Math.min(MAX_INTERVAL_MINUTES, rawMinutes(card, rating));
-}
-
-function rawMinutes(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">, rating: CardRating): number {
-	const ease = card.ease || EASE_START;
-	if (rating === "again") return 1;
-	if (rating === "hard") {
-		if (card.state === "review" && card.intervalMinutes >= DAY_MINUTES) return Math.max(DAY_MINUTES, Math.round(card.intervalMinutes * 1.2));
-		return 10;
-	}
-	if (rating === "good") {
-		if (card.state === "review" && card.intervalMinutes >= DAY_MINUTES) return Math.max(DAY_MINUTES, Math.round(card.intervalMinutes * ease));
-		return DAY_MINUTES;
-	}
-	if (card.state === "review" && card.intervalMinutes >= DAY_MINUTES) return Math.max(DAY_MINUTES, Math.round(card.intervalMinutes * ease * 1.3));
-	return 4 * DAY_MINUTES;
-}
-
-/** Short label for a rating button, e.g. "in 2 days". */
-export function formatInterval(minutes: number): string {
-	const n = Math.max(1, Math.round(minutes));
-	if (n < 60) return `in ${n} min`;
-	if (n < DAY_MINUTES) {
-		const hours = Math.max(1, Math.round(n / 60));
-		return hours === 1 ? "in 1 hr" : `in ${hours} hr`;
-	}
-	const days = Math.max(1, Math.round(n / DAY_MINUTES));
-	return days === 1 ? "in 1 day" : `in ${days} days`;
-}
-
-export function previewIntervals(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">): Array<{ rating: CardRating; minutes: number; label: string }> {
-	return RATINGS.map((rating) => {
-		const minutes = scheduledMinutes(card, rating);
-		return { rating, minutes, label: formatInterval(minutes) };
-	});
-}
-
-export function applyRating(card: Flashcard, rating: CardRating, now: Date): Flashcard {
-	const ease0 = card.ease || EASE_START;
-	const minutes = scheduledMinutes(card, rating);
-	let state: CardState = card.state;
-	let ease = ease0;
-	let reps = card.reps;
-	let lapses = card.lapses;
-	if (rating === "again") {
-		state = "learning";
-		if (card.state === "review") lapses += 1;
-		ease = clampEase(ease0 - 0.2);
-	} else if (rating === "hard") {
-		ease = clampEase(ease0 - 0.15);
-		state = minutes >= DAY_MINUTES ? "review" : "learning";
-	} else if (rating === "good") {
-		reps += 1;
-		state = "review";
-	} else {
-		reps += 1;
-		ease = clampEase(ease0 + 0.15);
-		state = "review";
-	}
-	const stamp = now.toISOString();
-	return {
-		...card,
-		state,
-		ease,
-		reps,
-		lapses,
-		intervalMinutes: minutes,
-		due: new Date(now.getTime() + minutes * 60_000).toISOString(),
-		lastRating: rating,
-		lastReviewed: stamp,
-		updatedAt: stamp,
-	};
-}
-
-export function ratingOutcome(rating: CardRating): { outcome: Outcome; difficulty: number } {
-	if (rating === "again") return { outcome: "incorrect", difficulty: 2 };
-	if (rating === "hard") return { outcome: "partial", difficulty: 3 };
-	if (rating === "good") return { outcome: "correct", difficulty: 3 };
-	return { outcome: "correct", difficulty: 4 };
-}
-
 export function auditFlashcardLibrary(lib: FlashcardLibrary): boolean {
 	let changed = false;
 	for (const card of lib.cards) {
@@ -221,23 +118,9 @@ export function makeCard(input: { id?: string; deckId: string; concept: string; 
 		source: input.source,
 		createdAt: now,
 		updatedAt: now,
-		state: "new",
-		due: now,
-		intervalMinutes: 0,
-		ease: EASE_START,
-		reps: 0,
-		lapses: 0,
 		contentKey: flashcardContentKey(concept, front, back),
 		qualityIssue,
 	};
-}
-
-function asRating(value: unknown): CardRating | undefined {
-	return RATINGS.includes(value as CardRating) ? (value as CardRating) : undefined;
-}
-
-function asState(value: unknown): CardState {
-	return value === "learning" || value === "review" || value === "new" ? value : "new";
 }
 
 export function parseFlashcardLibrary(value: unknown): FlashcardLibrary {
@@ -276,14 +159,6 @@ export function parseFlashcardLibrary(value: unknown): FlashcardLibrary {
 			source: typeof c.source === "string" ? c.source : undefined,
 			createdAt,
 			updatedAt: typeof c.updatedAt === "string" ? c.updatedAt : createdAt,
-			state: asState(c.state),
-			due: typeof c.due === "string" ? c.due : createdAt,
-			intervalMinutes: typeof c.intervalMinutes === "number" && c.intervalMinutes >= 0 ? c.intervalMinutes : 0,
-			ease: typeof c.ease === "number" && c.ease > 0 ? c.ease : EASE_START,
-			reps: typeof c.reps === "number" && c.reps >= 0 ? c.reps : 0,
-			lapses: typeof c.lapses === "number" && c.lapses >= 0 ? c.lapses : 0,
-			lastRating: asRating(c.lastRating),
-			lastReviewed: typeof c.lastReviewed === "string" ? c.lastReviewed : undefined,
 			fileName: typeof c.fileName === "string" ? c.fileName : undefined,
 			contentKey: typeof c.contentKey === "string" ? c.contentKey : undefined,
 			qualityIssue:
@@ -402,12 +277,6 @@ export function serializeCardMarkdown(card: Flashcard, deckTitle: string): strin
 			deck: card.deckId,
 			deckTitle,
 			concept: card.concept,
-			state: card.state,
-			due: card.due,
-			intervalMinutes: card.intervalMinutes,
-			ease: card.ease,
-			reps: card.reps,
-			lapses: card.lapses,
 			source: card.source,
 			contentKey: card.contentKey,
 		},
@@ -423,7 +292,7 @@ export function serializeDeckMarkdown(deck: FlashDeck, cards: Flashcard[]): stri
 	});
 	return serializeNote(
 		{ groundwork: "flashcard-deck", id: deck.id, title: deck.title },
-		`# ${deck.title}\n\nCards in this deck. Edit a card's note to change the question or the answer. The review schedule stays on your Groundwork account.\n\n${lines.join("\n")}\n`,
+		`# ${deck.title}\n\nCards in this deck. Edit a card's note to change the question or the answer.\n\n${lines.join("\n")}\n`,
 	);
 }
 
@@ -468,7 +337,7 @@ export function parseCardFile(text: string): ParsedCardFile | { kind: "deck" } |
 }
 
 /**
- * Pull question/answer edits out of vault card notes. Scheduling in those files is ignored.
+ * Pull question/answer edits out of vault card notes. Older schedule fields in those files are ignored.
  * If the same card was edited in more than one write folder, the last folder in the list wins.
  */
 export async function adoptVaultEdits(vault: VaultIO, writeFolders: readonly string[], lib: FlashcardLibrary, now = new Date()): Promise<boolean> {
@@ -606,14 +475,6 @@ function fingerprint(lib: FlashcardLibrary): string {
 			back: c.back,
 			source: c.source ?? null,
 			createdAt: c.createdAt,
-			state: c.state,
-			due: c.due,
-			intervalMinutes: c.intervalMinutes,
-			ease: c.ease,
-			reps: c.reps,
-			lapses: c.lapses,
-			lastRating: c.lastRating ?? null,
-			lastReviewed: c.lastReviewed ?? null,
 			fileName: c.fileName ?? null,
 			contentKey: c.contentKey ?? null,
 		})),
@@ -684,37 +545,66 @@ export async function createFlashcard(
 	return card;
 }
 
-export async function deleteFlashcard(store: KnowledgeStore, id: string, now = new Date()): Promise<void> {
-	const lib = await loadFlashcardLibrary(store.io);
-	const next = lib.cards.filter((c) => c.id !== id);
-	if (next.length === lib.cards.length) throw new Error("That card is already gone.");
-	lib.cards = next;
-	await persist(store, lib, now);
-}
-
-export async function rateFlashcard(store: KnowledgeStore, id: string, rating: CardRating, now = new Date()): Promise<Flashcard> {
-	const lib = await loadFlashcardLibrary(store.io);
-	const index = lib.cards.findIndex((c) => c.id === id);
-	if (index < 0) throw new Error("That card is already gone.");
-	const card = applyRating(lib.cards[index], rating, now);
-	lib.cards[index] = card;
-	await persist(store, lib, now);
-	// Recall is credit only: "Again" reschedules the card and leaves mastery alone.
-	if (rating !== "again" && (await store.resolve(card.concept))) {
-		const { outcome, difficulty } = ratingOutcome(rating);
-		await store.recordEvidence(card.concept, {
-			ts: now.toISOString(),
-			kind: "review",
-			source: "flashcard",
-			outcome,
-			difficulty,
-			question: card.front.slice(0, 240),
-		});
+/** Drop exported notes for these cards and decks so the next sync does not copy them back. */
+async function removeMirroredFlashcards(
+	vault: VaultIO,
+	writeFolders: readonly string[],
+	match: { cardIds: ReadonlySet<string>; deckIds: ReadonlySet<string> },
+): Promise<void> {
+	if (!match.cardIds.size && !match.deckIds.size) return;
+	for (const folder of cleanFolderList(writeFolders)) {
+		const dir = flashcardsDir(folder);
+		if (!(await vault.exists(dir))) continue;
+		let files: string[] = [];
+		try {
+			files = (await vault.list(dir)).files;
+		} catch {
+			continue;
+		}
+		for (const path of files) {
+			if (!path.endsWith(".md")) continue;
+			let text = "";
+			try {
+				text = await vault.read(path);
+			} catch {
+				continue;
+			}
+			const parsed = parseCardFile(text);
+			if (!parsed) continue;
+			if (parsed.kind === "deck") {
+				const { frontmatter } = parseNote(text);
+				const id = typeof frontmatter.id === "string" ? frontmatter.id.trim() : "";
+				if (match.deckIds.has(id)) await vault.remove(path);
+				continue;
+			}
+			if (match.cardIds.has(parsed.id) || match.deckIds.has(parsed.deckId)) await vault.remove(path);
+		}
 	}
-	return card;
 }
 
-/** Edit a card's wording in place. Its schedule and review history stay. */
+export async function deleteFlashcard(store: KnowledgeStore, id: string, writeFolders: readonly string[] = [], now = new Date()): Promise<void> {
+	const lib = await loadFlashcardLibrary(store.io);
+	const card = lib.cards.find((c) => c.id === id);
+	if (!card) throw new Error("That card is already gone.");
+	lib.cards = lib.cards.filter((c) => c.id !== id);
+	await persist(store, lib, now);
+	await removeMirroredFlashcards(store.context, writeFolders, { cardIds: new Set([id]), deckIds: new Set() });
+}
+
+/** Remove a deck and every card in it. Exported notes for that deck are removed too. */
+export async function deleteDeck(store: KnowledgeStore, id: string, writeFolders: readonly string[] = [], now = new Date()): Promise<void> {
+	const deckId = id.trim();
+	if (!deckId) throw new Error("That deck is already gone.");
+	const lib = await loadFlashcardLibrary(store.io);
+	if (!lib.decks.some((d) => d.id === deckId)) throw new Error("That deck is already gone.");
+	const cardIds = new Set(lib.cards.filter((c) => c.deckId === deckId).map((c) => c.id));
+	lib.decks = lib.decks.filter((d) => d.id !== deckId);
+	lib.cards = lib.cards.filter((c) => c.deckId !== deckId);
+	await persist(store, lib, now);
+	await removeMirroredFlashcards(store.context, writeFolders, { cardIds, deckIds: new Set([deckId]) });
+}
+
+/** Edit a card's wording in place. */
 export async function updateFlashcard(
 	store: KnowledgeStore,
 	id: string,
@@ -739,49 +629,16 @@ export async function updateFlashcard(
 	return card;
 }
 
-export function buildStudyQueue(cards: Flashcard[], now: Date, opts?: { limitNew?: number; rank?: (concept: string) => number }): Flashcard[] {
-	const dueAt = now.getTime();
-	const due = cards.filter((c) => !c.qualityIssue && (c.state === "new" || Date.parse(c.due) <= dueAt));
-	const sort = (list: Flashcard[]) =>
-		[...list].sort((a, b) => {
-			const ra = opts?.rank?.(a.concept) ?? 0;
-			const rb = opts?.rank?.(b.concept) ?? 0;
-			if (ra !== rb) return ra - rb;
-			return a.due.localeCompare(b.due) || a.concept.localeCompare(b.concept) || a.id.localeCompare(b.id);
-		});
-	const fresh = sort(due.filter((c) => c.state === "new")).slice(0, opts?.limitNew ?? 20);
-	return [...sort(due.filter((c) => c.state === "learning")), ...sort(due.filter((c) => c.state === "review")), ...fresh];
-}
-
-export function flashcardCounts(cards: Flashcard[], now: Date): { fresh: number; learning: number; review: number } {
-	const dueAt = now.getTime();
-	let fresh = 0;
-	let learning = 0;
-	let review = 0;
-	for (const c of cards) {
-		if (c.state === "new") fresh++;
-		else if (c.state === "learning") learning++;
-		else if (Date.parse(c.due) <= dueAt) review++;
-	}
-	return { fresh, learning, review };
+/** Every usable card, in a stable order. A card is never waiting on a due date. */
+export function buildStudyQueue(cards: Flashcard[]): Flashcard[] {
+	return cards
+		.filter((c) => !c.qualityIssue)
+		.sort((a, b) => a.concept.localeCompare(b.concept) || a.front.localeCompare(b.front) || a.id.localeCompare(b.id));
 }
 
 export function cardsInDeck(lib: FlashcardLibrary, deckId: string): Flashcard[] {
 	if (!deckId) return lib.cards;
 	return lib.cards.filter((c) => c.deckId === deckId);
-}
-
-export function dueByConcept(cards: Flashcard[], now: Date): Array<{ concept: string; count: number }> {
-	const dueAt = now.getTime();
-	const map = new Map<string, number>();
-	for (const c of cards) {
-		const due = c.state === "new" || c.state === "learning" || Date.parse(c.due) <= dueAt;
-		if (!due) continue;
-		map.set(c.concept, (map.get(c.concept) ?? 0) + 1);
-	}
-	return [...map.entries()]
-		.map(([concept, count]) => ({ concept, count }))
-		.sort((a, b) => b.count - a.count || a.concept.localeCompare(b.concept));
 }
 
 /** Save or replace one card. `deck` is any deck name. A new name creates that deck. Omit it for the Library deck. */
