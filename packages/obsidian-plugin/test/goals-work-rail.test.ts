@@ -68,6 +68,7 @@ describe("goals work rail", () => {
 		expect(buttons.some((t) => /\d+m/.test(t))).toBe(false);
 		expect(parent.textContent).not.toContain("Weights come from the goal");
 		expect(parent.querySelector(".gw-path-why")).toBeNull();
+		expect(parent.querySelector(".gw-kicker .gw-goal-flag path")?.getAttribute("d")).toBe("M5 21V4M5 4h11l-2 4 2 4H5");
 	});
 
 	it("never shows a Continue button with nowhere to go", () => {

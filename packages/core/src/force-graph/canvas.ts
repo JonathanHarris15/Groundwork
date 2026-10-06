@@ -1,4 +1,14 @@
 import { masteryLabel } from "../mastery-tone";
+import {
+	highlightGradient,
+	isGoalNode,
+	paintGoalMark,
+	PATH_BLUR,
+	PATH_CORE_WIDTH,
+	PATH_GLOW_OPACITY,
+	PATH_GLOW_WIDTH,
+	pathStrokeScale,
+} from "./goal-mark";
 import { createSimulationState, seedPositions, simulationTick } from "./simulation";
 import { readGraphTheme, withAlpha, type GraphPaintTheme } from "./theme";
 import type { ForceGraphData, ForceGraphLink, ForceGraphNode } from "./types";
@@ -274,24 +284,49 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		ctx.scale(camera.scale, camera.scale);
 
 		const byId = new Map(nodes.map((n) => [n.id, n]));
-		for (const link of links) {
-			const a = byId.get(link.from);
-			const b = byId.get(link.to);
-			if (!a || !b) continue;
-			const dim =
-				fade && hovered !== link.from && hovered !== link.to && !neighbors?.has(link.from) && !neighbors?.has(link.to);
+		const linkEnds = (link: ForceGraphLink, a: ForceGraphNode, b: ForceGraphNode) => {
 			const dx = b.x - a.x;
 			const dy = b.y - a.y;
 			const len = Math.hypot(dx, dy) || 1;
 			const ux = dx / len;
 			const uy = dy / len;
-			const start = { x: a.x + ux * (a.radius + 2), y: a.y + uy * (a.radius + 2) };
-			const end = { x: b.x - ux * (b.radius + 4), y: b.y - uy * (b.radius + 4) };
+			const insetStart = link.highlight ? a.radius : a.radius + 2;
+			const insetEnd = link.highlight ? b.radius : b.radius + 4;
+			return {
+				ux,
+				uy,
+				start: { x: a.x + ux * insetStart, y: a.y + uy * insetStart },
+				end: { x: b.x - ux * insetEnd, y: b.y - uy * insetEnd },
+			};
+		};
+		const dimLink = (link: ForceGraphLink) =>
+			fade && hovered !== link.from && hovered !== link.to && !neighbors?.has(link.from) && !neighbors?.has(link.to);
+
+		let pathTop = Infinity;
+		let pathBottom = -Infinity;
+		for (const link of links) {
+			if (!link.highlight) continue;
+			const a = byId.get(link.from);
+			const b = byId.get(link.to);
+			if (!a || !b) continue;
+			pathTop = Math.min(pathTop, a.y, b.y);
+			pathBottom = Math.max(pathBottom, a.y, b.y);
+		}
+		const pathGradient = Number.isFinite(pathTop) ? highlightGradient(ctx, pathTop, pathBottom) : null;
+		const pathScale = pathStrokeScale();
+
+		for (const link of links) {
+			if (link.highlight) continue;
+			const a = byId.get(link.from);
+			const b = byId.get(link.to);
+			if (!a || !b) continue;
+			const dim = dimLink(link);
+			const { ux, uy, start, end } = linkEnds(link, a, b);
 			ctx.beginPath();
 			ctx.moveTo(start.x, start.y);
 			ctx.lineTo(end.x, end.y);
 			ctx.strokeStyle = link.bridge ? theme.linkBridge : theme.link;
-			ctx.lineWidth = (link.bridge ? 1.1 : link.highlight ? 2.6 : 1.7) / camera.scale;
+			ctx.lineWidth = (link.bridge ? 1.1 : 1.7) / camera.scale;
 			ctx.globalAlpha = dim ? 0.1 : 1;
 			if (link.bridge) ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
 			else ctx.setLineDash([]);
@@ -307,7 +342,37 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			ctx.globalAlpha = dim ? 0.1 : 1;
 			ctx.fill();
 		}
+
+		if (pathGradient) {
+			const k = pathScale;
+			for (const link of links) {
+				if (!link.highlight) continue;
+				const a = byId.get(link.from);
+				const b = byId.get(link.to);
+				if (!a || !b) continue;
+				const dim = dimLink(link);
+				const { start, end } = linkEnds(link, a, b);
+				ctx.save();
+				ctx.setLineDash([]);
+				ctx.lineCap = "round";
+				ctx.lineJoin = "round";
+				ctx.strokeStyle = pathGradient;
+				ctx.beginPath();
+				ctx.moveTo(start.x, start.y);
+				ctx.lineTo(end.x, end.y);
+				ctx.globalAlpha = (dim ? 0.1 : 1) * PATH_GLOW_OPACITY;
+				ctx.lineWidth = PATH_GLOW_WIDTH * k;
+				ctx.filter = `blur(${PATH_BLUR * k * camera.scale}px)`;
+				ctx.stroke();
+				ctx.filter = "none";
+				ctx.globalAlpha = dim ? 0.1 : 1;
+				ctx.lineWidth = PATH_CORE_WIDTH * k;
+				ctx.stroke();
+				ctx.restore();
+			}
+		}
 		ctx.globalAlpha = 1;
+		ctx.filter = "none";
 
 		for (const node of nodes) {
 			const dim = fade && node.id !== hovered && !neighbors?.has(node.id);
@@ -315,6 +380,11 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			const color = (node.tone && theme.tones[node.tone]) || node.color;
 			ctx.globalAlpha = (dim ? 0.16 : 1) * strength;
 			const r = node.radius;
+			if (isGoalNode(node)) {
+				paintGoalMark(ctx, node.x, node.y, r);
+				ctx.globalAlpha = 1;
+				continue;
+			}
 			if (node.isNext) {
 				ctx.beginPath();
 				ctx.arc(node.x, node.y, r + 7, 0, Math.PI * 2);
@@ -351,17 +421,6 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 				ctx.fill();
 				ctx.strokeStyle = withAlpha(theme.nodeRing, 0.85);
 				ctx.lineWidth = 1.1 / camera.scale;
-				ctx.stroke();
-			}
-			if (node.isTarget && !node.isBuiltTarget) {
-				ctx.beginPath();
-				ctx.moveTo(node.x, node.y - r - 5);
-				ctx.lineTo(node.x + r + 4, node.y);
-				ctx.lineTo(node.x, node.y + r + 5);
-				ctx.lineTo(node.x - r - 4, node.y);
-				ctx.closePath();
-				ctx.strokeStyle = node.color;
-				ctx.lineWidth = 1.8 / camera.scale;
 				ctx.stroke();
 			}
 			ctx.globalAlpha = 1;

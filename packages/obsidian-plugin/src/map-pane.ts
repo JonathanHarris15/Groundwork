@@ -1,5 +1,5 @@
 import { describeConceptProgress, masteryTone, MASTERY_HINT, MASTERY_TONES, STUDY_MOVE_HINT, studyMove, type ConceptMapModel, type ForceGraphData, type MasteryTone, type PathStep, type StudyMove } from "@groundwork/core";
-import { masteryDot, setTone, toneLabel } from "./mastery-ui";
+import { goalMark, masteryDot, setTone, toneLabel } from "./mastery-ui";
 import { appendSvgFragment } from "./svg-fragment";
 import { mountConceptMapGraph, mountInteractiveGraph } from "./force-graph-host";
 
@@ -126,19 +126,22 @@ function drawStep(parent: HTMLElement, step: PathStep, options: MapPaneOptions):
 	row.addEventListener("click", () => options.onStudy?.(step.title, move));
 }
 
-/** The node's own mark: a filled disc in its tone, a dashed ring when not started, the red goal with a flag, and the next ring. */
+/** The node's own mark: a filled disc in its tone, a dashed ring when not started, the goal's ring and flag, and the next ring. */
 function stepMark(doc: Document, step: PathStep, next: boolean): HTMLElement {
 	const span = doc.createElement("span");
 	span.className = `gw-step-n${next ? " is-next" : ""}`;
 	setTone(span, step.tone);
-	if (step.tone === "goal") span.append(flagIcon(doc));
+	if (step.tone === "goal") goalMark(span);
 	else if (step.tone === "solid") span.append(checkIcon(doc));
 	else if (step.tone === "unstarted" && step.step) span.textContent = String(step.step);
 	return span;
 }
 
+/** Outline flag from the ad's goal card (`GOAL · DUE …`). */
 function flagIcon(doc: Document): SVGElement {
-	return icon(doc, `<path d="M5 21V4M5 4h11l-2 4 2 4H5"></path>`);
+	const svg = icon(doc, `<path d="M5 21V4M5 4h11l-2 4 2 4H5"></path>`);
+	svg.classList.add("gw-goal-flag");
+	return svg;
 }
 function checkIcon(doc: Document): SVGElement {
 	return icon(doc, `<path d="M5 12l5 5 9-10"></path>`);

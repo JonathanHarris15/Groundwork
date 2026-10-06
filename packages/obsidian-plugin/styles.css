@@ -196,6 +196,13 @@ body.theme-light .gw-root.gw-theme-obsidian {
 	background: transparent;
 	border: 1.5px dashed var(--gw-tone);
 }
+.gw-goal-mark {
+	display: block;
+	flex: none;
+	width: 14px;
+	height: 14px;
+}
+.gw-goal-flag { color: #E5484D; }
 .gw-root .gw-bar-fill[data-tone] { background: var(--gw-tone); }
 .gw-root.gw-theme-dark :is(h1, h2, h3, button, input, textarea, select),
 .gw-root.gw-theme-light :is(h1, h2, h3, button, input, textarea, select) {
@@ -2553,7 +2560,7 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-mapwrap {
 	flex: 1; position: relative; min-width: 0; min-height: 220px;
 	display: flex; flex-direction: column;
-	background: radial-gradient(circle at 70% 45%, rgba(240, 86, 91, 0.06), transparent 45%), var(--gw-map);
+	background: radial-gradient(circle at 50% 18%, rgba(229, 72, 77, 0.10), transparent 45%), var(--gw-map);
 }
 .gw-mapwrap > .gw-force-map,
 .gw-mapwrap > .gw-concept-map {
@@ -2688,9 +2695,10 @@ body .gw-root .gw-work button.gw-work-btn.is-primary {
 }
 .gw-kicker { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gw-faint); display: flex; align-items: center; gap: 8px; }
 .gw-kicker svg { width: 13px; height: 13px; color: var(--gw-tone-goal); }
+.gw-kicker svg.gw-goal-flag { color: #E5484D; }
 .gw-path-title, .gw-goal-title { font-size: 22px; font-weight: 500; color: var(--gw-ink-strong); line-height: 1.25; }
 .gw-path-sub { font-size: 13px; color: var(--gw-goal-ink); display: flex; align-items: center; gap: 6px; }
-.gw-path-sub svg { width: 13px; height: 13px; }
+.gw-path-sub svg { width: 13px; height: 13px; color: #E5484D; }
 .gw-prog { display: flex; gap: 4px; }
 .gw-prog i { flex: 1; height: 6px; border-radius: 3px; background: var(--gw-line-strong); }
 .gw-prog i.is-done { background: var(--gw-tone-solid); }
@@ -2715,6 +2723,8 @@ body .gw-root button.gw-step.is-off { color: var(--gw-muted); }
 	font-size: 11px; font-weight: 600; background: var(--gw-tone, var(--gw-tone-unstarted)); color: var(--gw-paper);
 }
 .gw-step-n svg { width: 12px; height: 12px; }
+.gw-step-n[data-tone="goal"] { background: transparent; }
+.gw-step-n[data-tone="goal"] .gw-goal-mark { width: 22px; height: 22px; }
 .gw-step-n[data-tone="unstarted"] { background: transparent; border: 1.5px dashed var(--gw-tone); color: var(--gw-tone-ink); }
 .gw-step-n.is-next { box-shadow: 0 0 0 2px var(--gw-raised), 0 0 0 4px var(--gw-next); }
 .gw-step-meta { font-size: 12px; color: var(--gw-muted); white-space: nowrap; }
@@ -2732,7 +2742,7 @@ body .gw-root button.gw-step.is-off { color: var(--gw-muted); }
 }
 .gw-goal-tab.is-on { background: var(--gw-chip); border-color: var(--gw-line-strong); color: var(--gw-ink-strong); }
 .gw-goal-tab.is-new { color: var(--gw-muted); border: 1px dashed var(--gw-line-strong); }
-.gw-goal-tab svg { width: 12px; height: 12px; }
+.gw-goal-tab svg { width: 14px; height: 14px; }
 .gw-goal-count { font-size: 11px; color: var(--gw-faint); }
 .gw-goal-hero {
 	display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 16px;

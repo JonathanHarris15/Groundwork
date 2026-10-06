@@ -40,7 +40,7 @@ export function buildFromConceptMap(model: ConceptMapModel): ForceGraphData {
 		to: edge.to,
 		kind: edge.kind,
 		bridge: edge.kind === "dim" || edge.kind === "faint",
-		highlight: edge.kind === "built",
+		highlight: edge.kind === "built" || edge.kind === "ahead",
 	}));
 	const legend: ForceGraphLegendItem[] = [
 		...MASTERY_TONES.map((tone) => ({ key: tone, label: MASTERY_LABEL[tone], color: TONE_FALLBACK_COLORS[tone] })),

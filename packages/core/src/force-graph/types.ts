@@ -39,7 +39,7 @@ export interface ForceGraphLink {
 	to: string;
 	bridge?: boolean;
 	kind?: string;
-	/** Brighter ascent edge on the goal map. */
+	/** Edge on the chain up to the goal: painted as the glowing colored path. */
 	highlight?: boolean;
 }
 
