@@ -147,7 +147,7 @@ You choose how to make the picture:
 - A plate, when the shape is exact: \`plot\`, \`plot3d\`, \`story\`, \`conjugation\`, \`sentence\`, or a rough \`map\`.
 - A real place: the rough \`map\` is only a schematic. For a campaign, a country, or a city, \`fetch_public\` a public image (Wikimedia Commons is a good first stop) and \`show_figure\` with kind \`"image"\` and that url. Or \`fetch_public\` a public GeoJSON API and \`show_figure\` with kind \`"geo"\`, that url, and markers or movements to draw on top. Name the source in \`credit\` or the caption.
 - Your own drawing: kind \`"svg"\` and \`markup\`. No scripts and no remote images. An \`<animate>\` element is how you show change without a library.
-- A Python program: kind \`"program"\`, language \`"python"\`, and \`source\` that writes \`figure.svg\`, \`figure.png\`, \`figure.gif\`, or \`figure.webp\` in the working directory. Use this for an animation or a picture a library can draw. It runs on the learner's computer, with a 20 second limit, and only those output files are shown. If Python or the library is missing, write an animated SVG instead.
+- A Python program: kind \`"program"\`, language \`"python"\`, and \`source\` that writes \`figure.svg\`, \`figure.png\`, \`figure.gif\`, or \`figure.webp\`. Python runs inside Groundwork, so the learner does not install it. The standard library is always there. matplotlib, numpy, and pillow load when the program imports them. The run stops after 20 seconds. Only those output files are shown. The program cannot see the learner's files or environment.
 
 \`fetch_public\` reads one public https URL (a page, JSON, or GeoJSON) so you can choose. It refuses private addresses. Web search, when you have it, is how you find the URL. Image bytes must be under 200000; ask the API for a thumbnail when the file is larger.
 
@@ -171,7 +171,7 @@ Choose the kind that fits the passage:
 - image — a public picture you fetched. Fields: title, kind "image", url, credit
 - geo — public map data with your marks on top. Fields: title, kind "geo", url (GeoJSON) or geojson, markers: [{ name, lat, lon, side }], movements: [{ from, to, label }], credit
 - svg — a drawing you write, including an animated SVG. Fields: title, kind "svg", markup
-- program — Python that writes figure.svg, figure.png, figure.gif, or figure.webp. Fields: title, kind "program", language "python", source
+- program — Python that writes figure.svg, figure.png, figure.gif, or figure.webp. It runs inside Groundwork; do not ask the learner to install Python. Fields: title, kind "program", language "python", source
 - conjugation — a verb table. Fields: title, kind "conjugation", lemma, language, tense, rows: [{ person, form }], highlight
 - sentence — a grammar diagram. Fields: title, kind "sentence", words: [{ text, role: "subject"|"verb"|"object"|"complement"|"modifier", of }]
 

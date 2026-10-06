@@ -143,10 +143,12 @@ open("figure.svg","w").write('<svg xmlns="http://www.w3.org/2000/svg" width="40"
 			expect(produced.svg).toContain("<animate");
 			expect(produced.svg).toContain("missing");
 			expect(produced.svg).not.toContain("secret-value");
+			await expect(runPythonFigure("print('no figure here')")).rejects.toThrow(/figure\.svg/);
+			await expect(runPythonFigure("print('no figure here')")).rejects.not.toThrow(/install/i);
 		} finally {
 			delete process.env.GW_FIGURE_SENTINEL;
 		}
-	});
+	}, 120_000);
 
 	it("fetch_public refuses a local address before any request", async () => {
 		const tool = toolByName("fetch_public");

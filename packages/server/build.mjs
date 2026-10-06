@@ -28,6 +28,6 @@ await esbuild.build({
 	banner: {
 		js: "import { createRequire as __gwCreateRequire } from 'node:module'; const require = __gwCreateRequire(import.meta.url);",
 	},
-	external: ["firebase-admin", "firebase-admin/app", "firebase-admin/auth", "firebase-admin/firestore", "@typesafe-ai/sdk", "stripe"],
+	external: ["firebase-admin", "firebase-admin/app", "firebase-admin/auth", "firebase-admin/firestore", "@typesafe-ai/sdk", "stripe", "pyodide"],
 	logLevel: "info",
 });
