@@ -6,6 +6,7 @@ import { route } from "./app";
 import { loadAuth } from "./auth";
 import { loadBilling } from "./billing";
 import { gradeWithJev, jevConfigured } from "./jev";
+import { clientAddress } from "./client-address";
 import { httpsRedirectTarget, isLocalHost, listenTarget } from "./listen";
 import { MemoryDirectory } from "./memory";
 import { FileTutorMemoryStore } from "./memory-file";
@@ -39,6 +40,8 @@ const server = createServer((req, res) => {
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
 	const method = req.method ?? "GET";
+	const head = method === "HEAD";
+	const verb = head ? "GET" : method;
 	const forwarded = header(req, "x-forwarded-proto");
 	const https = httpsRedirectTarget(forwarded, header(req, "x-forwarded-host") || header(req, "host"), req.url);
 	if (https) {
@@ -46,34 +49,43 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		res.end();
 		return;
 	}
-	if (method === "OPTIONS") {
-		writeHead(res, 204, "text/plain");
+	if (verb === "OPTIONS") {
+		writeHead(res, 204, "text/plain", 0);
 		res.end();
 		return;
 	}
 	const url = new URL(req.url ?? "/", "http://127.0.0.1");
-	if (method === "GET") {
+	if (verb === "GET") {
 		const site = readSite(url.pathname);
 		if (site) {
-			writeHead(res, 200, site.type);
-			res.end(site.body);
+			endBody(res, 200, site.type, site.body, head);
 			return;
 		}
 		if (!url.pathname.startsWith("/v1/") && url.pathname !== "/health") {
 			const notFound = readSite("/404.html");
 			if (notFound) {
-				writeHead(res, 404, notFound.type);
-				res.end(notFound.body);
+				endBody(res, 404, notFound.type, notFound.body, head);
 				return;
 			}
 		}
 	}
+	const origin = header(req, "origin") || process.env.GROUNDWORK_PUBLIC_URL || `http://127.0.0.1:${port}`;
+	const meta = {
+		origin,
+		attribution: header(req, "x-groundwork-attribution"),
+		sessionId: url.searchParams.get("session_id") ?? undefined,
+		ip: clientIp(req),
+	};
+	if (head) {
+		const result = await route(verb, url.pathname, null, deps, header(req, "authorization"), meta);
+		send(res, result.status, result.json, true);
+		return;
+	}
 	const chunks: Buffer[] = [];
 	for await (const chunk of req) chunks.push(chunk as Buffer);
 	const raw = Buffer.concat(chunks).toString("utf8");
-	const origin = header(req, "origin") || process.env.GROUNDWORK_PUBLIC_URL || `http://127.0.0.1:${port}`;
 	if (url.pathname === "/v1/stripe/webhook") {
-		const result = await route(method, url.pathname, null, deps, undefined, { origin, rawBody: raw, stripeSignature: header(req, "stripe-signature") });
+		const result = await route(verb, url.pathname, null, deps, undefined, { origin, rawBody: raw, stripeSignature: header(req, "stripe-signature") });
 		send(res, result.status, result.json);
 		return;
 	}
@@ -90,18 +102,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 			return;
 		}
 	}
-	const result = await route(method, url.pathname, body, deps, header(req, "authorization"), {
-		origin,
-		attribution: header(req, "x-groundwork-attribution"),
-		sessionId: url.searchParams.get("session_id") ?? undefined,
-		ip: clientIp(req),
-	});
+	const result = await route(verb, url.pathname, body, deps, header(req, "authorization"), meta);
 	send(res, result.status, result.json);
 }
 
 function clientIp(req: IncomingMessage): string {
-	const forwarded = header(req, "x-forwarded-for")?.split(",")[0]?.trim();
-	return forwarded || req.socket.remoteAddress || "unknown";
+	return clientAddress(header(req, "x-forwarded-for"), req.socket.remoteAddress);
 }
 
 function header(req: IncomingMessage, name: string): string | undefined {
@@ -115,14 +121,19 @@ function writeHead(res: ServerResponse, status: number, type: string, length?: n
 		...(length !== undefined ? { "content-length": length } : {}),
 		"access-control-allow-origin": "*",
 		"access-control-allow-headers": "authorization, content-type, stripe-signature",
-		"access-control-allow-methods": "GET, POST, PUT, OPTIONS",
+		"access-control-allow-methods": "GET, HEAD, POST, PUT, OPTIONS",
 	});
 }
 
-function send(res: ServerResponse, status: number, json: unknown): void {
-	const payload = JSON.stringify(json);
-	writeHead(res, status, "application/json; charset=utf-8", Buffer.byteLength(payload));
-	res.end(payload);
+function endBody(res: ServerResponse, status: number, type: string, body: string | Buffer, head: boolean): void {
+	const payload = Buffer.isBuffer(body) ? body : Buffer.from(body);
+	writeHead(res, status, type, payload.length);
+	if (head) res.end();
+	else res.end(payload);
+}
+
+function send(res: ServerResponse, status: number, json: unknown, head = false): void {
+	endBody(res, status, "application/json; charset=utf-8", JSON.stringify(json), head);
 }
 
 if (!isLocalHost(host) && !deps.auth.firebase) {

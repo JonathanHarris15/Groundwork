@@ -49,6 +49,18 @@ test("public marketing pages load", async ({ page }) => {
 	expect(sitemap?.status()).toBe(200);
 });
 
+test("HEAD matches GET", async ({ request }) => {
+	for (const href of ["/", "/pricing", "/privacy", "/terms", "/og.png", "/health", "/this-route-does-not-exist"]) {
+		const get = await request.get(href);
+		const head = await request.head(href);
+		expect(head.status(), href).toBe(get.status());
+		expect(head.headers()["content-type"], href).toBe(get.headers()["content-type"]);
+		const length = Buffer.byteLength(await get.body());
+		expect(Number(head.headers()["content-length"]), href).toBe(length);
+		expect(Buffer.byteLength(await head.body()), href).toBe(0);
+	}
+});
+
 test("landing and 404", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
