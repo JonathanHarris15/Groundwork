@@ -1547,7 +1547,14 @@ h1, h2, h3, .sub, .mkt-sub { text-wrap: balance; }
 	cursor: pointer;
 }
 .consent button[data-consent="granted"] { background: #fff; color: #0f1115; border-color: #fff; }
-body.has-consent { padding-bottom: 108px; }
+body.has-consent { padding-bottom: 108px; scroll-padding-bottom: 140px; }
+body.has-consent button,
+body.has-consent a,
+body.has-consent input,
+body.has-consent select,
+body.has-consent textarea {
+	scroll-margin-bottom: 140px;
+}
 
 @media (prefers-reduced-motion: reduce) {
 	.skip:focus { transform: none; }

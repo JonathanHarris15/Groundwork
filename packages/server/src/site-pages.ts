@@ -99,6 +99,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
 		<link rel="stylesheet" href="/styles.css?v=8" />
 		<script src="/tracking.js?v=1"></script>

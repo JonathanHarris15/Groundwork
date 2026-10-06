@@ -32,11 +32,15 @@ async function seedLargeAccount(request: APIRequestContext) {
 
 const publicPages = ["/", "/pricing", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms"];
 
+test.beforeEach(async ({ page }) => {
+	await page.addInitScript(() => localStorage.setItem("gw-consent-hide", "1"));
+});
+
 test("public marketing pages load", async ({ page }) => {
 	for (const href of publicPages) {
 		const res = await page.goto(href);
 		expect(res?.status(), href).toBe(200);
-		await expect(page.locator("footer")).toContainText("methoddev1505@gmail.com");
+		await expect(page.locator("footer.foot")).toContainText("methoddev1505@gmail.com");
 		await expect(page.locator("body")).not.toContainText("[Dev:");
 	}
 	const robots = await page.goto("/robots.txt");

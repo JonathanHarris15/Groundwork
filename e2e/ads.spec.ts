@@ -16,13 +16,13 @@ test("public pages, footer email, and screenshots", async ({ page }, testInfo) =
 	for (const href of pages) {
 		const res = await page.goto(href);
 		expect(res?.status(), href).toBe(200);
-		await expect(page.locator("footer").getByRole("link", { name: "methoddev1505@gmail.com" })).toBeVisible();
+		await expect(page.locator("footer.foot").getByRole("link", { name: "methoddev1505@gmail.com" })).toBeVisible();
 		await expect(page.locator("body")).not.toContainText("[Dev:");
 		await expect(page.locator("body")).not.toContainText(/coming soon/i);
 		if (href === "/") {
 			await expect(page.getByRole("dialog", { name: "Cookies" })).toBeVisible();
 			await page.screenshot({ path: path.join(shots, `home-consent-${width}.png`) });
-			await page.getByRole("button", { name: "OK" }).click();
+			await page.getByRole("button", { name: "OK", exact: true }).click();
 		}
 		await page.screenshot({ path: path.join(shots, `${slug(href)}-${width}.png`), fullPage: true });
 	}
@@ -58,7 +58,7 @@ test("sign_up fires only when the account was just created", async ({ page }) =>
 	await page.getByRole("button", { name: "Continue on this device" }).click();
 	await expect.poll(async () => countEvents(page, "sign_up")).toBe(1);
 
-	await page.goto("/#signin");
+	await page.goto("/?dedupe=1#signin");
 	await page.getByRole("button", { name: "Continue on this device" }).click();
 	await expect(page.getByRole("heading", { name: /Welcome|Choose a plan/i })).toBeVisible();
 	expect(await countEvents(page, "sign_up")).toBe(0);
