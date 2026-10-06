@@ -192,7 +192,15 @@ test("consent defaults deny everywhere and grant the US", async ({ page }) => {
 	await page.goto("/");
 	const regions = await page.evaluate(() => {
 		const layer = (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
-		return layer.filter((entry) => Array.isArray(entry) && entry[0] === "consent" && entry[1] === "default") as Array<[string, string, { region?: string[]; ad_storage: string }]>;
+		return layer.flatMap((entry) => {
+			const args = argsOf(entry);
+			if (!args || args[0] !== "consent" || args[1] !== "default") return [];
+			return [args as [string, string, { region?: string[]; ad_storage: string }]];
+		});
+		function argsOf(entry: unknown): unknown[] | null {
+			if (entry == null || typeof entry !== "object" || typeof (entry as { length?: unknown }).length !== "number") return null;
+			return Array.from(entry as ArrayLike<unknown>);
+		}
 	});
 	expect(regions[0]?.[2].ad_storage).toBe("denied");
 	expect(regions[0]?.[2].region).toBeUndefined();
@@ -246,6 +254,37 @@ test("purchase fires once per checkout session", async ({ page }) => {
 	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_2", value: 15, currency: "USD" }]);
 	expect(await countEvents(page, "conversion")).toBe(0);
 	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toContain("cs_test_1");
+});
+
+test("a free promotion still fires purchase with the amount paid", async ({ page }) => {
+	await page.route("**/v1/billing/checkout-amount**", async (route) => {
+		await route.fulfill({ json: { amountUsd: 0, currency: "USD" } });
+	});
+	await page.goto("/?billing=success&session_id=cs_promo_0&plan=included");
+	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_promo_0", value: 0, currency: "USD" }]);
+});
+
+test("gtag.js sends page_view and sign_up to /g/collect", async ({ page }) => {
+	const hits: string[] = [];
+	await page.addInitScript(() => {
+		localStorage.setItem("gw-consent", "granted");
+	});
+	await page.route("**/v1/web-config", async (route) => {
+		const response = await route.fetch();
+		const json = await response.json();
+		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: null } });
+	});
+	await page.route(/google-analytics\.com\/g\/collect/, async (route) => {
+		const request = route.request();
+		hits.push(`${request.url()} ${request.postData() ?? ""}`);
+		await route.abort();
+	});
+	await page.goto("/");
+	await expect.poll(() => hits.some((hit) => hit.includes("en=page_view") || hit.includes("en%3Dpage_view"))).toBe(true);
+	await page.evaluate(() => {
+		(window as unknown as { GroundworkTracking?: { noteSignUp: (created: boolean, method: string) => void } }).GroundworkTracking?.noteSignUp(true, "Google");
+	});
+	await expect.poll(() => hits.some((hit) => hit.includes("en=sign_up"))).toBe(true);
 });
 
 test("utm and gclid survive navigation and ride on the account request", async ({ page }) => {
@@ -436,15 +475,26 @@ function decodePng(buf: Buffer): { width: number; height: number; data: Uint8Arr
 async function countEvents(page: Page, name: string): Promise<number> {
 	return page.evaluate((eventName) => {
 		const layer = (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
-		return layer.filter((entry) => Array.isArray(entry) && entry[1] === eventName).length;
+		return layer.filter((entry) => argsOf(entry)?.[1] === eventName).length;
+		function argsOf(entry: unknown): unknown[] | null {
+			if (entry == null || typeof entry !== "object" || typeof (entry as { length?: unknown }).length !== "number") return null;
+			return Array.from(entry as ArrayLike<unknown>);
+		}
 	}, name);
 }
 
 async function purchaseParams(page: import("@playwright/test").Page): Promise<Array<{ transaction_id?: string; value?: number; currency?: string }>> {
 	return page.evaluate(() => {
 		const layer = (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
-		return layer
-			.filter((entry) => Array.isArray(entry) && entry[1] === "purchase")
-			.map((entry) => (entry as [string, string, { transaction_id?: string; value?: number; currency?: string }])[2]);
+		return layer.flatMap((entry) => {
+			const args = argsOf(entry);
+			if (!args || args[1] !== "purchase") return [];
+			const params = args[2] as { transaction_id?: string; value?: number; currency?: string };
+			return [params];
+		});
+		function argsOf(entry: unknown): unknown[] | null {
+			if (entry == null || typeof entry !== "object" || typeof (entry as { length?: unknown }).length !== "number") return null;
+			return Array.from(entry as ArrayLike<unknown>);
+		}
 	});
 }

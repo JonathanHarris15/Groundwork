@@ -33,6 +33,7 @@ export interface RouteMeta {
 	stripeSignature?: string;
 	/** URI-encoded JSON of utm_* and gclid, sent by the site after a landing. */
 	attribution?: string;
+	sessionId?: string;
 }
 
 export async function route(method: string, path: string, body: unknown, deps: ServerDeps, authorization?: string, meta: RouteMeta = {}): Promise<RouteResult> {
@@ -51,6 +52,11 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		if (method === "POST" && path === "/v1/stripe/webhook") {
 			await deps.billing.applyEvent(meta.rawBody ?? "", meta.stripeSignature);
 			return { status: 200, json: { received: true } };
+		}
+		if (method === "GET" && path === "/v1/billing/checkout-amount") {
+			const amountUsd = await deps.billing.checkoutAmount?.(meta.sessionId ?? "");
+			if (amountUsd == null) return { status: 404, json: { error: "Unknown checkout." } };
+			return { status: 200, json: { amountUsd, currency: "USD" } };
 		}
 		if (hasClientKey(body)) {
 			return { status: 400, json: { error: "Do not send API keys on this request. Paste keys under Your model on the account page." } };

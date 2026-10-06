@@ -93,6 +93,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 	const result = await route(method, url.pathname, body, deps, header(req, "authorization"), {
 		origin,
 		attribution: header(req, "x-groundwork-attribution"),
+		sessionId: url.searchParams.get("session_id") ?? undefined,
 	});
 	send(res, result.status, result.json);
 }

@@ -1452,6 +1452,9 @@ h1, h2, h3, .sub, .mkt-sub { text-wrap: balance; }
 	border: 1px solid rgba(255, 255, 255, 0.1);
 	background: #0c0e12;
 }
+@container (max-width: 800px) {
+	.has-phone img { aspect-ratio: 1994 / 1339; }
+}
 .map-figure figcaption { margin-top: 8px; color: #9aa0a9; font-size: 14px; }
 .map-legend {
 	display: flex;
@@ -1505,7 +1508,15 @@ h1, h2, h3, .sub, .mkt-sub { text-wrap: balance; }
 	align-items: center;
 	gap: 8px 18px;
 }
-.foot-links a { color: inherit; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
+.foot-features {
+	flex-basis: 100%;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 18px;
+}
+.foot-links a,
+.foot-features a { color: inherit; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
 .foot-links a:hover { color: #fff; }
 .foot-button {
 	background: none;
@@ -1517,7 +1528,8 @@ h1, h2, h3, .sub, .mkt-sub { text-wrap: balance; }
 	min-height: 44px;
 }
 .site-foot {
-	padding: 28px 0 48px;
+	padding-top: 28px;
+	padding-bottom: 48px;
 	border-top: 1px solid #e3e5e8;
 	color: #4a4f57;
 }

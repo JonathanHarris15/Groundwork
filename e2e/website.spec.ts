@@ -52,9 +52,9 @@ test("public marketing pages load", async ({ page }) => {
 test("landing and 404", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
-	await expect(page.locator("body")).toContainText("Bring your own model ($4/month)");
-	await expect(page.locator("body")).toContainText("($15/month)");
-	await expect(page.locator("body")).toContainText("$15/month plan");
+	await expect(page.locator("body")).toContainText("Bring your own model for $4/month");
+	await expect(page.locator("body")).toContainText("for $15/month");
+	await expect(page.locator("body")).toContainText("Start free on Groundwork");
 	await expect(page).toHaveTitle(/Groundwork/);
 	const res = await page.goto("/this-route-does-not-exist");
 	expect(res?.status()).toBe(404);

@@ -31,7 +31,9 @@ async function writeSet(dir, name) {
 }
 
 export async function writeHeroImages() {
-	await writeSet(path.join(publicDir, "hero"), "concept-map");
+	const dir = path.join(publicDir, "hero");
+	await writeSet(dir, "concept-map");
+	if (existsSync(path.join(dir, "concept-map-phone.png"))) await writeSet(dir, "concept-map-phone");
 }
 
 export async function writeShotImages() {

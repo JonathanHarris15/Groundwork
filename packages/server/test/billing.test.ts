@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { AccountDirectory } from "../src/accounts";
-import { applyStripeEvent, createBilling, escapeStripeSearch, isMissingStripeCustomer, planFromSubscription, resetStripeEventDedupe, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
+import { applyStripeEvent, checkoutSuccessUrl, createBilling, escapeStripeSearch, isMissingStripeCustomer, paidAmountUsd, planFromSubscription, resetStripeEventDedupe, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
 
 const prices = { byom: "price_byom", included: "price_included" };
 
@@ -62,8 +62,34 @@ describe("checkout promotion codes", () => {
 			allow_promotion_codes: true,
 			payment_method_collection: "if_required",
 			line_items: [{ price: "price_byom", quantity: 1 }],
+			success_url: checkoutSuccessUrl("https://groundwork.test", "byom"),
 		});
+		expect(created?.success_url).toContain("session_id={CHECKOUT_SESSION_ID}");
+		expect(created?.success_url).toContain("plan=byom");
 		await expect(accounts.customerId("ada")).resolves.toBe("cus_new");
+	});
+
+	it("reads the amount paid from the Checkout session, including a free promotion", async () => {
+		const accounts = new AccountDirectory();
+		const stripe = {
+			checkout: {
+				sessions: {
+					async retrieve(id: string) {
+						if (id === "cs_free") return { amount_total: 0 };
+						if (id === "cs_paid") return { amount_total: 1500 };
+						throw new Error("missing");
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.checkoutAmount?.("cs_free")).resolves.toBe(0);
+		await expect(billing.checkoutAmount?.("cs_paid")).resolves.toBe(15);
+		await expect(billing.checkoutAmount?.("cs_missing")).resolves.toBeNull();
+		await expect(billing.checkoutAmount?.("not-a-session")).resolves.toBeNull();
+		expect(paidAmountUsd(0)).toBe(0);
+		expect(paidAmountUsd(undefined)).toBeNull();
+		expect(paidAmountUsd(-1)).toBeNull();
 	});
 
 	it("keeps a 100% off forever subscription on our price and sets the plan", async () => {

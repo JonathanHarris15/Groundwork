@@ -15,10 +15,11 @@
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
-		<link rel="preload" as="image" type="image/avif" imagesrcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" imagesizes="(max-width: 860px) 92vw, 520px" fetchpriority="high" />
+		<link rel="preload" as="image" type="image/avif" media="(max-width: 800px)" imagesrcset="/hero/concept-map-phone-480.avif 480w, /hero/concept-map-phone-768.avif 768w, /hero/concept-map-phone-1200.avif 1200w" imagesizes="92vw" fetchpriority="high" />
+		<link rel="preload" as="image" type="image/avif" media="(min-width: 801px)" imagesrcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" imagesizes="520px" fetchpriority="high" />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=12" />
-		<script src="/tracking.js?v=3"></script>
+		<link rel="stylesheet" href="/styles.css?v=13" />
+		<script src="/tracking.js?v=4"></script>
 	</head>
 	<body>
 		<section id="landing" class="page" aria-label="Groundwork">
@@ -328,11 +329,13 @@
 					</div>
 					<p class="fine">Free plan included. No card needed to start.</p>
 				</div>
-				<figure class="map-figure">
+				<figure class="map-figure has-phone">
 					<picture>
+						<source media="(max-width: 800px)" type="image/avif" srcset="/hero/concept-map-phone-480.avif 480w, /hero/concept-map-phone-768.avif 768w, /hero/concept-map-phone-1200.avif 1200w" sizes="92vw" />
+						<source media="(max-width: 800px)" type="image/webp" srcset="/hero/concept-map-phone-480.webp 480w, /hero/concept-map-phone-768.webp 768w, /hero/concept-map-phone-1200.webp 1200w" sizes="92vw" />
 						<source type="image/avif" srcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" sizes="(max-width: 860px) 92vw, 520px" />
 						<source type="image/webp" srcset="/hero/concept-map-480.webp 480w, /hero/concept-map-768.webp 768w, /hero/concept-map-1200.webp 1200w" sizes="(max-width: 860px) 92vw, 520px" />
-						<img class="hero-shot" src="/hero/concept-map-768.webp" width="2168" height="1678" alt="Concept map for Derivatives for Calc I. Chain rule is the goal in red at the top, and the concepts below are marked solid, shaky, learning, rusty, not started, or next." fetchpriority="high" />
+						<img class="hero-shot" src="/hero/concept-map-768.webp" width="2700" height="1923" alt="Concept map for Derivatives for Calc I. Goals are dark circles with a red flag. The concepts below are marked solid, shaky, learning, rusty, or not started. The next concept to study is ringed." fetchpriority="high" />
 					</picture>
 				</figure>
 			</main>
@@ -340,13 +343,15 @@
 			<section class="sec story" aria-labelledby="know-title">
 				<div class="story-copy">
 					<h2 id="know-title">See what you actually know</h2>
-					<p>Every goal gets a concept map: a pyramid with the foundations at the bottom and your goal in red at the top. The path to the goal is highlighted and off-path concepts fade back. Each concept is marked solid, shaky, learning, rusty, or not started, so you can see where to spend the next hour.</p>
+					<p>Every goal gets a concept map: a pyramid with the foundations at the bottom and your goals, each marked with a red flag, at the top. The path to the goal is highlighted and off-path concepts fade back. Each concept is marked solid, shaky, learning, rusty, or not started, so you can see where to spend the next hour.</p>
 				</div>
-				<figure class="story-shot">
+				<figure class="story-shot has-phone">
 					<picture>
+						<source media="(max-width: 800px)" type="image/avif" srcset="/hero/concept-map-phone-480.avif 480w, /hero/concept-map-phone-768.avif 768w, /hero/concept-map-phone-1200.avif 1200w" sizes="92vw" />
+						<source media="(max-width: 800px)" type="image/webp" srcset="/hero/concept-map-phone-480.webp 480w, /hero/concept-map-phone-768.webp 768w, /hero/concept-map-phone-1200.webp 1200w" sizes="92vw" />
 						<source type="image/avif" srcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
 						<source type="image/webp" srcset="/hero/concept-map-480.webp 480w, /hero/concept-map-768.webp 768w, /hero/concept-map-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
-						<img src="/hero/concept-map-768.webp" width="2168" height="1678" alt="Concept map for Derivatives for Calc I. Chain rule is the goal in red at the top, and the concepts below are marked solid, shaky, learning, rusty, not started, or next." loading="lazy" />
+						<img src="/hero/concept-map-768.webp" width="2700" height="1923" alt="Concept map for Derivatives for Calc I. Goals are dark circles with a red flag. The concepts below are marked solid, shaky, learning, rusty, or not started. The next concept to study is ringed." loading="lazy" />
 					</picture>
 				</figure>
 			</section>
@@ -359,7 +364,7 @@
 					<picture>
 						<source type="image/avif" srcset="/shots/exam-chat-480.avif 480w, /shots/exam-chat-768.avif 768w, /shots/exam-chat-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
 						<source type="image/webp" srcset="/shots/exam-chat-480.webp 480w, /shots/exam-chat-768.webp 768w, /shots/exam-chat-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
-						<img src="/shots/exam-chat-768.webp" width="1808" height="806" alt="Tutor chat after attaching MATH-151-practice-exam.md. Groundwork saved the goal Prepare for MATH 151 practice, due in just over three weeks, with 4 of 14 concepts solid." loading="lazy" />
+						<img src="/shots/exam-chat-768.webp" width="1563" height="1272" alt="Tutor chat after attaching MATH-151-practice-exam.md. Groundwork saved the goal Prepare for MATH 151 practice, due in just over three weeks, with 4 of 14 concepts solid." loading="lazy" />
 					</picture>
 				</figure>
 			</section>
@@ -372,33 +377,33 @@
 					<picture>
 						<source type="image/avif" srcset="/shots/quiz-480.avif 480w, /shots/quiz-768.avif 768w, /shots/quiz-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
 						<source type="image/webp" srcset="/shots/quiz-480.webp 480w, /shots/quiz-768.webp 768w, /shots/quiz-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
-						<img src="/shots/quiz-768.webp" width="1808" height="1436" alt="Quiz card for the power rule at level 3 of 5. The question is the derivative of x cubed. 3x squared is marked correct, and 3x is marked wrong as a misconception that drops the exponent too far." loading="lazy" />
+						<img src="/shots/quiz-768.webp" width="1860" height="1959" alt="Quiz card for the power rule at level 3 of 5. The question is the derivative of x cubed. 3x squared is marked correct, and 3x is marked wrong as a misconception that drops the exponent too far." loading="lazy" />
 					</picture>
 				</figure>
 			</section>
 			<section class="sec story story-flip" aria-labelledby="tutor-title">
 				<div class="story-copy">
-					<h2 id="tutor-title">A tutor in Obsidian</h2>
-					<p>Chat with the tutor in Obsidian. Math renders in LaTeX, and answers can use callouts and diagrams. Attach slides, PDFs, or images when you want to work from them. Flashcard decks (Again, Hard, Good, Easy) are there for quick review.</p>
+					<h2 id="tutor-title">Flashcards and a tutor, in Obsidian</h2>
+					<p>Flashcard decks are there for quick review of terms and formulas. When you get stuck, chat with the tutor: math renders in LaTeX, answers can use callouts and diagrams, and you can attach slides, PDFs, or images.</p>
 				</div>
 				<figure class="story-shot">
 					<picture>
 						<source type="image/avif" srcset="/shots/flashcards-480.avif 480w, /shots/flashcards-768.avif 768w, /shots/flashcards-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
 						<source type="image/webp" srcset="/shots/flashcards-480.webp 480w, /shots/flashcards-768.webp 768w, /shots/flashcards-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
-						<img src="/shots/flashcards-768.webp" width="1404" height="754" alt="Flashcard for the power rule, asking for the derivative of x to the n. The answer is n x to the n minus 1, with Again, Hard, Good, and Easy." loading="lazy" />
+						<img src="/shots/flashcards-768.webp" width="2343" height="1875" alt="Flashcard for the power rule, asking for the derivative of x to the n. The answer is n x to the n minus 1." loading="lazy" />
 					</picture>
 				</figure>
 			</section>
 			<section class="sec story" aria-labelledby="keeps-title">
 				<div class="story-copy">
 					<h2 id="keeps-title">Keeps up with you</h2>
-					<p>Mastery fades over time, so rusty concepts come back for review. Progress syncs across your computers.</p>
+					<p>Every goal has a due date, and the Goals tab shows whether you’re on pace. Mastery fades over time, so rusty concepts come back for review. Progress syncs across your computers.</p>
 				</div>
 				<figure class="story-shot">
 					<picture>
 						<source type="image/avif" srcset="/shots/goals-480.avif 480w, /shots/goals-768.avif 768w, /shots/goals-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
 						<source type="image/webp" srcset="/shots/goals-480.webp 480w, /shots/goals-768.webp 768w, /shots/goals-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
-						<img src="/shots/goals-768.webp" width="2024" height="480" alt="Goal Derivatives for Calc I, due Tuesday, October 27, with 21 days left and marked on pace. The bar shows study days up to the exam, and 4 of 14 concepts are solid." loading="lazy" />
+						<img src="/shots/goals-768.webp" width="2103" height="1884" alt="Goal Derivatives for Calc I, due Tuesday, October 27, with 21 days left and marked on pace. The bar shows study days up to the exam, and 4 of 14 concepts are solid." loading="lazy" />
 					</picture>
 				</figure>
 			</section>
@@ -412,7 +417,7 @@
 						<li class="step" style="--c: #f59e2b"><div class="step-node"><span style="background: #f59e2b"></span></div><div><p class="step-num">03</p><h3>Build on what you know.</h3><p>Groundwork tracks concepts and your grasp of them. New lessons grow from that map instead of starting from zero every time.</p></div></li>
 						<li class="step" style="--c: #e5484d"><div class="step-node"><span style="background: #e5484d"></span></div><div><p class="step-num">04</p><h3>Practice until it sticks.</h3><p>Quizzes test real understanding, not just recognition, so gaps show up before the exam does.</p></div></li>
 						<li class="step" style="--c: #2db560"><div class="step-node"><span style="background: #2db560"></span></div><div><p class="step-num">05</p><h3>Aim at goals and deadlines.</h3><p>Set a goal, or feed in exam prep. Groundwork sequences the path: foundations first, then the heaviest-point material when time is short.</p></div></li>
-						<li class="step" style="--c: #2e9be6"><div class="step-node"><span style="background: #2e9be6"></span></div><div><p class="step-num">06</p><h3>Use your models or ours.</h3><p>Bring your own model ($4/month) or let Groundwork run the tutor ($15/month). Claude on your computer, a key you paste, or Groundwork's tutor on the $15/month plan.</p></div></li>
+						<li class="step" style="--c: #2e9be6"><div class="step-node"><span style="background: #2e9be6"></span></div><div><p class="step-num">06</p><h3>Use your models or ours.</h3><p>Start free on Groundwork’s smaller model. Bring your own model for $4/month (the Claude subscription on your computer or a key you paste), or let Groundwork run the models for $15/month.</p></div></li>
 					</ol>
 				</div>
 			</section>
@@ -435,6 +440,12 @@
 					<a href="mailto:methoddev1505@gmail.com" data-contact-email>methoddev1505@gmail.com</a>
 					<button type="button" class="foot-button" data-consent-open>Cookies</button>
 				</nav>
+				<nav class="foot-features" aria-label="Features">
+					<a href="/exam-prep">Exam prep</a>
+					<a href="/concept-map">Concept map</a>
+					<a href="/quizzes-flashcards">Quizzes &amp; flashcards</a>
+					<a href="/goals">Goals</a>
+				</nav>
 			</footer>
 		</section>
 		<div id="site" class="site" hidden>
@@ -456,9 +467,15 @@
 					<a href="mailto:methoddev1505@gmail.com" data-contact-email>methoddev1505@gmail.com</a>
 					<button type="button" class="foot-button" data-consent-open>Cookies</button>
 				</nav>
+				<nav class="foot-features" aria-label="Features">
+					<a href="/exam-prep">Exam prep</a>
+					<a href="/concept-map">Concept map</a>
+					<a href="/quizzes-flashcards">Quizzes &amp; flashcards</a>
+					<a href="/goals">Goals</a>
+				</nav>
 			</footer>
 		</div>
 		<script type="module" src="/force-graph.js?v=4"></script>
-		<script type="module" src="/app.js?v=20"></script>
+		<script type="module" src="/app.js?v=21"></script>
 	</body>
 </html>

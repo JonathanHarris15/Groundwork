@@ -18,7 +18,7 @@ const FILES: Record<string, { file: string; type: string }> = {
 	"/favicon.svg": { file: "favicon.svg", type: "image/svg+xml" },
 };
 
-const HERO_FILE = /^concept-map(?:-\d+)?\.(?:webp|avif|png)$/;
+const HERO_FILE = /^concept-map(?:-phone)?(?:-\d+)?\.(?:webp|avif|png)$/;
 const SHOT_FILE = /^(?:quiz|flashcards|exam-chat|exam-map|goals)(?:-\d+)?\.(?:webp|avif|png)$/;
 
 /** The home hero is one replaceable shot: `public/hero/concept-map.png`, plus the webp and avif sizes built from it. */

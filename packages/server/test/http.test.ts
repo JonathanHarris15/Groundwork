@@ -132,8 +132,8 @@ describe("account server", () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/force-graph.js?v=4"');
-		expect(site?.body).toContain('src="/app.js?v=20"');
-		expect(site?.body).toContain('href="/styles.css?v=12"');
+		expect(site?.body).toContain('src="/app.js?v=21"');
+		expect(site?.body).toContain('href="/styles.css?v=13"');
 		expect(site?.body).toContain("/hero/concept-map-768.webp");
 		expect(site?.body).toContain("image/avif");
 		expect(site?.body).not.toContain('id="hero-graph"');
@@ -236,6 +236,25 @@ describe("account server", () => {
 		});
 		const checkout = await route("POST", "/v1/billing/checkout", { plan: "byom" }, checkoutServer, undefined, { origin: "https://groundwork.test" });
 		expect(checkout.json).toEqual({ url: "https://checkout.stripe.test/byom" });
+		const amountServer = deps({
+			auth: {
+				firebase: true,
+				async uid() {
+					throw Object.assign(new Error("Sign in required."), { status: 401 });
+				},
+				async revokeRefreshTokens() {},
+			},
+			billing: billing({
+				configured: true,
+				async checkoutAmount(sessionId) {
+					return sessionId === "cs_free" ? 0 : null;
+				},
+			}),
+		});
+		const zero = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "cs_free" });
+		expect(zero).toEqual({ status: 200, json: { amountUsd: 0, currency: "USD" } });
+		const unknown = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "nope" });
+		expect(unknown.status).toBe(404);
 		const direct = await route("POST", "/v1/account/plan", { plan: "included" }, checkoutServer);
 		expect(direct.status).toBe(402);
 

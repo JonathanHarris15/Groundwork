@@ -60,6 +60,21 @@ describe("GA4 events", () => {
 		expect(JSON.stringify(calls)).not.toContain("AW-");
 	});
 
+	it("sends value 0 when a promotion covers the charge, and still records the transaction", () => {
+		const { calls, client } = mockClient();
+		expect(emitPurchase(client, "cs_free", "included", 0)).toBe(true);
+		expect(calls[0]?.[2]).toEqual({
+			utm_source: "ads",
+			gclid: "Cjwtest",
+			transaction_id: "cs_free",
+			value: 0,
+			currency: "USD",
+		});
+		expect(emitPurchase(client, "cs_free", "included", 0)).toBe(false);
+		expect(emitPurchase(client, "cs_neg", "included", -1)).toBe(false);
+		expect(calls).toHaveLength(1);
+	});
+
 	it("does not fire an Ads conversion when the AW- id and labels are empty", () => {
 		const calls: unknown[][] = [];
 		const gtag = (...args: unknown[]) => {

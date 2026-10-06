@@ -11,9 +11,7 @@ const billingNote = billingFlag === "success"
 	: billingFlag === "cancel"
 		? "Checkout was canceled. Your plan is unchanged."
 		: "";
-if (billingFlag === "success") {
-	window.GroundworkTracking?.notePurchase(params.get("session_id") || params.get("subscription_id"), params.get("plan"));
-}
+if (billingFlag === "success") void reportCheckoutPurchase();
 
 const NODE = { free: "green", byom: "blue", included: "orange" };
 const PROVIDER_LABEL = { anthropic: "Anthropic", openrouter: "OpenRouter", google: "Google", xai: "xAI", openai: "OpenAI" };
@@ -180,8 +178,26 @@ function consumeBillingQuery() {
 	history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
 }
 
+async function reportCheckoutPurchase() {
+	const sessionId = params.get("session_id") || params.get("subscription_id");
+	const plan = params.get("plan");
+	let amount = null;
+	if (sessionId && sessionId.startsWith("cs_")) {
+		try {
+			const res = await fetch(`/v1/billing/checkout-amount?session_id=${encodeURIComponent(sessionId)}`);
+			if (res.ok) {
+				const body = await res.json();
+				if (typeof body.amountUsd === "number") amount = body.amountUsd;
+			}
+		} catch {
+			/* The list price is the fallback when Checkout cannot be read. */
+		}
+	}
+	window.GroundworkTracking?.notePurchase(sessionId, plan, amount);
+}
+
 function showLanding() {
-	setPageTitle("Learn from the ground up");
+	document.title = "Groundwork: a tutor inside Obsidian | Start free";
 	landing.hidden = false;
 	site.hidden = true;
 	site.classList.remove("is-study");
@@ -226,8 +242,8 @@ function showSignIn() {
 	show(`
 		<div class="hero">
 			<div>
-				<h1>Sign in to study.</h1>
-				<p class="lede">Sign in to manage your plan. Then choose <strong>Open Obsidian</strong> on the account page to link the plugin on this computer.</p>
+				<h1>Sign in or start free.</h1>
+				<p class="lede">Create your free account or sign in with Google. Then choose <strong>Open Obsidian</strong> on the account page to link the plugin on this computer. Requires Obsidian desktop.</p>
 				${notice(false)}
 				<div class="signin">
 					${config.firebase ? `<button class="btn btn-ink" id="google" type="button">Sign in with Google</button>` : ""}

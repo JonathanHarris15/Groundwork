@@ -25,10 +25,15 @@ export function emitSignUp(client: Ga4EventClient, created: boolean, method: str
 	return true;
 }
 
-export function emitPurchase(client: Ga4EventClient, transactionId: string | null, plan: string | null): boolean {
+export function emitPurchase(
+	client: Ga4EventClient,
+	transactionId: string | null,
+	plan: string | null,
+	amountUsd?: number | null,
+): boolean {
 	const id = cleanTransactionId(transactionId);
-	const value = purchaseValue(plan);
-	if (!id || value == null) return false;
+	const value = typeof amountUsd === "number" && Number.isFinite(amountUsd) ? amountUsd : purchaseValue(plan);
+	if (!id || value == null || value < 0) return false;
 	if (!shouldRecordPurchase(id, client.recordedPurchases())) return false;
 	client.rememberPurchase(id);
 	client.gtag("event", "purchase", {

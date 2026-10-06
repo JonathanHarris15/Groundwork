@@ -22,16 +22,18 @@ declare global {
 			event: (name: string, params?: Record<string, unknown>) => void;
 			noteSignUp: (created: boolean, method: string) => void;
 			noteObsidian: (body: { first?: boolean } | null) => void;
-			notePurchase: (sessionId: string | null, plan: string | null) => boolean;
+			notePurchase: (sessionId: string | null, plan: string | null, amountUsd?: number | null) => boolean;
 			attributionHeader: () => string;
 			openConsent: () => void;
 		};
 	}
 }
 
-function gtag(...args: unknown[]): void {
+function gtag(..._args: unknown[]): void {
 	window.dataLayer = window.dataLayer || [];
-	window.dataLayer.push(args);
+	// gtag.js only reads Arguments objects; a plain array is ignored.
+	// eslint-disable-next-line prefer-rest-params
+	window.dataLayer.push(arguments);
 }
 
 function readJson<T>(key: string): T | null {
@@ -206,8 +208,8 @@ function noteSignUp(created: boolean, method: string): void {
 	emitSignUp(ga4Client, created, method);
 }
 
-function notePurchase(sessionId: string | null, plan: string | null): boolean {
-	return emitPurchase(ga4Client, sessionId, plan);
+function notePurchase(sessionId: string | null, plan: string | null, amountUsd?: number | null): boolean {
+	return emitPurchase(ga4Client, sessionId, plan, amountUsd);
 }
 
 function noteObsidian(body: { first?: boolean } | null): void {
