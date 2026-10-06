@@ -9,14 +9,19 @@ mkdirSync(path.join(here, "dist"), { recursive: true });
 mkdirSync(path.join(here, "public"), { recursive: true });
 
 const heroWidths = [480, 768, 1200];
-const heroReady = heroWidths.every((width) => existsSync(path.join(here, `public/hero/concept-map-${width}.webp`)) && existsSync(path.join(here, `public/hero/concept-map-${width}.avif`)));
+const shotNames = ["quiz", "flashcards", "exam-chat", "exam-map", "goals"];
+function imageSetReady(dir, name) {
+	return heroWidths.every((width) => existsSync(path.join(here, dir, `${name}-${width}.webp`)) && existsSync(path.join(here, dir, `${name}-${width}.avif`)));
+}
+const imagesReady = imageSetReady("public/hero", "concept-map") && shotNames.every((name) => imageSetReady("public/shots", name));
 try {
-	const { writeHeroImages } = await import("./scripts/hero-image.mjs");
+	const { writeHeroImages, writeShotImages } = await import("./scripts/hero-image.mjs");
 	await writeHeroImages();
+	await writeShotImages();
 } catch (error) {
 	const message = error instanceof Error ? error.message : String(error);
 	const missingSharp = message.includes("sharp") || message.includes("ERR_MODULE_NOT_FOUND");
-	if (!missingSharp || !heroReady) throw error;
+	if (!missingSharp || !imagesReady) throw error;
 }
 
 await esbuild.build({

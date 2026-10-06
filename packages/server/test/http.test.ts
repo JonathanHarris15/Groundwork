@@ -132,8 +132,8 @@ describe("account server", () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/force-graph.js?v=4"');
-		expect(site?.body).toContain('src="/app.js?v=19"');
-		expect(site?.body).toContain('href="/styles.css?v=10"');
+		expect(site?.body).toContain('src="/app.js?v=20"');
+		expect(site?.body).toContain('href="/styles.css?v=11"');
 		expect(site?.body).toContain("/hero/concept-map-768.webp");
 		expect(site?.body).toContain("image/avif");
 		expect(site?.body).not.toContain('id="hero-graph"');
@@ -142,6 +142,11 @@ describe("account server", () => {
 		expect(Buffer.isBuffer(hero?.body)).toBe(true);
 		expect((hero?.body as Buffer).byteLength).toBeGreaterThan(1000);
 		expect(readSite("/hero/concept-map-768.avif")?.type).toBe("image/avif");
+		const quiz = readSite("/shots/quiz-768.webp");
+		expect(quiz?.type).toBe("image/webp");
+		expect(Buffer.isBuffer(quiz?.body) && quiz.body.length).toBeGreaterThan(1000);
+		expect(readSite("/shots/exam-map-480.avif")?.type).toBe("image/avif");
+		expect(readSite("/shots/../hero/concept-map.png")).toBeNull();
 		expect(site?.body).toContain("Start free");
 		expect(site?.body).toContain("methoddev1505@gmail.com");
 		expect(site?.body).not.toContain("[Dev:");

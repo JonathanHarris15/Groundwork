@@ -13,8 +13,10 @@ import {
 	CONTACT_EMAIL_DEFAULT,
 	measurementIds,
 	mergeAttribution,
+	PRODUCTION_GA4_MEASUREMENT_ID,
 	purchaseValue,
 	resolveContactEmail,
+	resolveMeasurementIds,
 	shouldFireObsidianConnected,
 	shouldFireSignUp,
 	shouldRecordPurchase,
@@ -50,8 +52,8 @@ describe("ads tracking", () => {
 	});
 
 	it("prices a purchase once per session id", () => {
-		expect(purchaseValue("byom")).toBe(9);
-		expect(purchaseValue("included")).toBe(20);
+		expect(purchaseValue("byom")).toBe(4);
+		expect(purchaseValue("included")).toBe(15);
 		expect(purchaseValue("free")).toBeNull();
 		expect(cleanTransactionId("cs_test_1")).toBe("cs_test_1");
 		expect(cleanTransactionId("{CHECKOUT_SESSION_ID}")).toBeNull();
@@ -80,6 +82,15 @@ describe("ads tracking", () => {
 		expect(measurementIds("nope", "AW-")).toEqual({ ga4: null, ads: null });
 		expect(tagScriptUrl({ ga4: null, ads: null })).toBeNull();
 		expect(tagScriptUrl({ ga4: "G-ABC123", ads: null })).toContain("G-ABC123");
+		expect(PRODUCTION_GA4_MEASUREMENT_ID).toBe("G-F4236HGZSM");
+		expect(resolveMeasurementIds({ ga4: undefined, ads: undefined, production: true })).toEqual({
+			ga4: "G-F4236HGZSM",
+			ads: null,
+		});
+		expect(resolveMeasurementIds({ ga4: "", ads: "", production: true })).toEqual({ ga4: "G-F4236HGZSM", ads: null });
+		expect(resolveMeasurementIds({ ga4: undefined, ads: "AW-123", production: false })).toEqual({ ga4: null, ads: "AW-123" });
+		expect(resolveMeasurementIds({ ga4: "G-OTHER1", ads: undefined, production: true })).toEqual({ ga4: "G-OTHER1", ads: null });
+		expect(resolveMeasurementIds({ ga4: "nope", ads: undefined, production: true })).toEqual({ ga4: null, ads: null });
 	});
 
 	it("publishes real pages with the contact email and no draft markers", () => {
@@ -94,7 +105,19 @@ describe("ads tracking", () => {
 			expect(body.toLowerCase()).not.toContain("coming soon");
 			expect(body).not.toContain("public profile");
 		}
-		expect(readSite("/quizzes-flashcards")?.body).toContain("Quiz yourself on your own notes and lecture slides");
+		expect(readSite("/quizzes-flashcards")?.body).toContain("Quiz yourself in Obsidian on your own notes and lecture slides");
+		expect(readSite("/quizzes-flashcards")?.body).toContain("Quiz cards can come straight from the notes and lecture slides already in your vault.");
+		expect(readSite("/exam-prep")?.body).toContain("for a midterm or final");
+		expect(readSite("/exam-prep")?.body).toContain("plans in Obsidian");
+		expect(readSite("/privacy")?.body).toContain("adssettings.google.com");
+		expect(readSite("/privacy")?.body).toContain("Groundwork’s model provider on Free and the $15 plan");
+		expect(readSite("/pricing")?.body).toContain("Choose $4 plan");
+		expect(readSite("/pricing")?.body).toContain("Choose $15 plan");
+		expect(readSite("/pricing")?.body).not.toContain("$9");
+		expect(readSite("/pricing")?.body).not.toContain("$20");
+		expect(readSite("/terms")?.body).toContain("$4 per month");
+		expect(readSite("/terms")?.body).toContain("$15 per month");
+		expect(String(readSite("/pricing")?.body)).not.toContain("G-F4236HGZSM");
 		expect(readSite("/privacy")?.body).toContain("delete");
 		expect(sitemapXml()).toContain("https://groundworklearn.com/pricing");
 		expect(sitemapXml()).not.toContain("graph-harness");
@@ -103,5 +126,9 @@ describe("ads tracking", () => {
 		const home = readFileSync(path.join(root, "packages/server/public/index.html"), "utf8");
 		expect(home).toContain("not started");
 		expect(home).not.toContain("not built");
+		expect(home).toContain("Quiz yourself on your own notes and lecture slides");
+		expect(home).toContain("$15/month");
+		expect(home).not.toContain("G-F4236HGZSM");
+		expect(home).not.toContain("$20");
 	});
 });

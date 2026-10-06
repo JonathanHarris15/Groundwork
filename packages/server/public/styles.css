@@ -392,16 +392,7 @@ a:hover { color: #2c2f36; }
 	#landing .step p { font-size: 16px; }
 }
 
-#landing.reveal-ready .rv {
-	opacity: 0;
-	transform: translateY(22px);
-	transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-
-#landing.reveal-ready .rv.is-in { opacity: 1; transform: none; }
-#landing.reveal-ready .step .step-node span { transform: scale(0.4); }
-#landing.reveal-ready .step.is-in .step-node span { transform: scale(1); }
-#landing .step.is-in .step-node span { box-shadow: 0 0 0 6px #0f1115, 0 0 18px var(--c); }
+#landing .step .step-node span { box-shadow: 0 0 0 6px #0f1115, 0 0 18px var(--c); }
 
 #landing .close {
 	text-align: center;
@@ -1525,6 +1516,8 @@ h1, h2, h3, .sub, .mkt-sub { text-wrap: balance; }
 .mkt-section h3 { margin: 22px 0 4px; font-size: 18px; font-weight: 500; }
 .mkt-section p, .mkt .fine { color: #c3c7cd; }
 .mkt a { color: #fff; }
+.mkt a.cta,
+.mkt a.btn { color: #16181d; }
 .req { color: #aeb3bc; letter-spacing: 0.02em; }
 .plan-cards {
 	display: grid;
@@ -1542,17 +1535,33 @@ h1, h2, h3, .sub, .mkt-sub { text-wrap: balance; }
 	flex-direction: column;
 	gap: 8px;
 }
-.plan-card h2 { margin: 0; font-size: 22px; font-weight: 500; }
-.plan-card .price { margin: 0; font-size: 32px; }
+.plan-card h2 { margin: 0; font-size: 22px; font-weight: 500; line-height: 1.25; }
+.plan-card .price { margin: 0; font-size: 32px; flex: none; }
 .plan-card .price span { font-size: 16px; color: #aeb3bc; }
 .plan-card p { margin: 0; color: #c3c7cd; flex: 1; }
-.plan-card .cta { margin-top: 12px; align-self: flex-start; }
-.setup-steps { list-style: none; padding: 0; margin: 36px 0 0; }
+.plan-card .cta { margin-top: auto; align-self: flex-start; }
+.mkt-shot { margin: 28px 0 0; }
+.mkt-shot img {
+	display: block;
+	width: 100%;
+	height: auto;
+	border-radius: 16px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: #0c0e12;
+}
+.setup-steps { list-style: decimal; padding-left: 1.4em; margin: 36px 0 0; }
 .setup-steps li { margin-top: 28px; }
+.setup-steps li::marker { font-size: 22px; font-weight: 500; color: #f7f7f5; }
 .setup-steps h2 { margin: 0 0 8px; font-size: 22px; font-weight: 500; }
+@container (min-width: 801px) {
+	.plan-card h2 { min-height: 2.6em; }
+}
 @container (max-width: 800px) {
 	.plan-cards { grid-template-columns: 1fr; }
 	.mkt-main { padding: 8px 20px 64px; }
+}
+@container (max-width: 720px) {
+	.open-obsidian { display: none; }
 }
 
 .consent {

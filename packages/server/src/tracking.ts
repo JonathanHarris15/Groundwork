@@ -56,6 +56,9 @@ export function resolveContactEmail(envValue: string | undefined): string {
 	return trimmed || CONTACT_EMAIL_DEFAULT;
 }
 
+/** Production measurement id. Cloud Run uses this when GA4_MEASUREMENT_ID is unset. */
+export const PRODUCTION_GA4_MEASUREMENT_ID = "G-F4236HGZSM";
+
 /** GA4 ids look like G-ABC123. Ads ids look like AW-123. Anything else is ignored. */
 export function measurementIds(ga4: string | undefined, ads: string | undefined): { ga4: string | null; ads: string | null } {
 	const g = ga4?.trim() ?? "";
@@ -64,6 +67,18 @@ export function measurementIds(ga4: string | undefined, ads: string | undefined)
 		ga4: /^G-[A-Z0-9]+$/i.test(g) ? g : null,
 		ads: /^AW-\d+$/i.test(a) ? a : null,
 	};
+}
+
+/**
+ * GA4 is on in production even when the env var is empty. An explicit env value
+ * wins, including a blank override only when it is unset. Ads stays off until
+ * GOOGLE_ADS_ID is a real AW- id. Conversion labels are not required.
+ */
+export function resolveMeasurementIds(input: { ga4: string | undefined; ads: string | undefined; production: boolean }): { ga4: string | null; ads: string | null } {
+	const parsed = measurementIds(input.ga4, input.ads);
+	const explicit = input.ga4?.trim() ?? "";
+	const ga4 = explicit ? parsed.ga4 : input.production ? PRODUCTION_GA4_MEASUREMENT_ID : null;
+	return { ga4, ads: parsed.ads };
 }
 
 export function tagScriptUrl(ids: { ga4: string | null; ads: string | null }): string | null {
@@ -142,9 +157,10 @@ export function clientAttribution(stored: StoredAttribution | null | undefined):
 	return out;
 }
 
-export function purchaseValue(plan: string | null | undefined): 9 | 20 | null {
-	if (plan === "byom") return 9;
-	if (plan === "included") return 20;
+/** Bring your own model is $4/month. Groundwork is $15/month. */
+export function purchaseValue(plan: string | null | undefined): 4 | 15 | null {
+	if (plan === "byom") return 4;
+	if (plan === "included") return 15;
 	return null;
 }
 

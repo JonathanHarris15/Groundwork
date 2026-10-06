@@ -49,6 +49,20 @@ test("public pages, footer email, and screenshots", async ({ page }, testInfo) =
 			expect(paint.buttons).toEqual(["OK", "Opt out"]);
 			expect(paint.consentFont).toMatch(/Jost/);
 			expect(paint.heroLoaded).toBe(true);
+			const revealed = await page.evaluate(() => {
+				const nodes = ["#how-title", "#close-title", ".close .cta"].map((sel) => document.querySelector(sel));
+				return nodes.map((el) => {
+					if (!el) return 0;
+					let opacity = 1;
+					let node: Element | null = el;
+					while (node) {
+						opacity *= Number(getComputedStyle(node).opacity);
+						node = node.parentElement;
+					}
+					return opacity * el.getBoundingClientRect().height;
+				});
+			});
+			expect(revealed.every((value) => value > 1)).toBe(true);
 			const shot = await page.screenshot({ animations: "allow" });
 			const heading = lightShare(shot, paint.h1Box, paint.scale);
 			const cta = lightShare(shot, paint.ctaBox, paint.scale);
@@ -57,12 +71,78 @@ test("public pages, footer email, and screenshots", async ({ page }, testInfo) =
 			writeFileSync(path.join(shots, `home-consent-${width}.png`), shot);
 			await page.getByRole("button", { name: "OK", exact: true }).click();
 		}
+		if (["/concept-map", "/quizzes-flashcards", "/exam-prep", "/goals"].includes(href)) {
+			const shotImg = page.locator(".mkt-shot img").first();
+			await expect(shotImg).toBeVisible();
+			await expect.poll(async () => shotImg.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+		}
 		await page.screenshot({ path: path.join(shots, `${slug(href)}-${width}.png`), fullPage: true });
 	}
 	const missing = await page.goto("/this-route-does-not-exist");
 	expect(missing?.status()).toBe(404);
 	await expect(page.getByRole("heading", { name: /Page not found/i })).toBeVisible();
 	await page.screenshot({ path: path.join(shots, `404-${width}.png`), fullPage: true });
+});
+
+test("every call to action label contrasts with its background", async ({ page }) => {
+	for (const href of [...pages, "/this-route-does-not-exist"]) {
+		await page.goto(href);
+		const results = await page.evaluate(() => {
+			const parse = (color: string): [number, number, number] | null => {
+				const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+				if (!match) return null;
+				return [Number(match[1]), Number(match[2]), Number(match[3])];
+			};
+			const lin = (channel: number) => {
+				const s = channel / 255;
+				return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+			};
+			const lum = (rgb: [number, number, number]) => 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+			const contrast = (a: [number, number, number], b: [number, number, number]) => {
+				const left = lum(a);
+				const right = lum(b);
+				return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
+			};
+			return [...document.querySelectorAll("a.cta, a.btn")].map((el) => {
+				const style = getComputedStyle(el);
+				const fg = parse(style.color);
+				const bg = parse(style.backgroundColor);
+				return {
+					text: (el.textContent || "").replace(/\s+/g, " ").trim(),
+					ratio: fg && bg && style.backgroundColor !== "rgba(0, 0, 0, 0)" ? contrast(fg, bg) : 0,
+					opacity: style.opacity,
+				};
+			});
+		});
+		const expectsCta = href !== "/privacy" && href !== "/terms";
+		if (expectsCta) expect(results.length, href).toBeGreaterThan(0);
+		else expect(results, href).toEqual([]);
+		for (const item of results) {
+			expect(item.text.length, href).toBeGreaterThan(0);
+			expect(item.opacity, `${href} ${item.text}`).toBe("1");
+			expect(item.ratio, `${href} ${item.text}`).toBeGreaterThanOrEqual(4.5);
+		}
+	}
+});
+
+test("pricing cards share a height and line up price, copy, and buttons", async ({ page }, testInfo) => {
+	test.skip(testInfo.project.name === "phone", "stacked cards are a single column");
+	await page.goto("/pricing");
+	const boxes = await page.locator(".plan-card").evaluateAll((cards) =>
+		cards.map((card) => {
+			const price = card.querySelector(".price")?.getBoundingClientRect();
+			const desc = card.querySelector("p:not(.price)")?.getBoundingClientRect();
+			const cta = card.querySelector(".cta")?.getBoundingClientRect();
+			const cardBox = card.getBoundingClientRect();
+			return { price: price?.top ?? 0, desc: desc?.top ?? 0, cta: cta?.top ?? 0, height: cardBox.height };
+		}),
+	);
+	expect(boxes).toHaveLength(3);
+	const aligned = (values: number[]) => Math.max(...values) - Math.min(...values) < 2;
+	expect(aligned(boxes.map((box) => box.height))).toBe(true);
+	expect(aligned(boxes.map((box) => box.price))).toBe(true);
+	expect(aligned(boxes.map((box) => box.desc))).toBe(true);
+	expect(aligned(boxes.map((box) => box.cta))).toBe(true);
 });
 
 test("consent defaults deny everywhere and grant the US", async ({ page }) => {
@@ -115,12 +195,13 @@ test("a returning account does not fire sign_up", async ({ page }) => {
 
 test("purchase fires once per checkout session", async ({ page }) => {
 	await page.goto("/?billing=success&session_id=cs_test_1&plan=byom");
-	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_1", value: 9, currency: "USD" }]);
+	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_1", value: 4, currency: "USD" }]);
 	await page.goto("/?billing=success&session_id=cs_test_1&plan=byom");
 	await page.waitForFunction(() => Boolean((window as unknown as { GroundworkTracking?: unknown }).GroundworkTracking));
 	expect(await countEvents(page, "purchase")).toBe(0);
 	await page.goto("/?billing=success&session_id=cs_test_2&plan=included");
-	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_2", value: 20, currency: "USD" }]);
+	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_2", value: 15, currency: "USD" }]);
+	expect(await countEvents(page, "conversion")).toBe(0);
 	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toContain("cs_test_1");
 });
 

@@ -12,7 +12,7 @@ const billingNote = billingFlag === "success"
 		? "Checkout was canceled. Your plan is unchanged."
 		: "";
 if (billingFlag === "success") {
-	window.GroundworkTracking?.notePurchase(params.get("session_id"), params.get("plan"));
+	window.GroundworkTracking?.notePurchase(params.get("session_id") || params.get("subscription_id"), params.get("plan"));
 }
 
 const NODE = { free: "green", byom: "blue", included: "orange" };
@@ -53,7 +53,6 @@ boot().catch((err) => {
 
 window.addEventListener("hashchange", () => paint());
 bindParallax();
-bindReveal();
 
 async function boot() {
 	if (site && !site.hidden) showLoading();
@@ -1148,21 +1147,6 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
 	return escapeHtml(value);
-}
-
-function bindReveal() {
-	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-	const nodes = [...landing.querySelectorAll(".rv")];
-	if (!nodes.length) return;
-	landing.classList.add("reveal-ready");
-	const observer = new IntersectionObserver((entries) => {
-		for (const entry of entries) {
-			if (!entry.isIntersecting) continue;
-			entry.target.classList.add("is-in");
-			observer.unobserve(entry.target);
-		}
-	}, { threshold: 0.2, rootMargin: "0px 0px -8% 0px" });
-	for (const node of nodes) observer.observe(node);
 }
 
 function bindParallax() {

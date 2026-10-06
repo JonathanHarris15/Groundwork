@@ -50,8 +50,8 @@ The **first time** you open the vault on a machine, Obsidian asks you to *Trust 
 
 The plan on the account decides.
 
-- **Free** and **Groundwork** ($20/month): Obsidian calls Groundwork, and Groundwork calls the smaller model through one shared key. The month's budget is the limit. You do not paste a key.
-- **Bring your own model** ($9/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. Groundwork does not meter that usage. A Claude login stays on the computer.
+- **Free** and **Groundwork** ($15/month): Obsidian calls Groundwork, and Groundwork calls the smaller model through one shared key. The month's budget is the limit. You do not paste a key.
+- **Bring your own model** ($4/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. Groundwork does not meter that usage. A Claude login stays on the computer.
 
 ### Connect a Claude subscription
 
@@ -116,7 +116,14 @@ Sign in with Google on that site. **Open Obsidian** connects Obsidian to this ac
 
 `GROUNDWORK_PORT` chooses the listen port (default `8787`). `GROUNDWORK_MEMORY_FILE` chooses the local tutor-memory file when Firebase is not configured (default `data/tutor-memory.json`, gitignored).
 
-`GA4_MEASUREMENT_ID` and `GOOGLE_ADS_ID` turn on the Google tag. Leave them unset and the site does not load gtag.js. `CONTACT_EMAIL` overrides the address in the footer. The default is the address in `packages/server/src/tracking.ts`.
+Production Cloud Run (when `K_SERVICE` is set) loads GA4 with measurement id `G-F4236HGZSM` if `GA4_MEASUREMENT_ID` is unset. Set `GA4_MEASUREMENT_ID` to override that id. Local `npm run server` does not load the tag unless you set the env var. `GOOGLE_ADS_ID` is optional. Leave it unset until Marketing provides an `AW-` id. Conversion labels are not required: when the Ads id and labels are empty, the site does not configure Ads and does not fire Ads conversions. Deploy does not depend on them. GA4 events are `sign_up` (new accounts only), `obsidian_connected` (first link only), and `purchase` (value 4 or 15, currency USD, Stripe checkout session or subscription id). Marketing can import those key events into Ads later.
+
+```bash
+GA4_MEASUREMENT_ID=G-F4236HGZSM
+# GOOGLE_ADS_ID=
+```
+
+`CONTACT_EMAIL` overrides the address in the footer. The default is the address in `packages/server/src/tracking.ts`.
 
 ## How the tutor works
 

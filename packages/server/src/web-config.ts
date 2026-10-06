@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { measurementIds, resolveContactEmail } from "./tracking";
+import { resolveContactEmail, resolveMeasurementIds } from "./tracking";
 
 /** Public values the account site needs. Nothing in here is a secret. */
 export interface WebConfig {
@@ -10,9 +10,9 @@ export interface WebConfig {
 	/** True when the API accepts requests without Firebase. Never set on production Cloud Run. */
 	localDev: boolean;
 	contactEmail: string;
-	/** GA4 measurement id, or null when GA4_MEASUREMENT_ID is unset. */
+	/** GA4 measurement id. Production defaults to G-F4236HGZSM when the env var is unset. */
 	ga4MeasurementId: string | null;
-	/** Google Ads id (AW-…), or null when GOOGLE_ADS_ID is unset. */
+	/** Google Ads id (AW-…). Null when GOOGLE_ADS_ID is unset. Ads conversions are not required. */
 	googleAdsId: string | null;
 }
 
@@ -32,7 +32,11 @@ export function webConfig(billing: boolean, firebaseAdmin: boolean): WebConfig {
 }
 
 function publicSiteFields(): { contactEmail: string; ga4MeasurementId: string | null; googleAdsId: string | null } {
-	const ids = measurementIds(process.env.GA4_MEASUREMENT_ID, process.env.GOOGLE_ADS_ID);
+	const ids = resolveMeasurementIds({
+		ga4: process.env.GA4_MEASUREMENT_ID,
+		ads: process.env.GOOGLE_ADS_ID,
+		production: Boolean(process.env.K_SERVICE?.trim()),
+	});
 	return {
 		contactEmail: resolveContactEmail(process.env.CONTACT_EMAIL),
 		ga4MeasurementId: ids.ga4,

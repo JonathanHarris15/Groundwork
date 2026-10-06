@@ -1,13 +1,9 @@
+import { configureMeasurementTags, emitObsidianConnected, emitPurchase, emitSignUp, type Ga4EventClient } from "./ga4-events";
 import {
 	attributionFromSearch,
-	cleanTransactionId,
 	consentDefaults,
 	hasClientAttribution,
 	mergeAttribution,
-	purchaseValue,
-	shouldFireObsidianConnected,
-	shouldFireSignUp,
-	shouldRecordPurchase,
 	tagScriptUrl,
 	type Attribution,
 	type ConsentChoice,
@@ -179,41 +175,43 @@ async function bootTag(): Promise<void> {
 	if (attr.utm_term) campaign.campaign_term = attr.utm_term;
 	if (attr.utm_content) campaign.campaign_content = attr.utm_content;
 	if (attr.gclid) campaign.gclid = attr.gclid;
-	for (const id of [ids.ga4, ids.ads]) {
-		if (id) gtag("config", id, campaign);
-	}
+	configureMeasurementTags(gtag, ids, campaign);
 }
 
+const ga4Client: Ga4EventClient = {
+	gtag,
+	attribution: () => readAttribution() ?? {},
+	signUpAlreadyFired() {
+		try {
+			return sessionStorage.getItem(SIGNUP_KEY) === "1";
+		} catch {
+			return false;
+		}
+	},
+	markSignUpFired() {
+		try {
+			sessionStorage.setItem(SIGNUP_KEY, "1");
+		} catch {
+			/* ignore */
+		}
+	},
+	recordedPurchases: () => readJson<string[]>(PURCHASE_KEY) ?? [],
+	rememberPurchase(id) {
+		const already = readJson<string[]>(PURCHASE_KEY) ?? [];
+		writeJson(PURCHASE_KEY, [...already, id].slice(-50));
+	},
+};
+
 function noteSignUp(created: boolean, method: string): void {
-	let already = false;
-	try {
-		already = sessionStorage.getItem(SIGNUP_KEY) === "1";
-	} catch {
-		already = false;
-	}
-	if (!shouldFireSignUp(created, already)) return;
-	try {
-		sessionStorage.setItem(SIGNUP_KEY, "1");
-	} catch {
-		/* ignore */
-	}
-	event("sign_up", { method });
+	emitSignUp(ga4Client, created, method);
 }
 
 function notePurchase(sessionId: string | null, plan: string | null): boolean {
-	const id = cleanTransactionId(sessionId);
-	const value = purchaseValue(plan);
-	if (!id || value == null) return false;
-	const already = readJson<string[]>(PURCHASE_KEY) ?? [];
-	if (!shouldRecordPurchase(id, already)) return false;
-	writeJson(PURCHASE_KEY, [...already, id].slice(-50));
-	event("purchase", { transaction_id: id, value, currency: "USD" });
-	return true;
+	return emitPurchase(ga4Client, sessionId, plan);
 }
 
 function noteObsidian(body: { first?: boolean } | null): void {
-	if (!shouldFireObsidianConnected(body?.first === true)) return;
-	event("obsidian_connected");
+	emitObsidianConnected(ga4Client, body?.first === true);
 }
 
 bootConsent();
