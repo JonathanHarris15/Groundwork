@@ -16,6 +16,7 @@ import {
 	buildFromGroundwork,
 	layoutGroundworkGraph,
 	daysLeftPhrase,
+	describeQuizOutcome,
 	fileAccessGuidance,
 	formatDue,
 	goalChoiceLabel,
@@ -35,6 +36,7 @@ import {
 	removeFlashcardMirrors,
 	PATHS,
 	serializeNote,
+	settleQuizAnswer,
 	setSection,
 	sourceBoundConceptReason,
 	TOOLS,
@@ -68,6 +70,8 @@ import { renderMapPane, renderStartedVaultMap } from "./map-pane";
 import { mountMark } from "./mark";
 import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source";
 import { AskCard, QuizCard, TestCard } from "./cards";
+import { pendingQuiz } from "./open-quiz";
+import { ReaderFollow } from "./reader-follow";
 import { FlashcardsPane, type FlashcardsHost } from "./flashcards-pane";
 import { renderFlashcardsLibrary } from "./flashcards-library-pane";
 import { enhanceGraphs } from "./graph-pane";
@@ -113,6 +117,8 @@ interface ChatRecord {
 	/** Claude Code keeps sessions on the machine that ran them, so resume only there and only if nothing happened since. */
 	claude?: { device: string; sessionId: string; at: number };
 	items: DisplayItem[];
+	/** Shown and not yet answered. Survives closing Obsidian so the question is still there. */
+	openQuiz?: PreparedQuiz;
 	/** Margin threads on highlighted passages. */
 	asides?: AsideThread[];
 }
@@ -193,6 +199,15 @@ export class ChatView extends ItemView implements ToolUI {
 	private pending = new Set<(v: null) => void>();
 	private liveQuizCards = new Map<string, QuizCard>();
 	private liveTestCards = new Map<string, TestCard>();
+	/** Live quiz() promises, so a re-render can reattach the same answer. */
+	private quizSettle = new Map<string, (v: QuizResponse | null) => void>();
+	/** Restored quiz waiting in the pending set. Replaced when the chat is redrawn. */
+	private restoredQuizSettle: ((v: null) => void) | null = null;
+	private resumedQuizIds = new Set<string>();
+	private reader = new ReaderFollow();
+	/** Closing the view must keep an unanswered quiz. Stop and New session must not. */
+	private closing = false;
+	private persistQueue: Promise<void> = Promise.resolve();
 
 	private uiSessionEl!: HTMLElement;
 	private uiProviderEl!: HTMLElement;
@@ -312,6 +327,7 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 
 		this.uiMessagesEl = root.createDiv({ cls: "gw-messages" });
+		this.registerDomEvent(this.uiMessagesEl, "scroll", () => this.reader.noteUserScroll(this.uiMessagesEl));
 		this.uiMapEl = root.createDiv({ cls: "gw-screen gw-map" });
 		this.uiGoalsEl = root.createDiv({ cls: "gw-screen gw-goals" });
 		this.uiLibraryEl = root.createDiv({ cls: "gw-library" });
@@ -407,6 +423,8 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	async onClose(): Promise<void> {
+		this.closing = true;
+		if (this.record) await this.persist().catch(() => undefined);
 		if (this.pane.screen === "flashcards") this.flashPane?.hide();
 		this.stop();
 		this.dropAgent();
@@ -428,9 +446,14 @@ export class ChatView extends ItemView implements ToolUI {
 
 	newSession(): void {
 		this.enterScreen("learn");
+		const leaving = this.record;
 		if (this.agent?.busy) this.stop();
+		else if (leaving) leaving.openQuiz = undefined;
+		this.dropRestoredQuiz();
+		this.reader.release();
 		const now = new Date().toISOString();
 		this.record = { id: `chat-${Date.now().toString(36)}`, title: "New session", created: now, updated: now, messages: [], items: [] };
+		if (leaving && leaving.id !== this.record.id && (leaving.items.length || leaving.messages.length)) void this.persist(leaving);
 		this.session = { id: this.record.id };
 		this.dropAgent();
 		this.dropAsides();
@@ -448,11 +471,16 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private openChat(record: ChatRecord): void {
 		this.enterScreen("learn");
+		const leaving = this.record;
+		if (this.agent?.busy && leaving && leaving.id !== record.id) this.stop({ keepQuiz: true });
+		this.dropRestoredQuiz();
+		this.reader.release();
 		this.record = {
 			...record,
 			messages: record.messages ?? [],
 			items: record.items ?? [],
 		};
+		if (leaving && leaving.id !== this.record.id && (leaving.items.length || leaving.openQuiz || leaving.messages.length)) void this.persist(leaving);
 		this.session = { id: record.id, title: record.title, notePath: record.notePath };
 		this.dropAgent();
 		this.dropAsides();
@@ -527,7 +555,9 @@ export class ChatView extends ItemView implements ToolUI {
 		return this.agent;
 	}
 
-	private async submit(prefill?: string): Promise<void> {
+	private async submit(prefill?: string, opts?: { quiet?: boolean }): Promise<void> {
+		const quiet = opts?.quiet === true;
+		const chatId = this.record.id;
 		const text = (prefill ?? this.uiInputEl.value).trim();
 		const pending = prefill === undefined ? this.pendingFiles : [];
 		if (!text && !pending.length) return;
@@ -556,20 +586,22 @@ export class ChatView extends ItemView implements ToolUI {
 			new Notice(`Couldn't save the attachment: ${err instanceof Error ? err.message : String(err)}`);
 			return;
 		}
-		if (prefill === undefined) {
+		if (!quiet && prefill === undefined) {
 			this.pendingFiles = [];
 			this.renderPending();
 		}
-		this.uiInputEl.value = "";
-		this.autoGrow();
-		if (!this.record.items.length) {
+		if (!quiet) {
+			this.uiInputEl.value = "";
+			this.autoGrow();
+		}
+		if (!quiet && !this.record.items.length) {
 			this.uiMessagesEl.empty();
 			this.record.title = (text || `About ${attachments.map(basename).join(", ")}`).replace(/\s+/g, " ").slice(0, 60);
 			this.session.title = this.record.title;
 			this.session.notePath = await this.plugin.store.sessionNotePath(this.record.title.split(" ").slice(0, 8).join(" "));
 			this.record.notePath = this.session.notePath;
 		}
-		this.pushItem({ kind: "user", text, ...(attachments.length ? { attachments } : {}) });
+		if (!quiet) this.pushItem({ kind: "user", text, ...(attachments.length ? { attachments } : {}) });
 		this.setBusy(true);
 		this.abort = new AbortController();
 		try {
@@ -593,23 +625,39 @@ export class ChatView extends ItemView implements ToolUI {
 			if (notes) toSend = [toSend, notes].filter(Boolean).join("\n\n");
 			await agent.send(toSend, (e) => this.onEvent(e), this.abort.signal, files);
 		} finally {
-			this.finishSegment();
 			this.abort = null;
-			if (agent instanceof AgentSession) {
-				this.record.messages = agent.messages;
-				this.record.messagesAt = this.record.items.length;
-			} else if (agent instanceof ClaudeCodeSession && agent.sessionId) {
-				this.record.claude = { device: this.plugin.deviceName(), sessionId: agent.sessionId, at: this.record.items.length };
+			if (!this.record || this.record.id !== chatId) {
+				this.setBusy(false);
+				return;
+			}
+			this.finishSegment();
+			// A close resolves the open quiz as dismissed. Do not store that half-turn, or the question is gone on return.
+			if (!this.closing) {
+				if (agent instanceof AgentSession) {
+					this.record.messages = agent.messages;
+					this.record.messagesAt = this.record.items.length;
+				} else if (agent instanceof ClaudeCodeSession && agent.sessionId) {
+					this.record.claude = { device: this.plugin.deviceName(), sessionId: agent.sessionId, at: this.record.items.length };
+				}
 			}
 			this.setBusy(false);
 			await this.persist();
 		}
 	}
 
-	stop(): void {
+	/** Continue after a restored answer without putting that handoff in the transcript. */
+	private continueTutor(text: string): Promise<void> {
+		return this.submit(text, { quiet: true });
+	}
+
+	stop(opts?: { keepQuiz?: boolean }): void {
 		this.abort?.abort();
+		this.reader.release();
+		if (!this.closing && !opts?.keepQuiz && this.record) this.record.openQuiz = undefined;
 		for (const resolve of this.pending) resolve(null);
 		this.pending.clear();
+		this.quizSettle.clear();
+		this.restoredQuizSettle = null;
 	}
 
 	private setBusy(busy: boolean): void {
@@ -739,21 +787,29 @@ export class ChatView extends ItemView implements ToolUI {
 	// ── ToolUI ──────────────────────────────────────────────────────────
 
 	quiz(quiz: PreparedQuiz): Promise<QuizResponse | null> {
+		// Hold before the last prose render finishes, so that render cannot jump to the new card.
+		this.reader.hold();
 		this.finishSegment();
+		this.record.openQuiz = quiz;
+		void this.persist();
 		return new Promise((resolve) => {
 			const settle = (v: QuizResponse | null) => {
 				this.pending.delete(settle as (v: null) => void);
+				this.quizSettle.delete(quiz.id);
+				if (v) this.reader.release();
 				void this.releaseQuiz(quiz, v, resolve);
 			};
+			this.quizSettle.set(quiz.id, settle);
 			this.pending.add(settle as (v: null) => void);
 			this.waitingQuiz = quiz;
-			const card = new QuizCard(this.turn(`quiz:${quiz.id}`), quiz, (el, md) => this.renderMd(el, md), (r) => settle(r), {
-				onHint: () => this.openHint(`quiz:${quiz.id}`, quiz),
+			const top = this.reader.keepPlace(this.uiMessagesEl, () => {
+				this.mountOpenQuiz(quiz, (r) => settle(r));
+				this.keepThinkingLast();
 			});
-			this.liveQuizCards.set(quiz.id, card);
-			this.keepThinkingLast();
-			this.scrollToBottom(true);
-			card.focus();
+			window.requestAnimationFrame(() => {
+				this.reader.restore(this.uiMessagesEl, top);
+				window.requestAnimationFrame(() => this.reader.restore(this.uiMessagesEl, top));
+			});
 		});
 	}
 
@@ -817,8 +873,70 @@ export class ChatView extends ItemView implements ToolUI {
 		if (o.quiz.format === "free") card?.showAnswer({ response: o.response, grade: o.grade, before: o.before, after: o.after });
 		else card?.showRecorded(o.before, o.after);
 		this.liveQuizCards.delete(o.quiz.id);
+		if (this.record.openQuiz?.id === o.quiz.id) this.record.openQuiz = undefined;
 		this.record.items.push({ kind: "quiz", quiz: o.quiz, response: o.response, grade: o.grade, before: o.before, after: o.after });
 		this.plugin.onKnowledgeChanged();
+	}
+
+	private mountOpenQuiz(quiz: PreparedQuiz, onSubmit: (r: QuizResponse) => void): void {
+		this.waitingQuiz = quiz;
+		const card = new QuizCard(this.turn(`quiz:${quiz.id}`), quiz, (el, md) => this.renderMd(el, md), onSubmit, {
+			onHint: () => this.openHint(`quiz:${quiz.id}`, quiz),
+		});
+		this.liveQuizCards.set(quiz.id, card);
+		card.focus();
+	}
+
+	/** Draw a quiz that was saved unanswered. Answering it grades and continues the tutor. */
+	private mountRestoredQuiz(quiz: PreparedQuiz): void {
+		this.dropRestoredQuiz();
+		const live = this.quizSettle.get(quiz.id);
+		if (live) {
+			this.mountOpenQuiz(quiz, (r) => live(r));
+			return;
+		}
+		const settle = (v: QuizResponse | null) => {
+			this.pending.delete(settle as (v: null) => void);
+			if (this.restoredQuizSettle === settle) this.restoredQuizSettle = null;
+			if (v) void this.answerRestoredQuiz(quiz, v);
+		};
+		this.restoredQuizSettle = settle as (v: null) => void;
+		this.pending.add(settle as (v: null) => void);
+		this.mountOpenQuiz(quiz, (r) => settle(r));
+	}
+
+	private dropRestoredQuiz(): void {
+		if (!this.restoredQuizSettle) return;
+		this.pending.delete(this.restoredQuizSettle);
+		this.restoredQuizSettle = null;
+	}
+
+	private async answerRestoredQuiz(quiz: PreparedQuiz, response: QuizResponse): Promise<void> {
+		if (this.resumedQuizIds.has(quiz.id)) return;
+		this.resumedQuizIds.add(quiz.id);
+		this.reader.release();
+		if (this.waitingQuiz?.id === quiz.id) this.waitingQuiz = null;
+		try {
+			const settled = await settleQuizAnswer(this.plugin.store, quiz, response, this.session, this.plugin.answerGrader());
+			if (this.record.openQuiz?.id === quiz.id) this.record.openQuiz = undefined;
+			if ("outcome" in settled) {
+				this.quizRecorded(settled.outcome);
+				await this.persist();
+				await this.continueTutor(
+					[
+						"The learner answered a quiz that was still open when they came back.",
+						describeQuizOutcome(settled.outcome),
+						"Already graded. Teach from this result.",
+					].join("\n\n"),
+				);
+			} else {
+				await this.persist();
+				await this.continueTutor(settled.pending);
+			}
+		} catch (err) {
+			this.resumedQuizIds.delete(quiz.id);
+			new Notice(`Couldn't record that answer: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	}
 
 	test(test: PreparedTest): Promise<TestResponse | null> {
@@ -933,12 +1051,14 @@ export class ChatView extends ItemView implements ToolUI {
 		this.asideCards.clear();
 		this.asideRanges.clear();
 		this.updateMarginMode();
-		if (!this.record.items.length) {
+		const open = pendingQuiz(this.record);
+		if (!this.record.items.length && !open) {
 			void this.renderEmpty();
 			return;
 		}
 		this.record.items.forEach((item, i) => this.renderItem(item, i));
 		for (const t of this.record.asides ?? []) this.mountAside(t);
+		if (open) this.mountRestoredQuiz(open);
 		this.scrollToBottom(true);
 	}
 
@@ -1102,9 +1222,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private scrollToBottom(force = false): void {
-		const el = this.uiMessagesEl;
-		const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-		if (force || nearBottom) el.scrollTop = el.scrollHeight;
+		this.reader.follow(this.uiMessagesEl, force);
 	}
 
 	refreshSyncIndicator(): void {
@@ -2749,20 +2867,27 @@ export class ChatView extends ItemView implements ToolUI {
 
 	// ── persistence ─────────────────────────────────────────────────────
 
-	private async persist(): Promise<void> {
-		this.record.updated = new Date().toISOString();
+	private persist(record = this.record): Promise<void> {
+		const job = this.persistQueue.then(() => this.writeChat(record));
+		this.persistQueue = job.catch(() => undefined);
+		return job;
+	}
+
+	private async writeChat(record: ChatRecord | undefined): Promise<void> {
+		if (!record) return;
+		record.updated = new Date().toISOString();
 		const store = this.plugin.store;
-		const asides = (this.record.asides ?? []).filter((t) => t.messages.length);
-		await store.writeFile(`${PATHS.chats}/${this.record.id}.json`, JSON.stringify({ ...this.record, asides, messages: withoutFileData(this.record.messages) }));
-		if (this.record.notePath) {
-			const path = this.record.notePath;
+		const asides = (record.asides ?? []).filter((t) => t.messages.length);
+		await store.writeFile(`${PATHS.chats}/${record.id}.json`, JSON.stringify({ ...record, asides, messages: withoutFileData(record.messages) }));
+		if (record.notePath) {
+			const path = record.notePath;
 			const existing = (await store.io.exists(path)) ? await store.io.read(path) : "";
 			const { frontmatter, body } = parseNote(existing);
-			const fm = { ...frontmatter, type: "session", date: this.record.created.slice(0, 10), chat: this.record.id, tags: ["groundwork/session"] };
-			const base = body.trim() ? body : `# ${this.record.title}\n`;
-			await store.writeFile(path, serializeNote(fm, setSection(base, "Transcript", transcript(this.record.items, this.record.asides))));
+			const fm = { ...frontmatter, type: "session", date: record.created.slice(0, 10), chat: record.id, tags: ["groundwork/session"] };
+			const base = body.trim() ? body : `# ${record.title}\n`;
+			await store.writeFile(path, serializeNote(fm, setSection(base, "Transcript", transcript(record.items, record.asides))));
 		}
-		this.renderHeader();
+		if (this.record?.id === record.id) this.renderHeader();
 	}
 
 	private async listChats(): Promise<ChatRecord[]> {
