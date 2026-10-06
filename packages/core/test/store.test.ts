@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MemoryVaultIO } from "../src/io";
 import { parseNote } from "../src/markdown";
-import { DEFAULT_LEARNER_PROFILE, goalChoiceLabel, KnowledgeStore } from "../src/store";
+import { DEFAULT_LEARNER_PROFILE, describeConceptProgress, describeGoalProgress, goalChoiceLabel, KnowledgeStore } from "../src/store";
 import { workingGoalNote } from "../src/prompt";
 import { toolByName } from "../src/tools";
 
@@ -75,7 +75,7 @@ describe("KnowledgeStore", () => {
 		expect(r2.analysis.frontier.map((n) => n.title).sort()).toEqual(["Limit", "Secant line"]);
 
 		const goalNote = await io.read("goals/Understand the derivative.md");
-		expect(goalNote).toContain("0/1 targets built");
+		expect(goalNote).toContain("1 of 4 concepts solid");
 		expect(goalNote).toContain("## Targets");
 		expect(goalNote).toContain("[[Derivative]]");
 		expect(goalNote).toContain("```mermaid");
@@ -360,5 +360,34 @@ nodes:
 		expect(await io.exists("concepts/.gitkeep")).toBe(true);
 		expect(await io.read("resources/Lecture 1.pdf")).toBe("pdf");
 		expect(await io.read("README.md")).toBe("# keep\n");
+	});
+});
+
+describe("goal progress wording", () => {
+	it("counts solid concepts in the goal, including one the goal has already built", () => {
+		expect(
+			describeGoalProgress([
+				{ status: "solid", role: "built" },
+				{ status: "rusty", role: "built" },
+				{ status: "learning", role: "path" },
+				{ status: "unassessed", role: "target" },
+			]),
+		).toBe("2 of 4 concepts solid");
+		expect(describeGoalProgress([])).toBe("no concepts");
+		expect(describeConceptProgress(4, 14)).toBe("4 of 14 concepts solid");
+	});
+
+	it("uses that sentence on the goal note and the working-goal chip", async () => {
+		const { store } = makeStore();
+		await store.setGoal({
+			title: "Rates",
+			targets: ["Limit"],
+			nodes: [{ title: "Limit" }],
+		});
+		const pinned = await toolByName("set_working_goal")!.run({ goal: "Rates" }, { store });
+		expect(pinned.summary).toBe("Working on “Rates”");
+		expect(pinned.summary).not.toMatch(/dropdown/i);
+		const cleared = await toolByName("set_working_goal")!.run({ goal: "you choose" }, { store });
+		expect(cleared.summary).toBe("No goal pinned");
 	});
 });

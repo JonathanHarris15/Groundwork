@@ -1,4 +1,4 @@
-import { masteryTone, MASTERY_HINT, MASTERY_TONES, STUDY_MOVE_HINT, studyMove, type ConceptMapModel, type ForceGraphData, type MasteryTone, type PathStep, type StudyMove } from "@groundwork/core";
+import { describeConceptProgress, masteryTone, MASTERY_HINT, MASTERY_TONES, STUDY_MOVE_HINT, studyMove, type ConceptMapModel, type ForceGraphData, type MasteryTone, type PathStep, type StudyMove } from "@groundwork/core";
 import { masteryDot, setTone, toneLabel } from "./mastery-ui";
 import { appendSvgFragment } from "./svg-fragment";
 import { mountConceptMapGraph, mountInteractiveGraph } from "./force-graph-host";
@@ -101,7 +101,7 @@ export function renderMapPane(parent: HTMLElement, model: ConceptMapModel | null
 	const filled = Math.round(model.total ? (model.inPlace / model.total) * 6 : 0);
 	for (let i = 0; i < 6; i++) el(prog, "i", i < filled ? "is-done" : i === filled ? "is-partial" : "");
 	const labels = el(body, "div", "gw-prog-label");
-	el(labels, "span", "", `${model.inPlace} of ${model.total} concepts in place`);
+	el(labels, "span", "", describeConceptProgress(model.inPlace, model.total));
 	const steps = el(body, "div", "gw-steps");
 	for (const step of model.steps) drawStep(steps, step, options);
 	const next = model.steps.find((step) => step.label === "Next") ?? model.steps.find((step) => step.tone === "unstarted");

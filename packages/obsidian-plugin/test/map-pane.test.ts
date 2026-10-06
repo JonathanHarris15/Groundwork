@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi } from "vitest";
-import { buildConceptMap, buildFromConceptMap, type ForceGraphData } from "@groundwork/core";
+import { buildConceptMap, buildFromConceptMap, describeConceptProgress, type ForceGraphData } from "@groundwork/core";
 
 vi.mock("../src/force-graph-host", () => ({ mountConceptMapGraph: vi.fn(), mountInteractiveGraph: vi.fn() }));
 
@@ -62,6 +62,7 @@ describe("map legend", () => {
 		const tones = [...parent.querySelectorAll<HTMLElement>(".gw-map-key .gw-tone-dot")].map((el) => el.dataset.tone);
 		expect(tones).toEqual(["solid", "shaky", "learning", "rusty", "unstarted", "goal", "learning"]);
 		expect(parent.querySelector(".gw-map-key")!.textContent).toContain("Off the path");
+		expect(parent.querySelector(".gw-prog-label")!.textContent).toBe(describeConceptProgress(model.inPlace, model.total));
 	});
 
 	it("still shows a legend with no goal pinned", () => {

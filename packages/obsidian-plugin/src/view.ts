@@ -362,8 +362,8 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 
 		const composer = root.createDiv({ cls: "gw-composer" });
-		this.uiPendingEl = composer.createDiv({ cls: "gw-pending" });
 		const box = composer.createDiv({ cls: "gw-box" });
+		this.uiPendingEl = box.createDiv({ cls: "gw-pending" });
 		this.uiInputEl = box.createEl("textarea", {
 			cls: "gw-input",
 			attr: { rows: "1", placeholder: "Answer, ask a question, or say what you want to learn", title: "Enter to send · Shift+Enter for a new line · paste or drop files to attach" },
@@ -1093,8 +1093,9 @@ export class ChatView extends ItemView implements ToolUI {
 				const row = this.uiMessagesEl.createDiv({ cls: "gw-msg-row is-me" });
 				row.createDiv({ cls: "gw-avatar is-me", text: this.learnerInitial() });
 				const body = row.createDiv({ cls: "gw-msg-body" });
-				if (item.attachments?.length) this.renderFiles(body.createDiv({ cls: "gw-user-files" }), item.attachments);
-				if (item.text) body.createDiv({ cls: "gw-msg gw-user", text: item.text });
+				const bubble = body.createDiv({ cls: "gw-msg gw-user" });
+				if (item.attachments?.length) this.renderFiles(bubble.createDiv({ cls: "gw-user-files" }), item.attachments);
+				if (item.text) bubble.createDiv({ cls: "gw-user-text", text: item.text });
 				break;
 			}
 			case "assistant": {

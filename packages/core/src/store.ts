@@ -25,7 +25,8 @@ import {
 } from "./markdown";
 import { pickReadyStep, refineGoalInput, resolveForEvidence, type ResolvedConcept } from "./judgments";
 import { type JevClient } from "./jev";
-import { computeStats, describeEdge, emptyStats, isDue, type ConceptStats, type Evidence } from "./model";
+import { masteryTone } from "./mastery-tone";
+import { computeStats, describeEdge, emptyStats, isDue, type ConceptStats, type ConceptStatus, type Evidence } from "./model";
 
 export const PATHS = {
 	concepts: "concepts",
@@ -1151,7 +1152,7 @@ export class KnowledgeStore {
 		const { frontmatter, body } = parseNote(await this.io.read(goal.path));
 		const name = (id: string) => report.nodes.find((n) => n.id === id)?.title ?? id;
 		frontmatter.status = goal.status;
-		frontmatter.progress = describeGoalProgress(goal);
+		frontmatter.progress = describeGoalProgress(report.nodes);
 		frontmatter.targets = goal.targets.length ? goal.targets.map((id) => wikilink(name(id))) : undefined;
 		frontmatter.built = goal.built.length ? goal.built.map((id) => wikilink(name(id))) : undefined;
 		const required: Record<string, number> = {};
@@ -1168,7 +1169,7 @@ export class KnowledgeStore {
 			"> [!info] Legend",
 			"> Hexagons are targets (not built yet). Rounded nodes are targets already built. Rectangles are steps on the way. Arrows point from a prerequisite to what it unlocks. Green = solid, orange = shaky, blue = learning, purple = rusty (review due), grey = not started.",
 			"",
-			`### Progress — ${describeGoalProgress(goal)}`,
+			`### Progress — ${describeGoalProgress(report.nodes)}`,
 			"",
 			"| Concept | Role | Status | Now | Edge | Need |",
 			"| --- | --- | --- | --- | --- | --- |",
@@ -1341,7 +1342,7 @@ export class KnowledgeStore {
 				sources: g.sources,
 				targets: r.goal.targets.map(titleOf),
 				built: r.goal.built.map(titleOf),
-				progress: describeGoalProgress(r.goal),
+				progress: describeGoalProgress(r.nodes),
 				next: r.analysis.frontier.map((n) => n.title),
 			});
 		}
@@ -1481,10 +1482,16 @@ function dropRequiredKey(v: unknown, id: string): Record<string, number> | undef
 	return Object.keys(out).length ? out : undefined;
 }
 
-export function describeGoalProgress(goal: Pick<Goal, "targets" | "built">): string {
-	const total = goal.targets.length + goal.built.length;
-	if (!total) return "no targets";
-	return `${goal.built.length}/${total} targets built`;
+/** Solid concepts over every concept in the goal. The map, goals, and chat use this sentence. */
+export function describeConceptProgress(solid: number, total: number): string {
+	if (!total) return "no concepts";
+	return `${solid} of ${total} concepts solid`;
+}
+
+/** Same count the map paints: a concept the goal has built still counts after it fades. */
+export function describeGoalProgress(nodes: ReadonlyArray<{ status: ConceptStatus; role?: "target" | "built" | "path" }>): string {
+	const solid = nodes.filter((node) => masteryTone(node.status, node.role === "built") === "solid").length;
+	return describeConceptProgress(solid, nodes.length);
 }
 
 function goalTargetTitles(input: GoalInput): string[] {

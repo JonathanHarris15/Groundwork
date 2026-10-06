@@ -1,4 +1,4 @@
-import { daysLeftPhrase, type StudyMove } from "@groundwork/core";
+import { daysLeftPhrase, describeConceptProgress, type StudyMove } from "@groundwork/core";
 import { paceLabel, type GoalBoardView, type GoalConceptRow } from "./goal-board";
 import { masteryDot, masteryPill, setTone } from "./mastery-ui";
 import { appendSvgFragment } from "./svg-fragment";
@@ -135,7 +135,7 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 	label.textContent = `${pct}%`;
 	ringSvg.append(track, arc, label);
 	ring.append(ringSvg);
-	el(ring, "div", "gw-ring-label", `ready, weighted by the goal\n${board.knownCount} of ${board.conceptCount} concepts solid`);
+	el(ring, "div", "gw-ring-label", `ready, weighted by the goal\n${describeConceptProgress(board.knownCount, board.conceptCount)}`);
 
 	const list = el(main, "div", "gw-concept-list");
 	const head = el(list, "div", "gw-concept-head");
