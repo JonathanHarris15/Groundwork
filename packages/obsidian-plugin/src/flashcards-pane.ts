@@ -296,7 +296,8 @@ export class FlashcardsPane {
 			});
 			return;
 		}
-		const stack = stage.createDiv({ cls: "gw-fc-stack" });
+		const study = stage.createDiv({ cls: "gw-fc-study" });
+		const stack = study.createDiv({ cls: "gw-fc-stack" });
 		if (this.queue.length > 2) stack.createDiv({ cls: "gw-ghostcard gw-gc2" });
 		if (this.queue.length > 1) stack.createDiv({ cls: "gw-ghostcard gw-gc1" });
 		const face = stack.createDiv({ cls: "gw-fcard" });
@@ -338,13 +339,12 @@ export class FlashcardsPane {
 			masteryDot(feeds, this.conceptTone(card.concept));
 			feeds.createSpan({ text: `Counts a little toward ${card.concept}` });
 		}
-		const rate = parent.createDiv({ cls: "gw-fc-rate" });
+		const rate = study.createDiv({ cls: "gw-fc-rate" });
 		for (const item of RATINGS) {
 			const preview = previewIntervals(card).find((p) => p.rating === item.rating)!;
 			const button = rate.createEl("button", { cls: `gw-rb gw-rb-${item.rating}`, attr: { type: "button" } });
-			const label = button.createEl("b");
-			label.createSpan({ text: item.label });
-			label.createEl("kbd", { text: item.key });
+			button.createEl("kbd", { text: item.key });
+			button.createEl("b", { text: item.label });
 			button.createSpan({ text: preview.label });
 			button.addEventListener("click", () => void this.rate(item.rating));
 		}

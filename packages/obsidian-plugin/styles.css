@@ -335,7 +335,8 @@ body.theme-light .gw-root.gw-theme-obsidian {
 .gw-library-scroll {
 	flex: 1;
 	overflow-y: auto;
-	padding: 14px max(14px, calc((100% - var(--gw-column)) / 2)) 28px;
+	box-sizing: border-box;
+	padding: 14px max(14px, calc((100% - var(--gw-column)) / 2)) calc(28px + var(--gw-bottom-inset));
 	display: flex;
 	flex-direction: column;
 	gap: 22px;
@@ -2221,15 +2222,14 @@ body .gw-root button.gw-lib-tab.is-active {
 	height: 12px;
 }
 .gw-user-files {
-	align-self: flex-end;
 	display: flex;
 	flex-wrap: wrap;
-	justify-content: flex-end;
 	align-items: center;
 	gap: 6px;
-	max-width: 85%;
-	margin-bottom: -6px;
+	margin: 0 0 8px;
 }
+.gw-user-files:last-child { margin-bottom: 0; }
+.gw-box > .gw-pending:not(:empty) { margin-bottom: 8px; }
 .gw-file-thumb {
 	max-width: 220px;
 	max-height: 160px;
@@ -2422,7 +2422,9 @@ body .gw-root button.gw-lib-tab.is-active {
 	border: 1px solid var(--gw-line-strong);
 	border-radius: 12px;
 	padding: 10px 14px;
+	white-space: normal;
 }
+.gw-user-text { white-space: pre-wrap; }
 .gw-assistant, .gw-root .markdown-rendered { color: var(--gw-ink); font-family: var(--gw-font); }
 .gw-card, .gw-quiz {
 	border: 1px solid var(--gw-line-strong);
@@ -2490,10 +2492,15 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-map-row, .gw-goals-row { flex: 1; display: flex; min-height: 0; min-width: 0; }
 .gw-mapwrap {
 	flex: 1; position: relative; min-width: 0; min-height: 220px;
+	display: flex; flex-direction: column;
 	background: radial-gradient(circle at 70% 45%, rgba(240, 86, 91, 0.06), transparent 45%), var(--gw-map);
 }
-.gw-concept-map,
-.gw-force-map { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gw-mapwrap > .gw-force-map,
+.gw-mapwrap > .gw-concept-map {
+	position: relative; inset: auto; flex: 1 1 auto; min-height: 0;
+	width: 100%; height: auto;
+}
+.gw-mapwrap > .gw-map-empty { flex: 1; }
 .gw-map-toolbar { position: absolute; left: 16px; top: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 32px); }
 .gw-map-click-hint {
 	margin: 0;
@@ -2523,7 +2530,8 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-switch-ui.is-on { background: #45a9f0; }
 .gw-switch-ui.is-on::after { left: auto; right: 2px; }
 .gw-map-key {
-	position: absolute; left: 16px; bottom: 14px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+	position: static; flex: none; margin: 0 16px calc(14px + var(--gw-bottom-inset));
+	display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
 	font-size: 12px; color: var(--gw-muted); background: color-mix(in srgb, var(--gw-paper) 88%, transparent);
 	border: 1px solid var(--gw-line); border-radius: 10px; padding: 8px 12px;
 }
@@ -2551,6 +2559,7 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-side {
 	width: 320px; flex: none; background-color: var(--gw-raised); border-left: 1px solid var(--gw-line);
 	display: flex; flex-direction: column; min-height: 0; overflow: auto; isolation: isolate;
+	box-sizing: border-box; padding-bottom: var(--gw-bottom-inset);
 }
 .gw-side-head {
 	height: 40px; display: flex; align-items: center; padding: 0 16px;
@@ -2654,7 +2663,7 @@ body .gw-root button.gw-step.is-off { color: var(--gw-muted); }
 	display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
 }
 .gw-next-btn svg { width: 15px; height: 15px; }
-.gw-goals { flex: 1; min-width: 0; flex-direction: column; gap: 16px; padding: 16px 18px 18px; overflow: auto; }
+.gw-goals { flex: 1; min-width: 0; flex-direction: column; gap: 16px; padding: 16px 18px calc(18px + var(--gw-bottom-inset)); overflow: auto; box-sizing: border-box; }
 .gw-goal-tabs { display: flex; gap: 6px; align-items: center; overflow-x: auto; }
 .gw-goal-tab {
 	display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px;
@@ -2824,13 +2833,13 @@ body .gw-root button.gw-text-btn:hover {
 }
 @container (max-width: 860px) {
 	.gw-header { height: auto; min-height: 48px; flex-wrap: wrap; padding: 8px 12px; }
-	.gw-map-row, .gw-goals-row { flex-direction: column; overflow: auto; }
+	.gw-map-row, .gw-goals-row { flex-direction: column; overflow: auto; box-sizing: border-box; padding-bottom: var(--gw-bottom-inset); }
 	/* Stacked, the row scrolls as one; a flexible main column would be squeezed to a sliver by the rail. */
 	.gw-goals-row > .gw-goals { flex: none; overflow: visible; }
 	.gw-side { width: auto; flex: none; border-left: 0; border-top: 1px solid var(--gw-line); }
 	.gw-mapwrap { min-height: 360px; flex: none; display: flex; flex-direction: column; }
 	.gw-mapwrap > .gw-force-map { position: relative; inset: auto; height: auto; flex: 1 1 auto; min-height: 320px; }
-	.gw-map-key { position: static; margin: 0 12px 12px; }
+	.gw-map-key { position: static; margin: 0 12px calc(12px + var(--gw-bottom-inset)); }
 	.gw-goal-hero { grid-template-columns: 1fr; }
 	.gw-ring { border-left: 0; border-top: 1px solid var(--gw-line); padding-top: 12px; }
 	.gw-days b { font-size: 42px; }
@@ -3172,7 +3181,8 @@ body .gw-root button.gw-fc-lib-deck.is-on {
 	display: flex;
 	flex-direction: column;
 	gap: 18px;
-	padding: 18px 28px 20px;
+	box-sizing: border-box;
+	padding: 18px 28px calc(20px + var(--gw-bottom-inset));
 }
 .gw-fc-top {
 	display: flex;
@@ -3274,13 +3284,19 @@ body .gw-root select.gw-deck-select:focus-visible {
 	margin-top: 6px;
 }
 .gw-fc-stage {
-	flex: 1;
-	min-height: 220px;
+	flex: 0 0 auto;
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
 	align-items: stretch;
 	justify-content: flex-start;
-	gap: 16px;
+}
+.gw-fc-study {
+	width: min(640px, 100%);
+	margin: 0 auto;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
 }
 .gw-fc-unpinned .gw-fc-main {
 	justify-content: center;
@@ -3299,9 +3315,9 @@ body .gw-root select.gw-deck-select:focus-visible {
 /* Sized by the front card, so the cards stacked behind it peek out by their offset and no more. */
 .gw-fc-stack {
 	position: relative;
-	width: min(640px, 100%);
+	width: 100%;
 	max-width: 100%;
-	margin: 0 auto 20px;
+	margin: 0;
 	flex: none;
 }
 .gw-ghostcard {
@@ -3319,7 +3335,7 @@ body .gw-root select.gw-deck-select:focus-visible {
 	position: relative;
 	display: flex;
 	flex-direction: column;
-	min-height: 260px;
+	min-height: 0;
 	background: var(--gw-fc-card);
 	border: 1px solid var(--gw-fc-line);
 	border-radius: 18px;
@@ -3367,8 +3383,8 @@ body .gw-root select.gw-deck-select:focus-visible {
 	flex: none;
 }
 .gw-fcard-front {
-	flex: 1 1 auto;
-	min-height: 120px;
+	flex: 0 0 auto;
+	min-height: 88px;
 	padding-top: 22px;
 	padding-bottom: 12px;
 	font-size: 22px;
@@ -3383,9 +3399,15 @@ body .gw-root select.gw-deck-select:focus-visible {
 	font-style: italic;
 }
 .gw-fcard-back {
-	font-size: 16px;
-	line-height: 1.6;
-	padding-bottom: 18px;
+	font-size: 22px;
+	line-height: 1.45;
+	padding-top: 4px;
+	padding-bottom: 22px;
+}
+.gw-fcard-back .math,
+.gw-fcard-back .katex,
+.gw-fcard-back .math-block {
+	font-size: 1.05em;
 }
 .gw-flipline {
 	display: flex;
@@ -3492,29 +3514,40 @@ body .gw-root select.gw-deck-select:focus-visible {
 	display: grid;
 	grid-template-columns: repeat(4, minmax(0, 1fr));
 	gap: 10px;
-	width: min(640px, 100%);
-	margin: 0 auto;
+	width: 100%;
+	margin: 0;
 }
 .gw-rb {
+	position: relative;
 	border-radius: 12px;
 	border: 1px solid var(--gw-fc-line);
 	background: var(--background-primary);
-	padding: 10px 12px;
+	padding: 16px 8px 10px;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 2px;
+	gap: 4px;
 	cursor: pointer;
 	color: inherit;
+	min-width: 0;
+}
+.gw-rb kbd {
+	position: absolute;
+	top: 6px;
+	right: 6px;
 }
 .gw-rb b {
 	font-size: 15px;
 	font-weight: 500;
-	display: flex;
-	align-items: center;
-	gap: 8px;
+	display: block;
+	text-align: center;
+	line-height: 1.2;
 }
-.gw-rb span { font-size: 12px; color: var(--gw-fc-muted); }
+.gw-rb span { font-size: 11px; color: var(--gw-fc-muted); line-height: 1.2; }
+.gw-rb:focus-visible {
+	outline: 2px solid var(--gw-line-strong);
+	outline-offset: 2px;
+}
 .gw-rb-again { border-color: color-mix(in srgb, var(--gw-again) 45%, var(--gw-fc-line)); }
 .gw-rb-again b { color: var(--gw-again-ink); }
 .gw-rb-hard { border-color: color-mix(in srgb, var(--gw-hard) 45%, var(--gw-fc-line)); }
