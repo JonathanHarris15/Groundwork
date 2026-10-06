@@ -1,11 +1,14 @@
-import { Notice } from "obsidian";
+import { Menu, Modal, Notice, type App } from "obsidian";
 import {
 	cardsInDeck,
 	createDeck,
 	createFlashcard,
+	DEFAULT_DECK_ID,
+	deleteDeck,
 	deleteFlashcard,
 	exportFlashcards,
 	loadFlashcardLibrary,
+	renameDeck,
 	syncFlashcards,
 	updateFlashcard,
 	type Flashcard,
@@ -15,6 +18,7 @@ import {
 import { paintMarkdown, type RenderMarkdown } from "./markdown-face";
 
 export interface FlashcardsLibraryHost {
+	app: App;
 	store: KnowledgeStore;
 	writeFolders: () => string[];
 	/** Open this deck in the Flashcards tab. */
@@ -96,6 +100,17 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 				drawDecks();
 				drawCards();
 			});
+			row.addEventListener("contextmenu", (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				selectedDeckId = deck.id;
+				drawDecks();
+				drawCards();
+				const menu = new Menu();
+				menu.addItem((item) => item.setTitle("Rename").onClick(() => startRename(deck.id)));
+				if (deck.id !== DEFAULT_DECK_ID) menu.addItem((item) => item.setTitle("Delete").onClick(() => askDeleteDeck(deck.id)));
+				menu.showAtMouseEvent(event);
+			});
 		}
 	};
 
@@ -107,11 +122,29 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 			return;
 		}
 		const head = main.createDiv({ cls: "gw-fc-lib-head" });
-		head.createEl("h3", { text: deck.title });
+		const titleWrap = head.createDiv({ cls: "gw-fc-lib-title" });
+		titleWrap.createEl("h3", { text: deck.title });
+		if (deck.id === DEFAULT_DECK_ID) {
+			titleWrap.createEl("p", { cls: "gw-fc-lib-note", text: "Cards that aren't put in a deck go here." });
+		}
 		const headTools = head.createDiv({ cls: "gw-fc-lib-tools" });
 		const study = headTools.createEl("button", { cls: "gw-lib-btn", text: "Study this deck", attr: { type: "button" } });
 		study.addEventListener("click", () => host.onStudy(deck.id));
 		const addBtn = headTools.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Add card", attr: { type: "button" } });
+		const rename = headTools.createEl("button", {
+			cls: "gw-lib-btn",
+			text: "Rename",
+			attr: { type: "button", "aria-label": `Rename ${deck.title}` },
+		});
+		rename.addEventListener("click", () => startRename(deck.id));
+		if (deck.id !== DEFAULT_DECK_ID) {
+			const remove = headTools.createEl("button", {
+				cls: "gw-lib-btn is-danger",
+				text: "Delete",
+				attr: { type: "button", "aria-label": `Delete ${deck.title}` },
+			});
+			remove.addEventListener("click", () => askDeleteDeck(deck.id));
+		}
 		const list = main.createDiv({ cls: "gw-fc-lib-cards" });
 		addBtn.addEventListener("click", () => {
 			const form = cardForm(
@@ -155,23 +188,52 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 			);
 			row.replaceWith(form);
 		});
-		const del = rowTools.createEl("button", { cls: "gw-lib-btn", text: "Delete", attr: { type: "button", "aria-label": `Delete card: ${card.front.slice(0, 60)}` } });
+		const del = rowTools.createEl("button", { cls: "gw-lib-btn is-danger", text: "Delete", attr: { type: "button", "aria-label": `Delete card: ${card.front.slice(0, 60)}` } });
 		del.addEventListener("click", () => {
-			if (del.dataset.armed !== "1") {
-				del.dataset.armed = "1";
-				del.setText("Delete?");
-				del.addClass("is-danger");
-				window.setTimeout(() => {
-					if (del.dataset.armed !== "1") return;
-					del.dataset.armed = "";
-					del.setText("Delete");
-					del.removeClass("is-danger");
-				}, 3000);
-				return;
-			}
-			del.dataset.armed = "";
-			void deleteFlashcard(host.store, card.id).then(redraw, (err: unknown) => new Notice(err instanceof Error ? err.message : String(err)));
+			openConfirm(cardDeleteCopy(), async () => {
+				await deleteFlashcard(host.store, card.id);
+				await redraw();
+			});
 		});
+	};
+
+	const startRename = (deckId: string) => {
+		const deck = libraryDecks(lib).find((item) => item.id === deckId);
+		if (!deck) return;
+		selectedDeckId = deckId;
+		drawDecks();
+		drawCards();
+		const title = main.querySelector(".gw-fc-lib-title");
+		const head = main.querySelector(".gw-fc-lib-head");
+		if (!title || !head) return;
+		head.classList.add("is-renaming");
+		const form = renameField(
+			main,
+			deck.title,
+			async (next) => {
+				await renameDeck(host.store, deck.id, next);
+				await redraw();
+			},
+			() => drawCards(),
+		);
+		title.replaceWith(form);
+	};
+
+	const askDeleteDeck = (deckId: string) => {
+		if (deckId === DEFAULT_DECK_ID) return;
+		const deck = lib.decks.find((item) => item.id === deckId);
+		if (!deck) return;
+		openConfirm(deckDeleteCopy(deck.title, cardsInDeck(lib, deckId).length), async () => {
+			await deleteDeck(host.store, deckId);
+			await redraw();
+		});
+	};
+
+	const openConfirm = (copy: ConfirmCopy, run: () => Promise<void>) => {
+		const modal = new ConfirmModal(host.app, copy, () => {
+			void run().catch((err: unknown) => new Notice(err instanceof Error ? err.message : String(err)));
+		});
+		modal.open();
 	};
 
 	const redraw = async () => {
@@ -266,5 +328,102 @@ function deckNameForm(owner: HTMLElement, save: (title: string) => Promise<void>
 		commit();
 	});
 	window.setTimeout(() => name.focus(), 0);
+	return form;
+}
+
+interface ConfirmCopy {
+	heading: string;
+	body: string;
+	confirmLabel: string;
+}
+
+function deckDeleteCopy(title: string, count: number): ConfirmCopy {
+	const cards = count === 1 ? "1 card" : `${count} cards`;
+	const lead =
+		count === 0
+			? `Delete "${title}"? It has no cards. This removes the deck from your account.`
+			: `Delete "${title}" and its ${cards}? This removes them from your account.`;
+	return {
+		heading: "Delete this deck?",
+		body: `${lead} Notes already in the vault stay there, and they will not come back.`,
+		confirmLabel: "Delete deck",
+	};
+}
+
+function cardDeleteCopy(): ConfirmCopy {
+	return {
+		heading: "Delete this card?",
+		body: "This removes it from your account. If you already exported it, the note stays in your vault and will not come back.",
+		confirmLabel: "Delete card",
+	};
+}
+
+class ConfirmModal extends Modal {
+	constructor(
+		app: App,
+		private readonly copy: ConfirmCopy,
+		private readonly onYes: () => void,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.setTitle(this.copy.heading);
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("p", { text: this.copy.body });
+		const row = contentEl.createDiv({ cls: "modal-button-container" });
+		const cancel = row.createEl("button", { text: "Cancel", attr: { type: "button" } });
+		const ok = row.createEl("button", { cls: "mod-warning", text: this.copy.confirmLabel, attr: { type: "button" } });
+		cancel.addEventListener("click", () => this.close());
+		ok.addEventListener("click", () => {
+			this.close();
+			this.onYes();
+		});
+		window.setTimeout(() => cancel.focus(), 0);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+function renameField(owner: HTMLElement, current: string, save: (title: string) => Promise<void>, onCancel: () => void): HTMLElement {
+	const form = owner.ownerDocument.createElement("div");
+	form.className = "gw-fc-lib-rename";
+	const row = form.createDiv({ cls: "gw-fc-lib-rename-row" });
+	const name = row.createEl("input", {
+		cls: "gw-fc-input",
+		attr: { name: "deck-name", "aria-label": "Deck name", autocomplete: "off", spellcheck: "false" },
+	});
+	name.value = current;
+	name.setAttribute("value", current);
+	const saveBtn = row.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Save", attr: { type: "button" } });
+	const cancel = row.createEl("button", { cls: "gw-lib-btn", text: "Cancel", attr: { type: "button" } });
+	const error = form.createDiv({ cls: "gw-fc-form-error", attr: { role: "alert" } });
+	cancel.addEventListener("click", onCancel);
+	const commit = () => {
+		if (saveBtn.disabled) return;
+		saveBtn.disabled = true;
+		error.setText("");
+		void save(name.value)
+			.catch((err: unknown) => {
+				error.setText(err instanceof Error ? err.message : String(err));
+				name.focus();
+			})
+			.finally(() => {
+				saveBtn.disabled = false;
+			});
+	};
+	saveBtn.addEventListener("click", commit);
+	name.addEventListener("keydown", (event) => {
+		if (event.key !== "Enter") return;
+		event.preventDefault();
+		commit();
+	});
+	window.setTimeout(() => {
+		name.focus();
+		name.select();
+	}, 0);
 	return form;
 }

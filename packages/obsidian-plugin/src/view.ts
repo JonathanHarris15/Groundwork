@@ -1642,6 +1642,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 		if (this.libraryTab === "flashcards") {
 			await renderFlashcardsLibrary(scroll, {
+				app: this.app,
 				store,
 				writeFolders: () => this.plugin.settings.writeFolders,
 				onStudy: (deckId) => void this.studyDeck(deckId),

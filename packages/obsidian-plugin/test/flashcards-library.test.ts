@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { emptyFlashcardLibrary, makeCard } from "@groundwork/core";
 
-vi.mock("obsidian", () => ({ Notice: class {} }));
+vi.mock("obsidian", () => ({
+	Notice: class {},
+	Modal: class {},
+	Menu: class {},
+}));
 const { libraryDecks } = await import("../src/flashcards-library-pane");
 
 const NOW = new Date("2026-10-02T12:00:00.000Z");
