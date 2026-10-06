@@ -56,7 +56,7 @@ resources/HW2.md                optional vault context, only if you add that fol
 exams/Prepare for the midterm.md  topics + required depth parsed from those files
 learner.md                      your background and how you learn best (the tutor reads + appends)
 .groundwork/evidence/*.jsonl    append-only quiz evidence: the source of truth
-.groundwork/flashcards.json     flashcard decks and the review schedule
+.groundwork/flashcards.json     flashcard decks
 .groundwork/chats/*.json        chat history, so sessions resume on any machine
 ```
 
@@ -154,7 +154,7 @@ Attach files to a message with the paperclip (**Upload from this computer** or *
 
 The tutor reads images (PNG, JPEG, GIF, WebP), PDFs, and text files (markdown, code, CSV, LaTeX, …) from those folders (`list_vault_files`, `read_vault_file`): drop your lecture notes or textbook into a read folder and say "use my lecture 3 notes". Ask it to write up answers and it saves a markdown file in a write folder. With the Claude subscription, PDFs are read with Claude Code's `Read` tool, held to the same read folders. Groundwork splits PDFs longer than 10 pages or larger than 16 MB into parts under `.groundwork/cache/pdf-parts/` (ignored by git) so each part opens whole, with no need for poppler (`pdftoppm`) on the machine. Limits: 50 MB per upload (the vault is a git repo), and images must be under 5 MB and PDFs under 20 MB to be sent inline. Saved chats don't store file contents, only the paths.
 
-**Flashcards** (the layers icon in the tutor panel) are spaced-repetition cards in decks you name. A deck is not tied to a goal. Make one in Library and add cards, or ask the tutor to make cards for a deck. The tutor does not make cards from teaching notes unless you ask. The schedule and the card text live on the account with the rest of tutor memory. Nothing is written into the vault until you choose **Write cards into the vault**, which copies them as plain Markdown into `flashcards/` inside each folder the tutor can write. A hand edit of one of those notes is pulled back onto the account the next time the deck opens. Rating Again, Hard, Good, or Easy updates that concept on the map.
+**Flashcards** (the layers icon in the tutor panel) are decks you name and open when you want. A deck is not tied to a goal, and a card does not have a due date. Make one in Library and add cards, or ask the tutor to make cards for a deck. Delete a deck when you are done with it. The tutor does not make cards from teaching notes unless you ask. The card text lives on the account with the rest of tutor memory. Nothing is written into the vault until you choose **Export to vault**, which copies them as plain Markdown into `flashcards/` inside each folder the tutor can write. A hand edit of one of those notes is pulled back onto the account the next time the deck opens.
 
 ## CLI reference
 

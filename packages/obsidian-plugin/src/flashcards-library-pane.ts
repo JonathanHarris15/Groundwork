@@ -3,6 +3,7 @@ import {
 	cardsInDeck,
 	createDeck,
 	createFlashcard,
+	deleteDeck,
 	deleteFlashcard,
 	exportFlashcards,
 	loadFlashcardLibrary,
@@ -39,7 +40,7 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 	const section = parent.createDiv({ cls: "gw-lib-section gw-lib-flashcards" });
 	section.createDiv({
 		cls: "gw-lib-help",
-		text: "Make a deck and add cards, or ask the tutor to make them. A deck is not tied to a goal.",
+		text: "Decks are optional, and they are not tied to a goal. Make one and add cards, or ask the tutor. Open a deck whenever you want.",
 	});
 
 	let lib: FlashcardLibrary;
@@ -112,6 +113,29 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 		const study = headTools.createEl("button", { cls: "gw-lib-btn", text: "Study this deck", attr: { type: "button" } });
 		study.addEventListener("click", () => host.onStudy(deck.id));
 		const addBtn = headTools.createEl("button", { cls: "gw-lib-btn mod-cta", text: "Add card", attr: { type: "button" } });
+		const deleteDeckBtn = headTools.createEl("button", {
+			cls: "gw-lib-btn",
+			text: "Delete deck",
+			attr: { type: "button", "aria-label": `Delete deck: ${deck.title}` },
+		});
+		deleteDeckBtn.addEventListener("click", () => {
+			if (deleteDeckBtn.dataset.armed !== "1") {
+				deleteDeckBtn.dataset.armed = "1";
+				deleteDeckBtn.setText("Delete deck and cards?");
+				deleteDeckBtn.setAttribute("aria-label", `Delete ${deck.title} and its cards?`);
+				deleteDeckBtn.addClass("is-danger");
+				window.setTimeout(() => {
+					if (deleteDeckBtn.dataset.armed !== "1") return;
+					deleteDeckBtn.dataset.armed = "";
+					deleteDeckBtn.setText("Delete deck");
+					deleteDeckBtn.setAttribute("aria-label", `Delete deck: ${deck.title}`);
+					deleteDeckBtn.removeClass("is-danger");
+				}, 3000);
+				return;
+			}
+			deleteDeckBtn.dataset.armed = "";
+			void deleteDeck(host.store, deck.id, host.writeFolders()).then(redraw, (err: unknown) => new Notice(err instanceof Error ? err.message : String(err)));
+		});
 		const list = main.createDiv({ cls: "gw-fc-lib-cards" });
 		addBtn.addEventListener("click", () => {
 			const form = cardForm(
@@ -170,7 +194,7 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 				return;
 			}
 			del.dataset.armed = "";
-			void deleteFlashcard(host.store, card.id).then(redraw, (err: unknown) => new Notice(err instanceof Error ? err.message : String(err)));
+			void deleteFlashcard(host.store, card.id, host.writeFolders()).then(redraw, (err: unknown) => new Notice(err instanceof Error ? err.message : String(err)));
 		});
 	};
 

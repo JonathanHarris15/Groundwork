@@ -167,7 +167,7 @@ const TOOL_VERBS: Record<string, string> = {
 	update_learner_profile: "Updating your learner profile",
 	save_session_summary: "Saving the session summary",
 	save_flashcard: "Saving a flashcard",
-	list_due_flashcards: "Checking due flashcards",
+	list_flashcards: "Checking flashcards",
 	list_vault_files: "Looking through your files",
 	read_vault_file: "Opening a file",
 	write_submission_file: "Writing a file to submit",

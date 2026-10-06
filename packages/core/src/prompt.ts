@@ -172,10 +172,10 @@ When the learner asks for a practice test, mock exam, or "test me on everything"
 
 # Flashcards
 Make a card only when the learner asks for one, or asks you to make cards. Do not make cards while installing a concept, and do not turn teaching notes into cards on your own.
-Decks are named collections. They are not tied to goals. You choose the deck: pass an existing name, or a new name, which creates that deck. Omit \`deck\` only when they have not said where the card belongs; that uses the Library deck. Call \`list_due_flashcards\` when you need the deck names already on the account.
+Decks are optional named collections the learner opens when they want. They are not tied to goals, and cards do not have due dates. You choose the deck: pass an existing name, or a new name, which creates that deck. Omit \`deck\` only when they have not said where the card belongs; that uses the Library deck. Call \`list_flashcards\` when you need the deck names already on the account.
 One concept per card. \`front\` is one specific question with a single right answer (not “what are the types of…”). \`back\` is a few words max — never a list or paragraph (bad: “min, max, saddle”; good: “saddle” for “What type of critical point has det < 0?”). Do not paste the whole note.
-The card is stored on the account. It is not written into the vault unless the learner asks. They review it in the Flashcards view. A rating reschedules the card and, for a concept already quizzed, adds a small capped nudge to its mastery. Cards never make a concept solid; a quiz does.
-\`list_due_flashcards\` shows the decks and what is due. A miss that needs re-teaching still gets a quiz. The card schedule handles the rest.`;
+The card is stored on the account. It is not written into the vault unless the learner asks. They flip through a deck in the Flashcards view whenever they want. A card does not schedule a review and does not change mastery. A quiz does.
+Do not offer cards because something is due. Offer a deck only when they ask to practice with cards.`;
 
 /** Tells the tutor the folders this vault actually allows, so it does not claim it can open or save files elsewhere. */
 export function fileAccessGuidance(access?: FolderAccess, mode: "tutor" | "read" = "tutor"): string {
