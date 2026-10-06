@@ -103,6 +103,9 @@ export function createBilling(stripe: Stripe, prices: { byom: string; included: 
 				cancel_url: `${origin}/?billing=cancel`,
 				metadata: { uid, plan },
 				subscription_data: { metadata: { uid, plan } },
+				allow_promotion_codes: true,
+				// A 100% off code makes the total $0. Stripe then skips the card.
+				payment_method_collection: "if_required",
 			});
 			if (!session.url) throw new Error("Stripe did not return a checkout link.");
 			return session.url;

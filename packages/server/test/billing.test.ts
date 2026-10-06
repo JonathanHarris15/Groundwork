@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { AccountDirectory } from "../src/accounts";
-import { applyStripeEvent, createBilling, escapeStripeSearch, resetStripeEventDedupe, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
+import { applyStripeEvent, createBilling, escapeStripeSearch, planFromSubscription, resetStripeEventDedupe, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
 
 const prices = { byom: "price_byom", included: "price_included" };
 
@@ -32,6 +32,71 @@ function stripeFake(opts: {
 		},
 	};
 }
+
+describe("checkout promotion codes", () => {
+	it("opens Checkout with a promotion-code field and does not require a card when the total is zero", async () => {
+		const accounts = new AccountDirectory();
+		let created: Record<string, unknown> | undefined;
+		const stripe = {
+			customers: {
+				async create() {
+					return { id: "cus_new" };
+				},
+			},
+			checkout: {
+				sessions: {
+					async create(params: Record<string, unknown>) {
+						created = params;
+						return { url: "https://checkout.stripe.test/session", amount_total: 0 };
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.checkout("ada", "ada@example.com", "byom", "https://groundwork.test")).resolves.toBe(
+			"https://checkout.stripe.test/session",
+		);
+		expect(created).toMatchObject({
+			mode: "subscription",
+			customer: "cus_new",
+			allow_promotion_codes: true,
+			payment_method_collection: "if_required",
+			line_items: [{ price: "price_byom", quantity: 1 }],
+		});
+		await expect(accounts.customerId("ada")).resolves.toBe("cus_new");
+	});
+
+	it("keeps a 100% off forever subscription on our price and sets the plan", async () => {
+		const subscription = {
+			status: "active",
+			customer: "cus_ada",
+			metadata: { uid: "ada" },
+			items: { data: [{ price: { id: "price_included", unit_amount: 1500, currency: "usd" } }] },
+			discounts: [{ coupon: { percent_off: 100, duration: "forever" } }],
+		};
+		expect(planFromSubscription(subscription, prices)).toBe("included");
+		const accounts = new AccountDirectory();
+		await applyStripeEvent(accounts, event("customer.subscription.updated", subscription, "evt_free_forever"), prices);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
+
+		const checkedOut = new AccountDirectory();
+		await applyStripeEvent(
+			checkedOut,
+			event(
+				"checkout.session.completed",
+				{
+					metadata: { uid: "ada", plan: "byom" },
+					client_reference_id: "ada",
+					customer: "cus_ada",
+					amount_total: 0,
+					payment_status: "paid",
+				},
+				"evt_zero_checkout",
+			),
+		);
+		await expect(checkedOut.get("ada")).resolves.toMatchObject({ plan: "byom" });
+	});
+});
 
 describe("stripe plan updates", () => {
 	it("ignores a replayed webhook event id", async () => {
