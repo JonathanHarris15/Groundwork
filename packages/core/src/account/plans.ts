@@ -9,8 +9,8 @@
  * the Groundwork server.
  *
  * Public copy never states how many dollars of that credit a plan includes
- * or how many dollars remain. The only prices we show are $9/month and
- * $20/month. `hostedCreditUsd` stays on the server; `publicPlan` is what
+ * or how many dollars remain. The only prices we show are $4/month and
+ * $15/month. `hostedCreditUsd` stays on the server; `publicPlan` is what
  * the website and any other client may receive.
  */
 
@@ -40,7 +40,7 @@ export const PLANS: Record<PlanId, Plan> = {
 	byom: {
 		id: "byom",
 		name: "Bring your own model",
-		priceUsdPerMonth: 9,
+		priceUsdPerMonth: 4,
 		hostedCreditUsd: 0,
 		ownModel: true,
 		summary: "Use the Claude subscription on this computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI.",
@@ -48,7 +48,7 @@ export const PLANS: Record<PlanId, Plan> = {
 	included: {
 		id: "included",
 		name: "Groundwork",
-		priceUsdPerMonth: 20,
+		priceUsdPerMonth: 15,
 		hostedCreditUsd: 8,
 		ownModel: false,
 		summary: "We run the models, on the smaller model by default.",

@@ -17,7 +17,7 @@ Groundwork is [MIT licensed](LICENSE).
 
 ## Payment, account, and network
 
-Payment is required for full access. The Free plan uses Groundwork's smaller model. **Bring your own model** is $9 per month and uses the Claude subscription already on this computer, or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. **Groundwork** is $20 per month and Groundwork runs the models. Paid plans are billed on the [Groundwork website](https://groundworklearn.com) through Stripe.
+Payment is required for full access. The Free plan uses Groundwork's smaller model. **Bring your own model** is $4 per month and uses the Claude subscription already on this computer, or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. **Groundwork** is $15 per month and Groundwork runs the models. Paid plans are billed on the [Groundwork website](https://groundworklearn.com) through Stripe.
 
 An account is required before the tutor will run. Sign in with Google on that website. Tutor memory — concept notes, goals, quiz evidence, chats, and the learner profile — is stored on the account.
 
@@ -26,7 +26,7 @@ The plugin uses the network for these services:
 - **Groundwork** (`https://groundwork-6f9ca.web.app` in production builds) stores the account, tutor memory, plan routing, and grades written answers. Sign-in happens in the browser on the [Groundwork website](https://groundworklearn.com). **Open Obsidian** connects this device through Obsidian; if the plugin is not installed yet, the site opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
 - **Google** (`https://securetoken.googleapis.com`) refreshes the website sign-in into an ID token the plugin sends to Groundwork.
 - **Google Fonts** (`https://fonts.googleapis.com`) loads Jost for the Groundwork panel stylesheet.
-- **Stripe** — billing for the $9 and $20 plans happens on the website, not inside the plugin.
+- **Stripe** — billing for the $4 and $15 plans happens on the website, not inside the plugin.
 - **Anthropic**, through Claude Code on this computer, runs the tutor when you use your own Claude subscription. Claude Code may reach Anthropic's API and related sign-in endpoints. On hosted Groundwork plans, model calls go through your account API instead. Bring-your-own-model keys saved on the account are used only on the Groundwork server (OpenRouter, Anthropic, Google, xAI, or OpenAI), not sent from the plugin.
 
 The plugin does not send telemetry. It does use a few paths outside the vault on the desktop: the Claude Code executable to run the tutor (via `child_process` inside the bundled Agent SDK); `~/.config/groundwork/config.json` (vault path for the `groundwork` CLI); and the vault folder path as Claude Code's working directory. Device labels default to **Obsidian** until you set one in the panel. The separate `groundwork` CLI (not the plugin) can run `git` to sync the vault. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
@@ -124,8 +124,8 @@ The **first time** you open the vault on a machine, Obsidian asks you to *Trust 
 
 The plan on the account decides.
 
-- **Free** and **Groundwork** ($20/month): Obsidian calls Groundwork, and Groundwork calls the smaller model through one shared key. The month's budget is the limit. You do not paste a key.
-- **Bring your own model** ($9/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. Groundwork does not meter that usage. A Claude login stays on the computer.
+- **Free** and **Groundwork** ($15/month): Obsidian calls Groundwork, and Groundwork calls the smaller model through one shared key. The month's budget is the limit. You do not paste a key.
+- **Bring your own model** ($4/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. Groundwork does not meter that usage. A Claude login stays on the computer.
 
 ### Connect a Claude subscription
 

@@ -33,6 +33,9 @@ async function seedLargeAccount(request: APIRequestContext) {
 test("landing and 404", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
+	await expect(page.locator("body")).toContainText("Bring your own model ($4/month)");
+	await expect(page.locator("body")).toContainText("($15/month)");
+	await expect(page.locator("body")).toContainText("$15/month plan");
 	await expect(page).toHaveTitle(/Groundwork/);
 	const res = await page.goto("/this-route-does-not-exist");
 	expect(res?.status()).toBe(404);
@@ -73,6 +76,9 @@ test("plan picker and sign-out", async ({ page, request }) => {
 	await page.getByRole("button", { name: "Continue on this device" }).click();
 	await page.getByRole("button", { name: /Upgrade|Change plan/i }).click();
 	await expect(page.getByRole("heading", { name: /Choose a plan/i })).toBeVisible();
+	await expect(page.locator(".plans")).toContainText("$4");
+	await expect(page.locator(".plans")).toContainText("$15");
+	await expect(page.locator(".plans")).toContainText("Free");
 	await page.getByRole("button", { name: "Sign out", exact: true }).click();
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
 });

@@ -5,4 +5,4 @@ alwaysApply: true
 
 Never state how many dollars of model credit a plan includes, or how many dollars remain. Not in the README, the website, the Obsidian plugin, plan summaries, error text, or any API response a client receives.
 
-The prices that may be shown are $9/month (Bring your own model) and $20/month (Groundwork). `hostedCreditUsd` stays on the server. Clients receive `publicPlan` and `presentAccount`. A percentage of the month's budget used is fine; a dollar amount of credit is not.
+The prices that may be shown are $4/month (Bring your own model) and $15/month (Groundwork). `hostedCreditUsd` stays on the server. Clients receive `publicPlan` and `presentAccount`. A percentage of the month's budget used is fine; a dollar amount of credit is not.
