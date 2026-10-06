@@ -239,15 +239,13 @@ function prepareVault() {
 	writeFileSync(
 		path.join(vault, ".obsidian/snippets/ad-capture.css"),
 		[
-			"/* Capture vault only. Keeps the floating status bar and the map legend off labels. */",
+			"/* Capture vault only. Hides Obsidian's status bar so the frame is the product. The map legend and scroll padding are the product's layout. */",
 			".status-bar { display: none !important; }",
-			".gw-force-map { top: 0 !important; right: 0 !important; bottom: auto !important; left: 0 !important; height: calc(100% - 78px) !important; }",
 			".gw-days b { font-size: 44px !important; }",
 			".gw-goal-hero { padding: 12px 16px !important; }",
 			".gw-track { margin-top: 10px !important; }",
 			".gw-due-field { margin-top: 6px !important; }",
 			".gw-concept-head, .gw-concept-row { padding-top: 3px; padding-bottom: 3px; }",
-			".gw-messages { padding-bottom: 0 !important; }",
 			"",
 		].join("\n"),
 	);
@@ -687,17 +685,15 @@ async function main() {
 	await page.evaluate(() => {
 		const list = document.querySelector(".gw-concept-list");
 		if (!list) return;
-		const head = list.querySelector(".gw-concept-head");
 		const rows = [...list.querySelectorAll(".gw-concept-row")];
-		const available = list.clientHeight;
-		let used = head ? head.getBoundingClientRect().height : 0;
-		for (const row of rows) {
-			const height = row.getBoundingClientRect().height;
-			if (used + height > available + 1) break;
-			used += height;
+		const box = list.getBoundingClientRect();
+		const clipped = rows.filter((row) => {
+			const rect = row.getBoundingClientRect();
+			return rect.bottom > box.bottom + 1 || rect.top < box.top - 1;
+		});
+		if (clipped.length) {
+			throw new Error(`Goals list clips ${clipped.length} concept row(s)`);
 		}
-		list.style.overflow = "hidden";
-		list.style.maxHeight = `${Math.floor(used)}px`;
 	});
 	await assertFits(page, ".gw-goals, .gw-concept-list, .gw-work", "goals");
 	await assertClean(page, "goals");
