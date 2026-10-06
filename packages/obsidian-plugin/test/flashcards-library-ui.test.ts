@@ -152,6 +152,13 @@ describe("flashcard library", () => {
 		select!.dispatchEvent(new Event("change", { bubbles: true }));
 		expect(root.textContent).toContain("What is odds?");
 		expect(root.textContent).not.toContain("Why 9%?");
+
+		root.querySelector<HTMLButtonElement>(".gw-fc-show")!.click();
+		const again = root.querySelector(".gw-rb-again");
+		expect(again?.closest(".gw-fc-unit")?.querySelector(":scope > .gw-fc-rate")).toBeTruthy();
+		expect(again?.querySelector("b")?.textContent).toBe("Again");
+		expect(again?.querySelector("kbd")?.textContent).toBe("1");
+		expect(again?.querySelector(".gw-rb-when")?.textContent).toMatch(/^in /);
 		library.remove();
 		root.remove();
 	});

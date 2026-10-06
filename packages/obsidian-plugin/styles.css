@@ -3296,7 +3296,26 @@ body .gw-root select.gw-deck-select:focus-visible {
 	margin: 0 auto;
 	display: flex;
 	flex-direction: column;
-	gap: 14px;
+}
+.gw-fc-unit {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	min-width: 0;
+}
+/* Revealed card and its ratings are one shell. The row is the card's bottom edge. */
+.gw-flash.is-revealed .gw-fc-unit {
+	border: 1px solid var(--gw-fc-line);
+	border-radius: 18px;
+	overflow: hidden;
+	background: var(--gw-fc-card);
+	box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.45);
+}
+.gw-flash.is-revealed .gw-fcard {
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
+	background: transparent;
 }
 .gw-fc-unpinned .gw-fc-main {
 	justify-content: center;
@@ -3443,9 +3462,10 @@ body .gw-root select.gw-deck-select:focus-visible {
 .gw-rb kbd {
 	font-family: inherit;
 	font-size: 11px;
+	line-height: 1.2;
 	border: 1px solid var(--gw-fc-line);
 	border-radius: 4px;
-	padding: 0 5px;
+	padding: 1px 5px;
 }
 .gw-flash.is-revealed .gw-fc-show { display: none; }
 .gw-flash:not(.is-revealed) .gw-flipline,
@@ -3513,49 +3533,91 @@ body .gw-root select.gw-deck-select:focus-visible {
 .gw-fc-rate {
 	display: grid;
 	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 10px;
+	gap: 0;
 	width: 100%;
 	margin: 0;
-}
-.gw-rb {
+	border-top: 1px solid var(--gw-fc-line);
+	background: var(--gw-fc-card);
 	position: relative;
-	border-radius: 12px;
-	border: 1px solid var(--gw-fc-line);
-	background: var(--background-primary);
-	padding: 16px 8px 10px;
+	z-index: 1;
+}
+/* Obsidian sets every button to height: var(--input-height) (~30px) and centers its contents.
+   That clips the interval against the border. These rules let the label and interval stack. */
+body .gw-root button.gw-rb {
+	height: auto;
+	min-height: 68px;
+	width: 100%;
+	margin: 0;
+	box-sizing: border-box;
+	white-space: normal;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 4px;
+	justify-content: center;
+	gap: 6px;
+	padding: 12px 8px 14px;
+	border: 0;
+	border-radius: 0;
+	border-right: 1px solid var(--gw-fc-line);
+	background: transparent;
+	box-shadow: inset 0 2px 0 0 var(--gw-rb-tick, transparent);
+	color: var(--gw-ink);
 	cursor: pointer;
-	color: inherit;
+	line-height: 1.25;
+	position: relative;
+	min-width: 0;
+	align-self: stretch;
+}
+body .gw-root .gw-fc-rate button.gw-rb:last-child { border-right: 0; }
+body .gw-root button.gw-rb:hover {
+	background-color: var(--gw-hover);
+	box-shadow: inset 0 2px 0 0 var(--gw-rb-tick, transparent);
+}
+.gw-rb-line {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	max-width: 100%;
 	min-width: 0;
 }
-.gw-rb kbd {
-	position: absolute;
-	top: 6px;
-	right: 6px;
+body .gw-root button.gw-rb kbd {
+	position: static;
+	flex: none;
+	color: var(--gw-muted);
+	background: var(--gw-chip);
 }
 .gw-rb b {
 	font-size: 15px;
 	font-weight: 500;
-	display: block;
-	text-align: center;
 	line-height: 1.2;
 }
-.gw-rb span { font-size: 11px; color: var(--gw-fc-muted); line-height: 1.2; }
-.gw-rb:focus-visible {
-	outline: 2px solid var(--gw-line-strong);
-	outline-offset: 2px;
+.gw-rb-when {
+	display: block;
+	font-size: 12px;
+	line-height: 1.35;
+	color: var(--gw-fc-muted);
+	text-align: center;
+	padding-bottom: 2px;
 }
-.gw-rb-again { border-color: color-mix(in srgb, var(--gw-again) 45%, var(--gw-fc-line)); }
-.gw-rb-again b { color: var(--gw-again-ink); }
-.gw-rb-hard { border-color: color-mix(in srgb, var(--gw-hard) 45%, var(--gw-fc-line)); }
-.gw-rb-hard b { color: var(--gw-hard-ink); }
-.gw-rb-good { border-color: color-mix(in srgb, var(--gw-good) 45%, var(--gw-fc-line)); }
-.gw-rb-good b { color: var(--gw-good-ink); }
-.gw-rb-easy { border-color: color-mix(in srgb, var(--gw-easy) 45%, var(--gw-fc-line)); }
-.gw-rb-easy b { color: var(--gw-easy-ink); }
+/* Light chip #efeae3 leaves --gw-muted (#6f6a63) a hair under 4.5:1. */
+.gw-root.gw-theme-light .gw-rb-when,
+.gw-root.gw-theme-light button.gw-rb kbd {
+	color: #675f58;
+}
+body .gw-root button.gw-rb:focus-visible {
+	outline: 2px solid var(--gw-line-strong);
+	outline-offset: -3px;
+	box-shadow: inset 0 2px 0 0 var(--gw-rb-tick, transparent);
+}
+body .gw-root button.gw-rb-again { --gw-rb-tick: var(--gw-again); }
+body .gw-root button.gw-rb-again b { color: var(--gw-again-ink); }
+body .gw-root button.gw-rb-hard { --gw-rb-tick: var(--gw-hard); }
+body .gw-root button.gw-rb-hard b { color: var(--gw-hard-ink); }
+body .gw-root button.gw-rb-good { --gw-rb-tick: var(--gw-good); }
+body .gw-root button.gw-rb-good b { color: var(--gw-good-ink); }
+body .gw-root button.gw-rb-easy { --gw-rb-tick: var(--gw-easy); }
+body .gw-root button.gw-rb-easy b { color: var(--gw-easy-ink); }
 @container gwflash (max-width: 860px) {
 	.gw-fc-main { padding: 16px 16px 12px; }
 	.gw-fcard-front { font-size: 18px; padding-left: 18px; padding-right: 18px; }

@@ -353,6 +353,48 @@ async function expectNoCloseButton(screen) {
 const tab = (id) => page.locator(`${rootSel} [data-testid="gw-${id}-tab"]`);
 const utility = (id) => page.locator(`${rootSel} [data-testid="gw-${id}-btn"]`);
 
+/** Interval text must sit inside the button, clear of the border, and the key hint must not collide with the label. */
+async function assertRatingIntervalsFit() {
+	const show = page.locator(`${rootSel} .gw-fc-show`);
+	if (await show.count()) await show.click();
+	await page.waitForSelector(`${rootSel} .gw-rb-when`, { timeout: 10_000 });
+	const problems = await page.evaluate((sel) => {
+		const card = document.querySelector(`${sel} .gw-fcard`)?.getBoundingClientRect();
+		const rate = document.querySelector(`${sel} .gw-fc-rate`)?.getBoundingClientRect();
+		const issues = [];
+		if (!card || !rate) issues.push("missing card or rating row");
+		else if (Math.abs(rate.top - card.bottom) > 1) issues.push(`rating row sits ${Math.abs(rate.top - card.bottom).toFixed(1)}px off the card`);
+		for (const button of document.querySelectorAll(`${sel} .gw-rb`)) {
+			const interval = button.querySelector(".gw-rb-when");
+			const label = button.querySelector("b");
+			const key = button.querySelector("kbd");
+			const name = label?.textContent || "rating";
+			if (!interval || !label || !key) {
+				issues.push(`${name} is missing its label, key, or interval`);
+				continue;
+			}
+			const box = button.getBoundingClientRect();
+			const cs = getComputedStyle(button);
+			const inner = {
+				top: box.top + (parseFloat(cs.borderTopWidth) || 0),
+				right: box.right - (parseFloat(cs.borderRightWidth) || 0),
+				bottom: box.bottom - (parseFloat(cs.borderBottomWidth) || 0),
+				left: box.left + (parseFloat(cs.borderLeftWidth) || 0),
+			};
+			const text = interval.getBoundingClientRect();
+			const outside = text.top < inner.top - 0.5 || text.bottom > inner.bottom + 0.5 || text.left < inner.left - 0.5 || text.right > inner.right + 0.5;
+			if (outside) issues.push(`${name} interval is outside the button`);
+			else if (inner.bottom - text.bottom < 6) issues.push(`${name} interval is ${(inner.bottom - text.bottom).toFixed(1)}px from the button edge`);
+			const labelBox = label.getBoundingClientRect();
+			const keyBox = key.getBoundingClientRect();
+			const gap = Math.max(keyBox.left - labelBox.right, labelBox.left - keyBox.right, keyBox.top - labelBox.bottom, labelBox.top - keyBox.bottom);
+			if (gap < 4) issues.push(`${name} key hint crowds the label`);
+		}
+		return issues;
+	}, rootSel);
+	if (problems.length) throw new Error(`Flashcard ratings: ${problems.join("; ")}`);
+}
+
 if (scenario === "signed-in") {
 	await utility("library").click();
 	await page.waitForSelector(`${rootSel}.is-library`, { timeout: 15_000 });
@@ -394,7 +436,23 @@ if (scenario === "signed-in") {
 	await page.waitForSelector(`${rootSel}.is-flashcards`, { timeout: 15_000 });
 	await page.waitForSelector(`${rootSel} .gw-fc-loading, ${rootSel} .gw-fc-empty, ${rootSel} .gw-fcard`, { timeout: 20_000 });
 	await sleep(800);
+	await assertRatingIntervalsFit();
 	await shotGroundwork("08-flashcards");
+	for (const appearance of ["Dark", "Light"]) {
+		await utility("settings").click();
+		await page.waitForSelector(`${rootSel}.is-settings`, { timeout: 15_000 });
+		await page.locator(`${rootSel} button.gw-appearance-btn`, { hasText: new RegExp(`^${appearance}$`) }).click({ timeout: 10_000 });
+		await sleep(300);
+		await tab("flashcards").click();
+		await page.waitForSelector(`${rootSel}.is-flashcards .gw-fcard`, { timeout: 15_000 });
+		await assertRatingIntervalsFit();
+	}
+	await utility("settings").click();
+	await page.waitForSelector(`${rootSel}.is-settings`, { timeout: 15_000 });
+	await page.locator(`${rootSel} button.gw-appearance-btn`, { hasText: /^Obsidian$/ }).click({ timeout: 10_000 });
+	await sleep(300);
+	await tab("flashcards").click();
+	await page.waitForSelector(`${rootSel}.is-flashcards:not(.is-settings)`, { timeout: 15_000 });
 
 	await utility("settings").click();
 	await page.waitForSelector(`${rootSel}.is-settings:not(.is-flashcards)`, { timeout: 15_000 });
