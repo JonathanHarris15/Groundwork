@@ -41,7 +41,7 @@ export interface TutorMemory {
 }
 
 const MEMORY_PATH =
-	/^(?:learner\.md|concepts\/[^/]+\.md|goals\/[^/]+\.md|sessions\/[^/]+\.md|exams\/[^/]+\.md|tests\/[^/]+\.md|\.groundwork\/focus\.json|\.groundwork\/tutor-context\.md|\.groundwork\/flashcards\.json|\.groundwork\/chats\/[^/]+\.json|\.groundwork\/evidence\/[^/]+\.jsonl)$/;
+	/^(?:learner\.md|concepts\/[^/]+\.md|goals\/[^/]+\.md|sessions\/[^/]+\.md|exams\/[^/]+\.md|tests\/[^/]+\.md|\.groundwork\/focus\.json|\.groundwork\/tutor-context\.md|\.groundwork\/flashcards\.json|\.groundwork\/chats\/[^/]+\.json|\.groundwork\/evidence\/[^/]+\.jsonl|\.groundwork\/figures\/fig_[a-z0-9]+\.json)$/;
 
 export const TUTOR_MEMORY_LIMITS = { files: 4000, fileChars: 400_000, totalChars: 8_000_000 };
 

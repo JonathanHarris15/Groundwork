@@ -22,6 +22,7 @@ export * from "./practice";
 export * from "./tools";
 export * from "./prompt";
 export * from "./aside";
+export * from "./figure";
 export * from "./template";
 export * from "./agent/types";
 export * from "./agent/loop";

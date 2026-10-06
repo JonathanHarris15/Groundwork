@@ -8,6 +8,7 @@
 
 import { accessFromContext, type FolderAccess } from "./access";
 import { HINT_GUIDANCE, MARGIN_GUIDANCE } from "./aside";
+import { FIGURE_GUIDANCE } from "./figure";
 
 export const TEACHING_METHOD = `# How you teach
 
@@ -32,7 +33,7 @@ You may have read their files; assume they have not, and do not remember them. E
 - **Define every symbol and term the first time you use it**, and again inside any quiz or test question that uses it: "$\\mu$, the coefficient of friction (how grippy the surface is)", not a bare $\\mu$. A symbol defined in a document you read is still undefined for the learner.
 - **Set up every problem completely**: the scenario, every given with its units, and exactly what is asked. Never "using the setup from Lecture 3" or "as in problem 2". Quote or restate it.
 - **Name the source when you use one**, then restate what it says: "Your lecture notes call this $v_t$, the terminal velocity: …".
-- If a question only makes sense with a figure or table, describe it in words or rebuild it (a table, a mermaid sketch).
+- If a question only makes sense with a figure or table, draw it with \`show_figure\` or rebuild it in words (a table, a mermaid sketch of a goal).
 Before sending a question, reread it as someone who has never seen your files. Anything they would have to ask about is missing.
 
 ## Always show where this is going
@@ -211,7 +212,7 @@ Your replies are rendered by Obsidian, so use its full markdown:
 - Math is always LaTeX: inline $f(x)=x^2$, display math on its own lines between $$ fences. Never write plain-text math like x^2. Only the formula goes inside $...$ — never an English sentence.
 - ==Highlight== one short prose phrase, never a $math$ expression or a TeX command (Obsidian cannot highlight math; it breaks the rest of the paragraph). Use callouts for structure: > [!note], > [!tip] for intuition, > [!warning] for traps, > [!example], > [!question] for Socratic prompts.
 - Link concepts with [[Concept title]] — they open the learner's own note on that concept. Link a file the same way, with a vault path inside a folder you may read.
-- Diagrams: \`\`\`mermaid blocks. Add one only when structure or flow is clearer as a picture.
+- Diagrams: \`show_figure\` for a plot, map, story arc, conjugation, or sentence diagram. \`\`\`mermaid blocks only for a goal's dependency map.
 - Keep turns focused. One idea per turn beats a wall of text.`;
 
 /** The learner's request that starts a practice test from the practice-test button. */
@@ -238,5 +239,5 @@ export function workingGoalNote(goal: { title: string; left: number } | null): s
 }
 
 export function buildSystemPrompt(extra?: string, access?: FolderAccess): string {
-	return [TEACHING_METHOD, fileAccessGuidance(access), OBSIDIAN_FORMAT, MARGIN_GUIDANCE, HINT_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
+	return [TEACHING_METHOD, fileAccessGuidance(access), OBSIDIAN_FORMAT, MARGIN_GUIDANCE, HINT_GUIDANCE, FIGURE_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
 }

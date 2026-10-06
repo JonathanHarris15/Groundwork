@@ -37,6 +37,7 @@ export const PATHS = {
 	data: ".groundwork",
 	evidence: ".groundwork/evidence",
 	chats: ".groundwork/chats",
+	figures: ".groundwork/figures",
 	focus: ".groundwork/focus.json",
 	/** Notes the learner writes in Settings. Not `learner.md`. */
 	tutorContext: ".groundwork/tutor-context.md",
@@ -242,7 +243,7 @@ export class KnowledgeStore {
 	}
 
 	async ensureLayout(): Promise<void> {
-		for (const dir of [PATHS.concepts, PATHS.goals, PATHS.exams, PATHS.sessions, PATHS.data, PATHS.evidence, PATHS.chats]) {
+		for (const dir of [PATHS.concepts, PATHS.goals, PATHS.exams, PATHS.sessions, PATHS.data, PATHS.evidence, PATHS.chats, PATHS.figures]) {
 			await ensureDir(this.io, dir);
 		}
 		if (!(await this.io.exists(PATHS.learner))) {

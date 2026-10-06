@@ -5,10 +5,15 @@ import {
 	ASIDE_TOOL_NAMES,
 	HINT_PROMPT,
 	asideOpening,
+	FIGURE_PROMPT,
+	figureFile,
+	figureFromModelText,
+	figureOpening,
 	hintNotes,
 	hintOpening,
 	basename,
 	DemoAsideProvider,
+	DemoFigureProvider,
 	DemoProvider,
 	marginNotes,
 	buildSystemPrompt,
@@ -35,6 +40,7 @@ import {
 	pathInsideAny,
 	removeFlashcardMirrors,
 	PATHS,
+	saveFigure,
 	serializeNote,
 	settleQuizAnswer,
 	setSection,
@@ -44,6 +50,7 @@ import {
 	type AgentEvent,
 	type AsideThread,
 	type HintBrief,
+	type SessionFigure,
 	type AskInput,
 	type AskResponse,
 	type ChatMessage,
@@ -64,6 +71,8 @@ import {
 } from "@groundwork/core";
 import { ClaudeCodeSession } from "@groundwork/core/claude-code";
 import { AsideCard, findQuoteRange } from "./aside";
+import { downloadFigure, FigureCard, type FigureCardModel } from "./figure-card";
+import { gutterFlags } from "./gutter";
 import { toBoard, type GoalBoardView } from "./goal-board";
 import { renderGoalsPane } from "./goals-pane";
 import { renderMapPane, renderStartedVaultMap } from "./map-pane";
@@ -121,10 +130,9 @@ interface ChatRecord {
 	openQuiz?: PreparedQuiz;
 	/** Margin threads on highlighted passages. */
 	asides?: AsideThread[];
+	/** Figures in the left margin, also saved on the account. */
+	figures?: SessionFigure[];
 }
-
-/** Below this width margin threads sit under their passage instead of beside it. */
-const MARGIN_MIN_WIDTH = 900;
 
 /** What a study button sends to the tutor on the learner's behalf. */
 const STUDY_REQUEST: Record<StudyMove, (title: string) => string> = {
@@ -181,6 +189,7 @@ const TOOL_VERBS: Record<string, string> = {
 	get_exam_plan: "Reading the exam plan",
 	grade_answer: "Grading your answer",
 	grade_practice_test: "Grading your practice test",
+	show_figure: "Drawing a figure",
 	Read: "Opening a file",
 	WebSearch: "Searching the web",
 	WebFetch: "Reading a web page",
@@ -251,7 +260,14 @@ export class ChatView extends ItemView implements ToolUI {
 	private asideRanges = new Map<string, Range>();
 	private highlightFrame = 0;
 	private uiAskBtn!: HTMLElement;
+	private uiVizBtn!: HTMLElement;
+	private uiSelectMenu!: HTMLElement;
 	private selection: { anchor: string; quote: string } | null = null;
+	private figureCards = new Map<string, FigureCard>();
+	private figureRanges = new Map<string, Range>();
+	private figureAgents = new Map<string, TutorSession>();
+	/** Figures from show_figure, attached to the next assistant turn. */
+	private pendingFigures: SessionFigure[] = [];
 	private pickedMath: HTMLElement[] = [];
 
 	constructor(
@@ -741,6 +757,7 @@ export class ChatView extends ItemView implements ToolUI {
 				break;
 			case "turn_end":
 				this.finishSegment();
+				this.flushOrphanFigures();
 				break;
 		}
 	}
@@ -781,6 +798,7 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 		this.record.items.push({ kind: "assistant", text });
 		seg.wrap.dataset.anchor = `item:${this.record.items.length - 1}`;
+		this.attachPendingFigures(seg.wrap);
 		void this.renderSegment(seg);
 	}
 
@@ -1050,6 +1068,9 @@ export class ChatView extends ItemView implements ToolUI {
 		this.toolChips.clear();
 		this.asideCards.clear();
 		this.asideRanges.clear();
+		this.figureCards.clear();
+		this.figureRanges.clear();
+		this.pendingFigures = [];
 		this.updateMarginMode();
 		const open = pendingQuiz(this.record);
 		if (!this.record.items.length && !open) {
@@ -1058,6 +1079,7 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 		this.record.items.forEach((item, i) => this.renderItem(item, i));
 		for (const t of this.record.asides ?? []) this.mountAside(t);
+		for (const figure of this.record.figures ?? []) this.mountSavedFigure(figure);
 		if (open) this.mountRestoredQuiz(open);
 		this.scrollToBottom(true);
 	}
@@ -2505,16 +2527,25 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private setupMargin(root: HTMLElement): void {
-		this.uiAskBtn = root.createEl("button", { cls: "gw-ask-btn", attr: { type: "button", "aria-label": "Ask about the highlighted text in the margin" } });
+		this.uiSelectMenu = root.createDiv({ cls: "gw-select-menu" });
+		this.uiAskBtn = this.uiSelectMenu.createEl("button", { cls: "gw-ask-btn", attr: { type: "button", "aria-label": "Ask about the highlighted text in the margin" } });
 		setIcon(this.uiAskBtn.createSpan({ cls: "gw-ask-btn-icon" }), "message-square-plus");
 		this.uiAskBtn.createSpan({ text: "Ask about this" });
-		this.uiAskBtn.hide();
-		// Keep the text selection alive while clicking the button.
-		this.registerDomEvent(this.uiAskBtn, "mousedown", (e) => e.preventDefault());
+		this.uiVizBtn = this.uiSelectMenu.createEl("button", { cls: "gw-viz-btn", attr: { type: "button", "aria-label": "Make me a visualization of the highlighted text" } });
+		setIcon(this.uiVizBtn.createSpan({ cls: "gw-viz-btn-icon" }), "image");
+		this.uiVizBtn.createSpan({ text: "Make me a visualization" });
+		this.uiSelectMenu.hide();
+		// Keep the text selection alive while clicking a button.
+		this.registerDomEvent(this.uiSelectMenu, "mousedown", (e) => e.preventDefault());
 		this.registerDomEvent(this.uiAskBtn, "click", () => {
 			const sel = this.selection;
 			this.hideAskButton();
 			if (sel) this.openAside(sel.anchor, sel.quote);
+		});
+		this.registerDomEvent(this.uiVizBtn, "click", () => {
+			const sel = this.selection;
+			this.hideAskButton();
+			if (sel) void this.requestFigure(sel.anchor, sel.quote);
 		});
 
 		// Drags often end outside the chat, and selections can come from double-clicks or the keyboard,
@@ -2524,7 +2555,7 @@ export class ChatView extends ItemView implements ToolUI {
 		let settle = 0;
 		this.registerDomEvent(this.uiMessagesEl, "mousedown", (e) => {
 			dragging = true;
-			if (e.target !== this.uiAskBtn) this.hideAskButton();
+			if (!(e.target instanceof Node) || !this.uiSelectMenu.contains(e.target)) this.hideAskButton();
 		});
 		const release = () => {
 			if (!dragging) return;
@@ -2544,7 +2575,7 @@ export class ChatView extends ItemView implements ToolUI {
 		// MathJax glyphs can't be text-selected, so a click on a formula selects the whole thing.
 		this.registerDomEvent(this.uiMessagesEl, "click", (e) => {
 			const math = mathOf(e.target as Node);
-			if (!math || (e.target as Element).closest("button, a, .gw-asides, .gw-free-editor")) return;
+			if (!math || (e.target as Element).closest("button, a, .gw-asides, .gw-figures, .gw-free-editor")) return;
 			const sel = this.contentEl.win.getSelection();
 			if (!sel || (!sel.isCollapsed && !sel.getRangeAt(0).intersectsNode(math))) return;
 			const range = this.contentEl.doc.createRange();
@@ -2567,7 +2598,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const elOf = (n: Node) => (n instanceof Element ? n : n.parentElement);
 		const start = elOf(range.startContainer);
 		const end = elOf(range.endContainer);
-		if (start?.closest(".gw-asides, textarea, input, .gw-free-editor, .gw-symbols-drawer")) return this.hideAskButton();
+		if (start?.closest(".gw-asides, .gw-figures, .gw-select-menu, textarea, input, .gw-free-editor, .gw-symbols-drawer")) return this.hideAskButton();
 		const startTurn = start?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
 		const endTurn = end?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
 		const turn = startTurn ?? endTurn;
@@ -2584,17 +2615,17 @@ export class ChatView extends ItemView implements ToolUI {
 
 		const r = range.getBoundingClientRect();
 		const box = this.contentEl.getBoundingClientRect();
-		this.uiAskBtn.show();
-		const w = this.uiAskBtn.offsetWidth || 130;
+		this.uiSelectMenu.show();
+		const w = this.uiSelectMenu.offsetWidth || 320;
 		const left = Math.min(Math.max(8, r.left - box.left + r.width / 2 - w / 2), box.width - w - 8);
 		const below = r.bottom - box.top + 6;
-		const top = below + 36 > box.height ? r.top - box.top - 38 : below;
-		this.uiAskBtn.style.left = `${left}px`;
-		this.uiAskBtn.style.top = `${Math.max(4, top)}px`;
+		const top = below + 40 > box.height ? r.top - box.top - 42 : below;
+		this.uiSelectMenu.style.left = `${left}px`;
+		this.uiSelectMenu.style.top = `${Math.max(4, top)}px`;
 	}
 
 	private hideAskButton(): void {
-		this.uiAskBtn?.hide();
+		this.uiSelectMenu?.hide();
 		this.selection = null;
 		this.markPicked([]);
 	}
@@ -2777,6 +2808,11 @@ export class ChatView extends ItemView implements ToolUI {
 		this.asideRanges.clear();
 		this.hintKeys.clear();
 		this.hintInflight.clear();
+		for (const a of this.figureAgents.values()) a.close?.();
+		this.figureAgents.clear();
+		this.figureCards.clear();
+		this.figureRanges.clear();
+		this.pendingFigures = [];
 		this.clearHighlights();
 	}
 
@@ -2796,9 +2832,11 @@ export class ChatView extends ItemView implements ToolUI {
 	private updateMarginMode(): void {
 		const el = this.uiMessagesEl;
 		if (!el) return;
-		const wide = el.clientWidth >= MARGIN_MIN_WIDTH;
-		el.toggleClass("has-margin", wide && this.asideCards.size > 0);
+		const flags = gutterFlags(el.clientWidth, this.figureCards.size, this.asideCards.size);
+		el.toggleClass("has-figures", flags.figures);
+		el.toggleClass("has-margin", flags.margin);
 		this.layoutAsides();
+		this.layoutFigures();
 	}
 
 	/** In margin mode, start each thread stack level with its highlight. */
@@ -2819,8 +2857,26 @@ export class ChatView extends ItemView implements ToolUI {
 		});
 	}
 
+	/** In figure mode, start each stack level with its highlight. */
+	private layoutFigures(): void {
+		const side = this.uiMessagesEl.hasClass("has-figures");
+		this.uiMessagesEl.querySelectorAll(".gw-figures").forEach((node) => {
+			const list = node as HTMLElement;
+			const wrap = list.parentElement!;
+			let top = Infinity;
+			if (side) {
+				const base = wrap.getBoundingClientRect().top;
+				list.querySelectorAll(".gw-figure").forEach((c) => {
+					const r = this.figureRanges.get((c as HTMLElement).dataset.figure ?? "");
+					if (r) top = Math.min(top, r.getBoundingClientRect().top - base);
+				});
+			}
+			list.style.top = side && Number.isFinite(top) ? `${Math.max(0, Math.round(top) - 6)}px` : "";
+		});
+	}
+
 	private scheduleHighlights(): void {
-		if (!this.asideCards.size && !this.asideRanges.size) return;
+		if (!this.asideCards.size && !this.asideRanges.size && !this.figureCards.size && !this.figureRanges.size) return;
 		if (this.highlightFrame) return;
 		this.highlightFrame = window.requestAnimationFrame(() => {
 			this.highlightFrame = 0;
@@ -2838,7 +2894,25 @@ export class ChatView extends ItemView implements ToolUI {
 		const api = highlightApi();
 		api?.registry.set("gw-aside", new api.Highlight(...this.asideRanges.values()));
 		this.markMath("is-quoted", [...this.asideRanges.values()]);
+		this.figureRanges.clear();
+		for (const [id, card] of this.figureCards) {
+			const quote = card.el.dataset.quote;
+			const msg = card.el.closest(".gw-turn")?.querySelector(":scope > .gw-msg, :scope > .gw-card") as HTMLElement | null;
+			const r = quote && msg ? findQuoteRange(msg, quote) : null;
+			if (r) this.figureRanges.set(id, r);
+		}
+		api?.registry.set("gw-figure", new api.Highlight(...this.figureRanges.values()));
+		this.markMath("is-figured", [...this.figureRanges.values()]);
 		this.layoutAsides();
+		this.layoutFigures();
+	}
+
+	private setActiveFigure(id: string | null): void {
+		for (const [fid, card] of this.figureCards) card.setActive(fid === id);
+		const api = highlightApi();
+		const r = id ? this.figureRanges.get(id) : undefined;
+		api?.registry.set("gw-figure-active", new api.Highlight(...(r ? [r] : [])));
+		this.markMath("is-figured-active", r ? [r] : []);
 	}
 
 	private setActiveHighlight(id: string | null): void {
@@ -2853,8 +2927,169 @@ export class ChatView extends ItemView implements ToolUI {
 		const api = highlightApi();
 		api?.registry.delete("gw-aside");
 		api?.registry.delete("gw-aside-active");
+		api?.registry.delete("gw-figure");
+		api?.registry.delete("gw-figure-active");
 		this.markMath("is-quoted", []);
 		this.markMath("is-quoted-active", []);
+		this.markMath("is-figured", []);
+		this.markMath("is-figured-active", []);
+	}
+
+	// ── figures ─────────────────────────────────────────────────────────
+
+	showFigure(figure: SessionFigure): void {
+		this.pendingFigures.push(figure);
+		(this.record.figures ??= []).push(figure);
+	}
+
+	private attachPendingFigures(wrap: HTMLElement): void {
+		const anchor = wrap.dataset.anchor;
+		if (!anchor || !this.pendingFigures.length) return;
+		const batch = this.pendingFigures.splice(0);
+		for (const figure of batch) {
+			figure.anchor = anchor;
+			this.mountFigure(figure, wrap);
+			void this.plugin.store.writeFile(figureFile(figure.id), `${JSON.stringify(figure)}\n`);
+		}
+	}
+
+	private flushOrphanFigures(): void {
+		if (!this.pendingFigures.length) return;
+		const turns = [...this.uiMessagesEl.querySelectorAll(".gw-turn[data-anchor]")] as HTMLElement[];
+		const last = turns[turns.length - 1];
+		if (last) {
+			this.attachPendingFigures(last);
+			return;
+		}
+		while (this.pendingFigures.length) {
+			const figure = this.pendingFigures.shift()!;
+			figure.anchor = `figure:${figure.id}`;
+			const wrap = this.turn(figure.anchor);
+			wrap.createDiv({ cls: "gw-msg gw-assistant", text: figure.caption || figure.title });
+			this.mountFigure(figure, wrap);
+			void this.plugin.store.writeFile(figureFile(figure.id), `${JSON.stringify(figure)}\n`);
+		}
+	}
+
+	private mountSavedFigure(figure: SessionFigure): void {
+		if (this.figureCards.has(figure.id)) return;
+		let wrap = this.uiMessagesEl.querySelector(`.gw-turn[data-anchor="${CSS.escape(figure.anchor)}"]`) as HTMLElement | null;
+		if (!wrap) {
+			figure.anchor = figure.anchor || `figure:${figure.id}`;
+			wrap = this.turn(figure.anchor);
+			wrap.createDiv({ cls: "gw-msg gw-assistant", text: figure.caption || figure.title });
+		}
+		this.mountFigure(figure, wrap);
+	}
+
+	private mountFigure(figure: FigureCardModel, wrap: HTMLElement): FigureCard {
+		const list = (wrap.querySelector(":scope > .gw-figures") as HTMLElement | null) ?? wrap.createDiv({ cls: "gw-figures" });
+		if (list.parentElement === wrap && wrap.firstElementChild !== list) wrap.prepend(list);
+		let card!: FigureCard;
+		card = new FigureCard(list, figure, {
+			toggle: (collapsed) => {
+				const saved = (this.record.figures ?? []).find((item) => item.id === card.el.dataset.figure);
+				if (!saved) return;
+				saved.collapsed = collapsed;
+				void this.plugin.store.writeFile(figureFile(saved.id), `${JSON.stringify(saved)}\n`);
+				void this.persist();
+			},
+			download: (model) => {
+				if (model.svg) downloadFigure(this.contentEl.doc, model.title, model.svg);
+			},
+			dismiss: () => this.dismissFigure(card.el.dataset.figure ?? figure.id),
+			hover: (on) => this.setActiveFigure(on ? (card.el.dataset.figure ?? null) : null),
+		});
+		this.figureCards.set(figure.id, card);
+		this.updateMarginMode();
+		this.scheduleHighlights();
+		return card;
+	}
+
+	private dismissFigure(id: string): void {
+		const card = this.figureCards.get(id);
+		const list = card?.el.parentElement;
+		card?.el.remove();
+		if (list && !list.childElementCount) list.remove();
+		this.figureCards.delete(id);
+		this.figureAgents.get(id)?.close?.();
+		this.figureAgents.delete(id);
+		this.record.figures = (this.record.figures ?? []).filter((figure) => figure.id !== id);
+		this.updateMarginMode();
+		this.scheduleHighlights();
+	}
+
+	private async requestFigure(anchor: string, quote: string): Promise<void> {
+		const wrap = this.uiMessagesEl.querySelector(`.gw-turn[data-anchor="${CSS.escape(anchor)}"]`) as HTMLElement | null;
+		if (!wrap) return;
+		const pendingId = `pending_${Date.now().toString(36)}`;
+		const card = this.mountFigure({ id: pendingId, title: "Making a visualization", quote, pending: true }, wrap);
+		const stateHolder = card;
+		this.contentEl.win.getSelection()?.removeAllRanges();
+		if (!this.uiMessagesEl.hasClass("has-figures")) card.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+
+		if (!this.plugin.signedIn()) {
+			const detail = this.plugin.runtime().detail ?? "Sign in on the Groundwork website, then choose Open Obsidian.";
+			stateHolder.update({ id: pendingId, title: "Couldn't draw that", quote, error: detail });
+			window.open(accountSignInUrl());
+			return;
+		}
+		const agent = await this.makeFigureAgent(pendingId);
+		if (!agent) {
+			const detail = this.plugin.runtime().detail ?? "The tutor isn't ready to draw yet.";
+			stateHolder.update({ id: pendingId, title: "Couldn't draw that", quote, error: detail });
+			return;
+		}
+		this.figureAgents.set(pendingId, agent);
+		let text = "";
+		let error: string | undefined;
+		try {
+			const lesson = transcript(this.record.items, this.record.asides, this.record.figures);
+			await agent.send(figureOpening(lesson, quote), (e) => {
+				if (e.type === "text_delta") text += e.text;
+				else if (e.type === "error") error = e.message;
+			});
+		} catch (err) {
+			error = err instanceof Error ? err.message : String(err);
+		} finally {
+			this.figureAgents.delete(pendingId);
+		}
+		if (error && !text.trim()) {
+			stateHolder.update({ id: pendingId, title: "Couldn't draw that", quote, error: "The tutor couldn't draw a figure for that passage." });
+			return;
+		}
+		try {
+			const figure = await saveFigure(this.plugin.store, figureFromModelText(text), {
+				quote,
+				anchor,
+				sessionId: this.record.id,
+			});
+			(this.record.figures ??= []).push(figure);
+			this.figureCards.delete(pendingId);
+			this.figureCards.set(figure.id, card);
+			card.update(figure);
+			this.scheduleHighlights();
+			await this.persist();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "The tutor couldn't draw a figure for that passage.";
+			card.update({ id: pendingId, title: "Couldn't draw that", quote, error: message });
+		}
+	}
+
+	private async makeFigureAgent(id: string): Promise<TutorSession | null> {
+		await this.plugin.refreshTutorRoute();
+		if (!this.plugin.signedIn()) return null;
+		const access = folderAccessFrom(this.plugin.settings);
+		const session: SessionInfo = { id: `${this.record.id}-figure-${id}` };
+		const store = this.plugin.store;
+		const runtime = this.plugin.runtime();
+		if (runtime.runtime === "setup") return null;
+		if (runtime.runtime === "claude") {
+			const cfg = this.plugin.claudeCodeConfig();
+			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools: [], system: FIGURE_PROMPT, session, access, grader: this.plugin.answerGrader() }) : null;
+		}
+		const provider = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : new DemoFigureProvider();
+		return new AgentSession({ provider, store, tools: [], system: FIGURE_PROMPT, session, maxSteps: 2, access, grader: this.plugin.answerGrader() });
 	}
 
 	private markMath(cls: string, ranges: Range[]): void {
@@ -2885,7 +3120,7 @@ export class ChatView extends ItemView implements ToolUI {
 			const { frontmatter, body } = parseNote(existing);
 			const fm = { ...frontmatter, type: "session", date: record.created.slice(0, 10), chat: record.id, tags: ["groundwork/session"] };
 			const base = body.trim() ? body : `# ${record.title}\n`;
-			await store.writeFile(path, serializeNote(fm, setSection(base, "Transcript", transcript(record.items, record.asides))));
+			await store.writeFile(path, serializeNote(fm, setSection(base, "Transcript", transcript(record.items, record.asides, record.figures))));
 		}
 		if (this.record?.id === record.id) this.renderHeader();
 	}
@@ -2927,6 +3162,8 @@ function iconFor(name: string): string {
 		case "WebSearch":
 		case "WebFetch":
 			return "globe";
+		case "show_figure":
+			return "image";
 		default:
 			return "check";
 	}
@@ -3035,8 +3272,19 @@ function hintBrief(quiz: PreparedQuiz): HintBrief {
 	};
 }
 
-function transcript(items: DisplayItem[], asides: AsideThread[] = []): string {
+function transcript(items: DisplayItem[], asides: AsideThread[] = [], figures: SessionFigure[] = []): string {
 	const out: string[] = [];
+	const seen = new Set<string>();
+	const figuresAt = (anchor: string) => {
+		for (const figure of figures) {
+			if (figure.anchor !== anchor) continue;
+			seen.add(figure.id);
+			const lines = [`> [!example]- Figure: ${figure.title} (${figure.kind})`];
+			if (figure.caption) lines.push(">", `> ${figure.caption.replace(/\n/g, " ")}`);
+			lines.push(">", `> Saved on the account as \`${figureFile(figure.id)}\`.`);
+			out.push(lines.join("\n"), "");
+		}
+	};
 	const margin = (anchor: string) => {
 		for (const t of asides) {
 			if (t.anchor !== anchor || !t.messages.length) continue;
@@ -3047,9 +3295,14 @@ function transcript(items: DisplayItem[], asides: AsideThread[] = []): string {
 		}
 	};
 	items.forEach((item, i) => {
+		const anchor = item.kind === "quiz" ? `quiz:${item.quiz.id}` : item.kind === "test" ? `test:${item.test.id}` : `item:${i}`;
 		render(item);
-		margin(item.kind === "quiz" ? `quiz:${item.quiz.id}` : item.kind === "test" ? `test:${item.test.id}` : `item:${i}`);
+		figuresAt(anchor);
+		margin(anchor);
 	});
+	for (const figure of figures) {
+		if (!seen.has(figure.id)) figuresAt(figure.anchor || figure.id);
+	}
 	return out.join("\n");
 
 	function render(item: DisplayItem): void {

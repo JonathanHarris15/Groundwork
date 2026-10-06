@@ -184,7 +184,7 @@ function renderQuote(el: HTMLElement, quote: string): void {
 export function findQuoteRange(root: HTMLElement, quote: string): Range | null {
 	const needle = quote.replace(/\s+/g, "");
 	if (!needle) return null;
-	const skip = ".gw-aside, .gw-asides, mjx-container, .math, svg";
+	const skip = ".gw-aside, .gw-asides, .gw-figure, .gw-figures, mjx-container, .math, svg";
 	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
 		acceptNode: (n) => {
 			if (n.parentElement?.closest(skip)) return NodeFilter.FILTER_REJECT;

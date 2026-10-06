@@ -25,6 +25,7 @@ import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQui
 import { isBuilt } from "./graph";
 import { buildStudyQueue, loadFlashcardLibrary, saveFlashcard } from "./flashcards";
 import { daysLeftPhrase } from "./goal-plan";
+import { saveFigure, type SessionFigure } from "./figure";
 import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalReport, type GoalStatus, type KnowledgeStore } from "./store";
 
 export type JSONSchema = Record<string, unknown>;
@@ -55,6 +56,8 @@ export interface ToolUI {
 	marginNotes?(): string | undefined;
 	/** The dropdown pin changed (a goal title, or null for "you choose"). */
 	focusGoal?(title: string | null): void;
+	/** A figure to pin in the left margin of the current turn. */
+	showFigure?(figure: SessionFigure): void;
 }
 
 function withMarginNotes(text: string, ui: ToolUI): string {
@@ -921,6 +924,116 @@ export const TOOLS: ToolDef[] = [
 		async run({ section, content, mode }: { section: string; content: string; mode?: "append" | "replace" }, { store }) {
 			await store.updateProfile(section, content, mode ?? "append");
 			return { text: `Updated learner profile section "${section}".`, summary: `Updated learner profile (${section})` };
+		},
+	},
+	{
+		name: "show_figure",
+		description:
+			"Draw a figure in the left margin of this turn. Use it when a picture teaches better than another paragraph: a plot (2D, or a 3D surface as a still view), a story arc, a map of places and movements, a conjugation table, or a sentence diagram. Pass structured fields, not code and not an image. The learner sees it immediately. In your next sentence, say what to look at. Do not paste SVG.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				title: str("Short title on the figure."),
+				caption: str("One sentence under the figure."),
+				kind: {
+					type: "string",
+					enum: ["plot", "plot3d", "story", "map", "conjugation", "sentence"],
+					description: "plot, plot3d, story, map, conjugation, or sentence.",
+				},
+				xLabel: str("Horizontal axis name."),
+				yLabel: str("Vertical axis name."),
+				zLabel: str("Height axis name, for plot3d."),
+				xMin: { type: "number" },
+				xMax: { type: "number" },
+				yMin: { type: "number" },
+				yMax: { type: "number" },
+				expr: str("For plot3d, z as an expression in x and y. Use 2*x, not 2x. Functions: sin cos tan exp log ln log10 sqrt abs."),
+				series: {
+					type: "array",
+					description: "Plot series. Each has points [[x,y],...] or expr in x, and mark line, scatter, or bar.",
+					items: {
+						type: "object",
+						properties: {
+							name: str("Legend label."),
+							expr: str("Expression in x."),
+							points: { type: "array", items: { type: "array", items: { type: "number" } } },
+							mark: { type: "string", enum: ["line", "scatter", "bar"] },
+						},
+					},
+				},
+				grid: { type: "array", description: "Optional z grid for plot3d. Prefer expr.", items: { type: "array", items: { type: "number" } } },
+				beats: {
+					type: "array",
+					description: "Story beats in order.",
+					items: {
+						type: "object",
+						properties: {
+							stage: { type: "string", enum: ["exposition", "rising", "climax", "falling", "resolution"] },
+							label: str("What happens here."),
+						},
+						required: ["stage", "label"],
+					},
+				},
+				markers: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							name: str("Place name."),
+							lat: { type: "number" },
+							lon: { type: "number" },
+							side: str("Group that shares a color, such as Allies or Axis."),
+						},
+						required: ["name", "lat", "lon"],
+					},
+				},
+				movements: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							from: str("Marker name."),
+							to: str("Marker name."),
+							label: str("What moved."),
+						},
+						required: ["from", "to"],
+					},
+				},
+				lemma: str("Dictionary form of the verb."),
+				language: str("Language name."),
+				tense: str("Tense or mood."),
+				highlight: str("Person or form to emphasize."),
+				rows: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: { person: str("Person."), form: str("Conjugated form.") },
+						required: ["person", "form"],
+					},
+				},
+				words: {
+					type: "array",
+					description: "Sentence words in order. A modifier's of is the index it hangs from.",
+					items: {
+						type: "object",
+						properties: {
+							text: str("The word."),
+							role: { type: "string", enum: ["subject", "verb", "object", "complement", "modifier"] },
+							of: { type: "number" },
+						},
+						required: ["text", "role"],
+					},
+				},
+			},
+			required: ["title", "kind"],
+		},
+		async run(input: unknown, { store, ui, session }) {
+			const figure = await saveFigure(store, input, { sessionId: session?.id });
+			ui?.showFigure?.(figure);
+			return {
+				text: `Showing a ${figure.kind} figure “${figure.title}” in the left margin (${figure.id}). It is saved on the learner's account. Refer to it in your reply. Do not paste the SVG.`,
+				summary: `Figure: ${figure.title}`,
+			};
 		},
 	},
 	{
