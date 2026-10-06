@@ -5,6 +5,17 @@ __pycache__/
 dist/
 packages/obsidian-plugin/main.js
 packages/server/public/force-graph.js
+packages/server/public/tracking.js
+packages/server/public/sitemap.xml
+packages/server/public/robots.txt
+packages/server/public/pricing/
+packages/server/public/exam-prep/
+packages/server/public/concept-map/
+packages/server/public/quizzes-flashcards/
+packages/server/public/goals/
+packages/server/public/get-started/
+packages/server/public/privacy/
+packages/server/public/terms/
 *.log
 .DS_Store
 /demo-vault/

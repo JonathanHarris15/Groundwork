@@ -6,6 +6,8 @@ import { MemoryConflict, type MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
 import { completeTutor, describeTutor } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
+import { attributionFromHeader } from "./tracking";
+import { allowCheckoutAmount } from "./public-limit";
 import { webConfig } from "./web-config";
 
 export interface ServerDeps {
@@ -30,6 +32,11 @@ export interface RouteMeta {
 	origin?: string;
 	rawBody?: string;
 	stripeSignature?: string;
+	/** URI-encoded JSON of utm_* and gclid, sent by the site after a landing. */
+	attribution?: string;
+	sessionId?: string;
+	/** Client address for the public checkout-amount limit. */
+	ip?: string;
 }
 
 export async function route(method: string, path: string, body: unknown, deps: ServerDeps, authorization?: string, meta: RouteMeta = {}): Promise<RouteResult> {
@@ -49,6 +56,12 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			await deps.billing.applyEvent(meta.rawBody ?? "", meta.stripeSignature);
 			return { status: 200, json: { received: true } };
 		}
+		if (method === "GET" && path === "/v1/billing/checkout-amount") {
+			if (meta.ip && !allowCheckoutAmount(meta.ip)) return { status: 429, json: { error: "Too many requests." } };
+			const amountUsd = await deps.billing.checkoutAmount?.(meta.sessionId ?? "");
+			if (amountUsd == null) return { status: 404, json: { error: "Unknown checkout." } };
+			return { status: 200, json: { amountUsd, currency: "USD" } };
+		}
 		if (hasClientKey(body)) {
 			return { status: 400, json: { error: "Do not send API keys on this request. Paste keys under Your model on the account page." } };
 		}
@@ -62,7 +75,8 @@ export async function route(method: string, path: string, body: unknown, deps: S
 				console.error("Groundwork could not read the Stripe subscription.", err);
 			}
 		}
-		const view = await deps.accounts.seen(uid, { email: identity.email, name: identity.name });
+		const openedAccount = await deps.accounts.seen(uid, { email: identity.email, name: identity.name }, attributionFromHeader(meta.attribution));
+		const view = openedAccount.view;
 
 		if (method === "POST" && path === "/v1/auth/sign-out") {
 			await deps.auth.revokeRefreshTokens(uid, authorization);
@@ -70,7 +84,10 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 
 		if (method === "GET" && path === "/v1/account") {
-			return { status: 200, json: presentAccount(view) };
+			return { status: 200, json: { ...presentAccount(view), created: openedAccount.created } };
+		}
+		if (method === "POST" && path === "/v1/account/obsidian-connected") {
+			return { status: 200, json: await deps.accounts.connectObsidian(uid) };
 		}
 		if (method === "POST" && path === "/v1/account/profile") {
 			const displayName = (body as { displayName?: unknown } | null)?.displayName;

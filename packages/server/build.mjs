@@ -1,12 +1,28 @@
 import esbuild from "esbuild";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 mkdirSync(path.join(here, "dist"), { recursive: true });
 
 mkdirSync(path.join(here, "public"), { recursive: true });
+
+const heroWidths = [480, 768, 1200];
+const shotNames = ["quiz", "flashcards", "exam-chat", "exam-map", "goals"];
+function imageSetReady(dir, name) {
+	return heroWidths.every((width) => existsSync(path.join(here, dir, `${name}-${width}.webp`)) && existsSync(path.join(here, dir, `${name}-${width}.avif`)));
+}
+const imagesReady = imageSetReady("public/hero", "concept-map") && shotNames.every((name) => imageSetReady("public/shots", name));
+try {
+	const { writeHeroImages, writeShotImages } = await import("./scripts/hero-image.mjs");
+	await writeHeroImages();
+	await writeShotImages();
+} catch (error) {
+	const message = error instanceof Error ? error.message : String(error);
+	const missingSharp = message.includes("sharp") || message.includes("ERR_MODULE_NOT_FOUND");
+	if (!missingSharp || !imagesReady) throw error;
+}
 
 await esbuild.build({
 	entryPoints: [path.join(here, "graph-client/entry.ts")],
@@ -17,6 +33,28 @@ await esbuild.build({
 	outfile: path.join(here, "public/force-graph.js"),
 	logLevel: "info",
 });
+
+await esbuild.build({
+	entryPoints: [path.join(here, "src/browser-tracking.ts")],
+	bundle: true,
+	platform: "browser",
+	target: "es2022",
+	format: "iife",
+	outfile: path.join(here, "public/tracking.js"),
+	logLevel: "info",
+});
+
+await esbuild.build({
+	entryPoints: [path.join(here, "src/write-site.ts")],
+	bundle: true,
+	platform: "node",
+	target: "node20",
+	format: "esm",
+	outfile: path.join(here, "dist/write-site.js"),
+	logLevel: "info",
+});
+
+await import(pathToFileURL(path.join(here, "dist/write-site.js")).href);
 
 await esbuild.build({
 	entryPoints: [path.join(here, "src/index.ts")],

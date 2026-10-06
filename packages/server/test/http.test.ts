@@ -8,6 +8,7 @@ import { FileAccountStore } from "../src/account-store";
 import { route, type ServerDeps } from "../src/app";
 import type { Auth } from "../src/auth";
 import type { Billing } from "../src/billing";
+import { resetCheckoutAmountLimits } from "../src/public-limit";
 import { readSite } from "../src/static";
 import { MemoryDirectory } from "../src/memory";
 import { FileTutorMemoryStore } from "../src/memory-file";
@@ -62,6 +63,13 @@ describe("account server", () => {
 		expect(account.json).toMatchObject({ needsPlan: true, budgetUsed: 0 });
 		expect(account.json).not.toHaveProperty("creditUsd");
 		expect(account.json).not.toHaveProperty("remainingUsd");
+		expect(account.json).toMatchObject({ created: true });
+		expect(account.json).not.toHaveProperty("attribution");
+		const returning = await route("GET", "/v1/account", null, server);
+		expect(returning.json).toMatchObject({ created: false });
+		const linked = await route("POST", "/v1/account/obsidian-connected", {}, server);
+		expect(linked.json).toEqual({ first: true });
+		expect(await route("POST", "/v1/account/obsidian-connected", {}, server)).toMatchObject({ json: { first: false }, status: 200 });
 	});
 
 	it("saves a plan and reports the free credit", async () => {
@@ -124,10 +132,26 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/force-graph.js?v=3"');
-		expect(site?.body).toContain('src="/app.js?v=18"');
-		expect(site?.body).toContain('href="/styles.css?v=7"');
-		expect(site?.body).toContain("Groundwork plans from first principles");
+		expect(site?.body).toContain('src="/force-graph.js?v=4"');
+		expect(site?.body).toContain('src="/app.js?v=21"');
+		expect(site?.body).toContain('href="/styles.css?v=13"');
+		expect(site?.body).toContain("/hero/concept-map-768.webp");
+		expect(site?.body).toContain("image/avif");
+		expect(site?.body).not.toContain('id="hero-graph"');
+		const hero = readSite("/hero/concept-map-768.webp");
+		expect(hero?.type).toBe("image/webp");
+		expect(Buffer.isBuffer(hero?.body)).toBe(true);
+		expect((hero?.body as Buffer).byteLength).toBeGreaterThan(1000);
+		expect(readSite("/hero/concept-map-768.avif")?.type).toBe("image/avif");
+		const quiz = readSite("/shots/quiz-768.webp");
+		expect(quiz?.type).toBe("image/webp");
+		expect(Buffer.isBuffer(quiz?.body) && quiz.body.length).toBeGreaterThan(1000);
+		expect(readSite("/shots/exam-map-480.avif")?.type).toBe("image/avif");
+		expect(readSite("/shots/../hero/concept-map.png")).toBeNull();
+		expect(site?.body).toContain("Start free");
+		expect(site?.body).toContain("methoddev1505@gmail.com");
+		expect(site?.body).not.toContain("[Dev:");
+		expect(site?.body).not.toContain("coming soon");
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
@@ -213,6 +237,33 @@ describe("account server", () => {
 		});
 		const checkout = await route("POST", "/v1/billing/checkout", { plan: "byom" }, checkoutServer, undefined, { origin: "https://groundwork.test" });
 		expect(checkout.json).toEqual({ url: "https://checkout.stripe.test/byom" });
+		const amountServer = deps({
+			auth: {
+				firebase: true,
+				async uid() {
+					throw Object.assign(new Error("Sign in required."), { status: 401 });
+				},
+				async revokeRefreshTokens() {},
+			},
+			billing: billing({
+				configured: true,
+				async checkoutAmount(sessionId) {
+					return sessionId === "cs_free" ? 0 : null;
+				},
+			}),
+		});
+		const zero = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "cs_free" });
+		expect(zero).toEqual({ status: 200, json: { amountUsd: 0, currency: "USD" } });
+		const unknown = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "nope" });
+		expect(unknown.status).toBe(404);
+		resetCheckoutAmountLimits();
+		let limited = 0;
+		for (let n = 0; n < 31; n++) {
+			const hit = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "cs_free", ip: "203.0.113.8" });
+			if (hit.status === 429) limited++;
+		}
+		expect(limited).toBe(1);
+		expect(readSite("/og.png")?.type).toBe("image/png");
 		const direct = await route("POST", "/v1/account/plan", { plan: "included" }, checkoutServer);
 		expect(direct.status).toBe(402);
 

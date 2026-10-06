@@ -30,12 +30,43 @@ async function seedLargeAccount(request: APIRequestContext) {
 	});
 }
 
+const publicPages = ["/", "/pricing", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms"];
+
+test.beforeEach(async ({ page }) => {
+	await page.addInitScript(() => localStorage.setItem("gw-consent-hide", "1"));
+});
+
+test("public marketing pages load", async ({ page }) => {
+	for (const href of publicPages) {
+		const res = await page.goto(href);
+		expect(res?.status(), href).toBe(200);
+		await expect(page.locator("footer.foot")).toContainText("methoddev1505@gmail.com");
+		await expect(page.locator("body")).not.toContainText("[Dev:");
+	}
+	const robots = await page.goto("/robots.txt");
+	expect(robots?.status()).toBe(200);
+	const sitemap = await page.goto("/sitemap.xml");
+	expect(sitemap?.status()).toBe(200);
+});
+
+test("HEAD matches GET", async ({ request }) => {
+	for (const href of ["/", "/pricing", "/privacy", "/terms", "/og.png", "/health", "/this-route-does-not-exist"]) {
+		const get = await request.get(href);
+		const head = await request.head(href);
+		expect(head.status(), href).toBe(get.status());
+		expect(head.headers()["content-type"], href).toBe(get.headers()["content-type"]);
+		const length = Buffer.byteLength(await get.body());
+		expect(Number(head.headers()["content-length"]), href).toBe(length);
+		expect(Buffer.byteLength(await head.body()), href).toBe(0);
+	}
+});
+
 test("landing and 404", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
-	await expect(page.locator("body")).toContainText("Bring your own model ($4/month)");
-	await expect(page.locator("body")).toContainText("($15/month)");
-	await expect(page.locator("body")).toContainText("$15/month plan");
+	await expect(page.locator("body")).toContainText("Bring your own model for $4/month");
+	await expect(page.locator("body")).toContainText("for $15/month");
+	await expect(page.locator("body")).toContainText("Start free on Groundwork");
 	await expect(page).toHaveTitle(/Groundwork/);
 	const res = await page.goto("/this-route-does-not-exist");
 	expect(res?.status()).toBe(404);

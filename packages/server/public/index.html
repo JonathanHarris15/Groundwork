@@ -3,16 +3,31 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Groundwork</title>
-		<meta name="description" content="Groundwork is an AI tutor in Obsidian that plans from first principles and remembers what you know on your account." />
+		<title>Groundwork: a tutor inside Obsidian | Start free</title>
+		<meta name="description" content="A tutor plugin for Obsidian desktop. It maps what you know from foundations up to your goal, quizzes you at the edge, and plans exam prep." />
+		<link rel="canonical" href="https://groundworklearn.com/" />
+		<meta property="og:title" content="Groundwork: a tutor inside Obsidian | Start free" />
+		<meta property="og:description" content="A tutor plugin for Obsidian desktop. It maps what you know from foundations up to your goal, quizzes you at the edge, and plans exam prep." />
+		<meta property="og:url" content="https://groundworklearn.com/" />
+		<meta property="og:type" content="website" />
+		<meta property="og:image" content="https://groundworklearn.com/og.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:image" content="https://groundworklearn.com/og.png" />
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
+		<link rel="preload" as="image" type="image/avif" media="(max-width: 800px)" imagesrcset="/hero/concept-map-phone-480.avif 480w, /hero/concept-map-phone-768.avif 768w, /hero/concept-map-phone-1200.avif 1200w" imagesizes="92vw" fetchpriority="high" />
+		<link rel="preload" as="image" type="image/avif" media="(min-width: 801px)" imagesrcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" imagesizes="520px" fetchpriority="high" />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=7" />
+		<link rel="stylesheet" href="/styles.css?v=13" />
+		<script src="/tracking.js?v=5"></script>
 	</head>
 	<body>
 		<section id="landing" class="page" aria-label="Groundwork">
+			<a class="skip" href="#content">Skip to content</a>
 			<div class="hero">
 			<div class="glow a"></div>
 			<div class="glow b"></div>
@@ -294,48 +309,147 @@
 			</div>
 			<header class="bar">
 				<a class="logo" href="/" aria-label="Groundwork home">GROUND<svg viewBox="-4 0 128 110" aria-hidden="true"><polyline points="10,14 36,98 60,38 84,98 110,14" fill="none" stroke="#F7F7F5" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"></polyline><circle cx="10" cy="14" r="11" fill="#F0565B"></circle><circle cx="60" cy="38" r="11" fill="#F7A93E"></circle><circle cx="110" cy="14" r="11" fill="#45A9F0"></circle><circle cx="36" cy="98" r="11" fill="#3CC56F"></circle><circle cx="84" cy="98" r="11" fill="#3CC56F"></circle></svg>ORK</a>
-				<a class="sign-link" href="#signin">Sign in</a>
+				<nav class="bar-nav" aria-label="Site">
+					<a class="nav-wide" href="/pricing">Pricing</a>
+					<a class="nav-wide" href="/get-started">Get started</a>
+					<details class="nav-more">
+						<summary>Menu</summary>
+						<div class="nav-menu">
+							<a href="/pricing">Pricing</a>
+							<a href="/get-started">Get started</a>
+						</div>
+					</details>
+					<a class="sign-link" href="#signin">Sign in</a>
+				</nav>
 			</header>
-			<main class="center">
-				<p class="kicker"><i></i>A tutor for Obsidian</p>
-				<h1>Learn it from the ground up.</h1>
-				<p class="sub">Groundwork plans from first principles and teaches from what you already know.</p>
-				<a class="cta" href="#signin">Get started<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></a>
-				<p class="fine">Free plan included. No card needed to start.</p>
+			<main id="content" class="center hero-grid">
+				<div class="hero-copy">
+					<p class="kicker"><i></i>A tutor for Obsidian</p>
+					<h1>Learn it from the ground up, inside Obsidian.</h1>
+					<p class="sub">Groundwork is a tutor plugin for Obsidian. It maps the concepts you’re learning, marks how well you know each one, and plans the next step toward your goal.</p>
+					<div class="cta-row">
+						<a class="cta" href="#signin">Start free<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></a>
+						<p class="cta-note"><span class="note-wide">Requires Obsidian desktop</span><span class="note-phone">Requires Obsidian desktop. Sign up here, install on your computer.</span></p>
+					</div>
+					<p class="fine">Free plan included. No card needed to start.</p>
+				</div>
+				<figure class="map-figure has-phone">
+					<picture>
+						<source media="(max-width: 800px)" type="image/avif" srcset="/hero/concept-map-phone-480.avif 480w, /hero/concept-map-phone-768.avif 768w, /hero/concept-map-phone-1200.avif 1200w" sizes="92vw" />
+						<source media="(max-width: 800px)" type="image/webp" srcset="/hero/concept-map-phone-480.webp 480w, /hero/concept-map-phone-768.webp 768w, /hero/concept-map-phone-1200.webp 1200w" sizes="92vw" />
+						<source type="image/avif" srcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" sizes="(max-width: 860px) 92vw, 520px" />
+						<source type="image/webp" srcset="/hero/concept-map-480.webp 480w, /hero/concept-map-768.webp 768w, /hero/concept-map-1200.webp 1200w" sizes="(max-width: 860px) 92vw, 520px" />
+						<img class="hero-shot" src="/hero/concept-map-768.webp" width="2700" height="1914" alt="Concept map for Derivatives for Calc I. Goals are dark circles with a red flag. The concepts below are marked solid, shaky, learning, rusty, or not started. The next concept to study is ringed." fetchpriority="high" />
+					</picture>
+				</figure>
 			</main>
 			</div>
-			<section class="sec what" aria-labelledby="what-title">
-				<div class="rv"><p class="eyebrow"><i style="background: #2db560"></i>About</p><h2 id="what-title">What Groundwork is</h2></div>
-				<div class="what-body">
-					<p class="rv">Groundwork is a tutor inside Obsidian. Your notes stay in your vault; it reads the folders you choose and writes teaching notes where you allow.</p>
-					<p class="rv">It maps concepts and how well you know them, then builds the next lesson on that map instead of starting over each session.</p>
-					<p class="rv">Set goals, attach exam prep, and quiz until the gaps show up. Bring your own model ($4/month) or let Groundwork run the tutor ($15/month).</p>
+			<section class="sec story" aria-labelledby="know-title">
+				<div class="story-copy">
+					<h2 id="know-title">See what you actually know</h2>
+					<p>Every goal gets a concept map: a pyramid with the foundations at the bottom and your goals, each marked with a red flag, at the top. The path to the goal is highlighted and off-path concepts fade back. Each concept is marked solid, shaky, learning, rusty, or not started, so you can see where to spend the next hour.</p>
 				</div>
+				<figure class="story-shot has-phone">
+					<picture>
+						<source media="(max-width: 800px)" type="image/avif" srcset="/hero/concept-map-phone-480.avif 480w, /hero/concept-map-phone-768.avif 768w, /hero/concept-map-phone-1200.avif 1200w" sizes="92vw" />
+						<source media="(max-width: 800px)" type="image/webp" srcset="/hero/concept-map-phone-480.webp 480w, /hero/concept-map-phone-768.webp 768w, /hero/concept-map-phone-1200.webp 1200w" sizes="92vw" />
+						<source type="image/avif" srcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<source type="image/webp" srcset="/hero/concept-map-480.webp 480w, /hero/concept-map-768.webp 768w, /hero/concept-map-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<img src="/hero/concept-map-768.webp" width="2700" height="1914" alt="Concept map for Derivatives for Calc I. Goals are dark circles with a red flag. The concepts below are marked solid, shaky, learning, rusty, or not started. The next concept to study is ringed." loading="lazy" />
+					</picture>
+				</figure>
+			</section>
+			<section class="sec story story-flip" aria-labelledby="exam-title">
+				<div class="story-copy">
+					<h2 id="exam-title">Turn exam material into a plan</h2>
+					<p>Drop in lecture slides, homework, a study guide, or a practice exam. Groundwork pulls out the topics and the depth the exam asks for, then builds an exam goal with a due date. The plan starts with the foundations and works up.</p>
+				</div>
+				<figure class="story-shot">
+					<picture>
+						<source type="image/avif" srcset="/shots/exam-chat-480.avif 480w, /shots/exam-chat-768.avif 768w, /shots/exam-chat-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<source type="image/webp" srcset="/shots/exam-chat-480.webp 480w, /shots/exam-chat-768.webp 768w, /shots/exam-chat-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<img src="/shots/exam-chat-768.webp" width="1553" height="1260" alt="Tutor chat after attaching MATH-151-practice-exam.md. Groundwork saved the goal Prepare for MATH 151 practice, due in just over three weeks, with 4 of 14 concepts solid." loading="lazy" />
+					</picture>
+				</figure>
+			</section>
+			<section class="sec story" aria-labelledby="quiz-title">
+				<div class="story-copy">
+					<h2 id="quiz-title">Quizzes that find the edge</h2>
+					<p>Quiz yourself on your own notes and lecture slides. Diagnostic quiz cards test each concept at levels 1 to 5 to find where your understanding stops. A careless slip isn’t counted as a gap, and misconceptions are tracked separately. Groundwork only reads the vault folders you allow.</p>
+				</div>
+				<figure class="story-shot">
+					<picture>
+						<source type="image/avif" srcset="/shots/quiz-480.avif 480w, /shots/quiz-768.avif 768w, /shots/quiz-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<source type="image/webp" srcset="/shots/quiz-480.webp 480w, /shots/quiz-768.webp 768w, /shots/quiz-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<img src="/shots/quiz-768.webp" width="1852" height="1949" alt="Quiz card for the power rule at level 3 of 5. The question is the derivative of x cubed. 3x squared is marked correct, and 3x is marked wrong as a misconception that drops the exponent too far." loading="lazy" />
+					</picture>
+				</figure>
+			</section>
+			<section class="sec story story-flip" aria-labelledby="tutor-title">
+				<div class="story-copy">
+					<h2 id="tutor-title">Flashcards and a tutor, in Obsidian</h2>
+					<p>Flashcard decks are there for quick review of terms and formulas. Reviews count a little; quiz cards set the marks. When you get stuck, chat with the tutor: math renders in LaTeX, answers can use callouts and diagrams, and you can attach slides, PDFs, or images.</p>
+				</div>
+				<figure class="story-shot">
+					<picture>
+						<source type="image/avif" srcset="/shots/flashcards-480.avif 480w, /shots/flashcards-768.avif 768w, /shots/flashcards-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<source type="image/webp" srcset="/shots/flashcards-480.webp 480w, /shots/flashcards-768.webp 768w, /shots/flashcards-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<img src="/shots/flashcards-768.webp" width="2343" height="1756" alt="Flashcard for the power rule, asking for the derivative of x to the n. The answer is n x to the n minus 1." loading="lazy" />
+					</picture>
+				</figure>
+			</section>
+			<section class="sec story" aria-labelledby="keeps-title">
+				<div class="story-copy">
+					<h2 id="keeps-title">Keeps up with you</h2>
+					<p>Every goal has a due date, and the Goals tab shows whether you’re on pace. Mastery fades over time, so rusty concepts come back for review. Progress syncs across your computers.</p>
+				</div>
+				<figure class="story-shot">
+					<picture>
+						<source type="image/avif" srcset="/shots/goals-480.avif 480w, /shots/goals-768.avif 768w, /shots/goals-1200.avif 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<source type="image/webp" srcset="/shots/goals-480.webp 480w, /shots/goals-768.webp 768w, /shots/goals-1200.webp 1200w" sizes="(max-width: 800px) 92vw, 480px" />
+						<img src="/shots/goals-768.webp" width="2450" height="2195" alt="Goal Derivatives for Calc I, due Tuesday, December 8, with 15 days left and marked on pace. The bar shows study days up to the exam, and 4 of 14 concepts are solid." loading="lazy" />
+					</picture>
+				</figure>
 			</section>
 			<section class="sec" aria-labelledby="how-title">
-				<div class="how-head rv"><p class="eyebrow"><i style="background: #2e9be6"></i>The path</p><h2 id="how-title">How it works</h2></div>
+				<div class="how-head"><p class="eyebrow"><i style="background: #2e9be6"></i>The path</p><h2 id="how-title">How it works</h2></div>
 				<div class="steps-wrap">
 					<span class="rail-pulse" aria-hidden="true"></span>
 					<ol class="steps">
-						<li class="step rv" style="--c: #2db560"><div class="step-node"><span style="background: #2db560"></span></div><div><p class="step-num">01</p><h3>Keep your vault.</h3><p>Groundwork plugs into Obsidian. Your notes, links, and folders stay yours.</p></div></li>
-						<li class="step rv" style="--c: #2e9be6"><div class="step-node"><span style="background: #2e9be6"></span></div><div><p class="step-num">02</p><h3>Choose what it can see and where it can write.</h3><p>Mark folders as context. Mark folders for teaching documents it creates for review later.</p></div></li>
-						<li class="step rv" style="--c: #f59e2b"><div class="step-node"><span style="background: #f59e2b"></span></div><div><p class="step-num">03</p><h3>Build on what you know.</h3><p>Groundwork tracks concepts and your grasp of them. New lessons grow from that map instead of starting from zero every time.</p></div></li>
-						<li class="step rv" style="--c: #e5484d"><div class="step-node"><span style="background: #e5484d"></span></div><div><p class="step-num">04</p><h3>Practice until it sticks.</h3><p>Quizzes test real understanding, not just recognition, so gaps show up before the exam does.</p></div></li>
-						<li class="step rv" style="--c: #2db560"><div class="step-node"><span style="background: #2db560"></span></div><div><p class="step-num">05</p><h3>Aim at goals and deadlines.</h3><p>Set a goal, or feed in exam prep. Groundwork sequences the path: foundations first, then the heaviest-point material when time is short.</p></div></li>
-						<li class="step rv" style="--c: #2e9be6"><div class="step-node"><span style="background: #2e9be6"></span></div><div><p class="step-num">06</p><h3>Use your models or ours.</h3><p>Claude on your computer, a key you paste, or Groundwork's tutor on the $15/month plan.</p></div></li>
+						<li class="step" style="--c: #2db560"><div class="step-node"><span style="background: #2db560"></span></div><div><p class="step-num">01</p><h3>Keep your vault.</h3><p>Groundwork plugs into Obsidian. Your notes, links, and folders stay yours.</p></div></li>
+						<li class="step" style="--c: #2e9be6"><div class="step-node"><span style="background: #2e9be6"></span></div><div><p class="step-num">02</p><h3>Choose what it can see and where it can write.</h3><p>Mark folders as context. Mark folders for teaching documents it creates for review later.</p></div></li>
+						<li class="step" style="--c: #f59e2b"><div class="step-node"><span style="background: #f59e2b"></span></div><div><p class="step-num">03</p><h3>Build on what you know.</h3><p>Groundwork tracks concepts and your grasp of them. New lessons grow from that map instead of starting from zero every time.</p></div></li>
+						<li class="step" style="--c: #e5484d"><div class="step-node"><span style="background: #e5484d"></span></div><div><p class="step-num">04</p><h3>Practice until it sticks.</h3><p>Quizzes test real understanding, not just recognition, so gaps show up before the exam does.</p></div></li>
+						<li class="step" style="--c: #2db560"><div class="step-node"><span style="background: #2db560"></span></div><div><p class="step-num">05</p><h3>Aim at goals and deadlines.</h3><p>Set a goal, or feed in exam prep. Groundwork sequences the path: foundations first, then the heaviest-point material when time is short.</p></div></li>
+						<li class="step" style="--c: #2e9be6"><div class="step-node"><span style="background: #2e9be6"></span></div><div><p class="step-num">06</p><h3>Use your models or ours.</h3><p>Start free on Groundwork’s smaller model. Bring your own model for $4/month (the Claude subscription on your computer or a key you paste), or let Groundwork run the models for $15/month.</p></div></li>
 					</ol>
 				</div>
 			</section>
 			<section class="close" aria-labelledby="close-title">
-				<div class="rv">
+				<div>
 					<svg class="close-mark" viewBox="-4 0 128 110" aria-hidden="true"><polyline points="10,14 36,98 60,38 84,98 110,14" fill="none" stroke="#F7F7F5" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"></polyline><circle cx="10" cy="14" r="10" fill="#F0565B"></circle><circle cx="60" cy="38" r="10" fill="#F7A93E"></circle><circle cx="110" cy="14" r="10" fill="#45A9F0"></circle><circle cx="36" cy="98" r="10" fill="#3CC56F"></circle><circle cx="84" cy="98" r="10" fill="#3CC56F"></circle></svg>
 					<h2 id="close-title">Learn where your notes already live.</h2>
+					<div class="cta-row close-cta">
+						<a class="cta" href="#signin">Start free<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></a>
+						<p class="cta-note"><span class="note-wide">Requires Obsidian desktop</span><span class="note-phone">Requires Obsidian desktop. Sign up here, install on your computer.</span></p>
+					</div>
 					<p class="fine landing-close">Already exploring? <a href="#signin">Sign in</a> to connect Obsidian.</p>
 				</div>
 			</section>
 			<footer class="foot">
 				<a class="logo" href="/" aria-label="Groundwork home">GROUND<svg viewBox="-4 0 128 110" aria-hidden="true"><polyline points="10,14 36,98 60,38 84,98 110,14" fill="none" stroke="#F7F7F5" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"></polyline><circle cx="10" cy="14" r="11" fill="#F0565B"></circle><circle cx="60" cy="38" r="11" fill="#F7A93E"></circle><circle cx="110" cy="14" r="11" fill="#45A9F0"></circle><circle cx="36" cy="98" r="11" fill="#3CC56F"></circle><circle cx="84" cy="98" r="11" fill="#3CC56F"></circle></svg>ORK</a>
-				<span>A tutor for Obsidian</span>
+				<nav class="foot-links" aria-label="Footer">
+					<a href="/privacy">Privacy</a>
+					<a href="/terms">Terms</a>
+					<a href="mailto:methoddev1505@gmail.com" data-contact-email>methoddev1505@gmail.com</a>
+					<button type="button" class="foot-button" data-consent-open>Cookies</button>
+				</nav>
+				<nav class="foot-features" aria-label="Features">
+					<a href="/exam-prep">Exam prep</a>
+					<a href="/concept-map">Concept map</a>
+					<a href="/quizzes-flashcards">Quizzes &amp; flashcards</a>
+					<a href="/goals">Goals</a>
+				</nav>
 			</footer>
 		</section>
 		<div id="site" class="site" hidden>
@@ -346,11 +460,26 @@
 					<div id="account-chip" class="chip" hidden></div>
 				</div>
 			</header>
+			<a class="skip" href="#app">Skip to content</a>
 			<main id="app" class="wrap">
 				<p class="loading">Loading…</p>
 			</main>
+			<footer class="site-foot wrap">
+				<nav class="foot-links" aria-label="Footer">
+					<a href="/privacy">Privacy</a>
+					<a href="/terms">Terms</a>
+					<a href="mailto:methoddev1505@gmail.com" data-contact-email>methoddev1505@gmail.com</a>
+					<button type="button" class="foot-button" data-consent-open>Cookies</button>
+				</nav>
+				<nav class="foot-features" aria-label="Features">
+					<a href="/exam-prep">Exam prep</a>
+					<a href="/concept-map">Concept map</a>
+					<a href="/quizzes-flashcards">Quizzes &amp; flashcards</a>
+					<a href="/goals">Goals</a>
+				</nav>
+			</footer>
 		</div>
-		<script type="module" src="/force-graph.js?v=3"></script>
-		<script type="module" src="/app.js?v=18"></script>
+		<script type="module" src="/force-graph.js?v=4"></script>
+		<script type="module" src="/app.js?v=21"></script>
 	</body>
 </html>

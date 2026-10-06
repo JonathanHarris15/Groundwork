@@ -1,0 +1,308 @@
+import { configureMeasurementTags, emitObsidianConnected, emitPurchase, emitSignUp, type Ga4EventClient } from "./ga4-events";
+import {
+	attributionFromSearch,
+	consentDefaults,
+	hasClientAttribution,
+	mergeAttribution,
+	tagScriptUrl,
+	type Attribution,
+	type ConsentChoice,
+} from "./tracking";
+
+const ATTR_KEY = "gw-attribution";
+const CONSENT_KEY = "gw-consent";
+const CONSENT_HIDE_KEY = "gw-consent-hide";
+const SIGNUP_KEY = "gw-sign-up";
+const PURCHASE_KEY = "gw-purchases";
+
+declare global {
+	interface Window {
+		dataLayer?: unknown[];
+		GroundworkTracking?: {
+			event: (name: string, params?: Record<string, unknown>) => void;
+			noteSignUp: (created: boolean, method: string) => void;
+			noteObsidian: (body: { first?: boolean } | null) => void;
+			notePurchase: (sessionId: string | null, plan: string | null, amountUsd?: number | null) => boolean;
+			attributionHeader: () => string;
+			openConsent: () => void;
+		};
+	}
+}
+
+function gtag(..._args: unknown[]): void {
+	window.dataLayer = window.dataLayer || [];
+	// gtag.js only reads Arguments objects; a plain array is ignored.
+	// eslint-disable-next-line prefer-rest-params
+	window.dataLayer.push(arguments);
+}
+
+function readJson<T>(key: string): T | null {
+	try {
+		const raw = localStorage.getItem(key);
+		return raw ? (JSON.parse(raw) as T) : null;
+	} catch {
+		return null;
+	}
+}
+
+function writeJson(key: string, value: unknown): void {
+	try {
+		localStorage.setItem(key, JSON.stringify(value));
+	} catch {
+		/* private mode */
+	}
+}
+
+function readChoice(): ConsentChoice | null {
+	try {
+		const value = localStorage.getItem(CONSENT_KEY);
+		return value === "granted" || value === "denied" ? value : null;
+	} catch {
+		return null;
+	}
+}
+
+function readAttribution(): Attribution | null {
+	const fromStorage = readJson<Attribution>(ATTR_KEY);
+	if (hasClientAttribution(fromStorage)) return fromStorage;
+	const match = document.cookie.match(/(?:^|; )gw_attr=([^;]*)/);
+	if (!match) return null;
+	try {
+		const parsed = JSON.parse(decodeURIComponent(match[1])) as Attribution;
+		return hasClientAttribution(parsed) ? parsed : null;
+	} catch {
+		return null;
+	}
+}
+
+function writeAttribution(value: Attribution): void {
+	writeJson(ATTR_KEY, value);
+	const secure = location.protocol === "https:" ? "; Secure" : "";
+	document.cookie = `gw_attr=${encodeURIComponent(JSON.stringify(value))}; Path=/; Max-Age=7776000; SameSite=Lax${secure}`;
+}
+
+function eventParams(extra?: Record<string, unknown>): Record<string, unknown> {
+	return { ...(readAttribution() ?? {}), ...extra };
+}
+
+function event(name: string, params?: Record<string, unknown>): void {
+	const payload = eventParams(params);
+	void tagReady.then(() => gtag("event", name, payload));
+}
+
+function applyConsent(choice: ConsentChoice): void {
+	const [command] = consentDefaults(choice);
+	gtag("consent", "update", command);
+	try {
+		localStorage.setItem(CONSENT_KEY, choice);
+	} catch {
+		/* ignore */
+	}
+	hideBanner();
+}
+
+function hideBanner(): void {
+	document.querySelector(".consent")?.remove();
+	document.body.classList.remove("has-consent");
+	try {
+		localStorage.setItem(CONSENT_HIDE_KEY, "1");
+	} catch {
+		/* ignore */
+	}
+}
+
+function openConsent(): void {
+	if (document.querySelector(".consent")) return;
+	const bar = document.createElement("div");
+	bar.className = "consent";
+	bar.setAttribute("role", "dialog");
+	bar.setAttribute("aria-label", "Cookies");
+	bar.innerHTML = `
+		<p>Cookies measure ads. In the US they’re on unless you opt out.</p>
+		<div class="consent-actions">
+			<button type="button" data-consent="dismiss">OK</button>
+			<button type="button" data-consent="denied">Opt out</button>
+		</div>`;
+	bar.addEventListener("click", (click) => {
+		const target = click.target;
+		if (!(target instanceof HTMLElement)) return;
+		const action = target.closest("button")?.getAttribute("data-consent");
+		if (action === "granted" || action === "denied") applyConsent(action);
+		else if (action === "dismiss") hideBanner();
+	});
+	document.body.appendChild(bar);
+	document.body.classList.add("has-consent");
+}
+
+function bootConsent(): void {
+	for (const command of consentDefaults(readChoice())) gtag("consent", "default", command);
+}
+
+function capture(): void {
+	const next = mergeAttribution(readAttribution(), attributionFromSearch(location.search));
+	if (next && hasClientAttribution(next)) writeAttribution(next);
+}
+
+/** Resolves once `js` + `config` are queued (or there is no tag). gtag.js drops events queued before `config`. */
+let markTagReady: () => void = () => {};
+const tagReady = new Promise<void>((resolve) => {
+	markTagReady = resolve;
+});
+
+/** Purchase ids stay out of localStorage until the event is actually queued for gtag.js. */
+const pendingPurchases: string[] = [];
+let persistPurchases = false;
+
+function flushPurchases(): void {
+	if (!persistPurchases || pendingPurchases.length === 0) return;
+	const already = readJson<string[]>(PURCHASE_KEY) ?? [];
+	const next = [...already];
+	for (const id of pendingPurchases) {
+		if (!next.includes(id)) next.push(id);
+	}
+	pendingPurchases.length = 0;
+	writeJson(PURCHASE_KEY, next.slice(-50));
+}
+
+async function bootTag(): Promise<void> {
+	try {
+		await loadTag();
+	} finally {
+		markTagReady();
+	}
+}
+
+async function loadTag(): Promise<void> {
+	let config: { ga4MeasurementId?: string | null; googleAdsId?: string | null; contactEmail?: string } | null = null;
+	try {
+		const res = await fetch("/v1/web-config");
+		if (res.ok) config = await res.json();
+	} catch {
+		config = null;
+	}
+	const email = config?.contactEmail?.trim();
+	if (email) {
+		for (const el of document.querySelectorAll("[data-contact-email]")) {
+			el.textContent = email;
+			if (el instanceof HTMLAnchorElement) el.href = `mailto:${email}`;
+		}
+	}
+	const ids = { ga4: config?.ga4MeasurementId ?? null, ads: config?.googleAdsId ?? null };
+	const src = tagScriptUrl(ids);
+	if (!src) {
+		persistPurchases = true;
+		return;
+	}
+	let loaded = false;
+	await new Promise<void>((resolve) => {
+		const script = document.createElement("script");
+		script.async = true;
+		script.src = src;
+		script.onload = () => {
+			loaded = true;
+			resolve();
+		};
+		script.onerror = () => resolve();
+		document.head.appendChild(script);
+	});
+	if (!loaded) return;
+	gtag("js", new Date());
+	const attr = readAttribution() ?? {};
+	const campaign: Record<string, string> = {};
+	if (attr.utm_source) campaign.campaign_source = attr.utm_source;
+	if (attr.utm_medium) campaign.campaign_medium = attr.utm_medium;
+	if (attr.utm_campaign) campaign.campaign_name = attr.utm_campaign;
+	if (attr.utm_term) campaign.campaign_term = attr.utm_term;
+	if (attr.utm_content) campaign.campaign_content = attr.utm_content;
+	if (attr.gclid) campaign.gclid = attr.gclid;
+	configureMeasurementTags(gtag, ids, campaign);
+	persistPurchases = true;
+}
+
+const ga4Client: Ga4EventClient = {
+	gtag: (...args: unknown[]) => {
+		void tagReady.then(() => {
+			gtag(...args);
+			flushPurchases();
+		});
+	},
+	attribution: () => readAttribution() ?? {},
+	signUpAlreadyFired() {
+		try {
+			return sessionStorage.getItem(SIGNUP_KEY) === "1";
+		} catch {
+			return false;
+		}
+	},
+	markSignUpFired() {
+		try {
+			sessionStorage.setItem(SIGNUP_KEY, "1");
+		} catch {
+			/* ignore */
+		}
+	},
+	recordedPurchases: () => [...(readJson<string[]>(PURCHASE_KEY) ?? []), ...pendingPurchases],
+	rememberPurchase(id) {
+		if (!pendingPurchases.includes(id)) pendingPurchases.push(id);
+	},
+};
+
+function noteSignUp(created: boolean, method: string): void {
+	emitSignUp(ga4Client, created, method);
+}
+
+function notePurchase(sessionId: string | null, plan: string | null, amountUsd?: number | null): boolean {
+	return emitPurchase(ga4Client, sessionId, plan, amountUsd);
+}
+
+function noteObsidian(body: { first?: boolean } | null): void {
+	emitObsidianConnected(ga4Client, body?.first === true);
+}
+
+bootConsent();
+capture();
+
+window.GroundworkTracking = {
+	event,
+	noteSignUp,
+	noteObsidian,
+	notePurchase,
+	attributionHeader() {
+		const stored = readAttribution();
+		if (!hasClientAttribution(stored)) return "";
+		return encodeURIComponent(JSON.stringify(stored));
+	},
+	openConsent,
+};
+
+document.addEventListener("click", (click) => {
+	const target = click.target;
+	if (!(target instanceof Element)) return;
+	if (target.closest("[data-consent-open]")) openConsent();
+});
+
+if (document.readyState === "loading") {
+	document.addEventListener("DOMContentLoaded", () => {
+		if (!readChoice()) {
+			let hidden = false;
+			try {
+				hidden = localStorage.getItem(CONSENT_HIDE_KEY) === "1";
+			} catch {
+				hidden = false;
+			}
+			if (!hidden) openConsent();
+		}
+		void bootTag();
+	});
+} else {
+	if (!readChoice()) {
+		let hidden = false;
+		try {
+			hidden = localStorage.getItem(CONSENT_HIDE_KEY) === "1";
+		} catch {
+			hidden = false;
+		}
+		if (!hidden) openConsent();
+	}
+	void bootTag();
+}

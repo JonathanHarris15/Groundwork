@@ -13,6 +13,8 @@ export interface Billing {
 	 * A Stripe outage must not fail the request.
 	 */
 	sync?(uid: string, email?: string): Promise<void>;
+	/** Dollars paid on a Checkout Session, from amount_total. Zero is a real payment. */
+	checkoutAmount?(sessionId: string): Promise<number | null>;
 }
 
 /** Stripe-standard grace: past_due keeps paid entitlements until canceled, unpaid, or deleted. */
@@ -109,6 +111,15 @@ export function createBilling(stripe: Stripe, prices: { byom: string; included: 
 			const event = stripe.webhooks.constructEvent(raw, signature, webhookSecret);
 			freshUntil.clear();
 			await applyStripeEvent(accounts, event, prices);
+		},
+		async checkoutAmount(sessionId) {
+			if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return null;
+			try {
+				const session = await stripe.checkout.sessions.retrieve(sessionId);
+				return paidAmountUsd(session.amount_total);
+			} catch {
+				return null;
+			}
 		},
 		async sync(uid) {
 			const now = Date.now();
@@ -260,7 +271,7 @@ async function checkoutSession(
 		customer,
 		client_reference_id: uid,
 		line_items: [{ price: prices[plan], quantity: 1 }],
-		success_url: `${origin}/?billing=success`,
+		success_url: checkoutSuccessUrl(origin, plan),
 		cancel_url: `${origin}/?billing=cancel`,
 		metadata: { uid, plan },
 		subscription_data: { metadata: { uid, plan } },
@@ -311,6 +322,17 @@ function priceId(price: string | { id?: string | null } | null | undefined): str
 	if (typeof price === "string" && price) return price;
 	if (price && typeof price === "object" && typeof price.id === "string" && price.id) return price.id;
 	return undefined;
+}
+
+/** Checkout `amount_total` is cents. A 100% off promotion is 0, which is still a purchase. */
+export function paidAmountUsd(amountTotal: number | null | undefined): number | null {
+	if (typeof amountTotal !== "number" || !Number.isFinite(amountTotal) || amountTotal < 0) return null;
+	return amountTotal / 100;
+}
+
+/** Stripe replaces `{CHECKOUT_SESSION_ID}` so a refresh of the success page can be deduped. */
+export function checkoutSuccessUrl(origin: string, plan: "byom" | "included"): string {
+	return `${origin}/?billing=success&session_id={CHECKOUT_SESSION_ID}&plan=${plan}`;
 }
 
 function isPaid(plan: unknown): plan is "byom" | "included" {

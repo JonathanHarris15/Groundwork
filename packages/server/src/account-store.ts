@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type Firestore } from "firebase-admin/firestore";
 import { isPlanId, isUserKeyProvider, type AccountRecord } from "@groundwork/core";
+import { attributionFromUnknown } from "./tracking";
 import { openFirestore } from "./firestore";
 
 /** Saved account so any server process can remember the plan and the profile. */
@@ -23,6 +24,8 @@ export function serializeAccount(record: AccountRecord): Record<string, unknown>
 	if (record.stripeCustomerId) out.stripeCustomerId = record.stripeCustomerId;
 	if (record.tutorVia) out.tutorVia = record.tutorVia;
 	if (record.tutorProvider) out.tutorProvider = record.tutorProvider;
+	if (record.obsidianConnectedAt) out.obsidianConnectedAt = record.obsidianConnectedAt;
+	if (record.attribution) out.attribution = record.attribution;
 	return out;
 }
 
@@ -43,6 +46,9 @@ export function parseStoredAccount(uid: string, data: unknown): AccountRecord | 
 	if (typeof raw.stripeCustomerId === "string" && raw.stripeCustomerId.trim()) record.stripeCustomerId = raw.stripeCustomerId.trim();
 	if (raw.tutorVia === "claude" || raw.tutorVia === "key") record.tutorVia = raw.tutorVia;
 	if (isUserKeyProvider(raw.tutorProvider)) record.tutorProvider = raw.tutorProvider;
+	if (typeof raw.obsidianConnectedAt === "string" && raw.obsidianConnectedAt.trim()) record.obsidianConnectedAt = raw.obsidianConnectedAt.trim();
+	const attribution = attributionFromUnknown(raw.attribution);
+	if (attribution) record.attribution = attribution;
 	return record;
 }
 

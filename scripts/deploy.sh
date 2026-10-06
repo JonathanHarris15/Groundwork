@@ -3,6 +3,8 @@
 # Cloud Run service "groundwork" (the API) and Firebase Hosting (the website).
 # Run from any working directory. Do not pass environment variables to Cloud Run:
 # the Stripe keys and the other server secrets are already on the service.
+# GA4 is the production default (G-F4236HGZSM) when GA4_MEASUREMENT_ID is unset.
+# GOOGLE_ADS_ID and conversion labels are optional. Deploy does not require them.
 
 set -euo pipefail
 

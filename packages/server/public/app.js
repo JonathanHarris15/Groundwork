@@ -11,6 +11,7 @@ const billingNote = billingFlag === "success"
 	: billingFlag === "cancel"
 		? "Checkout was canceled. Your plan is unchanged."
 		: "";
+if (billingFlag === "success") void reportCheckoutPurchase();
 
 const NODE = { free: "green", byom: "blue", included: "orange" };
 const PROVIDER_LABEL = { anthropic: "Anthropic", openrouter: "OpenRouter", google: "Google", xai: "xAI", openai: "OpenAI" };
@@ -29,6 +30,8 @@ let firebaseAuth = null;
 let problem = "";
 let actionError = "";
 let billingQueryCleared = false;
+let planHandoffStarted = false;
+let heroMap = null;
 let conceptSearch = "";
 let conceptFilter = "needs-attention";
 let conceptVisible = 12;
@@ -48,7 +51,6 @@ boot().catch((err) => {
 
 window.addEventListener("hashchange", () => paint());
 bindParallax();
-bindReveal();
 
 async function boot() {
 	if (site && !site.hidden) showLoading();
@@ -94,7 +96,7 @@ async function boot() {
 }
 
 function localDevUser() {
-	return {
+	const next = {
 		_local: true,
 		displayName: "Local learner",
 		email: "local@groundwork.test",
@@ -102,6 +104,8 @@ function localDevUser() {
 			return null;
 		},
 	};
+	if (params.get("e2e") === "link") next.refreshToken = "local-dev-refresh";
+	return next;
 }
 
 async function continueLocalDev() {
@@ -127,6 +131,7 @@ async function authToken() {
 async function refresh() {
 	const token = await authToken();
 	account = await get("/v1/account", token);
+	window.GroundworkTracking?.noteSignUp(account.created === true, user?._local ? "local" : "Google");
 	const [secrets, nextGroundwork, nextTutor] = await Promise.all([
 		get("/v1/secrets", token).catch(() => null),
 		get("/v1/groundwork", token).catch(() => null),
@@ -155,6 +160,7 @@ function paint() {
 	renderChip();
 	if (account.needsPlan || location.hash === "#plans") showPlans();
 	else showAccount();
+	void maybePlanHandoff();
 }
 
 function setPageTitle(title) {
@@ -166,20 +172,65 @@ function consumeBillingQuery() {
 	billingQueryCleared = true;
 	const next = new URLSearchParams(location.search);
 	next.delete("billing");
+	next.delete("session_id");
+	next.delete("plan");
 	const qs = next.toString();
 	history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
 }
 
+async function reportCheckoutPurchase() {
+	const sessionId = params.get("session_id") || params.get("subscription_id");
+	const plan = params.get("plan");
+	let amount = null;
+	if (sessionId && sessionId.startsWith("cs_")) {
+		try {
+			const res = await fetch(`/v1/billing/checkout-amount?session_id=${encodeURIComponent(sessionId)}`);
+			if (res.ok) {
+				const body = await res.json();
+				if (typeof body.amountUsd === "number") amount = body.amountUsd;
+			}
+		} catch {
+			/* The list price is the fallback when Checkout cannot be read. */
+		}
+	}
+	window.GroundworkTracking?.notePurchase(sessionId, plan, amount);
+}
+
 function showLanding() {
-	setPageTitle("Learn from the ground up");
+	document.title = "Groundwork: a tutor inside Obsidian | Start free";
 	landing.hidden = false;
 	site.hidden = true;
 	site.classList.remove("is-study");
+	mountHeroMap();
 }
 
 function showApp() {
+	disposeHeroMap();
 	landing.hidden = true;
 	site.hidden = false;
+}
+
+function mountHeroMap() {
+	const host = document.querySelector("#hero-graph");
+	if (!host || heroMap || !window.GroundworkGraph?.mountMarketing) return;
+	heroMap = window.GroundworkGraph.mountMarketing(host);
+}
+
+function disposeHeroMap() {
+	heroMap?.dispose?.();
+	heroMap = null;
+}
+
+async function maybePlanHandoff() {
+	if (planHandoffStarted || billingFlag) return;
+	const plan = params.get("plan");
+	if (plan !== "byom" && plan !== "included") return;
+	planHandoffStarted = true;
+	const next = new URLSearchParams(location.search);
+	next.delete("plan");
+	const qs = next.toString();
+	history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+	await choose(plan);
 }
 
 function showSignIn() {
@@ -191,8 +242,8 @@ function showSignIn() {
 	show(`
 		<div class="hero">
 			<div>
-				<h1>Sign in to study.</h1>
-				<p class="lede">Sign in to manage your plan. Then choose <strong>Open Obsidian</strong> on the account page to link the plugin on this computer.</p>
+				<h1>Sign in or start free.</h1>
+				<p class="lede">Create your free account or sign in with Google. Then choose <strong>Open Obsidian</strong> on the account page to link the plugin on this computer. Requires Obsidian desktop.</p>
 				${notice(false)}
 				<div class="signin">
 					${config.firebase ? `<button class="btn btn-ink" id="google" type="button">Sign in with Google</button>` : ""}
@@ -1017,6 +1068,13 @@ function openObsidian() {
 		if (opened) {
 			stop();
 			try {
+				const token = await authToken();
+				const linked = await send("/v1/account/obsidian-connected", {}, token);
+				window.GroundworkTracking?.noteObsidian(linked);
+			} catch {
+				/* the page still marks the handoff below */
+			}
+			try {
 				localStorage.setItem("groundwork-obsidian-linked", "1");
 			} catch {
 				/* ignore */
@@ -1058,15 +1116,20 @@ async function openPortal() {
 	}
 }
 
+function trackingHeaders() {
+	const value = window.GroundworkTracking?.attributionHeader?.() || "";
+	return value ? { "x-groundwork-attribution": value } : {};
+}
+
 async function get(path, token) {
-	const res = await fetch(path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+	const res = await fetch(path, { headers: { ...trackingHeaders(), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
 	return readJson(res);
 }
 
 async function send(path, json, token) {
 	const res = await fetch(path, {
 		method: "POST",
-		headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+		headers: { "content-type": "application/json", ...trackingHeaders(), ...(token ? { authorization: `Bearer ${token}` } : {}) },
 		body: JSON.stringify(json),
 	});
 	return readJson(res);
@@ -1100,21 +1163,6 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
 	return escapeHtml(value);
-}
-
-function bindReveal() {
-	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-	const nodes = [...landing.querySelectorAll(".rv")];
-	if (!nodes.length) return;
-	landing.classList.add("reveal-ready");
-	const observer = new IntersectionObserver((entries) => {
-		for (const entry of entries) {
-			if (!entry.isIntersecting) continue;
-			entry.target.classList.add("is-in");
-			observer.unobserve(entry.target);
-		}
-	}, { threshold: 0.2, rootMargin: "0px 0px -8% 0px" });
-	for (const node of nodes) observer.observe(node);
 }
 
 function bindParallax() {

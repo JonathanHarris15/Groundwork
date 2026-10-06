@@ -13,6 +13,7 @@ import {
 	type AccountRecord,
 	type AccountView,
 	type PlanId,
+	type StoredAttribution,
 	type TutorChoice,
 } from "@groundwork/core";
 import type { AccountStore } from "./account-store";
@@ -31,8 +32,31 @@ export class AccountDirectory {
 		return viewAccount(await this.record(uid, now), now);
 	}
 
-	async seen(uid: string, profile: { email?: string; name?: string }, now: Date = new Date()): Promise<AccountView> {
-		return this.commit(uid, now, (record) => rememberProfile(currentAccount(record, now), profile));
+	async seen(
+		uid: string,
+		profile: { email?: string; name?: string },
+		attribution?: StoredAttribution | null,
+		now: Date = new Date(),
+	): Promise<{ view: AccountView; created: boolean }> {
+		const existing = await this.readRecord(uid);
+		const view = await this.commit(uid, now, (record) => {
+			let next = rememberProfile(currentAccount(record, now), profile);
+			if (attribution && !hasAttribution(next.attribution)) next = { ...next, attribution };
+			return next;
+		});
+		const created = !existing && !!(await this.readRecord(uid));
+		return { view, created };
+	}
+
+	/** First call for an account returns `{ first: true }`. Later calls do not. */
+	async connectObsidian(uid: string, now: Date = new Date()): Promise<{ first: boolean }> {
+		const existing = await this.readRecord(uid);
+		if (existing?.obsidianConnectedAt) return { first: false };
+		await this.commit(uid, now, (record) => {
+			if (record.obsidianConnectedAt) return currentAccount(record, now);
+			return { ...currentAccount(record, now), obsidianConnectedAt: now.toISOString() };
+		});
+		return { first: true };
 	}
 
 	async setPlan(uid: string, plan: PlanId, now: Date = new Date()): Promise<AccountView> {
@@ -81,9 +105,13 @@ export class AccountDirectory {
 		return undefined;
 	}
 
+	private async readRecord(uid: string): Promise<AccountRecord | null> {
+		if (!this.store) return this.accounts.get(uid) ?? null;
+		return this.store.read(uid);
+	}
+
 	private async record(uid: string, now: Date): Promise<AccountRecord> {
-		if (!this.store) return this.accounts.get(uid) ?? emptyAccount(uid, now);
-		return (await this.store.read(uid)) ?? emptyAccount(uid, now);
+		return (await this.readRecord(uid)) ?? emptyAccount(uid, now);
 	}
 
 	/**
@@ -118,6 +146,17 @@ function sameAccount(a: AccountRecord, b: AccountRecord): boolean {
 		a.email === b.email &&
 		a.stripeCustomerId === b.stripeCustomerId &&
 		a.tutorVia === b.tutorVia &&
-		a.tutorProvider === b.tutorProvider
+		a.tutorProvider === b.tutorProvider &&
+		a.obsidianConnectedAt === b.obsidianConnectedAt &&
+		attributionKey(a.attribution) === attributionKey(b.attribution)
 	);
+}
+
+function hasAttribution(value: StoredAttribution | undefined): boolean {
+	return attributionKey(value).length > 0;
+}
+
+function attributionKey(value: StoredAttribution | undefined): string {
+	if (!value) return "";
+	return [value.utmSource, value.utmMedium, value.utmCampaign, value.utmTerm, value.utmContent, value.gclid].filter(Boolean).join("\0");
 }
