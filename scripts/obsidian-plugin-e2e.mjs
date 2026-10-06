@@ -428,18 +428,35 @@ if (scenario === "signed-in") {
 	await page.locator(`${rootSel} h3`, { hasText: "Drill pad" }).waitFor({ timeout: 10_000 });
 	const deleteBtn = page.locator(`${rootSel} .gw-fc-lib-head button[aria-label="Delete Drill pad"]`);
 	await deleteBtn.waitFor({ timeout: 10_000 });
+	const pageErrors = [];
+	page.on("pageerror", (err) => pageErrors.push(String(err)));
 	// Pointer clicks from CDP sometimes land beside this button under xvfb. A DOM click still runs the handler.
-	await deleteBtn.evaluate((el) => el.click());
+	await deleteBtn.evaluate((el) => {
+		window.__gwDeleteClicks = 0;
+		el.addEventListener("click", () => {
+			window.__gwDeleteClicks += 1;
+		});
+		el.click();
+	});
 	try {
 		await page.locator(".modal").waitFor({ timeout: 10_000 });
 	} catch (err) {
 		const info = await page.evaluate(() => ({
+			clicks: window.__gwDeleteClicks ?? 0,
 			modals: document.querySelectorAll(".modal").length,
 			containers: document.querySelectorAll(".modal-container").length,
 			head: document.querySelector(".gw-fc-lib-head")?.innerText ?? "",
 			notices: [...document.querySelectorAll(".notice")].map((node) => node.textContent),
 		}));
-		throw new Error(`Delete did not open a modal (${JSON.stringify(info)}): ${err instanceof Error ? err.message : String(err)}`);
+		const pages = page.context().pages();
+		const elsewhere = [];
+		for (const other of pages) {
+			elsewhere.push({ url: other.url(), modals: await other.locator(".modal-container").count() });
+		}
+		await shot("05c-delete-failed");
+		throw new Error(
+			`Delete did not open a modal (${JSON.stringify({ ...info, elsewhere, pageErrors })}): ${err instanceof Error ? err.message : String(err)}`,
+		);
 	}
 	const confirmText = await page.locator(".modal").innerText();
 	if (!/1 card/.test(confirmText) || !/vault/i.test(confirmText)) {

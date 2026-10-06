@@ -226,7 +226,10 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 	const askDeleteDeck = (deckId: string) => {
 		if (deckId === DEFAULT_DECK_ID) return;
 		const deck = lib.decks.find((item) => item.id === deckId);
-		if (!deck) return;
+		if (!deck) {
+			new Notice("That deck is already gone.");
+			return;
+		}
 		openConfirm(deckDeleteCopy(deck.title, cardsInDeck(lib, deckId).length), async () => {
 			await deleteDeck(host.store, deckId);
 			await redraw();
@@ -234,10 +237,16 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 	};
 
 	const openConfirm = (copy: ConfirmCopy, run: () => Promise<void>) => {
-		const modal = new ConfirmModal(host.app, copy, () => {
-			void run().catch((err: unknown) => new Notice(err instanceof Error ? err.message : String(err)));
-		});
-		modal.open();
+		try {
+			const modal = new ConfirmModal(host.app, copy, () => {
+				void run().catch((err: unknown) => new Notice(err instanceof Error ? err.message : String(err)));
+			});
+			modal.open();
+			// Obsidian puts the modal on the focused window. If that is not this one, show it here.
+			if (!document.body.contains(modal.containerEl)) document.body.appendChild(modal.containerEl);
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
 	};
 
 	const redraw = async () => {
