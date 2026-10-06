@@ -428,13 +428,18 @@ if (scenario === "signed-in") {
 	await page.locator(`${rootSel} h3`, { hasText: "Drill pad" }).waitFor({ timeout: 10_000 });
 	const deleteBtn = page.locator(`${rootSel} .gw-fc-lib-head button[aria-label="Delete Drill pad"]`);
 	await deleteBtn.waitFor({ timeout: 10_000 });
-	await sleep(200);
-	await deleteBtn.click();
+	// Pointer clicks from CDP sometimes land beside this button under xvfb. A DOM click still runs the handler.
+	await deleteBtn.evaluate((el) => el.click());
 	try {
-		await page.locator(".modal").waitFor({ timeout: 4_000 });
-	} catch {
-		await deleteBtn.click();
 		await page.locator(".modal").waitFor({ timeout: 10_000 });
+	} catch (err) {
+		const info = await page.evaluate(() => ({
+			modals: document.querySelectorAll(".modal").length,
+			containers: document.querySelectorAll(".modal-container").length,
+			head: document.querySelector(".gw-fc-lib-head")?.innerText ?? "",
+			notices: [...document.querySelectorAll(".notice")].map((node) => node.textContent),
+		}));
+		throw new Error(`Delete did not open a modal (${JSON.stringify(info)}): ${err instanceof Error ? err.message : String(err)}`);
 	}
 	const confirmText = await page.locator(".modal").innerText();
 	if (!/1 card/.test(confirmText) || !/vault/i.test(confirmText)) {
