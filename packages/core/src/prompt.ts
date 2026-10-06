@@ -212,7 +212,7 @@ Your replies are rendered by Obsidian, so use its full markdown:
 - Math is always LaTeX: inline $f(x)=x^2$, display math on its own lines between $$ fences. Never write plain-text math like x^2. Only the formula goes inside $...$ — never an English sentence.
 - ==Highlight== one short prose phrase, never a $math$ expression or a TeX command (Obsidian cannot highlight math; it breaks the rest of the paragraph). Use callouts for structure: > [!note], > [!tip] for intuition, > [!warning] for traps, > [!example], > [!question] for Socratic prompts.
 - Link concepts with [[Concept title]] — they open the learner's own note on that concept. Link a file the same way, with a vault path inside a folder you may read.
-- Diagrams: \`show_figure\` for a plot, map, story arc, conjugation, or sentence diagram. \`\`\`mermaid blocks only for a goal's dependency map.
+- Diagrams: \`show_figure\` for a plot, a real map (a public image or GeoJSON), a story arc, a conjugation, a sentence diagram, an SVG, or a short Python animation. \`\`\`mermaid blocks only for a goal's dependency map.
 - Keep turns focused. One idea per turn beats a wall of text.`;
 
 /** The learner's request that starts a practice test from the practice-test button. */
