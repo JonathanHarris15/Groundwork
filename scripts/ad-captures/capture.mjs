@@ -241,11 +241,13 @@ function prepareVault() {
 		[
 			"/* Capture vault only. Hides Obsidian's status bar so the frame is the product. The map legend and scroll padding are the product's layout. */",
 			".status-bar { display: none !important; }",
-			".gw-days b { font-size: 44px !important; }",
-			".gw-goal-hero { padding: 12px 16px !important; }",
-			".gw-track { margin-top: 10px !important; }",
-			".gw-due-field { margin-top: 6px !important; }",
-			".gw-concept-head, .gw-concept-row { padding-top: 3px; padding-bottom: 3px; }",
+			".gw-days b { font-size: 40px !important; }",
+			".gw-goal-hero { padding: 10px 16px !important; }",
+			".gw-goals { gap: 8px !important; }",
+			".gw-track { margin-top: 8px !important; }",
+			".gw-due-field { margin-top: 4px !important; }",
+			".gw-concept-list { flex-shrink: 0 !important; }",
+			".gw-concept-head, .gw-concept-row { padding-top: 2px; padding-bottom: 2px; }",
 			"",
 		].join("\n"),
 	);
