@@ -1,7 +1,8 @@
 import { nextMove, type PrerequisiteState } from "./diagnose";
 import { judgeUnderstanding, pickLabel } from "./judgments";
 import { describeEdge, predictCorrect, type ConceptStats } from "./model";
-import { familiarityLabel, gradeQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizGrade, type QuizResponse } from "./quiz";
+import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
+import { familiarityLabel, gradeQuiz, needsJudgment, type FreeResponseJudgment, type PreparedQuiz, type QuizGrade, type QuizResponse } from "./quiz";
 import type { KnowledgeStore } from "./store";
 
 export interface QuizOutcome {
@@ -148,6 +149,25 @@ export function awaitJudgment(quiz: PreparedQuiz, response: QuizResponse): strin
 
 export const FREE_RESPONSE_GRADING =
 	"Grading rules: judge the understanding, not the formatting or the arithmetic. An equivalent form (rearranged, unsimplified but correct, different notation) is correct. A slip is a non-conceptual error in otherwise right work: an arithmetic or sign mistake, a dropped term while copying, a typo. Set slip: true for it (it is recorded as correct) and never call a slip a misconception. partial = the key idea is right but a conceptual piece is missing or wrong; incorrect = the approach itself is wrong or missing. In feedback, address them directly: name what is right first, then the exact step that went wrong (for a slip, one short line). Use LaTeX for math. If a wrong belief shows, put it in misconception. If a <hint_transcript> is in the conversation, an answer that only repeats what the hint already stated is not full credit: mark partial or incorrect for the part they did not reach on their own.";
+
+/**
+ * Grade an answer that arrived after the chat was closed.
+ * A written answer with no judgment waits for `grade_answer`, same as a live quiz.
+ */
+export async function settleQuizAnswer(
+	store: KnowledgeStore,
+	quiz: PreparedQuiz,
+	response: QuizResponse,
+	session?: { id: string },
+	grader?: AnswerGrader,
+): Promise<{ outcome: QuizOutcome } | { pending: string }> {
+	if (needsJudgment(quiz, response)) {
+		const [judgment] = await judgmentsFor(grader, [toGradeItem(quiz, response)]);
+		if (!judgment) return { pending: awaitJudgment(quiz, response) };
+		return { outcome: await recordQuizAnswer(store, quiz, response, session, judgment) };
+	}
+	return { outcome: await recordQuizAnswer(store, quiz, response, session) };
+}
 
 export function takeAwaiting(quizId: string): { quiz: PreparedQuiz; response: QuizResponse } | undefined {
 	const hit = awaiting.get(quizId);
