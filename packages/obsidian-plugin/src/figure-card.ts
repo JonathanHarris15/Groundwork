@@ -59,13 +59,13 @@ export class FigureCard {
 		this.kindEl = titles.createDiv({ cls: "gw-figure-kind" });
 		this.titleEl = titles.createDiv({ cls: "gw-figure-title" });
 		const download = head.createEl("button", {
-			cls: "clickable-icon gw-figure-btn",
+			cls: "clickable-icon gw-figure-btn gw-figure-download",
 			attr: { type: "button", "aria-label": "Download this figure" },
 		});
 		setIcon(download, "download");
 		download.addEventListener("click", (e) => {
 			e.stopPropagation();
-			if (this.model.svg) cb.download(this.model);
+			if (this.model.svg || this.model.media) cb.download(this.model);
 		});
 		const collapse = head.createEl("button", {
 			cls: "clickable-icon gw-figure-btn gw-figure-collapse",
@@ -117,8 +117,9 @@ export class FigureCard {
 		this.el.toggleClass("is-pending", !!this.model.pending);
 		this.el.toggleClass("is-error", !!this.model.error);
 		this.el.querySelector(".gw-figure-dismiss")?.toggleAttribute("hidden", !this.model.error);
-		const download = this.el.querySelector<HTMLButtonElement>(".gw-figure-btn:not(.gw-figure-collapse):not(.gw-figure-dismiss)");
-		if (download) download.disabled = !this.model.svg && !this.model.media;
+		const pictured = !!(this.model.svg || this.model.media);
+		const download = this.el.querySelector<HTMLButtonElement>(".gw-figure-download");
+		if (download) download.disabled = !pictured;
 		if (this.model.error) {
 			this.bodyEl.createDiv({ cls: "gw-figure-error", text: this.model.error });
 			this.setCollapsed(false);
@@ -131,7 +132,23 @@ export class FigureCard {
 			return;
 		}
 		const frame = this.bodyEl.createDiv({ cls: "gw-figure-frame" });
-		const reduceMotion = this.el.ownerDocument.defaultView?.matchMedia("(prefers-reduced-motion: reduce)").matches ?? false;
+		const full = frame.createEl("button", {
+			cls: "clickable-icon gw-figure-btn gw-figure-full",
+			attr: { type: "button", "aria-label": "View this figure full screen" },
+		});
+		setIcon(full, "maximize");
+		full.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.openStage(full);
+		});
+		frame.addEventListener("click", (e) => {
+			if ((e.target as Element | null)?.closest("button")) return;
+			e.stopPropagation();
+			this.openStage(full);
+		});
+		const view = this.el.ownerDocument.defaultView;
+		const matchMedia = view?.matchMedia;
+		const reduceMotion = typeof matchMedia === "function" && matchMedia.call(view, "(prefers-reduced-motion: reduce)").matches;
 		const gif = this.model.media?.mime === "image/gif";
 		const animatedSvg = this.model.svg?.includes("<animate") ?? false;
 		const holdStill = reduceMotion && (gif || animatedSvg);
@@ -161,14 +178,14 @@ export class FigureCard {
 	}
 
 	private figureImage(): HTMLImageElement {
-		const media = this.model.media!;
-		const img = this.el.ownerDocument.createElement("img");
-		img.className = "gw-figure-img";
-		img.alt = this.model.title;
-		img.width = media.width || 640;
-		img.height = media.height || 400;
-		img.src = `data:${media.mime};base64,${media.base64}`;
-		return img;
+		return renderFigureImage(this.el.ownerDocument, this.model);
+	}
+
+	private openStage(opener: Element | null): void {
+		if (!this.model.svg && !this.model.media) return;
+		const host = this.el.closest(".gw-root");
+		if (!(host instanceof HTMLElement)) return;
+		openFigureStage(this.el.ownerDocument, host, this.model, opener instanceof HTMLElement ? opener : undefined);
 	}
 
 	private setCollapsed(on: boolean): void {
@@ -178,6 +195,116 @@ export class FigureCard {
 		btn?.setAttr("aria-label", on ? "Expand figure" : "Minimize figure");
 		btn?.setAttr("aria-expanded", on ? "false" : "true");
 	}
+}
+
+let activeStageClose: (() => void) | null = null;
+
+/** Covers the tutor with the figure. Closes on Escape, the close button, or leaving full screen. */
+export function openFigureStage(doc: Document, host: HTMLElement, model: FigureCardModel, opener?: HTMLElement): () => void {
+	activeStageClose?.();
+	const stage = doc.createElement("div");
+	stage.className = "gw-figure-stage";
+	stage.setAttribute("role", "dialog");
+	stage.setAttribute("aria-modal", "true");
+	stage.setAttribute("aria-label", model.title || "Figure");
+	const bar = doc.createElement("div");
+	bar.className = "gw-figure-stage-bar";
+	const title = doc.createElement("div");
+	title.className = "gw-figure-stage-title";
+	title.textContent = model.title || "Figure";
+	const closeBtn = doc.createElement("button");
+	closeBtn.type = "button";
+	closeBtn.className = "gw-figure-stage-close";
+	closeBtn.textContent = "Close";
+	closeBtn.setAttribute("aria-label", "Close full screen figure");
+	bar.append(title, closeBtn);
+	const frame = doc.createElement("div");
+	frame.className = "gw-figure-stage-frame";
+	mountStagePicture(doc, frame, model);
+	stage.append(bar, frame);
+	const note = [model.caption, model.credit].filter(Boolean).join(" — ");
+	if (note) {
+		const caption = doc.createElement("div");
+		caption.className = "gw-figure-stage-caption";
+		caption.textContent = note;
+		stage.append(caption);
+	}
+	const frozen: HTMLElement[] = [];
+	for (const child of [...host.children]) {
+		if (child instanceof HTMLElement) {
+			child.setAttribute("inert", "");
+			child.dataset.gwStageInert = "1";
+			frozen.push(child);
+		}
+	}
+	host.append(stage);
+	let closed = false;
+	let enteredFullscreen = false;
+	const close = () => {
+		if (closed) return;
+		closed = true;
+		if (activeStageClose === close) activeStageClose = null;
+		doc.removeEventListener("keydown", onKey);
+		doc.removeEventListener("fullscreenchange", onFullscreen);
+		if (doc.fullscreenElement === stage) void doc.exitFullscreen?.();
+		stage.remove();
+		for (const el of frozen) {
+			el.removeAttribute("inert");
+			delete el.dataset.gwStageInert;
+		}
+		opener?.focus();
+	};
+	const onKey = (event: KeyboardEvent) => {
+		if (event.key !== "Escape") return;
+		event.preventDefault();
+		close();
+	};
+	const onFullscreen = () => {
+		if (doc.fullscreenElement === stage) enteredFullscreen = true;
+		else if (enteredFullscreen) close();
+	};
+	closeBtn.addEventListener("click", close);
+	stage.addEventListener("click", (event) => {
+		if (event.target === stage) close();
+	});
+	doc.addEventListener("keydown", onKey);
+	doc.addEventListener("fullscreenchange", onFullscreen);
+	closeBtn.focus();
+	activeStageClose = close;
+	try {
+		void stage.requestFullscreen?.().catch(() => undefined);
+	} catch {
+		/* The overlay still fills the tutor when the window cannot enter full screen. */
+	}
+	return close;
+}
+
+function mountStagePicture(doc: Document, frame: HTMLElement, model: FigureCardModel): void {
+	const matchMedia = doc.defaultView?.matchMedia;
+	const reduceMotion = typeof matchMedia === "function" && matchMedia.call(doc.defaultView, "(prefers-reduced-motion: reduce)").matches;
+	const gif = model.media?.mime === "image/gif";
+	const animatedSvg = model.svg?.includes("<animate") ?? false;
+	const holdStill = reduceMotion && (gif || animatedSvg);
+	if (model.media && !(holdStill && gif)) {
+		frame.appendChild(renderFigureImage(doc, model));
+		return;
+	}
+	if (!model.svg) return;
+	const svgEl = parseSvgMarkup(model.svg, doc);
+	svgEl.classList.add("gw-figure-svg");
+	frame.appendChild(svgEl);
+	if (holdStill && animatedSvg && "pauseAnimations" in svgEl) (svgEl as SVGSVGElement).pauseAnimations();
+}
+
+function renderFigureImage(doc: Document, model: FigureCardModel): HTMLImageElement {
+	const media = model.media!;
+	const img = doc.createElement("img");
+	img.className = "gw-figure-img";
+	img.alt = model.title;
+	img.width = media.width || 640;
+	img.height = media.height || 400;
+	img.src = `data:${media.mime};base64,${media.base64}`;
+	return img;
 }
 
 export function downloadFigure(doc: Document, title: string, svg: string, media?: { mime: string; base64: string }): void {

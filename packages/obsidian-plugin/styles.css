@@ -686,25 +686,9 @@ body .gw-root button.gw-lib-tab.is-active {
 	gap: 8px;
 	min-width: 0;
 }
+/* Gutters draw into the margin that already centers the column. They do not change this padding. */
 .gw-messages {
-	--gw-gutter-left: 0px;
-	--gw-gutter-right: 0px;
-	--gw-gap-left: 0px;
-	--gw-gap-right: 0px;
-}
-.gw-messages.has-figures {
-	--gw-gutter-left: 300px;
-	--gw-gap-left: 24px;
-}
-.gw-messages.has-margin {
-	--gw-gutter-right: 320px;
-	--gw-gap-right: 24px;
-}
-.gw-messages.has-figures,
-.gw-messages.has-margin {
-	--gw-free: max(14px, calc((100% - var(--gw-column) - var(--gw-gutter-left) - var(--gw-gutter-right) - var(--gw-gap-left) - var(--gw-gap-right)) / 2));
-	padding-left: calc(var(--gw-free) + var(--gw-gutter-left) + var(--gw-gap-left));
-	padding-right: calc(var(--gw-free) + var(--gw-gutter-right) + var(--gw-gap-right));
+	--gw-side: 0px;
 }
 .gw-asides {
 	display: flex;
@@ -716,9 +700,9 @@ body .gw-root button.gw-lib-tab.is-active {
 }
 .gw-messages.has-margin .gw-asides {
 	position: absolute;
-	left: calc(100% + 24px);
+	left: calc(100% + 16px);
 	top: 0;
-	width: var(--gw-margin);
+	width: min(320px, calc(var(--gw-side) - 32px));
 	margin: 0;
 	padding: 0;
 	border: none;
@@ -901,9 +885,9 @@ body .gw-root button.gw-lib-tab.is-active {
 }
 .gw-messages.has-figures .gw-figures {
 	position: absolute;
-	right: calc(100% + 24px);
+	right: calc(100% + 16px);
 	top: 0;
-	width: var(--gw-gutter-left);
+	width: min(300px, calc(var(--gw-side) - 32px));
 	margin: 0;
 	padding: 0;
 	border: none;
@@ -962,9 +946,24 @@ body .gw-root button.gw-lib-tab.is-active {
 	cursor: default;
 }
 .gw-figure-frame {
+	position: relative;
 	background: #f6f3ec;
 	border-radius: 8px;
 	overflow: hidden;
+	cursor: zoom-in;
+}
+.gw-figure-frame .gw-figure-full {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	z-index: 1;
+	width: 28px;
+	height: 28px;
+	border-radius: 8px;
+	border: 1px solid rgba(0, 0, 0, 0.12);
+	background: rgba(255, 255, 255, 0.92);
+	color: #1c1c1c;
+	cursor: zoom-in;
 }
 .gw-figure-svg,
 .gw-figure-img {
@@ -1004,8 +1003,69 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-figure.is-collapsed .gw-figure-collapse svg {
 	transform: rotate(180deg);
 }
-.gw-figure-dismiss[hidden] {
+.gw-figure-dismiss[hidden],
+.gw-figure-full[hidden] {
 	display: none;
+}
+.gw-figure-stage {
+	position: absolute;
+	inset: 0;
+	z-index: 40;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 20px 24px 24px;
+	background: color-mix(in srgb, var(--gw-paper, #111) 94%, #000);
+	overscroll-behavior: contain;
+}
+.gw-figure-stage:fullscreen {
+	background: #141414;
+}
+.gw-figure-stage-bar {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+}
+.gw-figure-stage-title {
+	font-weight: 600;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.gw-figure-stage-close {
+	margin-left: auto;
+	flex: none;
+	height: 32px;
+	padding: 0 12px;
+	border-radius: 999px;
+	border: 1px solid var(--background-modifier-border, #444);
+	background: var(--background-primary, #1e1e1e);
+	color: var(--text-normal, #eee);
+	cursor: pointer;
+}
+.gw-figure-stage-close:focus-visible {
+	outline: 2px solid var(--gw-learning);
+	outline-offset: 2px;
+}
+.gw-figure-stage-frame {
+	flex: 1;
+	min-height: 0;
+	display: grid;
+	place-items: center;
+	background: #f6f3ec;
+	border-radius: 12px;
+	overflow: hidden;
+}
+.gw-figure-stage-frame :is(.gw-figure-svg, .gw-figure-img) {
+	width: 100%;
+	height: 100%;
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
+}
+.gw-figure-stage-caption {
+	color: var(--text-muted, #aaa);
+	line-height: 1.4;
 }
 ::highlight(gw-aside) {
 	background-color: rgba(214, 158, 46, 0.26);
@@ -2845,12 +2905,7 @@ body .gw-root button.gw-text-btn:hover {
 	.gw-session-title { display: none; }
 	.gw-messages.has-margin,
 	.gw-messages.has-figures {
-		--gw-gutter-left: 0px;
-		--gw-gutter-right: 0px;
-		--gw-gap-left: 0px;
-		--gw-gap-right: 0px;
-		padding-left: max(14px, calc((100% - var(--gw-column)) / 2));
-		padding-right: max(14px, calc((100% - var(--gw-column)) / 2));
+		--gw-side: 0px;
 	}
 	.gw-messages.has-margin .gw-asides {
 		position: static;

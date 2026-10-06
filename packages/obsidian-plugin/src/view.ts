@@ -74,7 +74,8 @@ import {
 import { ClaudeCodeSession } from "@groundwork/core/claude-code";
 import { AsideCard, findQuoteRange } from "./aside";
 import { downloadFigure, FigureCard, type FigureCardModel } from "./figure-card";
-import { gutterFlags } from "./gutter";
+import { gutterFlags, menuPosition, sideRoom } from "./gutter";
+import { clampSelection, passageOf } from "./passage";
 import { toBoard, type GoalBoardView } from "./goal-board";
 import { renderGoalsPane } from "./goals-pane";
 import { renderMapPane, renderStartedVaultMap } from "./map-pane";
@@ -2606,25 +2607,27 @@ export class ChatView extends ItemView implements ToolUI {
 		const endTurn = end?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
 		const turn = startTurn ?? endTurn;
 		if (!turn || !this.uiMessagesEl.contains(turn)) return this.hideAskButton();
-		// Drags often overshoot into the next card or the composer; keep the part inside the first message.
-		const body = (turn.querySelector(":scope > .gw-msg, :scope > .gw-card") as HTMLElement | null) ?? turn;
-		if (turn !== endTurn || end?.closest(".gw-asides")) range.setEnd(body, body.childNodes.length);
-		if (turn !== startTurn) range.setStart(body, 0);
+		// A drag that slips into the margin stays on the paragraph under the pointer.
+		clampSelection(range, turn);
 		expandToMath(range);
 		const quote = rangeText(range).trim();
 		if (quote.length < 2) return this.hideAskButton();
 		this.selection = { anchor: turn.dataset.anchor!, quote: quote.slice(0, 1200) };
 		this.markPicked(mathIn(turn, range));
 
-		const r = range.getBoundingClientRect();
-		const box = this.contentEl.getBoundingClientRect();
+		const rects = [...range.getClientRects()].filter((rect) => rect.width > 0 || rect.height > 0);
+		const line = rects[rects.length - 1] ?? range.getBoundingClientRect();
 		this.uiSelectMenu.show();
-		const w = this.uiSelectMenu.offsetWidth || 320;
-		const left = Math.min(Math.max(8, r.left - box.left + r.width / 2 - w / 2), box.width - w - 8);
-		const below = r.bottom - box.top + 6;
-		const top = below + 40 > box.height ? r.top - box.top - 42 : below;
-		this.uiSelectMenu.style.left = `${left}px`;
-		this.uiSelectMenu.style.top = `${Math.max(4, top)}px`;
+		const host = this.uiSelectMenu.offsetParent instanceof HTMLElement ? this.uiSelectMenu.offsetParent : this.contentEl;
+		const box = host.getBoundingClientRect();
+		const pos = menuPosition(
+			{ left: box.left, top: box.top, width: box.width, height: box.height },
+			{ left: line.left, top: line.top, width: line.width, bottom: line.bottom },
+			this.uiSelectMenu.offsetWidth || 320,
+			this.uiSelectMenu.offsetHeight || 36,
+		);
+		this.uiSelectMenu.style.left = `${pos.left}px`;
+		this.uiSelectMenu.style.top = `${pos.top}px`;
 	}
 
 	private hideAskButton(): void {
@@ -2835,6 +2838,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private updateMarginMode(): void {
 		const el = this.uiMessagesEl;
 		if (!el) return;
+		el.style.setProperty("--gw-side", `${Math.floor(sideRoom(el.clientWidth))}px`);
 		const flags = gutterFlags(el.clientWidth, this.figureCards.size, this.asideCards.size);
 		el.toggleClass("has-figures", flags.figures);
 		el.toggleClass("has-margin", flags.margin);
@@ -2890,7 +2894,8 @@ export class ChatView extends ItemView implements ToolUI {
 	private refreshHighlights(): void {
 		this.asideRanges.clear();
 		for (const [id, card] of this.asideCards) {
-			const msg = card.el.closest(".gw-turn")?.querySelector(":scope > .gw-msg, :scope > .gw-card") as HTMLElement | null;
+			const turn = card.el.closest(".gw-turn");
+			const msg = turn instanceof HTMLElement ? passageOf(turn) : null;
 			const r = msg ? findQuoteRange(msg, card.thread.quote) : null;
 			if (r) this.asideRanges.set(id, r);
 		}
@@ -2900,7 +2905,8 @@ export class ChatView extends ItemView implements ToolUI {
 		this.figureRanges.clear();
 		for (const [id, card] of this.figureCards) {
 			const quote = card.el.dataset.quote;
-			const msg = card.el.closest(".gw-turn")?.querySelector(":scope > .gw-msg, :scope > .gw-card") as HTMLElement | null;
+			const turn = card.el.closest(".gw-turn");
+			const msg = turn instanceof HTMLElement ? passageOf(turn) : null;
 			const r = quote && msg ? findQuoteRange(msg, quote) : null;
 			if (r) this.figureRanges.set(id, r);
 		}
