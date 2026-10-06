@@ -17,7 +17,7 @@
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link rel="preload" as="image" type="image/avif" imagesrcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" imagesizes="(max-width: 860px) 92vw, 520px" fetchpriority="high" />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=9" />
+		<link rel="stylesheet" href="/styles.css?v=10" />
 		<script src="/tracking.js?v=2"></script>
 	</head>
 	<body>
@@ -305,8 +305,15 @@
 			<header class="bar">
 				<a class="logo" href="/" aria-label="Groundwork home">GROUND<svg viewBox="-4 0 128 110" aria-hidden="true"><polyline points="10,14 36,98 60,38 84,98 110,14" fill="none" stroke="#F7F7F5" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"></polyline><circle cx="10" cy="14" r="11" fill="#F0565B"></circle><circle cx="60" cy="38" r="11" fill="#F7A93E"></circle><circle cx="110" cy="14" r="11" fill="#45A9F0"></circle><circle cx="36" cy="98" r="11" fill="#3CC56F"></circle><circle cx="84" cy="98" r="11" fill="#3CC56F"></circle></svg>ORK</a>
 				<nav class="bar-nav" aria-label="Site">
-					<a href="/pricing">Pricing</a>
-					<a href="/get-started">Get started</a>
+					<a class="nav-wide" href="/pricing">Pricing</a>
+					<a class="nav-wide" href="/get-started">Get started</a>
+					<details class="nav-more">
+						<summary>Menu</summary>
+						<div class="nav-menu">
+							<a href="/pricing">Pricing</a>
+							<a href="/get-started">Get started</a>
+						</div>
+					</details>
 					<a class="sign-link" href="#signin">Sign in</a>
 				</nav>
 			</header>
@@ -317,9 +324,8 @@
 					<p class="sub">Groundwork is a tutor plugin for Obsidian. It maps the concepts you’re learning, marks how well you know each one, and plans the next step toward your goal.</p>
 					<div class="cta-row">
 						<a class="cta" href="#signin">Start free<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></a>
-						<p class="cta-note">Requires Obsidian desktop</p>
+						<p class="cta-note"><span class="note-wide">Requires Obsidian desktop</span><span class="note-phone">Requires Obsidian desktop. Sign up here, install on your computer.</span></p>
 					</div>
-					<p class="mobile-only">Desktop only. Sign up now and install on your computer.</p>
 					<p class="fine">Free plan included. No card needed to start.</p>
 				</div>
 				<figure class="map-figure">
@@ -371,9 +377,8 @@
 					<h2 id="close-title">Learn where your notes already live.</h2>
 					<div class="cta-row close-cta">
 						<a class="cta" href="#signin">Start free<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></a>
-						<p class="cta-note">Requires Obsidian desktop</p>
+						<p class="cta-note"><span class="note-wide">Requires Obsidian desktop</span><span class="note-phone">Requires Obsidian desktop. Sign up here, install on your computer.</span></p>
 					</div>
-					<p class="mobile-only">Desktop only. Sign up now and install on your computer.</p>
 					<p class="fine landing-close">Already exploring? <a href="#signin">Sign in</a> to connect Obsidian.</p>
 				</div>
 			</section>

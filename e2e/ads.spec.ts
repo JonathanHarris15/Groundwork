@@ -35,6 +35,16 @@ test("public pages, footer email, and screenshots", async ({ page }, testInfo) =
 			expect(paint.ctaInView).toBe(true);
 			expect(paint.noteBelow).toBe(true);
 			expect(paint.noteAligned).toBe(true);
+			expect(paint.noteText).toBe(width === "mobile" ? "Requires Obsidian desktop. Sign up here, install on your computer." : "Requires Obsidian desktop");
+			expect(paint.headerOneRow).toBe(true);
+			if (width === "mobile") {
+				expect(paint.consentShort).toBe(true);
+				await expect(page.locator(".bar-nav .nav-wide").first()).toBeHidden();
+				await expect(page.locator(".nav-more")).toBeVisible();
+			} else {
+				await expect(page.locator(".bar-nav .nav-wide").first()).toBeVisible();
+				await expect(page.locator(".nav-more")).toBeHidden();
+			}
 			expect(paint.ctaCovered).toBe(false);
 			expect(paint.buttons).toEqual(["OK", "Opt out"]);
 			expect(paint.consentFont).toMatch(/Jost/);
@@ -178,8 +188,9 @@ async function heroPaint(page: Page) {
 		const cta = document.querySelector(".hero-copy .cta");
 		const note = document.querySelector(".hero-copy .cta-note");
 		const bar = document.querySelector(".consent");
+		const header = document.querySelector(".bar");
 		const img = document.querySelector<HTMLImageElement>(".hero-shot");
-		if (!h1 || !sub || !cta || !note || !bar || !img) return null;
+		if (!h1 || !sub || !cta || !note || !bar || !header || !img) return null;
 		const box = (el: Element) => {
 			const r = el.getBoundingClientRect();
 			return { x: r.x, y: r.y, width: r.width, height: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right };
@@ -207,6 +218,9 @@ async function heroPaint(page: Page) {
 			ctaInView: inView(ctaBox),
 			noteBelow: noteBox.top >= ctaBox.bottom - 1 && noteBox.top - ctaBox.bottom < 28,
 			noteAligned: Math.abs(noteBox.left - ctaBox.left) < 12,
+			noteText: (note as HTMLElement).innerText.replace(/\s+/g, " ").trim(),
+			headerOneRow: header.getBoundingClientRect().height < 100,
+			consentShort: barBox.height < 96,
 			ctaCovered: overlaps,
 			buttons: [...bar.querySelectorAll("button")].map((button) => button.textContent?.trim()),
 			consentFont: getComputedStyle(bar).fontFamily,

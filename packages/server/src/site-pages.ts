@@ -33,9 +33,8 @@ function cta(href: string, label: string): string {
 	return `<div class="cta-block">
 		<div class="cta-row">
 			<a class="cta" href="${href}">${label}${ARROW}</a>
-			<p class="cta-note">Requires Obsidian desktop</p>
+			<p class="cta-note"><span class="note-wide">Requires Obsidian desktop</span><span class="note-phone">Requires Obsidian desktop. Sign up here, install on your computer.</span></p>
 		</div>
-		<p class="mobile-only">Desktop only. Sign up now and install on your computer.</p>
 	</div>`;
 }
 
@@ -58,7 +57,15 @@ function nav(current: string): string {
 		const cls = sign ? ` class="sign-link"` : "";
 		return `<a href="${href}"${cls}${currentAttr}>${label}</a>`;
 	};
-	return `<nav class="bar-nav" aria-label="Site">${link("/pricing", "Pricing")}${link("/get-started", "Get started")}${link("/#signin", "Sign in", true)}</nav>`;
+	const wide = (href: string, label: string) => {
+		const currentAttr = href === current ? ` aria-current="page"` : "";
+		return `<a class="nav-wide" href="${href}"${currentAttr}>${label}</a>`;
+	};
+	const item = (href: string, label: string) => {
+		const currentAttr = href === current ? ` aria-current="page"` : "";
+		return `<a href="${href}"${currentAttr}>${label}</a>`;
+	};
+	return `<nav class="bar-nav" aria-label="Site">${wide("/pricing", "Pricing")}${wide("/get-started", "Get started")}<details class="nav-more"><summary>Menu</summary><div class="nav-menu">${item("/pricing", "Pricing")}${item("/get-started", "Get started")}</div></details>${link("/#signin", "Sign in", true)}</nav>`;
 }
 
 function footer(): string {
@@ -101,7 +108,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=9" />
+		<link rel="stylesheet" href="/styles.css?v=10" />
 		<script src="/tracking.js?v=2"></script>
 	</head>
 	<body>
