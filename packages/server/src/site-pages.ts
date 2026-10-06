@@ -105,7 +105,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=11" />
+		<link rel="stylesheet" href="/styles.css?v=12" />
 		<script src="/tracking.js?v=3"></script>
 	</head>
 	<body>
@@ -135,7 +135,6 @@ function pricingPage(): string {
 			<h1>Plans</h1>
 			<p class="mkt-sub">All three plans run in Obsidian desktop. They differ in which model runs the tutor. The study tools are the same on each plan. Free uses Groundwork’s smaller model and has a monthly limit on tutor use.</p>
 			${cta("/#signin", "Start free")}
-			<p class="fine">Billing is handled by Stripe.</p>
 			<ul class="plan-cards">
 				<li class="plan-card">
 					<h2>Free</h2>
@@ -147,13 +146,13 @@ function pricingPage(): string {
 					<h2>Bring your own model</h2>
 					<p class="price">$4<span>/month</span></p>
 					<p>Use a model you already pay for. Connect the Claude subscription on your computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. Model use on that subscription or key is billed by the provider, not by Groundwork. The $4 covers Groundwork.</p>
-					<a class="cta" href="/?plan=byom#signin">Choose $4 plan${ARROW}</a>
+					<a class="cta" href="/?plan=byom#signin">Choose $4${ARROW}</a>
 				</li>
 				<li class="plan-card">
 					<h2>Groundwork</h2>
 					<p class="price">$15<span>/month</span></p>
 					<p>We run the models for you. No keys to manage.</p>
-					<a class="cta" href="/?plan=included#signin">Choose $15 plan${ARROW}</a>
+					<a class="cta" href="/?plan=included#signin">Choose $15${ARROW}</a>
 				</li>
 			</ul>
 			<section class="mkt-section">

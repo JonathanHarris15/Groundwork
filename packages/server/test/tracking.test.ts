@@ -111,8 +111,9 @@ describe("ads tracking", () => {
 		expect(readSite("/exam-prep")?.body).toContain("plans in Obsidian");
 		expect(readSite("/privacy")?.body).toContain("adssettings.google.com");
 		expect(readSite("/privacy")?.body).toContain("Groundwork’s model provider on Free and the $15 plan");
-		expect(readSite("/pricing")?.body).toContain("Choose $4 plan");
-		expect(readSite("/pricing")?.body).toContain("Choose $15 plan");
+		expect(readSite("/pricing")?.body).toContain("Choose $4");
+		expect(readSite("/pricing")?.body).toContain("Choose $15");
+		expect(readSite("/pricing")?.body).not.toContain("Billing is handled by Stripe.");
 		expect(readSite("/pricing")?.body).not.toContain("$9");
 		expect(readSite("/pricing")?.body).not.toContain("$20");
 		expect(readSite("/terms")?.body).toContain("$4 per month");
@@ -127,6 +128,12 @@ describe("ads tracking", () => {
 		expect(home).toContain("not started");
 		expect(home).not.toContain("not built");
 		expect(home).toContain("Quiz yourself on your own notes and lecture slides");
+		expect(home).toContain('class="story-shot"');
+		expect(home).toContain("/hero/concept-map-768.webp");
+		expect(home).toContain("/shots/exam-chat-768.webp");
+		expect(home).toContain("/shots/quiz-768.webp");
+		expect(home).toContain("/shots/flashcards-768.webp");
+		expect(home).toContain("/shots/goals-768.webp");
 		expect(home).toContain("$15/month");
 		expect(home).not.toContain("G-F4236HGZSM");
 		expect(home).not.toContain("$20");

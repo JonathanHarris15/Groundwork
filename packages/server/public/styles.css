@@ -1473,9 +1473,31 @@ h1, h2, h3, .sub, .mkt-sub { text-wrap: balance; }
 }
 .map-dot-open { background: transparent; box-shadow: inset 0 0 0 1.5px #8b8e94; }
 
-#landing .story h2 { max-width: 16em; }
-#landing .story p { max-width: 40em; margin: 18px 0 0; font-size: 20px; line-height: 1.55; color: #c3c7cd; }
-#landing .story { border-top: 1px solid rgba(255, 255, 255, 0.08); }
+#landing .story {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	align-items: center;
+	gap: 24px;
+	padding-top: 64px;
+	padding-bottom: 64px;
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+#landing .story h2 { max-width: 12em; text-wrap: balance; }
+#landing .story p { max-width: 34em; margin: 14px 0 0; font-size: 18px; line-height: 1.5; color: #c3c7cd; text-wrap: pretty; }
+#landing .story-shot { margin: 0; }
+#landing .story-shot img {
+	display: block;
+	width: 100%;
+	height: auto;
+	border-radius: 16px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: #0c0e12;
+}
+@container (min-width: 801px) {
+	#landing .story { grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr); gap: 40px 48px; }
+	#landing .story-flip .story-copy { order: 2; }
+	#landing .story-flip .story-shot { order: 1; }
+}
 
 .foot-links {
 	display: flex;
@@ -1539,7 +1561,15 @@ h1, h2, h3, .sub, .mkt-sub { text-wrap: balance; }
 .plan-card .price { margin: 0; font-size: 32px; flex: none; }
 .plan-card .price span { font-size: 16px; color: #aeb3bc; }
 .plan-card p { margin: 0; color: #c3c7cd; flex: 1; }
-.plan-card .cta { margin-top: auto; align-self: flex-start; }
+.plan-card .cta {
+	margin-top: auto;
+	align-self: flex-start;
+	white-space: nowrap;
+	padding: 0 22px;
+	min-height: 52px;
+	font-size: 17px;
+}
+.mkt-main:has(.plan-cards) { max-width: 980px; }
 .mkt-shot { margin: 28px 0 0; }
 .mkt-shot img {
 	display: block;

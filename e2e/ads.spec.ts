@@ -71,6 +71,29 @@ test("public pages, footer email, and screenshots", async ({ page }, testInfo) =
 			writeFileSync(path.join(shots, `home-consent-${width}.png`), shot);
 			await page.getByRole("button", { name: "OK", exact: true }).click();
 		}
+		if (href === "/") {
+			const shots = page.locator(".story-shot img");
+			await expect(shots).toHaveCount(5);
+			for (const img of await shots.all()) {
+				await img.scrollIntoViewIfNeeded();
+				await expect.poll(async () => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+			}
+			if (width === "desktop") {
+				const sides = await page.locator(".story").evaluateAll((sections) =>
+					sections.map((section) => {
+						const copy = section.querySelector(".story-copy")?.getBoundingClientRect();
+						const shot = section.querySelector(".story-shot")?.getBoundingClientRect();
+						return { copy: copy?.x ?? 0, shot: shot?.x ?? 0, shotWidth: shot?.width ?? 0, sectionWidth: section.getBoundingClientRect().width };
+					}),
+				);
+				expect(sides).toHaveLength(5);
+				sides.forEach((side, index) => {
+					expect(side.shotWidth).toBeGreaterThan(side.sectionWidth * 0.35);
+					if (index % 2 === 0) expect(side.shot).toBeGreaterThan(side.copy);
+					else expect(side.copy).toBeGreaterThan(side.shot);
+				});
+			}
+		}
 		if (["/concept-map", "/quizzes-flashcards", "/exam-prep", "/goals"].includes(href)) {
 			const shotImg = page.locator(".mkt-shot img").first();
 			await expect(shotImg).toBeVisible();
@@ -143,6 +166,26 @@ test("pricing cards share a height and line up price, copy, and buttons", async 
 	expect(aligned(boxes.map((box) => box.price))).toBe(true);
 	expect(aligned(boxes.map((box) => box.desc))).toBe(true);
 	expect(aligned(boxes.map((box) => box.cta))).toBe(true);
+	await expect(page.getByText("Billing is handled by Stripe.")).toHaveCount(0);
+	for (const viewport of [{ width: 1280, height: 800 }, { width: 900, height: 900 }]) {
+		await page.setViewportSize(viewport);
+		const fits = await page.locator(".plan-card .cta").evaluateAll((buttons) =>
+			buttons.map((button) => {
+				const card = button.closest(".plan-card")?.getBoundingClientRect();
+				const box = button.getBoundingClientRect();
+				return {
+					text: (button.textContent || "").replace(/\s+/g, " ").trim(),
+					height: box.height,
+					inside: Boolean(card && box.left >= card.left - 1 && box.right <= card.right + 1),
+				};
+			}),
+		);
+		expect(fits.map((button) => button.text)).toEqual(["Start free", "Choose $4", "Choose $15"]);
+		for (const button of fits) {
+			expect(button.inside, `${button.text} at ${viewport.width}`).toBe(true);
+			expect(button.height, `${button.text} at ${viewport.width}`).toBeLessThanOrEqual(64);
+		}
+	}
 });
 
 test("consent defaults deny everywhere and grant the US", async ({ page }) => {
