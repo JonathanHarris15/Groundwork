@@ -15,9 +15,10 @@
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
+		<link rel="preload" as="image" type="image/avif" imagesrcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" imagesizes="(max-width: 860px) 92vw, 520px" fetchpriority="high" />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=8" />
-		<script src="/tracking.js?v=1"></script>
+		<link rel="stylesheet" href="/styles.css?v=9" />
+		<script src="/tracking.js?v=2"></script>
 	</head>
 	<body>
 		<section id="landing" class="page" aria-label="Groundwork">
@@ -322,16 +323,11 @@
 					<p class="fine">Free plan included. No card needed to start.</p>
 				</div>
 				<figure class="map-figure">
-					<div id="hero-graph" class="graph-host hero-graph" data-concept-map role="region" aria-label="Concept map. The goal is in red at the top and the foundations sit below."></div>
-					<ul class="map-legend" aria-label="Concept marks">
-						<li><span class="map-dot" style="background:#3cc56f"></span>Solid</li>
-						<li><span class="map-dot" style="background:#f7a93e"></span>Shaky</li>
-						<li><span class="map-dot" style="background:#45a9f0"></span>Learning</li>
-						<li><span class="map-dot" style="background:#9d8cf0"></span>Rusty</li>
-						<li><span class="map-dot map-dot-open"></span>Not started</li>
-						<li><span class="map-dot" style="background:#f0565b"></span>Goal</li>
-					</ul>
-					<figcaption>Your goal in red at the top, foundations below, and each concept marked solid, shaky, learning, rusty, or not started.</figcaption>
+					<picture>
+						<source type="image/avif" srcset="/hero/concept-map-480.avif 480w, /hero/concept-map-768.avif 768w, /hero/concept-map-1200.avif 1200w" sizes="(max-width: 860px) 92vw, 520px" />
+						<source type="image/webp" srcset="/hero/concept-map-480.webp 480w, /hero/concept-map-768.webp 768w, /hero/concept-map-1200.webp 1200w" sizes="(max-width: 860px) 92vw, 520px" />
+						<img class="hero-shot" src="/hero/concept-map-768.webp" width="2168" height="1678" alt="Concept map for Derivatives for Calc I. Chain rule is the goal in red at the top, and the concepts below are marked solid, shaky, learning, rusty, not started, or next." fetchpriority="high" />
+					</picture>
 				</figure>
 			</main>
 			</div>

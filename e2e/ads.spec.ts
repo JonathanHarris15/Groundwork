@@ -1,6 +1,7 @@
-import { expect, test } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { expect, test, type Page } from "@playwright/test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { inflateSync } from "node:zlib";
 
 const shots = "/opt/cursor/artifacts/site-ads";
 mkdirSync(shots, { recursive: true });
@@ -21,7 +22,29 @@ test("public pages, footer email, and screenshots", async ({ page }, testInfo) =
 		await expect(page.locator("body")).not.toContainText(/coming soon/i);
 		if (href === "/") {
 			await expect(page.getByRole("dialog", { name: "Cookies" })).toBeVisible();
-			await page.screenshot({ path: path.join(shots, `home-consent-${width}.png`) });
+			const paint = await heroPaint(page);
+			if (!paint) throw new Error("hero heading or Start free is missing");
+			expect(paint.h1Animation).toBe("none");
+			expect(paint.subAnimation).toBe("none");
+			expect(paint.ctaAnimation).toBe("none");
+			expect(paint.h1Opacity).toBe("1");
+			expect(paint.subOpacity).toBe("1");
+			expect(paint.ctaOpacity).toBe("1");
+			expect(paint.h1InView).toBe(true);
+			expect(paint.subInView).toBe(true);
+			expect(paint.ctaInView).toBe(true);
+			expect(paint.noteBelow).toBe(true);
+			expect(paint.noteAligned).toBe(true);
+			expect(paint.ctaCovered).toBe(false);
+			expect(paint.buttons).toEqual(["OK", "Opt out"]);
+			expect(paint.consentFont).toMatch(/Jost/);
+			expect(paint.heroLoaded).toBe(true);
+			const shot = await page.screenshot({ animations: "allow" });
+			const heading = lightShare(shot, paint.h1Box, paint.scale);
+			const cta = lightShare(shot, paint.ctaBox, paint.scale);
+			expect(heading.light, "H1 is not visible in the home screenshot").toBeGreaterThan(24);
+			expect(cta.share, "Start free is not visible in the home screenshot").toBeGreaterThan(0.45);
+			writeFileSync(path.join(shots, `home-consent-${width}.png`), shot);
 			await page.getByRole("button", { name: "OK", exact: true }).click();
 		}
 		await page.screenshot({ path: path.join(shots, `${slug(href)}-${width}.png`), fullPage: true });
@@ -148,7 +171,131 @@ test("obsidian_connected fires on the first link only", async ({ page, request }
 	expect(await countEvents(page, "obsidian_connected")).toBe(1);
 });
 
-async function countEvents(page: import("@playwright/test").Page, name: string): Promise<number> {
+async function heroPaint(page: Page) {
+	return page.evaluate(() => {
+		const h1 = document.querySelector(".hero h1");
+		const sub = document.querySelector(".hero-copy .sub");
+		const cta = document.querySelector(".hero-copy .cta");
+		const note = document.querySelector(".hero-copy .cta-note");
+		const bar = document.querySelector(".consent");
+		const img = document.querySelector<HTMLImageElement>(".hero-shot");
+		if (!h1 || !sub || !cta || !note || !bar || !img) return null;
+		const box = (el: Element) => {
+			const r = el.getBoundingClientRect();
+			return { x: r.x, y: r.y, width: r.width, height: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+		};
+		const h1Box = box(h1);
+		const subBox = box(sub);
+		const ctaBox = box(cta);
+		const noteBox = box(note);
+		const barBox = box(bar);
+		const overlaps = barBox.left < ctaBox.right && barBox.right > ctaBox.left && barBox.top < ctaBox.bottom && barBox.bottom > ctaBox.top;
+		const inView = (r: { top: number; left: number; bottom: number; right: number; width: number; height: number }) =>
+			r.width > 8 && r.height > 8 && r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight && r.right <= window.innerWidth;
+		const h1Style = getComputedStyle(h1);
+		const subStyle = getComputedStyle(sub);
+		const ctaStyle = getComputedStyle(cta);
+		return {
+			h1Animation: h1Style.animationName,
+			subAnimation: subStyle.animationName,
+			ctaAnimation: ctaStyle.animationName,
+			h1Opacity: h1Style.opacity,
+			subOpacity: subStyle.opacity,
+			ctaOpacity: ctaStyle.opacity,
+			h1InView: inView(h1Box),
+			subInView: inView(subBox),
+			ctaInView: inView(ctaBox),
+			noteBelow: noteBox.top >= ctaBox.bottom - 1 && noteBox.top - ctaBox.bottom < 28,
+			noteAligned: Math.abs(noteBox.left - ctaBox.left) < 12,
+			ctaCovered: overlaps,
+			buttons: [...bar.querySelectorAll("button")].map((button) => button.textContent?.trim()),
+			consentFont: getComputedStyle(bar).fontFamily,
+			heroLoaded: img.complete && img.naturalWidth > 0,
+			scale: window.devicePixelRatio,
+			h1Box,
+			ctaBox,
+		};
+	});
+}
+
+function lightShare(png: Buffer, box: { x: number; y: number; width: number; height: number }, scale: number) {
+	const { width, height, data } = decodePng(png);
+	const x0 = Math.max(0, Math.floor(box.x * scale));
+	const y0 = Math.max(0, Math.floor(box.y * scale));
+	const x1 = Math.min(width, Math.ceil((box.x + box.width) * scale));
+	const y1 = Math.min(height, Math.ceil((box.y + box.height) * scale));
+	let light = 0;
+	let n = 0;
+	for (let y = y0; y < y1; y++) {
+		for (let x = x0; x < x1; x++) {
+			const i = (y * width + x) * 4;
+			const luma = data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
+			n++;
+			if (luma > 190) light++;
+		}
+	}
+	return { light, n, share: n ? light / n : 0 };
+}
+
+function decodePng(buf: Buffer): { width: number; height: number; data: Uint8Array } {
+	let offset = 8;
+	let width = 0;
+	let height = 0;
+	let colorType = 0;
+	const idat: Buffer[] = [];
+	while (offset + 8 <= buf.length) {
+		const len = buf.readUInt32BE(offset);
+		const type = buf.toString("ascii", offset + 4, offset + 8);
+		const data = buf.subarray(offset + 8, offset + 8 + len);
+		if (type === "IHDR") {
+			width = data.readUInt32BE(0);
+			height = data.readUInt32BE(4);
+			colorType = data[9];
+		} else if (type === "IDAT") idat.push(data);
+		else if (type === "IEND") break;
+		offset += 12 + len;
+	}
+	const channels = colorType === 6 ? 4 : 3;
+	const raw = inflateSync(Buffer.concat(idat));
+	const stride = width * channels;
+	const out = new Uint8Array(width * height * 4);
+	let src = 0;
+	let prev = new Uint8Array(stride);
+	for (let y = 0; y < height; y++) {
+		const filter = raw[src++];
+		const row = new Uint8Array(stride);
+		for (let i = 0; i < stride; i++) {
+			const left = i >= channels ? row[i - channels] : 0;
+			const up = prev[i] ?? 0;
+			const upLeft = i >= channels ? prev[i - channels] ?? 0 : 0;
+			const value = raw[src++];
+			if (filter === 0) row[i] = value;
+			else if (filter === 1) row[i] = (value + left) & 255;
+			else if (filter === 2) row[i] = (value + up) & 255;
+			else if (filter === 3) row[i] = (value + Math.floor((left + up) / 2)) & 255;
+			else {
+				const p = left + up - upLeft;
+				const pa = Math.abs(p - left);
+				const pb = Math.abs(p - up);
+				const pc = Math.abs(p - upLeft);
+				const pred = pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
+				row[i] = (value + pred) & 255;
+			}
+		}
+		prev = row;
+		for (let x = 0; x < width; x++) {
+			const s = x * channels;
+			const d = (y * width + x) * 4;
+			out[d] = row[s];
+			out[d + 1] = row[s + 1];
+			out[d + 2] = row[s + 2];
+			out[d + 3] = channels === 4 ? row[s + 3] : 255;
+		}
+	}
+	return { width, height, data: out };
+}
+
+async function countEvents(page: Page, name: string): Promise<number> {
 	return page.evaluate((eventName) => {
 		const layer = (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
 		return layer.filter((entry) => Array.isArray(entry) && entry[1] === eventName).length;

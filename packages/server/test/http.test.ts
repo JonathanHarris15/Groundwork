@@ -133,7 +133,15 @@ describe("account server", () => {
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/force-graph.js?v=4"');
 		expect(site?.body).toContain('src="/app.js?v=19"');
-		expect(site?.body).toContain('href="/styles.css?v=8"');
+		expect(site?.body).toContain('href="/styles.css?v=9"');
+		expect(site?.body).toContain("/hero/concept-map-768.webp");
+		expect(site?.body).toContain("image/avif");
+		expect(site?.body).not.toContain('id="hero-graph"');
+		const hero = readSite("/hero/concept-map-768.webp");
+		expect(hero?.type).toBe("image/webp");
+		expect(Buffer.isBuffer(hero?.body)).toBe(true);
+		expect((hero?.body as Buffer).byteLength).toBeGreaterThan(1000);
+		expect(readSite("/hero/concept-map-768.avif")?.type).toBe("image/avif");
 		expect(site?.body).toContain("Start free");
 		expect(site?.body).toContain("methoddev1505@gmail.com");
 		expect(site?.body).not.toContain("[Dev:");

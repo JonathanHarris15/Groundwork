@@ -119,11 +119,10 @@ function openConsent(): void {
 	bar.setAttribute("role", "dialog");
 	bar.setAttribute("aria-label", "Cookies");
 	bar.innerHTML = `
-		<p>We use cookies to measure ads. In the US this is on unless you opt out. Everywhere else it stays off until you allow it.</p>
+		<p>Cookies measure ads. In the US they’re on unless you opt out.</p>
 		<div class="consent-actions">
-			<button type="button" data-consent="granted">Allow</button>
-			<button type="button" data-consent="denied">Opt out</button>
 			<button type="button" data-consent="dismiss">OK</button>
+			<button type="button" data-consent="denied">Opt out</button>
 		</div>`;
 	bar.addEventListener("click", (click) => {
 		const target = click.target;

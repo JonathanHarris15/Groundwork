@@ -74,7 +74,7 @@ export function tagScriptUrl(ids: { ga4: string | null; ads: string | null }): s
 
 /**
  * No stored choice: denied everywhere, granted for visitors Google places in the US.
- * A stored Allow or Opt out replaces that for every region.
+ * A stored Opt out (or an older Allow) replaces that for every region.
  */
 export function consentDefaults(stored: ConsentChoice | null): ConsentCommand[] {
 	if (stored === "granted") return [{ ...GRANTED }];

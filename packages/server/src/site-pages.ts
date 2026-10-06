@@ -101,8 +101,8 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=8" />
-		<script src="/tracking.js?v=1"></script>
+		<link rel="stylesheet" href="/styles.css?v=9" />
+		<script src="/tracking.js?v=2"></script>
 	</head>
 	<body>
 		<div class="page mkt">
@@ -304,7 +304,7 @@ function privacyPage(): string {
 			${section("Obsidian", ["Groundwork is a plugin for Obsidian desktop. Your vault stays on your computer. The tutor reads only the vault folders you allow in settings, and it writes a file only in folders you mark for that. You can attach a slide, a PDF, or an image from those folders."])}
 			${section("Keys you paste", ["On the Bring your own model plan you can save a key for OpenRouter, Anthropic, Google, xAI, or OpenAI. The key is stored on your account and used only on Groundwork’s server to call that provider. The plugin does not send the key.", "Claude on your computer is separate. If you use a Claude subscription, Claude Code runs on your machine. That login stays there. Groundwork does not receive it."])}
 			${section("Billing", ["Paid plans are billed by Stripe. Stripe gets what it needs to charge the card and send receipts. Groundwork stores the Stripe customer id and which plan you’re on."])}
-			${section("Cookies, ads, and analytics", ["We use Google Analytics and Google Ads to see which ads bring people here, and whether they create an account, connect Obsidian, or start a paid plan.", "If you’re in the United States, those cookies are on unless you opt out. Everywhere else they stay off until you choose Allow. Cookies in the footer changes that. The choice is stored in this browser."])}
+			${section("Cookies, ads, and analytics", ["We use Google Analytics and Google Ads to see which ads bring people here, and whether they create an account, connect Obsidian, or start a paid plan.", "If you’re in the United States, those cookies are on unless you opt out. Everywhere else they stay off. OK closes the notice and leaves that as it is. Opt out turns them off in this browser. Cookies in the footer opens the notice again."])}
 			${section("Deletion and questions", [`Email <a href="mailto:${EMAIL}" data-contact-email>${EMAIL}</a> to ask for a copy of your account data or to delete it. Deleting the account removes the study record, saved keys, and the billing link we store. It does not delete files in your Obsidian vault. Cancel a paid plan from Manage billing on your account page, or ask us to cancel it when you write.`])}
 			<p class="fine">See also the <a href="/terms">terms</a>.</p>
 		`,

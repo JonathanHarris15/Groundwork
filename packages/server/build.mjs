@@ -1,5 +1,5 @@
 import esbuild from "esbuild";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -7,6 +7,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 mkdirSync(path.join(here, "dist"), { recursive: true });
 
 mkdirSync(path.join(here, "public"), { recursive: true });
+
+const heroWidths = [480, 768, 1200];
+const heroReady = heroWidths.every((width) => existsSync(path.join(here, `public/hero/concept-map-${width}.webp`)) && existsSync(path.join(here, `public/hero/concept-map-${width}.avif`)));
+try {
+	const { writeHeroImages } = await import("./scripts/hero-image.mjs");
+	await writeHeroImages();
+} catch (error) {
+	const message = error instanceof Error ? error.message : String(error);
+	const missingSharp = message.includes("sharp") || message.includes("ERR_MODULE_NOT_FOUND");
+	if (!missingSharp || !heroReady) throw error;
+}
 
 await esbuild.build({
 	entryPoints: [path.join(here, "graph-client/entry.ts")],
