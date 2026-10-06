@@ -93,28 +93,16 @@ export function createBilling(stripe: Stripe, prices: { byom: string; included: 
 		configured: true,
 		async checkout(uid, email, plan, origin) {
 			if (!isPaid(plan)) throw badRequest("That plan is free. Choose it without checkout.");
-			const customer = await customerFor(stripe, accounts, uid, email);
-			const session = await stripe.checkout.sessions.create({
-				mode: "subscription",
-				customer,
-				client_reference_id: uid,
-				line_items: [{ price: prices[plan], quantity: 1 }],
-				success_url: `${origin}/?billing=success`,
-				cancel_url: `${origin}/?billing=cancel`,
-				metadata: { uid, plan },
-				subscription_data: { metadata: { uid, plan } },
-				allow_promotion_codes: true,
-				// A 100% off code makes the total $0. Stripe then skips the card.
-				payment_method_collection: "if_required",
-			});
-			if (!session.url) throw new Error("Stripe did not return a checkout link.");
-			return session.url;
+			return withStripeCustomer(stripe, accounts, uid, email, false, (customer) =>
+				checkoutSession(stripe, prices, customer, uid, plan, origin),
+			);
 		},
 		async portal(uid, origin) {
-			const customer = await accounts.customerId(uid);
-			if (!customer) throw badRequest("No billing account yet. Choose a paid plan first.");
-			const session = await stripe.billingPortal.sessions.create({ customer, return_url: `${origin}/` });
-			return session.url;
+			const account = await accounts.get(uid);
+			return withStripeCustomer(stripe, accounts, uid, account.email ?? undefined, true, async (customer) => {
+				const session = await stripe.billingPortal.sessions.create({ customer, return_url: `${origin}/` });
+				return session.url;
+			});
 		},
 		async applyEvent(raw, signature) {
 			if (!signature) throw badRequest("Missing Stripe signature.");
@@ -179,6 +167,8 @@ export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe
  * Customers are never matched by email.
  * No subscription and a stored paid plan becomes free. Free, or no plan yet, is left as it is.
  * An active subscription whose price we do not recognize is left as it is.
+ * A stored customer Stripe does not have (a test-mode id after the live switch) is not a subscription.
+ * That id is cleared and a paid plan becomes free. Sync does not create a replacement customer.
  */
 export async function syncStripeMembership(
 	stripe: StripeMembershipClient,
@@ -199,14 +189,21 @@ export async function syncStripeMembership(
 	}
 	let recognized: "byom" | "included" | null = null;
 	let unknown = false;
-	for (const status of ["active", "trialing", "past_due"] as const) {
-		const page = await stripe.subscriptions.list({ customer: customerId, status, limit: 10 });
-		for (const subscription of page.data) {
-			const plan = planFromSubscription({ ...subscription, status: subscription.status ?? status }, prices);
-			if (plan === "included") recognized = "included";
-			else if (plan === "byom" && recognized !== "included") recognized = "byom";
-			else if (plan === "unknown") unknown = true;
+	try {
+		for (const status of ["active", "trialing", "past_due"] as const) {
+			const page = await stripe.subscriptions.list({ customer: customerId, status, limit: 10 });
+			for (const subscription of page.data) {
+				const plan = planFromSubscription({ ...subscription, status: subscription.status ?? status }, prices);
+				if (plan === "included") recognized = "included";
+				else if (plan === "byom" && recognized !== "included") recognized = "byom";
+				else if (plan === "unknown") unknown = true;
+			}
 		}
+	} catch (err) {
+		if (!isMissingStripeCustomer(err)) throw err;
+		await accounts.clearCustomer(uid);
+		if (isPaid(current.plan)) await accounts.setPlan(uid, "free");
+		return;
 	}
 	if (recognized) {
 		if (recognized !== current.plan) await accounts.setPlan(uid, recognized);
@@ -234,6 +231,72 @@ function unconfigured(): Billing {
 			throw Object.assign(new Error(missing), { status: 503 });
 		},
 	};
+}
+
+/**
+ * A test-mode customer id is `resource_missing` once the secret key is live.
+ * A missing price uses the same code and must not be treated as a missing customer.
+ */
+export function isMissingStripeCustomer(err: unknown): boolean {
+	if (!err || typeof err !== "object") return false;
+	const error = err as { code?: unknown; param?: unknown; message?: unknown };
+	if (error.code !== "resource_missing") return false;
+	const message = typeof error.message === "string" ? error.message : "";
+	if (/no such customer/i.test(message)) return true;
+	const param = typeof error.param === "string" ? error.param : "";
+	return param === "customer" || param.endsWith("[customer]");
+}
+
+async function checkoutSession(
+	stripe: Stripe,
+	prices: { byom: string; included: string },
+	customer: string,
+	uid: string,
+	plan: "byom" | "included",
+	origin: string,
+): Promise<string> {
+	const session = await stripe.checkout.sessions.create({
+		mode: "subscription",
+		customer,
+		client_reference_id: uid,
+		line_items: [{ price: prices[plan], quantity: 1 }],
+		success_url: `${origin}/?billing=success`,
+		cancel_url: `${origin}/?billing=cancel`,
+		metadata: { uid, plan },
+		subscription_data: { metadata: { uid, plan } },
+		allow_promotion_codes: true,
+		// A 100% off code makes the total $0. Stripe then skips the card.
+		payment_method_collection: "if_required",
+	});
+	if (!session.url) throw new Error("Stripe did not return a checkout link.");
+	return session.url;
+}
+
+/**
+ * Run a Stripe call with the stored customer.
+ * When that customer does not exist in this Stripe mode, clear it, create a live one, and retry once.
+ * Portal refuses to invent a customer when the account has never had one.
+ */
+async function withStripeCustomer(
+	stripe: Stripe,
+	accounts: AccountDirectory,
+	uid: string,
+	email: string | undefined,
+	portal: boolean,
+	run: (customerId: string) => Promise<string>,
+): Promise<string> {
+	const existing = await accounts.customerId(uid);
+	if (!existing) {
+		if (portal) throw badRequest("No billing account yet. Choose a paid plan first.");
+		return run(await customerFor(stripe, accounts, uid, email));
+	}
+	try {
+		return await run(existing);
+	} catch (err) {
+		if (!isMissingStripeCustomer(err)) throw err;
+	}
+	await accounts.clearCustomer(uid);
+	return run(await customerFor(stripe, accounts, uid, email));
 }
 
 async function customerFor(stripe: Stripe, accounts: AccountDirectory, uid: string, email: string | undefined): Promise<string> {

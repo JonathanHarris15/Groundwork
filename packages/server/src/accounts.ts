@@ -1,5 +1,6 @@
 import {
 	choosePlan,
+	clearStripeCustomer,
 	currentAccount,
 	emptyAccount,
 	rememberProfile,
@@ -48,6 +49,11 @@ export class AccountDirectory {
 
 	async attachCustomer(uid: string, customerId: string, now: Date = new Date()): Promise<void> {
 		await this.commit(uid, now, (record) => setStripeCustomer(record, customerId));
+	}
+
+	/** Forget a customer id Stripe no longer has, so the next checkout can create one. */
+	async clearCustomer(uid: string, now: Date = new Date()): Promise<void> {
+		await this.commit(uid, now, (record) => clearStripeCustomer(record));
 	}
 
 	async choice(uid: string, now: Date = new Date()): Promise<TutorChoice> {
