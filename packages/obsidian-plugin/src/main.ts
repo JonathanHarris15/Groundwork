@@ -255,14 +255,48 @@ export default class GroundworkPlugin extends Plugin {
 			setup: null,
 			budgetUsed: 0,
 			ownModel: false,
+			weight: null,
 			claude: CLAUDE_SETUP,
 		};
+	}
+
+	private weightSave: Promise<void> | null = null;
+
+	async setTutorWeight(weight: "light" | "heavy"): Promise<void> {
+		if (this.weightSave) return this.weightSave;
+		const token = await this.accountAccessToken();
+		if (!token) return;
+		const current = this.tutorRoute?.weight === "heavy" ? "heavy" : "light";
+		if (this.tutorRoute?.action === "hosted" && current === weight) return;
+		this.weightSave = this.saveTutorWeight(token, weight).finally(() => {
+			this.weightSave = null;
+		});
+		return this.weightSave;
+	}
+
+	private async saveTutorWeight(token: string, weight: "light" | "heavy"): Promise<void> {
+		try {
+			const res = await fetch(`${accountOrigin()}/v1/tutor/weight`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+				body: JSON.stringify({ weight }),
+			});
+			const body = (await res.json()) as TutorStatus & { error?: unknown };
+			if (!res.ok) {
+				new Notice(typeof body.error === "string" ? body.error : "Could not save the tutor model.");
+				return;
+			}
+			this.tutorRoute = body;
+			this.refreshAccountUi();
+		} catch (err) {
+			new Notice(err instanceof Error ? err.message : String(err));
+		}
 	}
 
 	tutorRouteKey(): string {
 		const route = this.tutorRoute;
 		if (!route) return `local:${this.settings.provider}`;
-		return `${route.action}:${route.provider ?? ""}:${route.model ?? ""}:${route.setup ?? ""}`;
+		return `${route.action}:${route.provider ?? ""}:${route.model ?? ""}:${route.weight ?? ""}:${route.setup ?? ""}`;
 	}
 
 	signedIn(): boolean {

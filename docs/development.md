@@ -50,8 +50,8 @@ The **first time** you open the vault on a machine, Obsidian asks you to *Trust 
 
 The plan on the account decides.
 
-- **Free** and **Groundwork** ($15/month): Obsidian calls Groundwork, and Groundwork calls the smaller model through one shared key. The month's budget is the limit. You do not paste a key.
-- **Bring your own model** ($4/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. Groundwork does not meter that usage. A Claude login stays on the computer.
+- **Free** and **Groundwork** ($20/month): Obsidian calls Groundwork. The tutor is Light (`google/gemini-3.8-flash`) unless the learner switches to Heavy (`google/gemini-3.5-flash`) in the plugin. One shared key. The month's budget is the limit. You do not paste a key.
+- **Bring your own model** ($6/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. Groundwork does not meter that usage. A Claude login stays on the computer. Checkout uses `STRIPE_PRICE_BYOM` and `STRIPE_PRICE_INCLUDED`. Older price ids in `STRIPE_PRICE_BYOM_PREVIOUS` and `STRIPE_PRICE_INCLUDED_PREVIOUS` still count as the same plan. They are not offered at checkout.
 
 ### Connect a Claude subscription
 
@@ -116,7 +116,7 @@ Sign in with Google on that site. **Open Obsidian** connects Obsidian to this ac
 
 `GROUNDWORK_PORT` chooses the listen port (default `8787`). `GROUNDWORK_MEMORY_FILE` chooses the local tutor-memory file when Firebase is not configured (default `data/tutor-memory.json`, gitignored).
 
-Production Cloud Run (when `K_SERVICE` is set) loads GA4 with measurement id `G-F4236HGZSM` if `GA4_MEASUREMENT_ID` is unset. Set `GA4_MEASUREMENT_ID` to override that id. Local `npm run server` does not load the tag unless you set the env var. `GOOGLE_ADS_ID` is optional. Leave it unset until Marketing provides an `AW-` id. Conversion labels are not required: when the Ads id and labels are empty, the site does not configure Ads and does not fire Ads conversions. Deploy does not depend on them. GA4 events are `sign_up` (new accounts only), `obsidian_connected` (first link only), and `purchase` (value 4 or 15, currency USD, Stripe checkout session or subscription id). Marketing can import those key events into Ads later.
+Production Cloud Run (when `K_SERVICE` is set) loads GA4 with measurement id `G-F4236HGZSM` if `GA4_MEASUREMENT_ID` is unset. Set `GA4_MEASUREMENT_ID` to override that id. Local `npm run server` does not load the tag unless you set the env var. `GOOGLE_ADS_ID` is optional. Leave it unset until Marketing provides an `AW-` id. Conversion labels are not required: when the Ads id and labels are empty, the site does not configure Ads and does not fire Ads conversions. Deploy does not depend on them. GA4 events are `sign_up` (new accounts only), `obsidian_connected` (first link only), and `purchase` (value 6 or 20, currency USD, Stripe checkout session or subscription id). Marketing can import those key events into Ads later.
 
 ```bash
 GA4_MEASUREMENT_ID=G-F4236HGZSM

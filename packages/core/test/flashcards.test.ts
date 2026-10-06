@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { isTutorMemoryPath } from "../src/account";
 import {
 	applyRating,
+	applySessionRating,
 	auditFlashcardLibrary,
-	buildStudyQueue,
 	cardsInDeck,
+	cardsToPractice,
 	createDeck,
 	createFlashcard,
 	DEFAULT_DECK_ID,
@@ -15,15 +16,15 @@ import {
 	exportFlashcards,
 	flashcardContentKey,
 	flashcardQualityIssue,
-	formatInterval,
 	loadFlashcardLibrary,
 	makeCard,
 	parseCardFile,
-	previewIntervals,
 	rateFlashcard,
+	SESSION_HARD_GAP,
+	sessionRatingHint,
+	startStudySession,
 	removeFlashcardMirrors,
 	renameDeck,
-	scheduledMinutes,
 	saveFlashcard,
 	serializeCardMarkdown,
 	serializeFlashcardLibrary,
@@ -44,35 +45,52 @@ function pair() {
 	return { memory, vault, store };
 }
 
-describe("flashcard schedule", () => {
-	it("shows again in a minute, hard in ten, and a review good in days", () => {
-		const card = makeCard({ deckId: "library", concept: "Base rates", front: "Why?", back: "False alarms.", now: NOW });
-		expect(previewIntervals(card).map((p) => p.label)).toEqual(["in 1 min", "in 10 min", "in 1 day", "in 4 days"]);
-		const review = { ...card, state: "review" as const, intervalMinutes: 24 * 60, ease: 2 };
-		expect(formatInterval(scheduledMinutes(review, "good"))).toBe("in 2 days");
-		expect(scheduledMinutes(review, "again")).toBe(1);
+describe("flashcard sitting", () => {
+	it("names the four moves inside the sitting", () => {
+		expect(sessionRatingHint("again")).toBe("Right away");
+		expect(sessionRatingHint("hard")).toBe("Later");
+		expect(sessionRatingHint("good")).toBe("Done");
+		expect(sessionRatingHint("easy")).toBe("Done");
 	});
 
-	it("sends a miss back to learning and keeps an easy card in review", () => {
+	it("remembers the rating and leaves the old due date alone", () => {
 		const card = makeCard({ deckId: "exam-2", concept: "Base rates", front: "Why?", back: "False alarms.", now: NOW });
-		const learned = applyRating(card, "good", NOW);
-		expect(learned.state).toBe("review");
-		expect(learned.intervalMinutes).toBe(24 * 60);
+		const later = { ...card, state: "review" as const, due: "2099-01-01T00:00:00.000Z", intervalMinutes: 24 * 60 };
+		const learned = applyRating(later, "good", NOW);
+		expect(learned.due).toBe(later.due);
+		expect(learned.intervalMinutes).toBe(later.intervalMinutes);
+		expect(learned.lastRating).toBe("good");
+		expect(learned.reps).toBe(1);
 		const missed = applyRating(learned, "again", NOW);
-		expect(missed.state).toBe("learning");
+		expect(missed.due).toBe(later.due);
 		expect(missed.lapses).toBe(1);
-		expect(missed.intervalMinutes).toBe(1);
+		expect(missed.state).toBe("review");
 		const easy = applyRating(learned, "easy", NOW);
-		expect(easy.state).toBe("review");
 		expect(easy.reps).toBe(2);
 	});
 
-	it("studies learning cards before reviews, and caps new cards", () => {
-		const learning = { ...makeCard({ id: "l", deckId: "d", concept: "A", front: "a", back: "a", now: NOW }), state: "learning" as const, due: NOW.toISOString() };
-		const review = { ...makeCard({ id: "r", deckId: "d", concept: "B", front: "b", back: "b", now: NOW }), state: "review" as const, due: NOW.toISOString() };
-		const fresh = Array.from({ length: 3 }, (_, i) => makeCard({ id: `n${i}`, deckId: "d", concept: `N${i}`, front: "q", back: "a", now: NOW }));
-		const queue = buildStudyQueue([review, ...fresh, learning], NOW, { limitNew: 2 });
-		expect(queue.map((c) => c.id)).toEqual(["l", "r", "n0", "n1"]);
+	it("starts with every card, including ones that used to be not due", () => {
+		const future = { ...makeCard({ id: "later", deckId: "d", concept: "Integral", front: "q", back: "a", now: NOW }), state: "review" as const, due: "2099-01-01T00:00:00.000Z" };
+		const fresh = makeCard({ id: "now", deckId: "d", concept: "Derivative", front: "q", back: "a", now: NOW });
+		const broken = { ...makeCard({ id: "bad", deckId: "d", concept: "Broken", front: "q", back: "a", now: NOW }), qualityIssue: "Answer must be a few words." };
+		const session = startStudySession([future, broken, fresh], () => 0);
+		expect(session.map((card) => card.id).sort()).toEqual(["later", "now"]);
+		expect(cardsToPractice([future, broken, fresh]).map((card) => card.id)).toEqual(["now", "later"]);
+	});
+
+	it("shows a miss next, buries a hard card, and drops a card that is down", () => {
+		const cards = ["a", "b", "c", "d", "e"].map((id) => makeCard({ id, deckId: "d", concept: id, front: "q", back: "a", now: NOW }));
+		expect(applySessionRating(cards, "again").map((card) => card.id)).toEqual(["a", "b", "c", "d", "e"]);
+		expect(applySessionRating(cards, "hard").map((card) => card.id)).toEqual(["b", "c", "d", "a", "e"]);
+		expect(SESSION_HARD_GAP).toBe(3);
+		expect(applySessionRating(cards.slice(0, 2), "hard").map((card) => card.id)).toEqual(["b", "a"]);
+		expect(applySessionRating([cards[0]], "hard").map((card) => card.id)).toEqual(["a"]);
+		expect(applySessionRating(cards, "good").map((card) => card.id)).toEqual(["b", "c", "d", "e"]);
+		expect(applySessionRating(cards, "easy").map((card) => card.id)).toEqual(["b", "c", "d", "e"]);
+		let queue = cards.slice(0, 2);
+		queue = applySessionRating(queue, "good");
+		queue = applySessionRating(queue, "easy");
+		expect(queue).toEqual([]);
 	});
 });
 
@@ -282,7 +300,7 @@ describe("flashcard tools", () => {
 		expect(saved.isError).toBeFalsy();
 		expect(saved.text).toContain("stays on the account");
 		expect(vault.files.has("Groundwork/flashcards/Base rates.md")).toBe(false);
-		const due = await toolByName("list_due_flashcards")!.run({}, { store });
+		const due = await toolByName("list_flashcards")!.run({}, { store });
 		expect(due.text).toContain("Why 9%?");
 		expect(due.text).toContain("Decks: Exam 2");
 		const lib = await loadFlashcardLibrary(store.io);
@@ -499,18 +517,29 @@ describe("deck rename and delete", () => {
 		const saved = await toolByName("save_flashcard")!.run({ concept: "Odds", front: "What is odds?", back: "A ratio." }, { store });
 		expect(saved.isError).toBeFalsy();
 		expect(saved.text).toContain("Unsorted");
-		const due = await toolByName("list_due_flashcards")!.run({}, { store });
+		const due = await toolByName("list_flashcards")!.run({}, { store });
 		expect(due.text).toContain("Decks: Unsorted");
 		const lib = await loadFlashcardLibrary(store.io);
 		expect(lib.decks[0]).toMatchObject({ id: DEFAULT_DECK_ID, title: DEFAULT_DECK_TITLE });
 	});
 });
 
-describe("flashcard interval cap", () => {
-	it("keeps compounding easy ratings inside a valid date", () => {
-		let card = makeCard({ deckId: "library", concept: "Odds", front: "What is odds?", back: "A ratio.", now: NOW });
-		for (let i = 0; i < 60; i++) card = applyRating(card, "easy", NOW);
-		expect(Number.isNaN(Date.parse(card.due))).toBe(false);
-		expect(card.intervalMinutes).toBe(36_500 * 24 * 60);
+describe("old flashcard fields", () => {
+	it("still loads a card that carries a future due date", async () => {
+		const { memory, store } = pair();
+		const lib = emptyFlashcardLibrary(NOW);
+		lib.decks.push({ id: "later", title: "Later deck" });
+		lib.cards.push({
+			...makeCard({ id: "later-card", deckId: "later", concept: "Integral", front: "What is the integral of 2x?", back: "x squared", now: NOW }),
+			state: "review",
+			due: "2099-01-01T00:00:00.000Z",
+			intervalMinutes: 40 * 24 * 60,
+		});
+		await memory.write(PATHS.flashcards, serializeFlashcardLibrary(lib));
+		const loaded = await loadFlashcardLibrary(memory);
+		expect(loaded.cards[0].due).toBe("2099-01-01T00:00:00.000Z");
+		const rated = await rateFlashcard(store, "later-card", "good", NOW);
+		expect(rated.due).toBe("2099-01-01T00:00:00.000Z");
+		expect(rated.lastRating).toBe("good");
 	});
 });

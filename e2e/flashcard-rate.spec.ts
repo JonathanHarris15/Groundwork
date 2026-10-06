@@ -84,10 +84,10 @@ function pageHtml(theme: (typeof themes)[number]): string {
             <div class="gw-fcard"><div class="gw-fcard-front">What is the power rule?</div></div>
           </div>
           <div class="gw-fc-rate">
-            ${button("again", "Again", "1", "in 1 min")}
-            ${button("hard", "Hard", "2", "in 4 days")}
-            ${button("good", "Good", "3", "in 8 days")}
-            ${button("easy", "Easy", "4", "in 10 days")}
+            ${button("again", "Again", "1", "Right away")}
+            ${button("hard", "Hard", "2", "Later")}
+            ${button("good", "Good", "3", "Done")}
+            ${button("easy", "Easy", "4", "Done")}
           </div>
         </div>
       </div>

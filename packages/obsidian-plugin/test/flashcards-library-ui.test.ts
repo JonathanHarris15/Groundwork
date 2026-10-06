@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { createFlashcard, KnowledgeStore, MemoryVaultIO } from "@groundwork/core";
+import { createFlashcard, emptyFlashcardLibrary, KnowledgeStore, makeCard, MemoryVaultIO, PATHS, serializeFlashcardLibrary } from "@groundwork/core";
 
 vi.mock("obsidian", () => ({
 	Notice: class {
@@ -214,7 +214,8 @@ describe("flashcard library", () => {
 		expect(again?.closest(".gw-fc-unit")?.querySelector(":scope > .gw-fc-rate")).toBeTruthy();
 		expect(again?.querySelector("b")?.textContent).toBe("Again");
 		expect(again?.querySelector("kbd")?.textContent).toBe("1");
-		expect(again?.querySelector(".gw-rb-when")?.textContent).toMatch(/^in /);
+		expect(again?.querySelector(".gw-rb-when")?.textContent).toBe("Right away");
+		expect(root.textContent).not.toMatch(/Nothing due|tomorrow|in \d+ day/);
 		library.remove();
 		root.remove();
 	});
@@ -310,5 +311,64 @@ describe("flashcard library", () => {
 		expect(parent.querySelector(".gw-fc-lib-note")?.textContent).toContain("aren't put in a deck");
 		expect(parent.querySelector(".gw-fc-lib-head")?.textContent).not.toContain("Delete");
 		parent.remove();
+	});
+});
+
+describe("study sitting", () => {
+	it("opens cards that used to be not due, puts a miss back next, and finishes without a tomorrow", async () => {
+		const now = new Date("2026-10-02T12:00:00.000Z");
+		const memory = new MemoryVaultIO();
+		const knowledge = new KnowledgeStore(memory, { context: new MemoryVaultIO(), now: () => now });
+		const lib = emptyFlashcardLibrary(now);
+		lib.decks.push({ id: "later", title: "Later deck" });
+		lib.cards.push(
+			{
+				...makeCard({ id: "c1", deckId: "later", concept: "Integral", front: "What is the integral of 2x?", back: "x squared", now }),
+				state: "review",
+				due: "2099-01-01T00:00:00.000Z",
+				intervalMinutes: 40 * 24 * 60,
+			},
+			{
+				...makeCard({ id: "c2", deckId: "later", concept: "Derivative", front: "What is the derivative of x squared?", back: "2x", now }),
+				state: "review",
+				due: "2099-06-01T00:00:00.000Z",
+				intervalMinutes: 80 * 24 * 60,
+			},
+		);
+		await memory.write(PATHS.flashcards, serializeFlashcardLibrary(lib));
+		const root = document.createElement("div");
+		document.body.append(root);
+		const pane = new FlashcardsPane(root, {
+			app: { workspace: { openLinkText: async () => {} } } as never,
+			store: knowledge,
+			writeFolders: () => [],
+			renderMarkdown: async (el, markdown) => {
+				el.textContent = markdown;
+			},
+			onManageCards: () => {},
+		});
+		pane.study("later");
+		await pane.show();
+		expect(root.textContent).not.toMatch(/Nothing due|tomorrow|Next card/);
+		const front = () => root.querySelector(".gw-fcard-front")?.textContent ?? "";
+		const first = front();
+		expect(["What is the integral of 2x?", "What is the derivative of x squared?"]).toContain(first);
+		root.querySelector<HTMLButtonElement>(".gw-fc-show")!.click();
+		root.querySelector<HTMLButtonElement>(".gw-rb-again")!.click();
+		await vi.waitFor(() => expect(root.classList.contains("is-revealed")).toBe(false));
+		expect(front()).toBe(first);
+		expect(root.textContent).toContain("Right away");
+		root.querySelector<HTMLButtonElement>(".gw-fc-show")!.click();
+		root.querySelector<HTMLButtonElement>(".gw-rb-good")!.click();
+		await vi.waitFor(() => {
+			expect(root.classList.contains("is-revealed")).toBe(false);
+			expect(front()).not.toBe(first);
+		});
+		root.querySelector<HTMLButtonElement>(".gw-fc-show")!.click();
+		root.querySelector<HTMLButtonElement>(".gw-rb-easy")!.click();
+		await vi.waitFor(() => expect(root.textContent).toContain("Deck finished"));
+		expect(root.textContent).toContain("Every card in this sitting is down.");
+		expect(root.textContent).not.toMatch(/Nothing due|tomorrow|Next card/);
+		root.remove();
 	});
 });

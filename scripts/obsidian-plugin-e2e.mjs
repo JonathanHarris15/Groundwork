@@ -465,7 +465,7 @@ if (scenario === "signed-in") {
 	await shot("05c-delete-deck-confirm");
 	await page.locator(".modal button", { hasText: "Delete deck" }).click();
 	await page.waitForFunction(() => !document.querySelector(".gw-root")?.textContent?.includes("Drill pad"), { timeout: 10_000 });
-	await page.locator(`${rootSel} .gw-lib-tab[title="Flashcards"] .gw-lib-count`, { hasText: /^1$/ }).waitFor({ timeout: 10_000 });
+	await page.locator(`${rootSel} .gw-lib-tab[title="Flashcards"] .gw-lib-count`, { hasText: /^2$/ }).waitFor({ timeout: 10_000 });
 	await page.locator(`${rootSel} h3`, { hasText: /Calculus fluency|Unsorted/ }).waitFor({ timeout: 10_000 });
 	await sleep(400);
 	await shotGroundwork("05d-deck-deleted");
@@ -512,12 +512,51 @@ if (scenario === "signed-in") {
 	await tab("flashcards").click();
 	await page.waitForSelector(`${rootSel}.is-flashcards:not(.is-settings)`, { timeout: 15_000 });
 
+	await utility("library").click();
+	await page.waitForSelector(`${rootSel}.is-library`, { timeout: 15_000 });
+	await page.locator(`${rootSel} button.gw-lib-tab`, { hasText: /^Flashcards/ }).click({ timeout: 10_000 });
+	await page.locator(`${rootSel} .gw-fc-lib-deck`, { hasText: "Later deck" }).click();
+	await page.locator(`${rootSel} h3`, { hasText: "Later deck" }).waitFor({ timeout: 10_000 });
+	await page.locator(`${rootSel} button`, { hasText: "Study this deck" }).click();
+	await page.waitForSelector(`${rootSel}.is-flashcards .gw-fcard-front`, { timeout: 15_000 });
+	const sitting = await page.locator(`${rootSel}.is-flashcards`).innerText();
+	if (/Nothing due|tomorrow|Next card/i.test(sitting)) {
+		throw new Error(`Study sitting still talks about a due date: ${sitting}`);
+	}
+	if (!sitting.includes("What is the integral of 2x?")) {
+		throw new Error(`A card due in 2099 did not open: ${sitting}`);
+	}
+	await shotGroundwork("08b-study-not-due");
+	await page.locator(`${rootSel} .gw-fc-show`).click();
+	await page.locator(`${rootSel} .gw-rb-again`).click();
+	await page.waitForFunction(
+		() => document.querySelector(".gw-root.is-flashcards .gw-fcard-front")?.textContent?.includes("integral of 2x"),
+		{ timeout: 10_000 },
+	);
+	await page.locator(`${rootSel} .gw-fc-show`).click();
+	await page.locator(`${rootSel} .gw-rb-good`).click();
+	await page.waitForFunction(
+		() => /Deck finished/.test(document.querySelector(".gw-root.is-flashcards")?.textContent ?? ""),
+		{ timeout: 10_000 },
+	);
+	const finished = await page.locator(`${rootSel}.is-flashcards`).innerText();
+	if (/Nothing due|tomorrow|Next card/i.test(finished)) {
+		throw new Error(`Finished sitting still talks about tomorrow: ${finished}`);
+	}
+	await shotGroundwork("08c-deck-finished");
+
 	await utility("settings").click();
 	await page.waitForSelector(`${rootSel}.is-settings:not(.is-flashcards)`, { timeout: 15_000 });
 	await page.waitForSelector(`${rootSel}.is-settings .gw-library-title`, { hasText: "Settings", timeout: 15_000 });
 	await page.waitForSelector(`${rootSel}.is-settings h3`, { timeout: 15_000 });
 	await expectNoCloseButton("settings");
-	await sleep(600);
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button`, { hasText: /^Light$/ }).waitFor({ timeout: 15_000 });
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button`, { hasText: /^Heavy$/ }).click();
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button.is-on`, { hasText: /^Heavy$/ }).waitFor({ timeout: 15_000 });
+	await shotGroundwork("09b-tutor-heavy");
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button`, { hasText: /^Light$/ }).click();
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button.is-on`, { hasText: /^Light$/ }).waitFor({ timeout: 15_000 });
+	await sleep(400);
 	await shotGroundwork("09-settings");
 
 	await utility("library").click();

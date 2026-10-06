@@ -18,6 +18,8 @@ export interface AccountRecord {
 	/** Bring-your-own-model only. Hosted plans ignore this and call Groundwork's model. */
 	tutorVia?: "claude" | "key";
 	tutorProvider?: UserKeyProvider;
+	/** Hosted plans. Absent means Light. */
+	tutorWeight?: TutorWeight;
 	/** First-touch ad click, stored once when the account is created or first seen with it. */
 	attribution?: StoredAttribution;
 	/** Set the first time Obsidian links this account. Absent until then. */
@@ -32,6 +34,13 @@ export interface StoredAttribution {
 	utmTerm?: string;
 	utmContent?: string;
 	gclid?: string;
+}
+
+/** Hosted tutor size. Light is the default. Bring-your-own-model accounts ignore this. */
+export type TutorWeight = "light" | "heavy";
+
+export function isTutorWeight(value: unknown): value is TutorWeight {
+	return value === "light" || value === "heavy";
 }
 
 /** How a bring-your-own-model account wants the tutor to run. Claude is the default. */
@@ -55,6 +64,7 @@ export interface AccountView {
 	hasBilling: boolean;
 	tutorVia: "claude" | "key";
 	tutorProvider: UserKeyProvider | null;
+	tutorWeight: TutorWeight;
 }
 
 /** Account fields a client may show. Dollar credit balances are not among them. */
@@ -71,6 +81,7 @@ export interface PublicAccount {
 	budgetUsed: number;
 	tutorVia: "claude" | "key";
 	tutorProvider: UserKeyProvider | null;
+	tutorWeight: TutorWeight;
 }
 
 export function emptyAccount(uid: string, now: Date = new Date()): AccountRecord {
@@ -125,10 +136,11 @@ export function tutorChoiceFrom(record: AccountRecord): TutorChoice {
 	return { via: fields.tutorVia, provider: fields.tutorProvider };
 }
 
-function tutorFields(record: AccountRecord): { tutorVia: "claude" | "key"; tutorProvider: UserKeyProvider | null } {
+function tutorFields(record: AccountRecord): { tutorVia: "claude" | "key"; tutorProvider: UserKeyProvider | null; tutorWeight: TutorWeight } {
 	return {
 		tutorVia: record.tutorVia === "key" ? "key" : "claude",
 		tutorProvider: isUserKeyProvider(record.tutorProvider) ? record.tutorProvider : null,
+		tutorWeight: record.tutorWeight === "heavy" ? "heavy" : "light",
 	};
 }
 
@@ -146,6 +158,7 @@ export function presentAccount(view: AccountView): PublicAccount {
 		budgetUsed,
 		tutorVia: view.tutorVia,
 		tutorProvider: view.tutorProvider,
+		tutorWeight: view.tutorWeight,
 	};
 }
 
@@ -173,6 +186,11 @@ export function clearStripeCustomer(record: AccountRecord): AccountRecord {
 	const next = { ...record };
 	delete next.stripeCustomerId;
 	return next;
+}
+
+export function setTutorWeight(record: AccountRecord, weight: TutorWeight, now: Date = new Date()): AccountRecord {
+	const current = currentAccount(record, now);
+	return { ...current, tutorWeight: weight };
 }
 
 export function setTutorChoice(record: AccountRecord, choice: { via: "claude" | "key"; provider?: string | null }, now: Date = new Date()): AccountRecord {

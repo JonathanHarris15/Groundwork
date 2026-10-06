@@ -54,10 +54,10 @@ describe("account server", () => {
 		const plans = await route("GET", "/v1/plans", null, server);
 		const listed = JSON.stringify(plans.json);
 		expect(listed).toContain("Bring your own model");
-		expect(listed).toContain('"priceUsdPerMonth":4');
-		expect(listed).toContain('"priceUsdPerMonth":15');
-		expect(listed).not.toContain('"priceUsdPerMonth":9');
-		expect(listed).not.toContain('"priceUsdPerMonth":20');
+		expect(listed).toContain('"priceUsdPerMonth":6');
+		expect(listed).toContain('"priceUsdPerMonth":20');
+		expect(listed).not.toContain('"priceUsdPerMonth":4');
+		expect(listed).not.toContain('"priceUsdPerMonth":15');
 		expect(listed).not.toMatch(/hostedCreditUsd|creditUsd|remainingUsd|\$3|\$8/);
 		const account = await route("GET", "/v1/account", null, server);
 		expect(account.json).toMatchObject({ needsPlan: true, budgetUsed: 0 });

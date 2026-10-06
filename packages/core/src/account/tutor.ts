@@ -18,15 +18,29 @@
 
 import type { ContentBlock, ProviderTool, ChatMessage } from "../agent/types";
 import { USER_KEY_PROVIDERS, type UserKeyProvider } from "./plans";
-import { type AccountView, type TutorChoice } from "./usage";
+import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
 
-export const HOSTED_MODEL = {
-	id: "anthropic/claude-haiku-4.5",
-	label: "Groundwork small",
-	/** USD per million tokens. Matches the published Haiku 4.5 rate. */
-	inputUsdPerMillion: 1,
-	outputUsdPerMillion: 5,
-} as const;
+/**
+ * Hosted models on OpenRouter. Rates are the listed OpenRouter prices (Oct 2026).
+ * Light is Gemini 3.8 Flash ($0.75 / $3.75 per 1M). Heavy is Gemini 3.5 Flash ($1.50 / $9 per 1M).
+ */
+export const HOSTED_MODELS: Record<TutorWeight, { id: string; label: string; inputUsdPerMillion: number; outputUsdPerMillion: number }> = {
+	light: {
+		id: "google/gemini-3.8-flash",
+		label: "Light",
+		inputUsdPerMillion: 0.75,
+		outputUsdPerMillion: 3.75,
+	},
+	heavy: {
+		id: "google/gemini-3.5-flash",
+		label: "Heavy",
+		inputUsdPerMillion: 1.5,
+		outputUsdPerMillion: 9,
+	},
+};
+
+/** Default hosted model. */
+export const HOSTED_MODEL = HOSTED_MODELS.light;
 
 export const PROVIDER_LABEL: Record<UserKeyProvider, string> = {
 	anthropic: "Anthropic",
@@ -67,7 +81,7 @@ export const SIGN_IN_DETAIL = "Sign in on the Groundwork website, then choose Op
 export type UpstreamKind = "anthropic" | "openai" | "google";
 
 export type TutorDecision =
-	| { action: "hosted"; model: string; provider: "openrouter"; key: "groundwork" }
+	| { action: "hosted"; model: string; provider: "openrouter"; key: "groundwork"; weight: TutorWeight }
 	| { action: "claude" }
 	| { action: "key"; provider: UserKeyProvider; model: string; key: "user" }
 	| { action: "blocked"; status: 402 | 409; error: string; setup: "plan" | "credit" | "key" };
@@ -83,6 +97,8 @@ export interface TutorStatus {
 	setup: "plan" | "credit" | "claude" | "key" | null;
 	budgetUsed: number;
 	ownModel: boolean;
+	/** Set for a hosted tutor. Null when the account brings its own model. */
+	weight: TutorWeight | null;
 	claude: typeof CLAUDE_SETUP;
 }
 
@@ -91,7 +107,7 @@ export interface TutorCall {
 	messages: ChatMessage[];
 	tools: ProviderTool[];
 	maxTokens: number;
-	/** Honored for a bring-your-own key. Hosted turns always use the small model. */
+	/** Honored for a bring-your-own key. Hosted turns use the account's Light or Heavy model. */
 	model?: string;
 }
 
@@ -108,8 +124,9 @@ export interface UpstreamResult {
 	usage: { input: number; output: number };
 }
 
-export function hostedCostUsd(usage: { input: number; output: number }): number {
-	const cost = (usage.input * HOSTED_MODEL.inputUsdPerMillion + usage.output * HOSTED_MODEL.outputUsdPerMillion) / 1_000_000;
+export function hostedCostUsd(usage: { input: number; output: number }, weight: TutorWeight = "light"): number {
+	const model = HOSTED_MODELS[weight];
+	const cost = (usage.input * model.inputUsdPerMillion + usage.output * model.outputUsdPerMillion) / 1_000_000;
 	return Math.round(cost * 10_000) / 10_000;
 }
 
@@ -121,7 +138,9 @@ export function tutorDecision(view: AccountView, choice: TutorChoice, saved: Par
 		if (view.remainingUsd <= 0) {
 			return { action: "blocked", status: 402, error: "This month's tutor budget is used up. Wait until next month, or switch to Bring your own model on the website.", setup: "credit" };
 		}
-		return { action: "hosted", model: HOSTED_MODEL.id, provider: "openrouter", key: "groundwork" };
+		const weight = view.tutorWeight === "heavy" ? "heavy" : "light";
+		const model = HOSTED_MODELS[weight];
+		return { action: "hosted", model: model.id, provider: "openrouter", key: "groundwork", weight };
 	}
 	if (choice.via === "key") {
 		const provider = choice.provider;
@@ -143,13 +162,13 @@ export function tutorStatus(decision: TutorDecision, view: AccountView, choice: 
 	const budgetUsed = view.ownModel || view.creditUsd <= 0 ? 0 : Math.min(1, view.spentUsd / view.creditUsd);
 	const shared = { budgetUsed, ownModel: view.ownModel, claude: CLAUDE_SETUP };
 	if (decision.action === "hosted") {
-		return { ...shared, action: "hosted", via: "hosted", model: decision.model, provider: "openrouter", label: HOSTED_MODEL.label, error: null, setup: null };
+		return { ...shared, action: "hosted", via: "hosted", model: decision.model, provider: "openrouter", label: HOSTED_MODELS[decision.weight].label, weight: decision.weight, error: null, setup: null };
 	}
 	if (decision.action === "claude") {
-		return { ...shared, action: "claude", via: "claude", model: null, provider: null, label: "Claude subscription", error: null, setup: null };
+		return { ...shared, action: "claude", via: "claude", model: null, provider: null, label: "Claude subscription", weight: null, error: null, setup: null };
 	}
 	if (decision.action === "key") {
-		return { ...shared, action: "key", via: "key", model: decision.model, provider: decision.provider, label: PROVIDER_LABEL[decision.provider], error: null, setup: null };
+		return { ...shared, action: "key", via: "key", model: decision.model, provider: decision.provider, label: PROVIDER_LABEL[decision.provider], weight: null, error: null, setup: null };
 	}
 	return {
 		...shared,
@@ -158,6 +177,7 @@ export function tutorStatus(decision: TutorDecision, view: AccountView, choice: 
 		model: null,
 		provider: choice.provider,
 		label: "Tutor paused",
+		weight: null,
 		error: decision.error,
 		setup: decision.setup,
 	};
@@ -204,7 +224,7 @@ export function parseTutorCall(body: unknown): TutorCall | null {
 }
 
 export function buildUpstream(decision: Extract<TutorDecision, { action: "hosted" | "key" }>, apiKey: string, call: TutorCall): UpstreamRequest {
-	const model = decision.action === "hosted" ? HOSTED_MODEL.id : call.model || decision.model;
+	const model = decision.action === "hosted" ? decision.model : call.model || decision.model;
 	const provider = decision.action === "hosted" ? "openrouter" : decision.provider;
 	const kind = providerKind(provider);
 	const headers: Record<string, string> = { "content-type": "application/json" };
@@ -365,7 +385,7 @@ function googleBody(call: TutorCall): unknown {
 
 function readAnthropic(body: AnthropicMessage): { ok: true; result: UpstreamResult } | { ok: false; error: string } {
 	if (!Array.isArray(body.content)) return { ok: false, error: "The model provider returned no message." };
-	const content = body.content.filter((block) => block && (block.type === "text" || block.type === "tool_use")) as ContentBlock[];
+	const content = body.content.filter((block) => block && typeof block === "object" && typeof block.type === "string") as ContentBlock[];
 	return {
 		ok: true,
 		result: {

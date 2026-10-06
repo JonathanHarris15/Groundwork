@@ -180,7 +180,7 @@ test("pricing cards share a height and line up price, copy, and buttons", async 
 				};
 			}),
 		);
-		expect(fits.map((button) => button.text)).toEqual(["Start free", "Choose $4", "Choose $15"]);
+		expect(fits.map((button) => button.text)).toEqual(["Start free", "Choose $6", "Choose $20"]);
 		for (const button of fits) {
 			expect(button.inside, `${button.text} at ${viewport.width}`).toBe(true);
 			expect(button.height, `${button.text} at ${viewport.width}`).toBeLessThanOrEqual(64);
@@ -246,12 +246,12 @@ test("a returning account does not fire sign_up", async ({ page }) => {
 
 test("purchase fires once per checkout session", async ({ page }) => {
 	await page.goto("/?billing=success&session_id=cs_test_1&plan=byom");
-	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_1", value: 4, currency: "USD" }]);
+	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_1", value: 6, currency: "USD" }]);
 	await page.goto("/?billing=success&session_id=cs_test_1&plan=byom");
 	await page.waitForFunction(() => Boolean((window as unknown as { GroundworkTracking?: unknown }).GroundworkTracking));
 	expect(await countEvents(page, "purchase")).toBe(0);
 	await page.goto("/?billing=success&session_id=cs_test_2&plan=included");
-	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_2", value: 15, currency: "USD" }]);
+	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_2", value: 20, currency: "USD" }]);
 	expect(await countEvents(page, "conversion")).toBe(0);
 	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toContain("cs_test_1");
 });
@@ -268,7 +268,7 @@ test("gtag.js sends purchase to /g/collect for a full price and a free promotion
 	});
 	await page.route("**/v1/billing/checkout-amount**", async (route) => {
 		const sessionId = new URL(route.request().url()).searchParams.get("session_id") ?? "";
-		const amountUsd = sessionId.includes("free") ? 0 : 15;
+		const amountUsd = sessionId.includes("free") ? 0 : 20;
 		await route.fulfill({ json: { amountUsd, currency: "USD" } });
 	});
 	await page.route(COLLECT, async (route) => {
@@ -277,7 +277,7 @@ test("gtag.js sends purchase to /g/collect for a full price and a free promotion
 		await route.abort();
 	});
 	await page.goto("/?billing=success&session_id=cs_full_price&plan=included");
-	await expect.poll(() => hits.some((hit) => hit.includes("en=purchase") && hit.includes("epn.value=15") && hit.includes("cu=USD") && hit.includes("cs_full_price"))).toBe(true);
+	await expect.poll(() => hits.some((hit) => hit.includes("en=purchase") && hit.includes("epn.value=20") && hit.includes("cu=USD") && hit.includes("cs_full_price"))).toBe(true);
 	const before = hits.length;
 	await page.goto("/?billing=success&session_id=cs_free_promo&plan=included");
 	await expect.poll(() => hits.slice(before).some((hit) => hit.includes("en=purchase") && hit.includes("epn.value=0") && hit.includes("cu=USD") && hit.includes("cs_free_promo"))).toBe(true);
@@ -499,7 +499,7 @@ function decodePng(buf: Buffer): { width: number; height: number; data: Uint8Arr
 	return { width, height, data: out };
 }
 
-const COLLECT = /(?:google-analytics\.com|www\.google\.com)\/g\/collect/;
+const COLLECT = /(?:google-analytics\.com|analytics\.google\.com|www\.google\.com)\/g\/collect/;
 
 async function countEvents(page: Page, name: string): Promise<number> {
 	return page.evaluate((eventName) => {

@@ -2962,6 +2962,25 @@ body .gw-root button.gw-toggle,
 body .gw-root .gw-seg button {
 	box-shadow: none;
 }
+body .gw-root .gw-seg button {
+	height: 28px;
+	min-height: 28px;
+	padding: 0 12px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+body .gw-root .gw-seg button.is-on {
+	background: var(--gw-pill-on);
+	color: var(--gw-ink-strong);
+}
+body .gw-root .gw-seg button:focus-visible {
+	outline: 2px solid var(--interactive-accent, currentColor);
+	outline-offset: 2px;
+}
+.gw-composer .gw-tutor-weight {
+	margin-right: 4px;
+}
 body .gw-root button.gw-lib-btn {
 	background: var(--gw-hover);
 	color: var(--gw-ink);
