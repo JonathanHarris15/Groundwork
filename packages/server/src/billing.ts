@@ -54,15 +54,24 @@ export function subscriptionIsEntitled(status: string | null | undefined): boole
  * `unknown` means it is active, but the price is not one of ours — leave the stored plan alone.
  * Included wins when a subscription carries both prices.
  */
-export function planFromSubscription(subscription: SubscriptionLike, prices: { byom: string; included: string }): "byom" | "included" | "unknown" | null {
+export interface MembershipPrices {
+	byom: string;
+	included: string;
+	/** Older price ids that still grant the same plan. Checkout uses only the current ids. */
+	previous?: { byom?: readonly string[]; included?: readonly string[] };
+}
+
+export function planFromSubscription(subscription: SubscriptionLike, prices: MembershipPrices): "byom" | "included" | "unknown" | null {
 	if (!subscriptionIsEntitled(subscription.status)) return null;
+	const includedIds = new Set([prices.included, ...(prices.previous?.included ?? [])]);
+	const byomIds = new Set([prices.byom, ...(prices.previous?.byom ?? [])]);
 	let included = false;
 	let byom = false;
 	for (const item of subscription.items?.data ?? []) {
 		const id = priceId(item?.price);
 		if (!id) continue;
-		if (id === prices.included) included = true;
-		else if (id === prices.byom) byom = true;
+		if (includedIds.has(id)) included = true;
+		else if (byomIds.has(id)) byom = true;
 	}
 	if (included) return "included";
 	if (byom) return "byom";
@@ -72,12 +81,18 @@ export function planFromSubscription(subscription: SubscriptionLike, prices: { b
 export function loadBilling(accounts: AccountDirectory): Billing {
 	const key = process.env.STRIPE_SECRET_KEY?.trim();
 	const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
-	const prices = {
-		byom: process.env.STRIPE_PRICE_BYOM?.trim(),
-		included: process.env.STRIPE_PRICE_INCLUDED?.trim(),
+	const byom = process.env.STRIPE_PRICE_BYOM?.trim();
+	const included = process.env.STRIPE_PRICE_INCLUDED?.trim();
+	if (!key || !webhookSecret || !byom || !included) return unconfigured();
+	const prices: MembershipPrices = {
+		byom,
+		included,
+		previous: {
+			byom: extraPrices("STRIPE_PRICE_BYOM_PREVIOUS"),
+			included: extraPrices("STRIPE_PRICE_INCLUDED_PREVIOUS"),
+		},
 	};
-	if (!key || !webhookSecret || !prices.byom || !prices.included) return unconfigured();
-	return createBilling(new Stripe(key), prices as { byom: string; included: string }, webhookSecret, accounts);
+	return createBilling(new Stripe(key), prices, webhookSecret, accounts);
 }
 
 export interface StripeMembershipClient {
@@ -89,7 +104,7 @@ export interface StripeMembershipClient {
 	};
 }
 
-export function createBilling(stripe: Stripe, prices: { byom: string; included: string }, webhookSecret: string, accounts: AccountDirectory): Billing {
+export function createBilling(stripe: Stripe, prices: MembershipPrices, webhookSecret: string, accounts: AccountDirectory): Billing {
 	const freshUntil = new Map<string, number>();
 	return {
 		configured: true,
@@ -141,7 +156,7 @@ export function createBilling(stripe: Stripe, prices: { byom: string; included: 
  * price change in the billing portal.
  * When `prices` is omitted, an entitled subscription still falls back to metadata.
  */
-export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event, prices?: { byom: string; included: string }): Promise<void> {
+export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event, prices?: MembershipPrices): Promise<void> {
 	if (event.id && !rememberStripeEvent(event.id)) return;
 	if (event.type === "checkout.session.completed") {
 		const session = event.data.object;
@@ -183,7 +198,7 @@ export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe
  */
 export async function syncStripeMembership(
 	stripe: StripeMembershipClient,
-	prices: { byom: string; included: string },
+	prices: MembershipPrices,
 	accounts: AccountDirectory,
 	uid: string,
 ): Promise<void> {
@@ -258,9 +273,16 @@ export function isMissingStripeCustomer(err: unknown): boolean {
 	return param === "customer" || param.endsWith("[customer]");
 }
 
+function extraPrices(name: string): string[] {
+	return (process.env[name] ?? "")
+		.split(",")
+		.map((part) => part.trim())
+		.filter(Boolean);
+}
+
 async function checkoutSession(
 	stripe: Stripe,
-	prices: { byom: string; included: string },
+	prices: MembershipPrices,
 	customer: string,
 	uid: string,
 	plan: "byom" | "included",

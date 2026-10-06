@@ -138,11 +138,11 @@ describe("plans", () => {
 	it("gives the free plan $3 of hosted credit and keeps Jev off the key list", () => {
 		expect(PLANS.free.hostedCreditUsd).toBe(3);
 		expect(PLANS.free.priceUsdPerMonth).toBe(0);
-		expect(PLANS.byom.priceUsdPerMonth).toBe(4);
+		expect(PLANS.byom.priceUsdPerMonth).toBe(6);
 		expect(PLANS.byom.hostedCreditUsd).toBe(0);
 		expect(PLANS.byom.ownModel).toBe(true);
-		expect(PLANS.included.priceUsdPerMonth).toBe(15);
-		expect(PLANS.included.hostedCreditUsd).toBe(8);
+		expect(PLANS.included.priceUsdPerMonth).toBe(20);
+		expect(PLANS.included.hostedCreditUsd).toBe(12);
 		expect(USER_KEY_PROVIDERS).not.toContain("jev");
 		expect(USER_KEY_PROVIDERS).not.toContain("typesafe");
 		expect(isUserKeyProvider("openrouter")).toBe(true);
@@ -156,8 +156,8 @@ describe("plans", () => {
 			expect(shown.summary).not.toMatch(/\$\d/);
 			expect(JSON.stringify(shown)).not.toMatch(/creditUsd|hostedCredit/);
 		}
-		expect(publicPlan(PLANS.byom).priceUsdPerMonth).toBe(4);
-		expect(publicPlan(PLANS.included).priceUsdPerMonth).toBe(15);
+		expect(publicPlan(PLANS.byom).priceUsdPerMonth).toBe(6);
+		expect(publicPlan(PLANS.included).priceUsdPerMonth).toBe(20);
 		const shown = presentAccount(viewAccount(choosePlan(emptyAccount("u"), "free")));
 		expect(shown).not.toHaveProperty("creditUsd");
 		expect(shown).not.toHaveProperty("remainingUsd");
@@ -203,12 +203,12 @@ describe("hosted credit", () => {
 
 	it("resets spend when the month changes", () => {
 		const chosen = choosePlan(emptyAccount("u", now), "included", now);
-		const spent = spendHosted(chosen, 8, now);
+		const spent = spendHosted(chosen, 12, now);
 		expect(spent.ok).toBe(true);
 		if (!spent.ok) return;
 		const nextMonth = viewAccount(spent.account, new Date("2026-11-02T00:00:00Z"));
 		expect(nextMonth.spentUsd).toBe(0);
-		expect(nextMonth.remainingUsd).toBe(8);
+		expect(nextMonth.remainingUsd).toBe(12);
 	});
 });
 

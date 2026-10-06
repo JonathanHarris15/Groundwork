@@ -7,11 +7,12 @@ const hostedRoute = (): TutorStatus => ({
 	via: "hosted",
 	model: "test",
 	provider: "openrouter",
-	label: "Groundwork small",
+	label: "Light",
 	error: null,
 	setup: null,
 	budgetUsed: 0,
 	ownModel: false,
+	weight: "light",
 	claude: CLAUDE_SETUP,
 });
 

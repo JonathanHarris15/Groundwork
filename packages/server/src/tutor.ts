@@ -98,7 +98,7 @@ export async function completeTutor(ctx: TutorCallContext, body: unknown): Promi
 	if (!read.ok) return { status: 502, json: { error: upstreamErrorMessage({ error: read.error }, [apiKey]) } };
 
 	let view = ctx.view;
-	if (decision.action === "hosted") view = await ctx.charge(hostedCostUsd(read.result.usage));
+	if (decision.action === "hosted") view = await ctx.charge(hostedCostUsd(read.result.usage, decision.weight));
 	const shown = presentAccount(view);
 	return {
 		status: 200,

@@ -184,7 +184,7 @@ const TOOL_VERBS: Record<string, string> = {
 	update_learner_profile: "Updating your learner profile",
 	save_session_summary: "Saving the session summary",
 	save_flashcard: "Saving a flashcard",
-	list_due_flashcards: "Checking due flashcards",
+	list_flashcards: "Checking flashcards",
 	list_vault_files: "Looking through your files",
 	read_vault_file: "Opening a file",
 	write_submission_file: "Writing a file to submit",
@@ -224,6 +224,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private uiSessionEl!: HTMLElement;
 	private uiProviderEl!: HTMLElement;
+	private uiWeightEl!: HTMLElement;
 	private uiContextEl!: HTMLElement;
 	private uiGoalDaysEl!: HTMLElement;
 	private uiTabs = new Map<PrimaryScreen, HTMLElement>();
@@ -383,6 +384,7 @@ export class ChatView extends ItemView implements ToolUI {
 			this.uiFileInput.value = "";
 		});
 
+		this.uiWeightEl = tools.createDiv({ cls: "gw-seg gw-tutor-weight", attr: { hidden: "", role: "group", "aria-label": "Tutor model" } });
 		this.uiProviderEl = tools.createSpan({ cls: "gw-chip gw-chip-provider", attr: { hidden: "" } });
 		this.uiContextEl = tools.createSpan({ cls: "gw-chip gw-chip-context", attr: { hidden: "" } });
 		const openProviderSetup = () => {
@@ -1034,6 +1036,38 @@ export class ChatView extends ItemView implements ToolUI {
 		if (only?.tagName === "P") only.addClass("gw-tight");
 	}
 
+	private paintTutorWeight(): void {
+		const el = this.uiWeightEl;
+		if (!el) return;
+		const show = this.plugin.tutorRoute?.action === "hosted";
+		el.toggleAttribute("hidden", !show);
+		if (!show) {
+			el.empty();
+			return;
+		}
+		this.paintWeightButtons(el);
+	}
+
+	private paintWeightButtons(parent: HTMLElement): void {
+		const weight = this.plugin.tutorRoute?.weight === "heavy" ? "heavy" : "light";
+		parent.empty();
+		for (const [id, label] of [
+			["light", "Light"],
+			["heavy", "Heavy"],
+		] as const) {
+			const on = weight === id;
+			const button = parent.createEl("button", {
+				text: label,
+				attr: { type: "button", "aria-pressed": on ? "true" : "false" },
+			});
+			if (on) button.addClass("is-on");
+			button.addEventListener("click", () => {
+				if (this.plugin.tutorRoute?.weight === id || (!this.plugin.tutorRoute?.weight && id === "light")) return;
+				void this.plugin.setTutorWeight(id);
+			});
+		}
+	}
+
 	private renderHeader(): void {
 		if (!this.record) return;
 		const title = this.record.items.length ? this.record.title : "New session";
@@ -1042,6 +1076,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiSessionEl?.setAttr("aria-hidden", showTitle ? "false" : "true");
 		this.uiSessionEl?.setText(showTitle ? title : "");
 		const provider = this.plugin.providerLabel();
+		this.paintTutorWeight();
 		this.uiProviderEl?.setText(provider.label);
 		this.uiProviderEl?.toggleAttribute("hidden", !this.plugin.showProviderChip());
 		this.uiProviderEl?.toggleClass("is-attention", !!provider.setup);
@@ -1887,8 +1922,10 @@ export class ChatView extends ItemView implements ToolUI {
 			const used = Math.round((this.plugin.tutorRoute.budgetUsed || 0) * 100);
 			section.createDiv({
 				cls: "gw-lib-help",
-				text: `This account uses Groundwork's smaller model. ${used}% of this month's tutor budget is used. For your own Claude subscription, switch to Bring your own model on the website.`,
+				text: `Light is Gemini Flash. Heavy is the stronger Gemini Flash, and it uses more of this month's budget. ${used}% of this month's tutor budget is used.`,
 			});
+			const picker = section.createDiv({ cls: "gw-seg gw-tutor-weight", attr: { role: "group", "aria-label": "Tutor model" } });
+			this.paintWeightButtons(picker);
 		} else if (this.plugin.tutorRoute?.action === "key") {
 			section.createDiv({ cls: "gw-lib-help", text: `The tutor calls ${this.plugin.tutorRoute.label} with the key saved on your account. Change that on the website.` });
 		} else if (this.plugin.tutorRoute?.action === "blocked") {

@@ -101,6 +101,12 @@ describe("checkout promotion codes", () => {
 			discounts: [{ coupon: { percent_off: 100, duration: "forever" } }],
 		};
 		expect(planFromSubscription(subscription, prices)).toBe("included");
+		expect(
+			planFromSubscription(
+				{ ...subscription, items: { data: [{ price: { id: "price_included_old" } }] } },
+				{ ...prices, previous: { included: ["price_included_old"] } },
+			),
+		).toBe("included");
 		const accounts = new AccountDirectory();
 		await applyStripeEvent(accounts, event("customer.subscription.updated", subscription, "evt_free_forever"), prices);
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });

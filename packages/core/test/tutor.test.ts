@@ -3,6 +3,7 @@ import { choosePlan, emptyAccount, presentAccount, settleHosted, setTutorChoice,
 import {
 	CLAUDE_SETUP,
 	HOSTED_MODEL,
+	HOSTED_MODELS,
 	buildUpstream,
 	hostedCostUsd,
 	parseTutorCall,
@@ -34,11 +35,13 @@ describe("tutor route", () => {
 		expect(decision.action === "blocked" && decision.error).not.toMatch(/\$\d/);
 	});
 
-	it("sends free and Groundwork through one hosted model", () => {
+	it("sends free and Groundwork through Light unless the account chooses Heavy", () => {
 		for (const plan of ["free", "included"] as const) {
 			const view = viewAccount(choosePlan(emptyAccount("u", now), plan, now), now);
 			const decision = tutorDecision(view, { via: "claude", provider: null }, saved);
-			expect(decision).toMatchObject({ action: "hosted", model: HOSTED_MODEL.id, key: "groundwork" });
+			expect(decision).toMatchObject({ action: "hosted", model: HOSTED_MODELS.light.id, weight: "light", key: "groundwork" });
+			const heavy = tutorDecision({ ...view, tutorWeight: "heavy" }, { via: "claude", provider: null }, saved);
+			expect(heavy).toMatchObject({ action: "hosted", model: HOSTED_MODELS.heavy.id, weight: "heavy", key: "groundwork" });
 		}
 	});
 
@@ -77,9 +80,11 @@ describe("tutor route", () => {
 });
 
 describe("hosted ledger", () => {
-	it("prices the small model from its published token rates", () => {
-		expect(hostedCostUsd({ input: 2_000, output: 500 })).toBe(0.0045);
-		expect(hostedCostUsd({ input: 1_000_000, output: 0 })).toBe(1);
+	it("prices Light and Heavy from their OpenRouter rates", () => {
+		expect(hostedCostUsd({ input: 2_000, output: 500 }, "light")).toBe(0.0034);
+		expect(hostedCostUsd({ input: 1_000_000, output: 0 }, "light")).toBe(0.75);
+		expect(hostedCostUsd({ input: 2_000, output: 500 }, "heavy")).toBe(0.0075);
+		expect(hostedCostUsd({ input: 1_000_000, output: 1_000_000 }, "heavy")).toBe(10.5);
 	});
 
 	it("lets the last turn finish and then stops", () => {
@@ -95,7 +100,7 @@ describe("hosted ledger", () => {
 
 describe("provider requests", () => {
 	it("calls OpenRouter with Groundwork's key and ignores a requested larger model", () => {
-		const upstream = buildUpstream({ action: "hosted", model: HOSTED_MODEL.id, provider: "openrouter", key: "groundwork" }, "sk-or-groundwork", {
+		const upstream = buildUpstream({ action: "hosted", model: HOSTED_MODEL.id, provider: "openrouter", key: "groundwork", weight: "light" }, "sk-or-groundwork", {
 			...call,
 			model: "anthropic/claude-opus-4",
 		});
@@ -125,6 +130,27 @@ describe("provider requests", () => {
 		expect(google.url).toContain("gemini-2.5-flash");
 		expect(google.headers["x-goog-api-key"]).toBe("google-key");
 		expect(JSON.stringify(google.body)).toContain("functionResponse");
+	});
+
+	it("keeps a thinking block so a later tool turn can send it back", () => {
+		const read = readUpstream("anthropic", {
+			content: [
+				{ type: "thinking", thinking: "Check the definition.", signature: "sig" },
+				{ type: "tool_use", id: "toolu_1", name: "get_goal", input: {} },
+			],
+			stop_reason: "tool_use",
+			usage: { input_tokens: 10, output_tokens: 4 },
+		});
+		expect(read.ok).toBe(true);
+		if (!read.ok) return;
+		expect(read.result.content.map((block) => block.type)).toEqual(["thinking", "tool_use"]);
+		const upstream = buildUpstream(
+			{ action: "hosted", model: HOSTED_MODELS.heavy.id, provider: "openrouter", key: "groundwork", weight: "heavy" },
+			"sk-or-groundwork",
+			{ ...call, messages: [{ role: "assistant", content: read.result.content }] },
+		);
+		expect(upstream.body).toMatchObject({ model: HOSTED_MODELS.heavy.id });
+		expect(JSON.stringify(upstream.body)).toContain("signature");
 	});
 
 	it("reads a tool call back into the tutor's shape", () => {
@@ -163,7 +189,7 @@ describe("tutor runtime", () => {
 function status(action: "hosted" | "key" | "blocked") {
 	return tutorStatus(
 		action === "hosted"
-			? { action: "hosted", model: HOSTED_MODEL.id, provider: "openrouter", key: "groundwork" }
+			? { action: "hosted", model: HOSTED_MODEL.id, provider: "openrouter", key: "groundwork", weight: "light" as const }
 			: action === "key"
 				? { action: "key", provider: "openai", model: "gpt-4.1-mini", key: "user" }
 				: { action: "blocked", status: 402, error: "Choose a plan on the Groundwork website (Plans), then choose Open Obsidian.", setup: "plan" },

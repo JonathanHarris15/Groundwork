@@ -51,10 +51,10 @@ describe("GA4 events", () => {
 			utm_source: "ads",
 			gclid: "Cjwtest",
 			transaction_id: "cs_test_1",
-			value: 4,
+			value: 6,
 			currency: "USD",
 		});
-		expect(calls[3]?.[2]).toMatchObject({ transaction_id: "sub_123", value: 15, currency: "USD" });
+		expect(calls[3]?.[2]).toMatchObject({ transaction_id: "sub_123", value: 20, currency: "USD" });
 		expect(calls[4]?.[2]).toEqual({ utm_source: "ads", gclid: "Cjwtest" });
 		expect(JSON.stringify(calls)).not.toContain("conversion");
 		expect(JSON.stringify(calls)).not.toContain("AW-");

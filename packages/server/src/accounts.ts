@@ -7,6 +7,7 @@ import {
 	setDisplayName,
 	setStripeCustomer,
 	setTutorChoice,
+	setTutorWeight,
 	settleHosted,
 	tutorChoiceFrom,
 	viewAccount,
@@ -15,6 +16,7 @@ import {
 	type PlanId,
 	type StoredAttribution,
 	type TutorChoice,
+	type TutorWeight,
 } from "@groundwork/core";
 import type { AccountStore } from "./account-store";
 
@@ -88,6 +90,10 @@ export class AccountDirectory {
 		return this.commit(uid, now, (record) => setTutorChoice(record, choice, now));
 	}
 
+	async setTutorWeight(uid: string, weight: TutorWeight, now: Date = new Date()): Promise<AccountView> {
+		return this.commit(uid, now, (record) => setTutorWeight(record, weight, now));
+	}
+
 	/** Apply one hosted tutor turn to the allowance. */
 	async charge(uid: string, costUsd: number, now: Date = new Date()): Promise<AccountView> {
 		return this.commit(uid, now, (record) => settleHosted(record, costUsd, now).account);
@@ -147,6 +153,7 @@ function sameAccount(a: AccountRecord, b: AccountRecord): boolean {
 		a.stripeCustomerId === b.stripeCustomerId &&
 		a.tutorVia === b.tutorVia &&
 		a.tutorProvider === b.tutorProvider &&
+		a.tutorWeight === b.tutorWeight &&
 		a.obsidianConnectedAt === b.obsidianConnectedAt &&
 		attributionKey(a.attribution) === attributionKey(b.attribution)
 	);

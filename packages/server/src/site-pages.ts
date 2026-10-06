@@ -152,8 +152,8 @@ function page(spec: { path: string; title: string; description: string; main: st
 function pricingPage(): string {
 	return page({
 		path: "/pricing",
-		title: "Groundwork pricing: Free, $4/mo, or $15/mo",
-		description: "Start free on Groundwork’s smaller model. Bring your own model for $4/mo, or let Groundwork run the models for $15/mo. Billed through Stripe.",
+		title: "Groundwork pricing: Free, $6/mo, or $20/mo",
+		description: "Start free on Groundwork’s smaller model. Bring your own model for $6/mo, or let Groundwork run the models for $20/mo. Billed through Stripe.",
 		main: `
 			<h1>Plans</h1>
 			<p class="mkt-sub">All three plans run in Obsidian desktop. They differ in which model runs the tutor. The study tools are the same on each plan. Free uses Groundwork’s smaller model and has a monthly limit on tutor use.</p>
@@ -167,15 +167,15 @@ function pricingPage(): string {
 				</li>
 				<li class="plan-card">
 					<h2>Bring your own model</h2>
-					<p class="price">$4<span>/month</span></p>
-					<p>Use a model you already pay for. Connect the Claude subscription on your computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. Model use on that subscription or key is billed by the provider, not by Groundwork. The $4 covers Groundwork.</p>
-					<a class="cta" href="/?plan=byom#signin">Choose $4${ARROW}</a>
+					<p class="price">$6<span>/month</span></p>
+					<p>Use a model you already pay for. Connect the Claude subscription on your computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 covers Groundwork.</p>
+					<a class="cta" href="/?plan=byom#signin">Choose $6${ARROW}</a>
 				</li>
 				<li class="plan-card">
 					<h2>Groundwork</h2>
-					<p class="price">$15<span>/month</span></p>
-					<p>We run the models for you. No keys to manage.</p>
-					<a class="cta" href="/?plan=included#signin">Choose $15${ARROW}</a>
+					<p class="price">$20<span>/month</span></p>
+					<p>We run the models for you. No keys to manage. Light by default.</p>
+					<a class="cta" href="/?plan=included#signin">Choose $20${ARROW}</a>
 				</li>
 			</ul>
 			<section class="mkt-section">
@@ -340,7 +340,7 @@ function startPage(): string {
 				</li>
 				<li>
 					<h2>Pick how the tutor runs</h2>
-					<p>Stay on Free with Groundwork’s smaller model, bring your own model for $4/month (your Claude subscription or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI), or let Groundwork run the models for $15/month. See <a href="/pricing">Plans</a>.</p>
+					<p>Stay on Free with Groundwork’s smaller model, bring your own model for $6/month (your Claude subscription or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI), or let Groundwork run the models for $20/month. See <a href="/pricing">Plans</a>.</p>
 				</li>
 				<li>
 					<h2>Start a goal</h2>
@@ -361,7 +361,7 @@ function privacyPage(): string {
 			<h1>Privacy</h1>
 			<p class="mkt-sub">What Groundwork stores, and who else sees it. This covers groundworklearn.com and the Groundwork plugin.</p>
 			${section("Google sign-in", ["You sign in with Google. We receive the name and email on that Google account, and a sign-in token that proves it’s you. We use them to open your Groundwork account. We don’t get your Google password."])}
-			${section("Your study record", ["The account holds tutor memory: concept notes, goals, quiz answers, flashcards, chats, and a short profile of how you learn. That record is what lets the same progress show up on each computer where you sign in.", "The account page on this site draws your concept map: titles, how concepts connect, and whether each one is solid, shaky, learning, rusty, or not started. It does not show the text of your notes or your quiz answers.", "When the tutor answers, your message and any files you attach are sent to the model that runs it: Groundwork’s model provider on Free and the $15 plan, or the provider you connect on Bring your own model."])}
+			${section("Your study record", ["The account holds tutor memory: concept notes, goals, quiz answers, flashcards, chats, and a short profile of how you learn. That record is what lets the same progress show up on each computer where you sign in.", "The account page on this site draws your concept map: titles, how concepts connect, and whether each one is solid, shaky, learning, rusty, or not started. It does not show the text of your notes or your quiz answers.", "When the tutor answers, your message and any files you attach are sent to the model that runs it: Groundwork’s model provider on Free and the $20 plan, or the provider you connect on Bring your own model."])}
 			${section("Obsidian", ["Groundwork is a plugin for Obsidian desktop. Your vault stays on your computer. The tutor reads only the vault folders you allow in settings, and it writes a file only in folders you mark for that. You can attach a slide, a PDF, or an image from those folders."])}
 			${section("Keys you paste", ["On the Bring your own model plan you can save a key for OpenRouter, Anthropic, Google, xAI, or OpenAI. The key is stored on your account and used only on Groundwork’s server to call that provider. The plugin does not send the key.", "Claude on your computer is separate. If you use a Claude subscription, Claude Code runs on your machine. That login stays there. Groundwork does not receive it."])}
 			${section("Billing", ["Paid plans are billed by Stripe. Stripe gets what it needs to charge the card and send receipts. Groundwork stores the Stripe customer id and which plan you’re on."])}
@@ -376,12 +376,12 @@ function termsPage(): string {
 	return page({
 		path: "/terms",
 		title: "Terms · Groundwork",
-		description: "Terms for Groundwork: the Free plan, Bring your own model at $4/month, and Groundwork at $15/month, billed through Stripe.",
+		description: "Terms for Groundwork: the Free plan, Bring your own model at $6/month, and Groundwork at $20/month, billed through Stripe.",
 		main: `
 			<h1>Terms</h1>
 			<p class="mkt-sub">These terms cover the Groundwork website and the Groundwork plugin for Obsidian desktop.</p>
 			${section("The product", ["Groundwork is a tutor that runs inside Obsidian on a desktop computer. It does not run on a phone. You need an account. You sign in with Google at groundworklearn.com."])}
-			${section("Plans", ["Free is $0. It uses Groundwork’s smaller model and has a monthly limit on tutor use. Your account shows the share of that month you’ve used.", "Bring your own model is $4 per month. You use the Claude subscription on your computer, or a key you paste. Model use on that subscription or key is billed by the provider, not by Groundwork. The $4 is for Groundwork.", "Groundwork is $15 per month. We run the models.", "The study tools are the same on each plan. What changes is which model answers, and who pays for that use. Prices are listed on <a href=\"/pricing\">Plans</a>."])}
+			${section("Plans", ["Free is $0. It uses Groundwork’s smaller model and has a monthly limit on tutor use. Your account shows the share of that month you’ve used.", "Bring your own model is $6 per month. You use the Claude subscription on your computer, or a key you paste. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 is for Groundwork.", "Groundwork is $20 per month. We run the models. Light by default.", "The study tools are the same on each plan. What changes is which model answers, and who pays for that use. Prices are listed on <a href=\"/pricing\">Plans</a>."])}
 			${section("Billing and cancellation", ["Paid plans are billed monthly by Stripe. You can switch plans on your account page. To change or cancel a paid plan, open Manage billing, which takes you to Stripe. Canceling stops the next charge. It does not delete your study record.", "Stripe may add tax where it has to."])}
 			${section("Your notes", ["Your vault is yours. Groundwork reads and writes only the folders you allow. You’re responsible for the files you attach and for having the right to use them."])}
 			${section("The service", ["We can suspend an account that abuses the service or tries to break it. If these terms change, the new page is the one that applies."])}

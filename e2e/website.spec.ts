@@ -64,8 +64,8 @@ test("HEAD matches GET", async ({ request }) => {
 test("landing and 404", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
-	await expect(page.locator("body")).toContainText("Bring your own model for $4/month");
-	await expect(page.locator("body")).toContainText("for $15/month");
+	await expect(page.locator("body")).toContainText("Bring your own model for $6/month");
+	await expect(page.locator("body")).toContainText("for $20/month");
 	await expect(page.locator("body")).toContainText("Start free on Groundwork");
 	await expect(page).toHaveTitle(/Groundwork/);
 	const res = await page.goto("/this-route-does-not-exist");
@@ -107,8 +107,8 @@ test("plan picker and sign-out", async ({ page, request }) => {
 	await page.getByRole("button", { name: "Continue on this device" }).click();
 	await page.getByRole("button", { name: /Upgrade|Change plan/i }).click();
 	await expect(page.getByRole("heading", { name: /Choose a plan/i })).toBeVisible();
-	await expect(page.locator(".plans")).toContainText("$4");
-	await expect(page.locator(".plans")).toContainText("$15");
+	await expect(page.locator(".plans")).toContainText("$6");
+	await expect(page.locator(".plans")).toContainText("$20");
 	await expect(page.locator(".plans")).toContainText("Free");
 	await page.getByRole("button", { name: "Sign out", exact: true }).click();
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();

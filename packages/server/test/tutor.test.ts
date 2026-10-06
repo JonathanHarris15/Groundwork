@@ -65,16 +65,44 @@ describe("tutor API", () => {
 		expect(calls).toHaveLength(1);
 		expect(calls[0].url).toBe("https://openrouter.ai/api/v1/messages");
 		expect(calls[0].headers.get("authorization")).toBe("Bearer sk-or-groundwork");
-		expect(calls[0].body.model).toBe("anthropic/claude-haiku-4.5");
+		expect(calls[0].body.model).toBe("google/gemini-3.8-flash");
 		expect(JSON.stringify(result.json)).not.toContain("sk-or-groundwork");
 		expect(JSON.stringify(result.json)).not.toMatch(/\$\d|creditUsd|remainingUsd|hostedCredit/);
 		expect(result.json).toMatchObject({ route: { action: "hosted", provider: "openrouter" }, budgetUsed: expect.any(Number) });
-		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0.0045, remainingUsd: 2.9955 });
+		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0.0034, remainingUsd: 2.9966 });
 
 		const described = await route("GET", "/v1/tutor", null, server);
-		expect(described.json).toMatchObject({ action: "hosted", label: "Groundwork small" });
+		expect(described.json).toMatchObject({ action: "hosted", label: "Light", weight: "light", model: "google/gemini-3.8-flash" });
 		expect(JSON.stringify(described.json)).not.toMatch(/\$\d|creditUsd|remainingUsd/);
 		expect(Object.keys((described.json as { claude: object[] }).claude)).toHaveLength(3);
+	});
+
+	it("routes Heavy to Gemini 3.5 Flash and leaves bring-your-own-model alone", async () => {
+		const { fetchImpl, calls } = capture({
+			content: [
+				{ type: "thinking", thinking: "Recall the definition.", signature: "sig" },
+				{ type: "text", text: "A limit is the value being approached." },
+			],
+			stop_reason: "end_turn",
+			usage: { input_tokens: 2_000, output_tokens: 500 },
+		});
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "included");
+		const refused = await route("POST", "/v1/tutor/weight", { weight: "huge" }, server);
+		expect(refused.status).toBe(400);
+		const chosen = await route("POST", "/v1/tutor/weight", { weight: "heavy" }, server);
+		expect(chosen.status).toBe(200);
+		expect(chosen.json).toMatchObject({ action: "hosted", model: "google/gemini-3.5-flash", label: "Heavy", weight: "heavy" });
+		const result = await route("POST", "/v1/tutor/complete", { ...turn, model: "anthropic/claude-opus-4" }, server);
+		expect(result.status).toBe(200);
+		expect(calls[0].body.model).toBe("google/gemini-3.5-flash");
+		expect(JSON.stringify(result.json)).toContain("thinking");
+		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0.0075 });
+
+		await server.accounts.setPlan("local", "byom");
+		const blocked = await route("POST", "/v1/tutor/weight", { weight: "light" }, server);
+		expect(blocked.status).toBe(400);
+		expect(JSON.stringify(blocked.json)).toMatch(/own model/);
 	});
 
 	it("does not call a provider once the budget is gone", async () => {

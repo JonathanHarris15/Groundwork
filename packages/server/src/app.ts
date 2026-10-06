@@ -1,4 +1,4 @@
-import { isPlanId, isUserKeyProvider, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
+import { isPlanId, isTutorWeight, isUserKeyProvider, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
@@ -129,6 +129,13 @@ export async function route(method: string, path: string, body: unknown, deps: S
 				return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: await deps.secrets.saved(uid) }) };
 			}
 			const next = await deps.accounts.setTutor(uid, { via: "claude" });
+			return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: await deps.secrets.saved(uid) }) };
+		}
+		if (method === "POST" && path === "/v1/tutor/weight") {
+			if (view.ownModel) return { status: 400, json: { error: "This plan uses your own model." } };
+			const weight = (body as { weight?: unknown } | null)?.weight;
+			if (!isTutorWeight(weight)) return { status: 400, json: { error: "Choose Light or Heavy." } };
+			const next = await deps.accounts.setTutorWeight(uid, weight);
 			return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: await deps.secrets.saved(uid) }) };
 		}
 		if (method === "POST" && path === "/v1/tutor/complete") {

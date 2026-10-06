@@ -1,13 +1,14 @@
 import { Notice, type App } from "obsidian";
 import {
-	buildStudyQueue,
+	applySessionRating,
 	cardsInDeck,
 	emptyFlashcardLibrary,
-	flashcardCounts,
 	flashcardsDir,
 	masteryTone,
-	previewIntervals,
 	rateFlashcard,
+	sessionRatingHint,
+	startStudySession,
+	studyableCards,
 	syncFlashcards,
 	type CardRating,
 	type Concept,
@@ -42,6 +43,7 @@ export class FlashcardsPane {
 	private deckId = "";
 	private requestedDeckId = "";
 	private queue: Flashcard[] = [];
+	private mastered = 0;
 	private history: CardRating[] = [];
 	private misses: Array<{ concept: string; front: string }> = [];
 	private revealed = false;
@@ -121,12 +123,9 @@ export class FlashcardsPane {
 	private startSession(): void {
 		this.history = [];
 		this.misses = [];
+		this.mastered = 0;
 		this.revealed = false;
-		this.queue = this.makeQueue();
-	}
-
-	private makeQueue(): Flashcard[] {
-		return buildStudyQueue(this.scopedCards(), new Date());
+		this.queue = startStudySession(this.scopedCards());
 	}
 
 	private scopedCards(): Flashcard[] {
@@ -164,8 +163,9 @@ export class FlashcardsPane {
 			const updated = await rateFlashcard(this.host.store, card.id, rating);
 			const index = this.lib.cards.findIndex((c) => c.id === updated.id);
 			if (index >= 0) this.lib.cards[index] = updated;
-			this.queue.shift();
-			if (updated.intervalMinutes <= 10) this.queue.push(updated);
+			const current = this.queue.map((item) => (item.id === updated.id ? updated : item));
+			if (rating === "good" || rating === "easy") this.mastered += 1;
+			this.queue = applySessionRating(current, rating);
 			this.history.push(rating);
 			if (rating === "again" || rating === "hard") this.misses.push({ concept: updated.concept, front: updated.front });
 			this.revealed = false;
@@ -201,7 +201,7 @@ export class FlashcardsPane {
 		}
 		const body = this.root.createDiv({ cls: "gw-fc-body" });
 		const main = body.createDiv({ cls: "gw-fc-main" });
-		this.drawTop(main, now);
+		this.drawTop(main);
 		this.drawProgress(main);
 		this.drawStage(main, now);
 		if (gen !== this.renderGen) return;
@@ -225,7 +225,7 @@ export class FlashcardsPane {
 		return this.lib.decks.find((d) => d.id === this.deckId)?.title ?? "Deck";
 	}
 
-	private drawTop(parent: HTMLElement, now: Date): void {
+	private drawTop(parent: HTMLElement): void {
 		const top = parent.createDiv({ cls: "gw-fc-top" });
 		const deck = top.createDiv({ cls: "gw-deck" });
 		deck.createSpan({ cls: "gw-deck-k", text: "Flashcards" });
@@ -242,16 +242,10 @@ export class FlashcardsPane {
 			this.draw();
 		});
 		const meta = top.createDiv({ cls: "gw-fc-meta" });
-		const counts = flashcardCounts(this.scopedCards(), now);
-		for (const [n, label] of [
-			[counts.fresh, "New"],
-			[counts.learning, "Learning"],
-			[counts.review, "Review"],
-		] as const) {
-			const chip = meta.createSpan({ cls: "gw-fc-chip" });
-			chip.createEl("b", { text: String(n) });
-			chip.append(` ${label}`);
-		}
+		const chip = meta.createSpan({ cls: "gw-fc-chip" });
+		const total = studyableCards(this.scopedCards()).length;
+		chip.createEl("b", { text: String(total) });
+		chip.append(total === 1 ? " card" : " cards");
 		const manage = top.createEl("button", {
 			cls: "gw-lib-btn gw-fc-manage",
 			text: "Manage cards",
@@ -275,10 +269,8 @@ export class FlashcardsPane {
 			else if (cell === "easy") pip.addClass("e");
 		}
 		const labels = wrap.createDiv({ cls: "gw-seq-l" });
-		const left = this.queue.length ? this.history.length + 1 : this.history.length;
-		const total = this.history.length + this.queue.length;
-		labels.createSpan({ text: total ? `Card ${Math.min(left, total)} of ${total}` : "Nothing due" });
-		labels.createSpan({ text: this.queue.length ? `${this.queue.length} to go` : "Caught up" });
+		labels.createSpan({ text: this.queue.length ? `${this.queue.length} left` : this.mastered ? "Finished" : "No cards" });
+		labels.createSpan({ text: this.mastered ? `${this.mastered} down` : "This sitting" });
 	}
 
 	private drawStage(parent: HTMLElement, now: Date): void {
@@ -286,13 +278,22 @@ export class FlashcardsPane {
 		const stage = parent.createDiv({ cls: "gw-fc-stage" });
 		if (!card) {
 			const empty = stage.createDiv({ cls: "gw-fc-empty" });
-			empty.createDiv({ cls: "gw-deck-t", text: "Nothing due" });
-			const next = this.scopedCards()
-				.filter((c) => c.state !== "new" && Date.parse(c.due) > now.getTime())
-				.sort((a, b) => a.due.localeCompare(b.due))[0];
+			const playable = studyableCards(this.scopedCards());
+			if (this.mastered > 0 && playable.length > 0) {
+				empty.createDiv({ cls: "gw-deck-t", text: "Deck finished" });
+				empty.createDiv({
+					cls: "gw-fc-empty-sub",
+					text: "Every card in this sitting is down. Study this deck again whenever you want.",
+				});
+				return;
+			}
+			const blocked = this.scopedCards().some((item) => item.qualityIssue);
+			empty.createDiv({ cls: "gw-deck-t", text: blocked && !playable.length ? "Cards need a shorter answer" : "No cards in this deck" });
 			empty.createDiv({
 				cls: "gw-fc-empty-sub",
-				text: next ? `Next card ${formatWhen(next.due, now)}.` : "Nothing in this deck is due. Add cards in Library, or ask the tutor to make some.",
+				text: blocked && !playable.length
+					? "Fix them in Library, then study this deck again."
+					: "Add cards in Library, or ask the tutor to make some.",
 			});
 			return;
 		}
@@ -342,12 +343,11 @@ export class FlashcardsPane {
 		}
 		const rate = unit.createDiv({ cls: "gw-fc-rate" });
 		for (const item of RATINGS) {
-			const preview = previewIntervals(card).find((p) => p.rating === item.rating)!;
 			const button = rate.createEl("button", { cls: `gw-rb gw-rb-${item.rating}`, attr: { type: "button" } });
 			const line = button.createSpan({ cls: "gw-rb-line" });
 			line.createEl("b", { text: item.label });
 			line.createEl("kbd", { text: item.key });
-			button.createSpan({ cls: "gw-rb-when", text: preview.label });
+			button.createSpan({ cls: "gw-rb-when", text: sessionRatingHint(item.rating) });
 			button.addEventListener("click", () => void this.rate(item.rating));
 		}
 	}
@@ -379,19 +379,8 @@ export class FlashcardsPane {
 }
 
 function seenLabel(card: Flashcard, now: Date): string {
-	const state = card.state === "new" ? "New" : card.state === "learning" ? "Learning" : "Review";
-	if (!card.lastReviewed) return state;
+	if (!card.lastReviewed) return "New";
 	const days = Math.floor((now.getTime() - Date.parse(card.lastReviewed)) / 86_400_000);
 	const when = days <= 0 ? "last seen today" : days === 1 ? "last seen yesterday" : `last seen ${days} days ago`;
-	return `${state} · ${when}`;
-}
-
-function formatWhen(iso: string, now: Date): string {
-	const ms = Date.parse(iso) - now.getTime();
-	const minutes = Math.max(1, Math.round(ms / 60_000));
-	if (minutes < 60) return `in ${minutes} min`;
-	const hours = Math.round(minutes / 60);
-	if (hours < 24) return hours === 1 ? "in 1 hour" : `in ${hours} hours`;
-	const days = Math.round(hours / 24);
-	return days === 1 ? "tomorrow" : `in ${days} days`;
+	return `Seen · ${when}`;
 }

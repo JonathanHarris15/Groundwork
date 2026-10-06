@@ -52,8 +52,8 @@ describe("ads tracking", () => {
 	});
 
 	it("prices a purchase once per session id", () => {
-		expect(purchaseValue("byom")).toBe(4);
-		expect(purchaseValue("included")).toBe(15);
+		expect(purchaseValue("byom")).toBe(6);
+		expect(purchaseValue("included")).toBe(20);
 		expect(purchaseValue("free")).toBeNull();
 		expect(cleanTransactionId("cs_test_1")).toBe("cs_test_1");
 		expect(cleanTransactionId("{CHECKOUT_SESSION_ID}")).toBeNull();
@@ -112,14 +112,15 @@ describe("ads tracking", () => {
 		expect(readSite("/exam-prep")?.body).toContain("for a midterm or final");
 		expect(readSite("/exam-prep")?.body).toContain("plans in Obsidian");
 		expect(readSite("/privacy")?.body).toContain("adssettings.google.com");
-		expect(readSite("/privacy")?.body).toContain("Groundwork’s model provider on Free and the $15 plan");
-		expect(readSite("/pricing")?.body).toContain("Choose $4");
-		expect(readSite("/pricing")?.body).toContain("Choose $15");
+		expect(readSite("/privacy")?.body).toContain("Groundwork’s model provider on Free and the $20 plan");
+		expect(readSite("/pricing")?.body).toContain("Choose $6");
+		expect(readSite("/pricing")?.body).toContain("Choose $20");
 		expect(readSite("/pricing")?.body).not.toContain("Billing is handled by Stripe.");
 		expect(readSite("/pricing")?.body).not.toContain("$9");
-		expect(readSite("/pricing")?.body).not.toContain("$20");
-		expect(readSite("/terms")?.body).toContain("$4 per month");
-		expect(readSite("/terms")?.body).toContain("$15 per month");
+		expect(readSite("/pricing")?.body).not.toContain("$15");
+		expect(readSite("/pricing")?.body).not.toContain("$4");
+		expect(readSite("/terms")?.body).toContain("$6 per month");
+		expect(readSite("/terms")?.body).toContain("$20 per month");
 		expect(String(readSite("/pricing")?.body)).not.toContain("G-F4236HGZSM");
 		expect(readSite("/privacy")?.body).toContain("delete");
 		expect(sitemapXml()).toContain("https://groundworklearn.com/pricing");
@@ -139,8 +140,10 @@ describe("ads tracking", () => {
 		expect(home).toContain("Reviews count a little; quiz cards set the marks.");
 		expect(home).toContain("December 8, with 15 days left");
 		expect(home).toContain('content="https://groundworklearn.com/og.png"');
-		expect(home).toContain("$15/month");
+		expect(home).toContain("$20/month");
+		expect(home).toContain("$6/month");
 		expect(home).not.toContain("G-F4236HGZSM");
-		expect(home).not.toContain("$20");
+		expect(home).not.toContain("$15/month");
+		expect(home).not.toContain("$4/month");
 	});
 });

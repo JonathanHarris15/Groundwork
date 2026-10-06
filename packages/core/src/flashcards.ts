@@ -4,7 +4,9 @@
  * copies them as plain Markdown into `flashcards/` inside the folders they chose.
  * A hand edit of an exported card is pulled back onto the account by `syncFlashcards`.
  * Deleting a deck or a card leaves those notes in the vault and does not pull them back.
- * The account copy owns the schedule.
+ * A study sitting lives in memory. Ratings do not schedule the next day.
+ * Older accounts still store `due` and `intervalMinutes`. Those fields are left
+ * in place and are not used to decide which cards appear.
  */
 
 import { cleanFolderList } from "./access";
@@ -71,10 +73,12 @@ export interface FlashcardLibrary {
 }
 
 const RATINGS: CardRating[] = ["again", "hard", "good", "easy"];
-const DAY_MINUTES = 24 * 60;
 const EASE_START = 2.5;
-/** Compounding easy ratings would otherwise overflow a Date. */
-const MAX_INTERVAL_MINUTES = 36_500 * DAY_MINUTES;
+/**
+ * Hard waits this many other cards in the sitting.
+ * With fewer cards left, it waits until the end of what remains.
+ */
+export const SESSION_HARD_GAP = 3;
 
 export function flashcardsDir(writeFolder: string): string {
 	return `${writeFolder}/${FLASHCARDS_DIR}`;
@@ -122,79 +126,55 @@ function newId(prefix: string): string {
 	return prefix + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function clampEase(ease: number): number {
-	return Math.round(Math.min(3, Math.max(1.3, ease)) * 100) / 100;
+/** What the rating button says. These are moves inside the sitting, not a calendar. */
+export function sessionRatingHint(rating: CardRating): string {
+	if (rating === "again") return "Right away";
+	if (rating === "hard") return "Later";
+	return "Done";
 }
 
-export function scheduledMinutes(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">, rating: CardRating): number {
-	return Math.min(MAX_INTERVAL_MINUTES, rawMinutes(card, rating));
+/** Cards that can be studied. A quality problem hides a card until the wording is fixed. Due dates are ignored. */
+export function studyableCards(cards: readonly Flashcard[]): Flashcard[] {
+	return cards.filter((card) => !card.qualityIssue);
 }
 
-function rawMinutes(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">, rating: CardRating): number {
-	const ease = card.ease || EASE_START;
-	if (rating === "again") return 1;
-	if (rating === "hard") {
-		if (card.state === "review" && card.intervalMinutes >= DAY_MINUTES) return Math.max(DAY_MINUTES, Math.round(card.intervalMinutes * 1.2));
-		return 10;
+export function shuffleCards<T>(items: readonly T[], rng: () => number = Math.random): T[] {
+	const out = [...items];
+	for (let i = out.length - 1; i > 0; i--) {
+		const j = Math.floor(rng() * (i + 1));
+		const swap = out[i];
+		out[i] = out[j]!;
+		out[j] = swap!;
 	}
-	if (rating === "good") {
-		if (card.state === "review" && card.intervalMinutes >= DAY_MINUTES) return Math.max(DAY_MINUTES, Math.round(card.intervalMinutes * ease));
-		return DAY_MINUTES;
-	}
-	if (card.state === "review" && card.intervalMinutes >= DAY_MINUTES) return Math.max(DAY_MINUTES, Math.round(card.intervalMinutes * ease * 1.3));
-	return 4 * DAY_MINUTES;
+	return out;
 }
 
-/** Short label for a rating button, e.g. "in 2 days". */
-export function formatInterval(minutes: number): string {
-	const n = Math.max(1, Math.round(minutes));
-	if (n < 60) return `in ${n} min`;
-	if (n < DAY_MINUTES) {
-		const hours = Math.max(1, Math.round(n / 60));
-		return hours === 1 ? "in 1 hr" : `in ${hours} hr`;
-	}
-	const days = Math.max(1, Math.round(n / DAY_MINUTES));
-	return days === 1 ? "in 1 day" : `in ${days} days`;
+/** Every studyable card in the deck, shuffled. Nothing is left out because of a due date. */
+export function startStudySession(cards: readonly Flashcard[], rng: () => number = Math.random): Flashcard[] {
+	return shuffleCards(studyableCards(cards), rng);
 }
 
-export function previewIntervals(card: Pick<Flashcard, "state" | "intervalMinutes" | "ease">): Array<{ rating: CardRating; minutes: number; label: string }> {
-	return RATINGS.map((rating) => {
-		const minutes = scheduledMinutes(card, rating);
-		return { rating, minutes, label: formatInterval(minutes) };
-	});
+/**
+ * Rate the card at the front of the sitting.
+ * Again is the next card. Hard waits `SESSION_HARD_GAP` other cards, or until the end if fewer remain.
+ * Good and Easy leave the sitting.
+ */
+export function applySessionRating(queue: readonly Flashcard[], rating: CardRating): Flashcard[] {
+	if (!queue.length) return [];
+	const [card, ...rest] = queue;
+	if (rating === "good" || rating === "easy") return rest;
+	if (rating === "again") return [card!, ...rest];
+	const gap = Math.min(SESSION_HARD_GAP, rest.length);
+	return [...rest.slice(0, gap), card!, ...rest.slice(gap)];
 }
 
+/** Remember the rating. Does not move `due` or the interval. */
 export function applyRating(card: Flashcard, rating: CardRating, now: Date): Flashcard {
-	const ease0 = card.ease || EASE_START;
-	const minutes = scheduledMinutes(card, rating);
-	let state: CardState = card.state;
-	let ease = ease0;
-	let reps = card.reps;
-	let lapses = card.lapses;
-	if (rating === "again") {
-		state = "learning";
-		if (card.state === "review") lapses += 1;
-		ease = clampEase(ease0 - 0.2);
-	} else if (rating === "hard") {
-		ease = clampEase(ease0 - 0.15);
-		state = minutes >= DAY_MINUTES ? "review" : "learning";
-	} else if (rating === "good") {
-		reps += 1;
-		state = "review";
-	} else {
-		reps += 1;
-		ease = clampEase(ease0 + 0.15);
-		state = "review";
-	}
 	const stamp = now.toISOString();
 	return {
 		...card,
-		state,
-		ease,
-		reps,
-		lapses,
-		intervalMinutes: minutes,
-		due: new Date(now.getTime() + minutes * 60_000).toISOString(),
+		reps: rating === "good" || rating === "easy" ? card.reps + 1 : card.reps,
+		lapses: rating === "again" ? card.lapses + 1 : card.lapses,
 		lastRating: rating,
 		lastReviewed: stamp,
 		updatedAt: stamp,
@@ -877,7 +857,7 @@ export async function rateFlashcard(store: KnowledgeStore, id: string, rating: C
 	const card = applyRating(lib.cards[index], rating, now);
 	lib.cards[index] = card;
 	await persist(store, lib, now);
-	// Recall is credit only: "Again" reschedules the card and leaves mastery alone.
+	// Again is only a miss inside this sitting. It does not add mastery.
 	if (rating !== "again" && (await store.resolve(card.concept))) {
 		const { outcome, difficulty } = ratingOutcome(rating);
 		await store.recordEvidence(card.concept, {
@@ -917,49 +897,14 @@ export async function updateFlashcard(
 	return card;
 }
 
-export function buildStudyQueue(cards: Flashcard[], now: Date, opts?: { limitNew?: number; rank?: (concept: string) => number }): Flashcard[] {
-	const dueAt = now.getTime();
-	const due = cards.filter((c) => !c.qualityIssue && (c.state === "new" || Date.parse(c.due) <= dueAt));
-	const sort = (list: Flashcard[]) =>
-		[...list].sort((a, b) => {
-			const ra = opts?.rank?.(a.concept) ?? 0;
-			const rb = opts?.rank?.(b.concept) ?? 0;
-			if (ra !== rb) return ra - rb;
-			return a.due.localeCompare(b.due) || a.concept.localeCompare(b.concept) || a.id.localeCompare(b.id);
-		});
-	const fresh = sort(due.filter((c) => c.state === "new")).slice(0, opts?.limitNew ?? 20);
-	return [...sort(due.filter((c) => c.state === "learning")), ...sort(due.filter((c) => c.state === "review")), ...fresh];
-}
-
-export function flashcardCounts(cards: Flashcard[], now: Date): { fresh: number; learning: number; review: number } {
-	const dueAt = now.getTime();
-	let fresh = 0;
-	let learning = 0;
-	let review = 0;
-	for (const c of cards) {
-		if (c.state === "new") fresh++;
-		else if (c.state === "learning") learning++;
-		else if (Date.parse(c.due) <= dueAt) review++;
-	}
-	return { fresh, learning, review };
+/** Cards a learner can practice, in a stable order. Calendar due dates are ignored. */
+export function cardsToPractice(cards: readonly Flashcard[]): Flashcard[] {
+	return studyableCards(cards).sort((a, b) => a.concept.localeCompare(b.concept) || a.front.localeCompare(b.front) || a.id.localeCompare(b.id));
 }
 
 export function cardsInDeck(lib: FlashcardLibrary, deckId: string): Flashcard[] {
 	if (!deckId) return lib.cards;
 	return lib.cards.filter((c) => c.deckId === deckId);
-}
-
-export function dueByConcept(cards: Flashcard[], now: Date): Array<{ concept: string; count: number }> {
-	const dueAt = now.getTime();
-	const map = new Map<string, number>();
-	for (const c of cards) {
-		const due = c.state === "new" || c.state === "learning" || Date.parse(c.due) <= dueAt;
-		if (!due) continue;
-		map.set(c.concept, (map.get(c.concept) ?? 0) + 1);
-	}
-	return [...map.entries()]
-		.map(([concept, count]) => ({ concept, count }))
-		.sort((a, b) => b.count - a.count || a.concept.localeCompare(b.concept));
 }
 
 /** Save or replace one card. `deck` is any deck name. A new name creates that deck. Omit it, or pass "Library", for the Unsorted deck. */

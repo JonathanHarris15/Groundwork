@@ -157,10 +157,10 @@ export function clientAttribution(stored: StoredAttribution | null | undefined):
 	return out;
 }
 
-/** Bring your own model is $4/month. Groundwork is $15/month. */
-export function purchaseValue(plan: string | null | undefined): 4 | 15 | null {
-	if (plan === "byom") return 4;
-	if (plan === "included") return 15;
+/** Bring your own model is $6/month. Groundwork is $20/month. */
+export function purchaseValue(plan: string | null | undefined): 6 | 20 | null {
+	if (plan === "byom") return 6;
+	if (plan === "included") return 20;
 	return null;
 }
 
