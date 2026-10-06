@@ -223,7 +223,8 @@ describe("flashcard library", () => {
 		const parent = document.createElement("div");
 		document.body.append(parent);
 		const memory = store();
-		await renderFlashcardsLibrary(parent, host(memory));
+		const counts: number[] = [];
+		await renderFlashcardsLibrary(parent, { ...host(memory), onCardsChanged: (count) => counts.push(count) });
 		click(parent, "New deck");
 		parent.querySelector<HTMLInputElement>("input[aria-label='Deck name']")!.value = "Nightly drills";
 		click(parent, "Create");
@@ -281,6 +282,8 @@ describe("flashcard library", () => {
 		click(document.body, "Delete deck");
 		await vi.waitFor(() => expect(parent.textContent).toContain("No decks yet."));
 		expect(parent.textContent).toContain("Make a deck, then add cards to it.");
+		expect(counts.at(-1)).toBe(0);
+		expect(counts).toContain(1);
 		parent.remove();
 	});
 

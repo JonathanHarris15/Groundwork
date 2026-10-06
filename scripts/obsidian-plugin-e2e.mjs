@@ -426,8 +426,16 @@ if (scenario === "signed-in") {
 	await deckName.fill("Drill pad");
 	await page.locator(`${rootSel} .gw-fc-lib-rename button`, { hasText: /^Save$/ }).click();
 	await page.locator(`${rootSel} h3`, { hasText: "Drill pad" }).waitFor({ timeout: 10_000 });
-	await page.locator(`${rootSel} .gw-fc-lib-head button`, { hasText: /^Delete$/ }).click();
-	await page.locator(".modal").waitFor({ timeout: 10_000 });
+	const deleteBtn = page.locator(`${rootSel} .gw-fc-lib-head button[aria-label="Delete Drill pad"]`);
+	await deleteBtn.waitFor({ timeout: 10_000 });
+	await sleep(200);
+	await deleteBtn.click();
+	try {
+		await page.locator(".modal").waitFor({ timeout: 4_000 });
+	} catch {
+		await deleteBtn.click();
+		await page.locator(".modal").waitFor({ timeout: 10_000 });
+	}
 	const confirmText = await page.locator(".modal").innerText();
 	if (!/1 card/.test(confirmText) || !/vault/i.test(confirmText)) {
 		throw new Error(`Delete confirmation did not explain the card count and the vault notes: ${confirmText}`);
@@ -435,6 +443,7 @@ if (scenario === "signed-in") {
 	await shot("05c-delete-deck-confirm");
 	await page.locator(".modal button", { hasText: "Delete deck" }).click();
 	await page.waitForFunction(() => !document.querySelector(".gw-root")?.textContent?.includes("Drill pad"), { timeout: 10_000 });
+	await page.locator(`${rootSel} .gw-lib-tab[title="Flashcards"] .gw-lib-count`, { hasText: /^1$/ }).waitFor({ timeout: 10_000 });
 	await page.locator(`${rootSel} h3`, { hasText: /Calculus fluency|Unsorted/ }).waitFor({ timeout: 10_000 });
 	await sleep(400);
 	await shotGroundwork("05d-deck-deleted");

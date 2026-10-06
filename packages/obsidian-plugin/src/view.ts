@@ -1647,6 +1647,10 @@ export class ChatView extends ItemView implements ToolUI {
 				writeFolders: () => this.plugin.settings.writeFolders,
 				onStudy: (deckId) => void this.studyDeck(deckId),
 				renderMarkdown: (el, md) => this.renderMd(el, md),
+				onCardsChanged: (count) => {
+					const badge = this.uiLibraryEl?.querySelector('.gw-lib-tab[title="Flashcards"] .gw-lib-count');
+					if (badge) badge.textContent = String(count);
+				},
 			});
 			return;
 		}

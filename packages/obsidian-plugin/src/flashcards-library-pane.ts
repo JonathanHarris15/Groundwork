@@ -24,6 +24,8 @@ export interface FlashcardsLibraryHost {
 	/** Open this deck in the Flashcards tab. */
 	onStudy: (deckId: string) => void;
 	renderMarkdown?: RenderMarkdown;
+	/** The Library tab badge. Called after the account deck changes. */
+	onCardsChanged?: (count: number) => void;
 }
 
 interface DeckEntry {
@@ -69,6 +71,8 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 
 	let decks = libraryDecks(lib);
 	let selectedDeckId = decks[0]?.id ?? "";
+	const publishCount = () => host.onCardsChanged?.(lib.cards.length);
+	publishCount();
 
 	newDeckBtn.addEventListener("click", () => {
 		section.querySelector(".gw-fc-lib-form.is-deck")?.remove();
@@ -241,6 +245,7 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 		lib = await loadFlashcardLibrary(host.store.io);
 		const next = libraryDecks(lib);
 		if (!next.some((deck) => deck.id === selectedDeckId)) selectedDeckId = next[0]?.id ?? "";
+		publishCount();
 		drawDecks();
 		drawCards();
 	};
