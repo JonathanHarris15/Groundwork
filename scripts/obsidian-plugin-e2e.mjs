@@ -550,12 +550,12 @@ if (scenario === "signed-in") {
 	await page.waitForSelector(`${rootSel}.is-settings .gw-library-title`, { hasText: "Settings", timeout: 15_000 });
 	await page.waitForSelector(`${rootSel}.is-settings h3`, { timeout: 15_000 });
 	await expectNoCloseButton("settings");
-	await page.locator(`${rootSel}.is-settings .gw-tutor-weight button`, { hasText: /^Light$/ }).waitFor({ timeout: 15_000 });
-	await page.locator(`${rootSel}.is-settings .gw-tutor-weight button`, { hasText: /^Heavy$/ }).click();
-	await page.locator(`${rootSel}.is-settings .gw-tutor-weight button.is-on`, { hasText: /^Heavy$/ }).waitFor({ timeout: 15_000 });
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button`, { hasText: /^Light$/ }).waitFor({ timeout: 15_000 });
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button`, { hasText: /^Heavy$/ }).click();
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button.is-on`, { hasText: /^Heavy$/ }).waitFor({ timeout: 15_000 });
 	await shotGroundwork("09b-tutor-heavy");
-	await page.locator(`${rootSel}.is-settings .gw-tutor-weight button`, { hasText: /^Light$/ }).click();
-	await page.locator(`${rootSel}.is-settings .gw-tutor-weight button.is-on`, { hasText: /^Light$/ }).waitFor({ timeout: 15_000 });
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button`, { hasText: /^Light$/ }).click();
+	await page.locator(`${rootSel}.is-settings .gw-settings .gw-tutor-weight button.is-on`, { hasText: /^Light$/ }).waitFor({ timeout: 15_000 });
 	await sleep(400);
 	await shotGroundwork("09-settings");
 
