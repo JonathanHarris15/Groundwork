@@ -1,11 +1,5 @@
-import {
-	buildFromGroundwork,
-	buildSyntheticGraph,
-	mountForceGraph,
-	type ConceptStatus,
-	type ForceGraphHandle,
-	type GroundworkGraph,
-} from "@groundwork/core";
+import type { ConceptStatus, ForceGraphHandle, GroundworkGraph } from "@groundwork/core";
+import { buildFromGroundwork, buildSyntheticGraph, mountForceGraph } from "../../core/src/force-graph/index";
 
 export interface SiteGraphPayload {
 	concepts: Array<{ id: string; title: string; status: ConceptStatus }>;
