@@ -16,8 +16,9 @@
  *   successes grow it, crammed successes barely do, misses shrink it.
  *
  * `current` combines both: ability discounted by forgetting since the last
- * evidence. That is the number used to decide what is solid, what is rusty,
- * and what to review.
+ * successful recall. A miss shrinks ability and half-life, and it does not
+ * reset that clock, so a wrong answer cannot make the concept look more ready.
+ * That number decides what is solid, what is rusty, and what to review.
  */
 
 export type Outcome = "correct" | "partial" | "incorrect" | "dont_know";
@@ -123,6 +124,10 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 	let attempts = 0;
 	let correct = 0;
 	let last: number | undefined;
+	/** First evidence, used when nothing has been recalled correctly yet. */
+	let first: number | undefined;
+	/** Latest correct answer. A miss must not move this forward. */
+	let recalledAt: number | undefined;
 	let floor: number | undefined;
 	let ceiling: number | undefined;
 	const misconceptions = new Map<string, number>();
@@ -176,13 +181,16 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 			if ((ev.outcome === "incorrect" || ev.outcome === "partial") && ev.misconception) misconceptions.set(ev.misconception, d);
 		}
 		attempts++;
+		if (first === undefined) first = t;
+		if (isCorrect) recalledAt = t;
 		last = t;
 	}
 
 	if (attempts === 0) return emptyStats();
 
 	const mastery = sigmoid(ability);
-	const elapsedDays = Math.max(0, (now.getTime() - (last as number)) / DAY_MS);
+	const memoryAt = recalledAt ?? first ?? (last as number);
+	const elapsedDays = Math.max(0, (now.getTime() - memoryAt) / DAY_MS);
 	const retention = Math.pow(2, -elapsedDays / halfLife);
 	const current = sigmoid(ability - 2.5 * (1 - retention));
 	const reviewAfterDays = halfLife * Math.log2(1 / REVIEW_AT_RETENTION);
