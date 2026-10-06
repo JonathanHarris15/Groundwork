@@ -855,14 +855,14 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "save_flashcard",
 		description:
-			"Save one flashcard on the learner's account when they asked for a card. It is not copied into the vault unless they ask to write the cards down. One concept, one atomic question, back is a few words (no comma lists). deck is any deck name. A new name creates that deck. Omit it for the Library deck.",
+			"Save one flashcard on the learner's account when they asked for a card. It is not copied into the vault unless they ask to write the cards down. One concept, one atomic question, back is a few words (no comma lists). deck is any deck name. A new name creates that deck. Omit it for the Unsorted deck. If they deleted that deck, this starts it again without the cards they removed. Use the deck's current name.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				concept: str("Concept this card checks. The title of a concept you have already saved."),
 				front: str("One specific question with a single short answer (not “list all types of…”). Markdown and LaTeX allowed."),
 				back: str("A few words max — one atomic answer, no comma-separated lists."),
-				deck: str("Deck name. A name that does not exist yet creates that deck. Omit for the Library deck."),
+				deck: str("Deck name. A name that does not exist yet creates that deck. Omit for the Unsorted deck. A deleted deck name starts that deck again, empty of the cards they removed."),
 			},
 			required: ["concept", "front", "back"],
 		},
