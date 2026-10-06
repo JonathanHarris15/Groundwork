@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { renderSite } from "./site-pages";
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../public");
 
@@ -10,6 +11,7 @@ const FILES: Record<string, { file: string; type: string }> = {
 	"/404.html": { file: "404.html", type: "text/html; charset=utf-8" },
 	"/app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
 	"/force-graph.js": { file: "force-graph.js", type: "text/javascript; charset=utf-8" },
+	"/tracking.js": { file: "tracking.js", type: "text/javascript; charset=utf-8" },
 	"/graph-harness.html": { file: "graph-harness.html", type: "text/html; charset=utf-8" },
 	"/graph-account-preview.html": { file: "graph-account-preview.html", type: "text/html; charset=utf-8" },
 	"/styles.css": { file: "styles.css", type: "text/css; charset=utf-8" },
@@ -17,7 +19,10 @@ const FILES: Record<string, { file: string; type: string }> = {
 };
 
 export function readSite(urlPath: string): { body: string; type: string } | null {
-	const hit = FILES[urlPath];
+	const normalized = urlPath.length > 1 && urlPath.endsWith("/") ? urlPath.slice(0, -1) : urlPath;
+	const rendered = renderSite(normalized);
+	if (rendered) return rendered;
+	const hit = FILES[normalized];
 	if (!hit) return null;
 	return { body: readFileSync(path.join(publicDir, hit.file), "utf8"), type: hit.type };
 }

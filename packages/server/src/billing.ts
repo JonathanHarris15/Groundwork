@@ -260,7 +260,7 @@ async function checkoutSession(
 		customer,
 		client_reference_id: uid,
 		line_items: [{ price: prices[plan], quantity: 1 }],
-		success_url: `${origin}/?billing=success`,
+		success_url: checkoutSuccessUrl(origin, plan),
 		cancel_url: `${origin}/?billing=cancel`,
 		metadata: { uid, plan },
 		subscription_data: { metadata: { uid, plan } },
@@ -311,6 +311,11 @@ function priceId(price: string | { id?: string | null } | null | undefined): str
 	if (typeof price === "string" && price) return price;
 	if (price && typeof price === "object" && typeof price.id === "string" && price.id) return price.id;
 	return undefined;
+}
+
+/** Stripe replaces `{CHECKOUT_SESSION_ID}` so a refresh of the success page can be deduped. */
+export function checkoutSuccessUrl(origin: string, plan: "byom" | "included"): string {
+	return `${origin}/?billing=success&session_id={CHECKOUT_SESSION_ID}&plan=${plan}`;
 }
 
 function isPaid(plan: unknown): plan is "byom" | "included" {

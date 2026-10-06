@@ -18,6 +18,20 @@ export interface AccountRecord {
 	/** Bring-your-own-model only. Hosted plans ignore this and call Groundwork's model. */
 	tutorVia?: "claude" | "key";
 	tutorProvider?: UserKeyProvider;
+	/** First-touch ad click, stored once when the account is created or first seen with it. */
+	attribution?: StoredAttribution;
+	/** Set the first time Obsidian links this account. Absent until then. */
+	obsidianConnectedAt?: string;
+}
+
+/** Campaign fields captured on the site and kept on the account. Not shown to the client. */
+export interface StoredAttribution {
+	utmSource?: string;
+	utmMedium?: string;
+	utmCampaign?: string;
+	utmTerm?: string;
+	utmContent?: string;
+	gclid?: string;
 }
 
 /** How a bring-your-own-model account wants the tutor to run. Claude is the default. */

@@ -30,6 +30,21 @@ async function seedLargeAccount(request: APIRequestContext) {
 	});
 }
 
+const publicPages = ["/", "/pricing", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms"];
+
+test("public marketing pages load", async ({ page }) => {
+	for (const href of publicPages) {
+		const res = await page.goto(href);
+		expect(res?.status(), href).toBe(200);
+		await expect(page.locator("footer")).toContainText("methoddev1505@gmail.com");
+		await expect(page.locator("body")).not.toContainText("[Dev:");
+	}
+	const robots = await page.goto("/robots.txt");
+	expect(robots?.status()).toBe(200);
+	const sitemap = await page.goto("/sitemap.xml");
+	expect(sitemap?.status()).toBe(200);
+});
+
 test("landing and 404", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();

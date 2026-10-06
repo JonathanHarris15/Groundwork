@@ -6,7 +6,7 @@ import { route } from "./app";
 import { loadAuth } from "./auth";
 import { loadBilling } from "./billing";
 import { gradeWithJev, jevConfigured } from "./jev";
-import { isLocalHost, listenTarget } from "./listen";
+import { httpsRedirectTarget, isLocalHost, listenTarget } from "./listen";
 import { MemoryDirectory } from "./memory";
 import { FileTutorMemoryStore } from "./memory-file";
 import { BestEffortStore, FirestoreTutorMemoryStore } from "./memory-firestore";
@@ -39,6 +39,13 @@ const server = createServer((req, res) => {
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
 	const method = req.method ?? "GET";
+	const forwarded = header(req, "x-forwarded-proto");
+	const https = httpsRedirectTarget(forwarded, header(req, "x-forwarded-host") || header(req, "host"), req.url);
+	if (https) {
+		res.writeHead(308, { location: https });
+		res.end();
+		return;
+	}
 	if (method === "OPTIONS") {
 		writeHead(res, 204, "text/plain");
 		res.end();
@@ -83,7 +90,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 			return;
 		}
 	}
-	const result = await route(method, url.pathname, body, deps, header(req, "authorization"), { origin });
+	const result = await route(method, url.pathname, body, deps, header(req, "authorization"), {
+		origin,
+		attribution: header(req, "x-groundwork-attribution"),
+	});
 	send(res, result.status, result.json);
 }
 

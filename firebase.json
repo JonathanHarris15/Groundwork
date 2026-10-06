@@ -2,9 +2,30 @@
   "hosting": {
     "public": "packages/server/public",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" },
+          { "key": "X-Content-Type-Options", "value": "nosniff" }
+        ]
+      }
+    ],
     "rewrites": [
       { "source": "/v1/**", "run": { "serviceId": "groundwork", "region": "us-central1" } },
-      { "source": "/health", "run": { "serviceId": "groundwork", "region": "us-central1" } }
+      { "source": "/health", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/pricing", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/exam-prep", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/concept-map", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/quizzes-flashcards", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/goals", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/get-started", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/privacy", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/terms", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/robots.txt", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/sitemap.xml", "run": { "serviceId": "groundwork", "region": "us-central1" } }
     ]
   },
   "auth": {

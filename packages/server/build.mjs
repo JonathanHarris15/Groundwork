@@ -1,7 +1,7 @@
 import esbuild from "esbuild";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 mkdirSync(path.join(here, "dist"), { recursive: true });
@@ -17,6 +17,28 @@ await esbuild.build({
 	outfile: path.join(here, "public/force-graph.js"),
 	logLevel: "info",
 });
+
+await esbuild.build({
+	entryPoints: [path.join(here, "src/browser-tracking.ts")],
+	bundle: true,
+	platform: "browser",
+	target: "es2022",
+	format: "iife",
+	outfile: path.join(here, "public/tracking.js"),
+	logLevel: "info",
+});
+
+await esbuild.build({
+	entryPoints: [path.join(here, "src/write-site.ts")],
+	bundle: true,
+	platform: "node",
+	target: "node20",
+	format: "esm",
+	outfile: path.join(here, "dist/write-site.js"),
+	logLevel: "info",
+});
+
+await import(pathToFileURL(path.join(here, "dist/write-site.js")).href);
 
 await esbuild.build({
 	entryPoints: [path.join(here, "src/index.ts")],

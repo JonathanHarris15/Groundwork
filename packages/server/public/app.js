@@ -11,6 +11,9 @@ const billingNote = billingFlag === "success"
 	: billingFlag === "cancel"
 		? "Checkout was canceled. Your plan is unchanged."
 		: "";
+if (billingFlag === "success") {
+	window.GroundworkTracking?.notePurchase(params.get("session_id"), params.get("plan"));
+}
 
 const NODE = { free: "green", byom: "blue", included: "orange" };
 const PROVIDER_LABEL = { anthropic: "Anthropic", openrouter: "OpenRouter", google: "Google", xai: "xAI", openai: "OpenAI" };
@@ -29,6 +32,8 @@ let firebaseAuth = null;
 let problem = "";
 let actionError = "";
 let billingQueryCleared = false;
+let planHandoffStarted = false;
+let heroMap = null;
 let conceptSearch = "";
 let conceptFilter = "needs-attention";
 let conceptVisible = 12;
@@ -94,7 +99,7 @@ async function boot() {
 }
 
 function localDevUser() {
-	return {
+	const next = {
 		_local: true,
 		displayName: "Local learner",
 		email: "local@groundwork.test",
@@ -102,6 +107,8 @@ function localDevUser() {
 			return null;
 		},
 	};
+	if (params.get("e2e") === "link") next.refreshToken = "local-dev-refresh";
+	return next;
 }
 
 async function continueLocalDev() {
@@ -127,6 +134,7 @@ async function authToken() {
 async function refresh() {
 	const token = await authToken();
 	account = await get("/v1/account", token);
+	window.GroundworkTracking?.noteSignUp(account.created === true, user?._local ? "local" : "Google");
 	const [secrets, nextGroundwork, nextTutor] = await Promise.all([
 		get("/v1/secrets", token).catch(() => null),
 		get("/v1/groundwork", token).catch(() => null),
@@ -155,6 +163,7 @@ function paint() {
 	renderChip();
 	if (account.needsPlan || location.hash === "#plans") showPlans();
 	else showAccount();
+	void maybePlanHandoff();
 }
 
 function setPageTitle(title) {
@@ -166,6 +175,8 @@ function consumeBillingQuery() {
 	billingQueryCleared = true;
 	const next = new URLSearchParams(location.search);
 	next.delete("billing");
+	next.delete("session_id");
+	next.delete("plan");
 	const qs = next.toString();
 	history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
 }
@@ -175,11 +186,36 @@ function showLanding() {
 	landing.hidden = false;
 	site.hidden = true;
 	site.classList.remove("is-study");
+	mountHeroMap();
 }
 
 function showApp() {
+	disposeHeroMap();
 	landing.hidden = true;
 	site.hidden = false;
+}
+
+function mountHeroMap() {
+	const host = document.querySelector("#hero-graph");
+	if (!host || heroMap || !window.GroundworkGraph?.mountMarketing) return;
+	heroMap = window.GroundworkGraph.mountMarketing(host);
+}
+
+function disposeHeroMap() {
+	heroMap?.dispose?.();
+	heroMap = null;
+}
+
+async function maybePlanHandoff() {
+	if (planHandoffStarted || billingFlag) return;
+	const plan = params.get("plan");
+	if (plan !== "byom" && plan !== "included") return;
+	planHandoffStarted = true;
+	const next = new URLSearchParams(location.search);
+	next.delete("plan");
+	const qs = next.toString();
+	history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+	await choose(plan);
 }
 
 function showSignIn() {
@@ -1017,6 +1053,13 @@ function openObsidian() {
 		if (opened) {
 			stop();
 			try {
+				const token = await authToken();
+				const linked = await send("/v1/account/obsidian-connected", {}, token);
+				window.GroundworkTracking?.noteObsidian(linked);
+			} catch {
+				/* the page still marks the handoff below */
+			}
+			try {
 				localStorage.setItem("groundwork-obsidian-linked", "1");
 			} catch {
 				/* ignore */
@@ -1058,15 +1101,20 @@ async function openPortal() {
 	}
 }
 
+function trackingHeaders() {
+	const value = window.GroundworkTracking?.attributionHeader?.() || "";
+	return value ? { "x-groundwork-attribution": value } : {};
+}
+
 async function get(path, token) {
-	const res = await fetch(path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+	const res = await fetch(path, { headers: { ...trackingHeaders(), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
 	return readJson(res);
 }
 
 async function send(path, json, token) {
 	const res = await fetch(path, {
 		method: "POST",
-		headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+		headers: { "content-type": "application/json", ...trackingHeaders(), ...(token ? { authorization: `Bearer ${token}` } : {}) },
 		body: JSON.stringify(json),
 	});
 	return readJson(res);

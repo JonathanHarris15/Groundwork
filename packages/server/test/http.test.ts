@@ -62,6 +62,13 @@ describe("account server", () => {
 		expect(account.json).toMatchObject({ needsPlan: true, budgetUsed: 0 });
 		expect(account.json).not.toHaveProperty("creditUsd");
 		expect(account.json).not.toHaveProperty("remainingUsd");
+		expect(account.json).toMatchObject({ created: true });
+		expect(account.json).not.toHaveProperty("attribution");
+		const returning = await route("GET", "/v1/account", null, server);
+		expect(returning.json).toMatchObject({ created: false });
+		const linked = await route("POST", "/v1/account/obsidian-connected", {}, server);
+		expect(linked.json).toEqual({ first: true });
+		expect(await route("POST", "/v1/account/obsidian-connected", {}, server)).toMatchObject({ json: { first: false }, status: 200 });
 	});
 
 	it("saves a plan and reports the free credit", async () => {
@@ -124,10 +131,13 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/force-graph.js?v=3"');
-		expect(site?.body).toContain('src="/app.js?v=18"');
-		expect(site?.body).toContain('href="/styles.css?v=7"');
-		expect(site?.body).toContain("Groundwork plans from first principles");
+		expect(site?.body).toContain('src="/force-graph.js?v=4"');
+		expect(site?.body).toContain('src="/app.js?v=19"');
+		expect(site?.body).toContain('href="/styles.css?v=8"');
+		expect(site?.body).toContain("Start free");
+		expect(site?.body).toContain("methoddev1505@gmail.com");
+		expect(site?.body).not.toContain("[Dev:");
+		expect(site?.body).not.toContain("coming soon");
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
