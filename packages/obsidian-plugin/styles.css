@@ -966,10 +966,22 @@ body .gw-root button.gw-lib-tab.is-active {
 	border-radius: 8px;
 	overflow: hidden;
 }
-.gw-figure-svg {
+.gw-figure-svg,
+.gw-figure-img {
 	display: block;
 	width: 100%;
 	height: auto;
+}
+.gw-figure-play {
+	margin-top: 8px;
+	font: inherit;
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 4px 10px;
+	cursor: pointer;
 }
 .gw-figure-caption {
 	color: var(--text-muted);

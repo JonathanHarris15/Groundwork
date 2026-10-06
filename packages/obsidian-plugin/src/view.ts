@@ -7,6 +7,7 @@ import {
 	asideOpening,
 	FIGURE_PROMPT,
 	figureFile,
+	figureForChat,
 	figureFromModelText,
 	figureOpening,
 	hintNotes,
@@ -46,6 +47,7 @@ import {
 	setSection,
 	sourceBoundConceptReason,
 	TOOLS,
+	toolByName,
 	withoutFileData,
 	type AgentEvent,
 	type AsideThread,
@@ -190,6 +192,7 @@ const TOOL_VERBS: Record<string, string> = {
 	grade_answer: "Grading your answer",
 	grade_practice_test: "Grading your practice test",
 	show_figure: "Drawing a figure",
+	fetch_public: "Reading a public page",
 	Read: "Opening a file",
 	WebSearch: "Searching the web",
 	WebFetch: "Reading a web page",
@@ -2939,7 +2942,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	showFigure(figure: SessionFigure): void {
 		this.pendingFigures.push(figure);
-		(this.record.figures ??= []).push(figure);
+		(this.record.figures ??= []).push(figureForChat(figure));
 	}
 
 	private attachPendingFigures(wrap: HTMLElement): void {
@@ -2947,7 +2950,7 @@ export class ChatView extends ItemView implements ToolUI {
 		if (!anchor || !this.pendingFigures.length) return;
 		const batch = this.pendingFigures.splice(0);
 		for (const figure of batch) {
-			figure.anchor = anchor;
+			this.rememberAnchor(figure, anchor);
 			this.mountFigure(figure, wrap);
 			void this.plugin.store.writeFile(figureFile(figure.id), `${JSON.stringify(figure)}\n`);
 		}
@@ -2963,7 +2966,7 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 		while (this.pendingFigures.length) {
 			const figure = this.pendingFigures.shift()!;
-			figure.anchor = `figure:${figure.id}`;
+			this.rememberAnchor(figure, `figure:${figure.id}`);
 			const wrap = this.turn(figure.anchor);
 			wrap.createDiv({ cls: "gw-msg gw-assistant", text: figure.caption || figure.title });
 			this.mountFigure(figure, wrap);
@@ -2979,7 +2982,8 @@ export class ChatView extends ItemView implements ToolUI {
 			wrap = this.turn(figure.anchor);
 			wrap.createDiv({ cls: "gw-msg gw-assistant", text: figure.caption || figure.title });
 		}
-		this.mountFigure(figure, wrap);
+		const card = this.mountFigure(figure, wrap);
+		if (figure.hasMedia && !figure.media) void this.hydrateFigure(figure.id, card);
 	}
 
 	private mountFigure(figure: FigureCardModel, wrap: HTMLElement): FigureCard {
@@ -2991,11 +2995,12 @@ export class ChatView extends ItemView implements ToolUI {
 				const saved = (this.record.figures ?? []).find((item) => item.id === card.el.dataset.figure);
 				if (!saved) return;
 				saved.collapsed = collapsed;
-				void this.plugin.store.writeFile(figureFile(saved.id), `${JSON.stringify(saved)}\n`);
+				void this.writeFigureCollapsed(saved.id, collapsed);
 				void this.persist();
 			},
 			download: (model) => {
-				if (model.svg) downloadFigure(this.contentEl.doc, model.title, model.svg);
+				if (model.media) downloadFigure(this.contentEl.doc, model.title, model.svg ?? "", model.media);
+				else if (model.svg) downloadFigure(this.contentEl.doc, model.title, model.svg);
 			},
 			dismiss: () => this.dismissFigure(card.el.dataset.figure ?? figure.id),
 			hover: (on) => this.setActiveFigure(on ? (card.el.dataset.figure ?? null) : null),
@@ -3064,7 +3069,7 @@ export class ChatView extends ItemView implements ToolUI {
 				anchor,
 				sessionId: this.record.id,
 			});
-			(this.record.figures ??= []).push(figure);
+			(this.record.figures ??= []).push(figureForChat(figure));
 			this.figureCards.delete(pendingId);
 			this.figureCards.set(figure.id, card);
 			card.update(figure);
@@ -3084,12 +3089,42 @@ export class ChatView extends ItemView implements ToolUI {
 		const store = this.plugin.store;
 		const runtime = this.plugin.runtime();
 		if (runtime.runtime === "setup") return null;
+		const fetchTool = toolByName("fetch_public");
+		const tools = fetchTool ? [fetchTool] : [];
 		if (runtime.runtime === "claude") {
 			const cfg = this.plugin.claudeCodeConfig();
-			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools: [], system: FIGURE_PROMPT, session, access, grader: this.plugin.answerGrader() }) : null;
+			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system: FIGURE_PROMPT, session, access, grader: this.plugin.answerGrader() }) : null;
 		}
 		const provider = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : new DemoFigureProvider();
-		return new AgentSession({ provider, store, tools: [], system: FIGURE_PROMPT, session, maxSteps: 2, access, grader: this.plugin.answerGrader() });
+		return new AgentSession({ provider, store, tools, system: FIGURE_PROMPT, session, maxSteps: 6, access, grader: this.plugin.answerGrader() });
+	}
+
+	private rememberAnchor(figure: SessionFigure, anchor: string): void {
+		figure.anchor = anchor;
+		const saved = (this.record.figures ?? []).find((item) => item.id === figure.id);
+		if (saved) saved.anchor = anchor;
+	}
+
+	private async hydrateFigure(id: string, card: FigureCard): Promise<void> {
+		try {
+			const saved = JSON.parse(await this.plugin.store.io.read(figureFile(id))) as SessionFigure;
+			if (!saved.media) return;
+			const light = (this.record.figures ?? []).find((item) => item.id === id);
+			card.update({ ...(light ?? saved), media: saved.media, svg: saved.svg, credit: saved.credit });
+		} catch {
+			/* the plate still shows the title */
+		}
+	}
+
+	private async writeFigureCollapsed(id: string, collapsed: boolean): Promise<void> {
+		try {
+			const saved = JSON.parse(await this.plugin.store.io.read(figureFile(id))) as SessionFigure;
+			saved.collapsed = collapsed;
+			await this.plugin.store.writeFile(figureFile(id), `${JSON.stringify(saved)}\n`);
+		} catch {
+			const light = (this.record.figures ?? []).find((item) => item.id === id);
+			if (light) await this.plugin.store.writeFile(figureFile(id), `${JSON.stringify({ ...light, collapsed })}\n`);
+		}
 	}
 
 	private markMath(cls: string, ranges: Range[]): void {
@@ -3161,6 +3196,7 @@ function iconFor(name: string): string {
 			return "user";
 		case "WebSearch":
 		case "WebFetch":
+		case "fetch_public":
 			return "globe";
 		case "show_figure":
 			return "image";

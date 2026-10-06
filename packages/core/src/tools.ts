@@ -26,6 +26,7 @@ import { isBuilt } from "./graph";
 import { buildStudyQueue, loadFlashcardLibrary, saveFlashcard } from "./flashcards";
 import { daysLeftPhrase } from "./goal-plan";
 import { saveFigure, type SessionFigure } from "./figure";
+import { describePublicBody, fetchPublic } from "./figure-net";
 import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalReport, type GoalStatus, type KnowledgeStore } from "./store";
 
 export type JSONSchema = Record<string, unknown>;
@@ -927,9 +928,29 @@ export const TOOLS: ToolDef[] = [
 		},
 	},
 	{
+		name: "fetch_public",
+		description:
+			"Read one public https URL: a page, a JSON or GeoJSON API, or the size of an image. Use it before show_figure when a real picture or map dataset would teach better than a schematic. Private and local addresses are refused. Image bytes are not returned; pass the URL to show_figure.",
+		inputSchema: {
+			type: "object",
+			properties: { url: str("https URL of a public page, API, GeoJSON file, or image.") },
+			required: ["url"],
+		},
+		async run({ url }: { url?: string }, { signal }) {
+			const body = await fetchPublic(String(url ?? ""), { signal });
+			let host = body.finalUrl;
+			try {
+				host = new URL(body.finalUrl).host;
+			} catch {
+				/* the fetched URL is already checked */
+			}
+			return { text: describePublicBody(body), summary: `Read ${host}` };
+		},
+	},
+	{
 		name: "show_figure",
 		description:
-			"Draw a figure in the left margin of this turn. Use it when a picture teaches better than another paragraph: a plot (2D, or a 3D surface as a still view), a story arc, a map of places and movements, a conjugation table, or a sentence diagram. Pass structured fields, not code and not an image. The learner sees it immediately. In your next sentence, say what to look at. Do not paste SVG.",
+			"Show a figure in the left margin of this turn. Use a plate (plot, plot3d, story, conjugation, sentence, or a rough map) when the shape is exact. For a real place, pass kind image with a public image url, or kind geo with a GeoJSON url plus markers drawn on top. kind svg is a drawing you write, including an animated SVG. kind program is Python that writes figure.svg, figure.png, figure.gif, or figure.webp. The learner sees it immediately. In your next sentence, say what to look at. Do not paste the picture into the chat.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -937,9 +958,14 @@ export const TOOLS: ToolDef[] = [
 				caption: str("One sentence under the figure."),
 				kind: {
 					type: "string",
-					enum: ["plot", "plot3d", "story", "map", "conjugation", "sentence"],
-					description: "plot, plot3d, story, map, conjugation, or sentence.",
+					enum: ["plot", "plot3d", "story", "map", "conjugation", "sentence", "image", "svg", "geo", "program"],
+					description: "plot, plot3d, story, map, conjugation, sentence, image, svg, geo, or program.",
 				},
+				url: str("Public https URL for kind image or geo."),
+				credit: str("Where an image or map came from."),
+				markup: str("SVG markup for kind svg. No scripts."),
+				geojson: { type: "object", description: "GeoJSON for kind geo, when you already have it. Otherwise pass url." },
+				source: str("Python source for kind program. Write figure.svg, figure.png, figure.gif, or figure.webp."),
 				xLabel: str("Horizontal axis name."),
 				yLabel: str("Vertical axis name."),
 				zLabel: str("Height axis name, for plot3d."),
@@ -1000,7 +1026,7 @@ export const TOOLS: ToolDef[] = [
 					},
 				},
 				lemma: str("Dictionary form of the verb."),
-				language: str("Language name."),
+				language: str("For a conjugation, the language name. For a program, python."),
 				tense: str("Tense or mood."),
 				highlight: str("Person or form to emphasize."),
 				rows: {
@@ -1027,8 +1053,8 @@ export const TOOLS: ToolDef[] = [
 			},
 			required: ["title", "kind"],
 		},
-		async run(input: unknown, { store, ui, session }) {
-			const figure = await saveFigure(store, input, { sessionId: session?.id });
+		async run(input: unknown, { store, ui, session, signal }) {
+			const figure = await saveFigure(store, input, { sessionId: session?.id }, { signal });
 			ui?.showFigure?.(figure);
 			return {
 				text: `Showing a ${figure.kind} figure “${figure.title}” in the left margin (${figure.id}). It is saved on the learner's account. Refer to it in your reply. Do not paste the SVG.`,

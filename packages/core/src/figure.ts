@@ -1,15 +1,20 @@
 import type { Provider, ProviderRequest, ProviderResponse } from "./agent/types";
 import { drawFigure } from "./figure-draw";
+import { geoPlate } from "./figure-geo";
+import type { FigureMedia } from "./figure-python";
+import { realizeFigure, type FigureDeps } from "./figure-realize";
 import type { KnowledgeStore } from "./store";
 
+export type { FigureMedia, FigureDeps };
+
 /**
- * A figure the tutor draws beside a lesson. The picture is an SVG plate: a
- * plot (including a static 3D view), a story arc, a map, a conjugation table,
- * or a sentence diagram. Matplotlib is not on the tutor runtime; a 3D figure
- * is the same kind of still export mplot3d would write to a file.
+ * A figure the tutor shows beside a lesson. It can be a plate drawn here
+ * (plot, story, conjugation, sentence, a rough map), a public image, a
+ * GeoJSON map with the tutor's marks on it, an SVG the tutor writes, or a
+ * short Python program that writes the picture.
  */
 
-export const FIGURE_KINDS = ["plot", "plot3d", "story", "map", "conjugation", "sentence"] as const;
+export const FIGURE_KINDS = ["plot", "plot3d", "story", "map", "conjugation", "sentence", "image", "svg", "geo", "program"] as const;
 export type FigureKind = (typeof FIGURE_KINDS)[number];
 
 export const STORY_STAGES = ["exposition", "rising", "climax", "falling", "resolution"] as const;
@@ -81,6 +86,38 @@ export type FigureSpec =
 			title: string;
 			caption?: string;
 			words: { text: string; role: (typeof WORD_ROLES)[number]; of?: number }[];
+	  }
+	| {
+			kind: "image";
+			title: string;
+			caption?: string;
+			/** Where the picture came from, shown under it. */
+			credit?: string;
+			sourceUrl: string;
+	  }
+	| {
+			kind: "svg";
+			title: string;
+			caption?: string;
+			markup: string;
+	  }
+	| {
+			kind: "geo";
+			title: string;
+			caption?: string;
+			polygons: Array<Array<[number, number]>>;
+			lines: Array<Array<[number, number]>>;
+			markers: { name: string; lat: number; lon: number; side?: string }[];
+			movements?: { from: string; to: string; label?: string }[];
+			sourceUrl?: string;
+	  }
+	| {
+			kind: "program";
+			title: string;
+			caption?: string;
+			language: "python";
+			/** Kept when the saved file still has room. */
+			source?: string;
 	  };
 
 /** Saved on the account and on the chat, so a session can show it again. */
@@ -89,37 +126,56 @@ export interface SessionFigure {
 	anchor: string;
 	title: string;
 	caption?: string;
+	credit?: string;
 	kind: FigureKind;
 	quote?: string;
 	created: string;
 	collapsed?: boolean;
 	svg: string;
+	/** Present when the picture is a raster or an animation. Omitted from the chat file. */
+	media?: FigureMedia;
+	/** The chat copy dropped `media`; reload it from the figure file. */
+	hasMedia?: boolean;
 	spec: FigureSpec;
 	sessionId?: string;
 }
 
 export const FIGURE_GUIDANCE = `# Figures
 When a picture teaches the step better than another paragraph, call \`show_figure\` and then talk about what it shows. The learner sees it in the left margin of that turn. They can minimize it, and it is saved on their account.
-- \`plot\`: a curve, points, or bars. Pass \`points\` as [x, y] pairs, or \`expr\` in the variable x. The curve is that expression evaluated on a fine grid and drawn through those points. It breaks at a gap or an asymptote instead of connecting across it. Operators are + - * / ^ and parentheses. Functions: sin, cos, tan, asin, acos, atan, exp, log, ln, log10, sqrt, abs. Constants: pi, e. Write 2*x, not 2x. \`^\` is right-associative, and \`-x^2\` means \`-(x^2)\`.
-- \`plot3d\`: a surface, z from an \`expr\` in x and y (same functions). Each grid value is the expression. The picture is a still perspective view of those values.
-- \`story\`: the shape of a narrative. Beats in order, each with a stage (exposition, rising, climax, falling, resolution) and a short label.
-- \`map\`: places and movements. Each marker has a name, lat, and lon. \`side\` groups them (Allies, Axis). \`movements\` draw an arrow from one marker name to another. Use this for campaigns, routes, and migrations.
-- \`conjugation\`: one verb. \`rows\` are person and form. \`highlight\` is the person or form to mark.
-- \`sentence\`: a Reed-Kellogg diagram. \`words\` in order, each with text and a role (subject, verb, object, complement, modifier). A modifier's \`of\` is the index of the word it hangs from.
-One figure per idea. Do not paste SVG. Mermaid stays for a goal's dependency map, not for these.`;
+
+You choose how to make the picture:
+- A plate, when the shape is exact: \`plot\`, \`plot3d\`, \`story\`, \`conjugation\`, \`sentence\`, or a rough \`map\`.
+- A real place: the rough \`map\` is only a schematic. For a campaign, a country, or a city, \`fetch_public\` a public image (Wikimedia Commons is a good first stop) and \`show_figure\` with kind \`"image"\` and that url. Or \`fetch_public\` a public GeoJSON API and \`show_figure\` with kind \`"geo"\`, that url, and markers or movements to draw on top. Name the source in \`credit\` or the caption.
+- Your own drawing: kind \`"svg"\` and \`markup\`. No scripts and no remote images. An \`<animate>\` element is how you show change without a library.
+- A Python program: kind \`"program"\`, language \`"python"\`, and \`source\` that writes \`figure.svg\`, \`figure.png\`, \`figure.gif\`, or \`figure.webp\` in the working directory. Use this for an animation or a picture a library can draw. It runs on the learner's computer, with a 20 second limit, and only those output files are shown. If Python or the library is missing, write an animated SVG instead.
+
+\`fetch_public\` reads one public https URL (a page, JSON, or GeoJSON) so you can choose. It refuses private addresses. Web search, when you have it, is how you find the URL. Image bytes must be under 200000; ask the API for a thumbnail when the file is larger.
+
+- \`plot\`: \`points\` as [x, y] pairs, or \`expr\` in x. The curve is that expression evaluated on a fine grid. It breaks at a gap or an asymptote. Operators are + - * / ^ and parentheses. Functions: sin, cos, tan, asin, acos, atan, exp, log, ln, log10, sqrt, abs. Constants: pi, e. Write 2*x, not 2x. \`^\` is right-associative, and \`-x^2\` means \`-(x^2)\`.
+- \`plot3d\`: z from an \`expr\` in x and y. The picture is a still perspective view of those values.
+- \`story\`: beats in order, each with a stage (exposition, rising, climax, falling, resolution) and a short label.
+- \`map\`: a schematic only. Markers have name, lat, and lon. \`side\` groups them. \`movements\` draw an arrow between marker names.
+- \`conjugation\`: \`rows\` are person and form. \`highlight\` is the person or form to mark.
+- \`sentence\`: words in order, each with text and a role (subject, verb, object, complement, modifier). A modifier's \`of\` is the index of the word it hangs from.
+
+One figure per idea. Do not paste the picture into the chat. Mermaid stays for a goal's dependency map, not for these.`;
 
 export const FIGURE_PROMPT = `# You draw one figure
-The learner highlighted a passage and asked for a visualization. Reply with one JSON object and nothing else: no markdown fence, no explanation.
+The learner highlighted a passage and asked for a visualization. You may call \`fetch_public\` to read a public https URL (a page, a JSON or GeoJSON API, or to confirm an image). Then reply with one JSON object and nothing else: no markdown fence, no explanation.
 
 Choose the kind that fits the passage:
 - plot — a function, a data series, or bars. Fields: title, kind "plot", xLabel, yLabel, series: [{ name, expr (in x) or points: [[x,y],...], mark: "line"|"scatter"|"bar" }]
 - plot3d — a surface. Fields: title, kind "plot3d", expr (z in x and y), xMin, xMax, yMin, yMax, xLabel, yLabel, zLabel
 - story — narrative shape. Fields: title, kind "story", beats: [{ stage: "exposition"|"rising"|"climax"|"falling"|"resolution", label }]
-- map — places or movements. Fields: title, kind "map", markers: [{ name, lat, lon, side }], movements: [{ from, to, label }]
+- map — a rough schematic only. Fields: title, kind "map", markers: [{ name, lat, lon, side }], movements: [{ from, to, label }]
+- image — a public picture you fetched. Fields: title, kind "image", url, credit
+- geo — public map data with your marks on top. Fields: title, kind "geo", url (GeoJSON) or geojson, markers: [{ name, lat, lon, side }], movements: [{ from, to, label }], credit
+- svg — a drawing you write, including an animated SVG. Fields: title, kind "svg", markup
+- program — Python that writes figure.svg, figure.png, figure.gif, or figure.webp. Fields: title, kind "program", language "python", source
 - conjugation — a verb table. Fields: title, kind "conjugation", lemma, language, tense, rows: [{ person, form }], highlight
 - sentence — a grammar diagram. Fields: title, kind "sentence", words: [{ text, role: "subject"|"verb"|"object"|"complement"|"modifier", of }]
 
-Expressions use + - * / ^, parentheses, sin cos tan asin acos atan exp log ln log10 sqrt abs, and pi and e. Write 2*x, not 2x.
+For a real place, prefer image or geo over map. Expressions use + - * / ^, parentheses, sin cos tan asin acos atan exp log ln log10 sqrt abs, and pi and e. Write 2*x, not 2x.
 Use the passage. Do not invent a quiz answer, and do not add a second figure.`;
 
 const LESSON_CHARS = 12_000;
@@ -167,6 +223,14 @@ export function parseFigureSpec(value: unknown): FigureSpec {
 			return { kind, title, caption, ...parseConjugation(o) };
 		case "sentence":
 			return { kind, title, caption, words: parseWords(o.words) };
+		case "image":
+			return { kind, title, caption, credit: optionalText(o.credit, 180), sourceUrl: httpUrl(o.url) };
+		case "svg":
+			return { kind, title, caption, markup: string(o.markup, "markup") };
+		case "geo":
+			return { kind, title, caption, ...parseGeo(o) };
+		case "program":
+			return { kind, title, caption, language: "python", source: pythonSource(o) };
 		default:
 			throw new Error(`Unknown figure kind "${kind}".`);
 	}
@@ -188,27 +252,43 @@ export function figureFile(id: string): string {
 	return `.groundwork/figures/${id}.json`;
 }
 
+/** The chat file keeps a light copy. Raster bytes stay on the figure file. */
+export function figureForChat(figure: SessionFigure): SessionFigure {
+	if (!figure.media) return figure;
+	const copy: SessionFigure = { ...figure, hasMedia: true };
+	delete copy.media;
+	return copy;
+}
+
 export async function saveFigure(
 	store: KnowledgeStore,
 	input: unknown,
 	extra?: { quote?: string; sessionId?: string; anchor?: string; id?: string },
+	deps?: FigureDeps,
 ): Promise<SessionFigure> {
-	const spec = parseFigureSpec(input);
-	const svg = renderFigure(spec);
+	const realized = await realizeFigure(parseFigureSpec(input), deps);
 	const figure: SessionFigure = {
 		id: extra?.id && /^fig_[a-z0-9]+$/.test(extra.id) ? extra.id : newFigureId(),
 		anchor: extra?.anchor ?? "",
-		title: spec.title,
-		caption: spec.caption,
-		kind: spec.kind,
+		title: realized.spec.title,
+		caption: realized.spec.caption,
+		credit: realized.credit,
+		kind: realized.spec.kind,
 		quote: extra?.quote,
 		created: new Date().toISOString(),
 		collapsed: false,
-		svg,
-		spec,
+		svg: realized.svg,
+		media: realized.media,
+		spec: realized.spec,
 		sessionId: extra?.sessionId,
 	};
-	await store.writeFile(figureFile(figure.id), `${JSON.stringify(figure)}\n`);
+	const body = `${JSON.stringify(figure)}\n`;
+	if (body.length > 380_000 && figure.spec.kind === "program" && figure.spec.source) {
+		figure.spec = { ...figure.spec, source: undefined };
+	}
+	const saved = `${JSON.stringify(figure)}\n`;
+	if (saved.length > 380_000) throw new Error("That figure is too large to save. Use a smaller image or a simpler drawing.");
+	await store.writeFile(figureFile(figure.id), saved);
 	return figure;
 }
 
@@ -384,6 +464,47 @@ function parseBeats(value: unknown): { stage: StoryStage; label: string }[] {
 		if (!STORY_STAGES.includes(stage as StoryStage)) throw new Error(`Beat ${i} has an unknown stage.`);
 		return { stage: stage as StoryStage, label: clip(string(b.label, `beat ${i} label`), 80) };
 	});
+}
+
+function parseGeo(o: Record<string, unknown>): Omit<Extract<FigureSpec, { kind: "geo" }>, "kind" | "title" | "caption"> {
+	const sourceUrl = typeof o.url === "string" && o.url.trim() ? httpUrl(o.url) : undefined;
+	const placed = Array.isArray(o.markers) && o.markers.length ? parseMap(o) : { markers: [], movements: undefined as ReturnType<typeof parseMap>["movements"] };
+	let polygons: Array<Array<[number, number]>> = [];
+	let lines: Array<Array<[number, number]>> = [];
+	if (o.geojson !== undefined) {
+		let raw = o.geojson;
+		if (typeof raw === "string") {
+			try {
+				raw = JSON.parse(raw);
+			} catch {
+				throw new Error("geojson was not JSON.");
+			}
+		}
+		const plate = geoPlate(raw);
+		polygons = plate.polygons;
+		lines = plate.lines;
+	}
+	if (!polygons.length && !lines.length && !placed.markers.length && !sourceUrl) {
+		throw new Error("A geo figure needs a url, GeoJSON, or markers.");
+	}
+	return { polygons, lines, markers: placed.markers, movements: placed.movements, sourceUrl };
+}
+
+function httpUrl(value: unknown): string {
+	const raw = string(value, "url");
+	let url: URL;
+	try {
+		url = new URL(raw);
+	} catch {
+		throw new Error("That is not a web address.");
+	}
+	if (url.protocol !== "https:") throw new Error("The figure URL has to be https.");
+	return url.toString();
+}
+
+function pythonSource(o: Record<string, unknown>): string {
+	if (o.language !== undefined && o.language !== "python") throw new Error('A program figure runs language "python".');
+	return string(o.source, "source");
 }
 
 function parseMap(o: Record<string, unknown>): Omit<Extract<FigureSpec, { kind: "map" }>, "kind" | "title" | "caption"> {

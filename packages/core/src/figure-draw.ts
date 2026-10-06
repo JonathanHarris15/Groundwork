@@ -23,6 +23,13 @@ export function drawFigure(spec: FigureSpec): string {
 			return drawConjugation(spec);
 		case "sentence":
 			return drawSentence(spec);
+		case "image":
+		case "program":
+			return drawPlate(spec.title, spec.caption);
+		case "svg":
+			return spec.markup;
+		case "geo":
+			return drawGeo(spec);
 	}
 }
 
@@ -450,6 +457,123 @@ function mapBounds(markers: { lat: number; lon: number }[]): { minLon: number; m
 		minLat: Math.max(-58, minLat - padLat),
 		maxLat: Math.min(84, maxLat + padLat),
 	};
+}
+
+function drawPlate(title: string, caption?: string): string {
+	return svg(640, 200, title, [text(32, 48, title, { size: 18, weight: 600 }), caption ? text(32, 80, caption, { size: 14, fill: MUTED, weight: 400 }) : ""].join(""));
+}
+
+function drawGeo(spec: Extract<FigureSpec, { kind: "geo" }>): string {
+	const w = 720;
+	const h = 460;
+	const margin = 28;
+	const land = [
+		...spec.polygons.flat().map(([lon, lat]) => ({ lon, lat })),
+		...spec.lines.flat().map(([lon, lat]) => ({ lon, lat })),
+	];
+	const bounds = geoBounds(spec.markers, land);
+	const project = (lon: number, lat: number) => {
+		const x = margin + ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon || 1)) * (w - margin * 2);
+		const y = 48 + ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat || 1)) * (h - 48 - 56);
+		return [x, y] as const;
+	};
+	const parts: string[] = [];
+	parts.push(text(margin, 30, spec.title, { size: 16, weight: 600 }));
+	parts.push(`<clipPath id="geo-frame"><rect x="${margin}" y="48" width="${w - margin * 2}" height="${h - 48 - 56}"/></clipPath>`);
+	parts.push(`<g clip-path="url(#geo-frame)">`);
+	for (const ring of spec.polygons) {
+		const d = ring
+			.map(([lon, lat], i) => {
+				const [x, y] = project(lon, lat);
+				return `${i ? "L" : "M"}${n(x)} ${n(y)}`;
+			})
+			.join(" ");
+		parts.push(`<path d="${d} Z" fill="#e4ddd0" stroke="#8a8478" stroke-width="0.8" stroke-linejoin="round"/>`);
+	}
+	for (const line of spec.lines) {
+		const d = line
+			.map(([lon, lat], i) => {
+				const [x, y] = project(lon, lat);
+				return `${i ? "L" : "M"}${n(x)} ${n(y)}`;
+			})
+			.join(" ");
+		parts.push(`<path d="${d}" fill="none" stroke="#5c564c" stroke-width="1.4" stroke-linejoin="round"/>`);
+	}
+	parts.push(`</g>`);
+	const sideColor = new Map<string, string>();
+	const colorFor = (side: string | undefined) => {
+		const key = side?.trim() || "";
+		if (!key) return INK;
+		const existing = sideColor.get(key);
+		if (existing) return existing;
+		const color = SIDES[sideColor.size % SIDES.length];
+		sideColor.set(key, color);
+		return color;
+	};
+	const at = new Map<string, readonly [number, number]>();
+	for (const m of spec.markers) at.set(m.name, project(m.lon, m.lat));
+	for (const move of spec.movements ?? []) {
+		const a = at.get(move.from);
+		const b = at.get(move.to);
+		if (!a || !b) continue;
+		const mx = (a[0] + b[0]) / 2;
+		const my = (a[1] + b[1]) / 2 - 28;
+		const id = `arrow-${parts.length}`;
+		parts.push(`<defs><marker id="${id}" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="${INK}"/></marker></defs>`);
+		parts.push(`<path d="M${n(a[0])} ${n(a[1])} Q${n(mx)} ${n(my)} ${n(b[0])} ${n(b[1])}" fill="none" stroke="${INK}" stroke-width="1.4" marker-end="url(#${id})"/>`);
+		if (move.label) parts.push(text(mx, my - 6, move.label, { size: 11, anchor: "middle", fill: MUTED, weight: 400 }));
+	}
+	for (const m of spec.markers) {
+		const [x, y] = at.get(m.name)!;
+		const color = colorFor(m.side);
+		parts.push(`<circle cx="${n(x)}" cy="${n(y)}" r="5" fill="${color}" stroke="${PAPER}" stroke-width="1.5"/>`);
+		parts.push(text(x + 8, y - 8, m.name, { size: 12, weight: 600 }));
+	}
+	let legendX = margin;
+	for (const [side, color] of sideColor) {
+		parts.push(`<circle cx="${legendX + 5}" cy="${h - 24}" r="4.5" fill="${color}"/>`);
+		parts.push(text(legendX + 14, h - 20, side, { size: 12, weight: 500 }));
+		legendX += 14 + side.length * 7 + 18;
+	}
+	const source = spec.sourceUrl ? safeHost(spec.sourceUrl) : "";
+	if (source) parts.push(text(margin, h - 8, source, { size: 11, fill: MUTED, weight: 400 }));
+	if (spec.caption) parts.push(text(w - margin, h - 20, spec.caption, { size: 12, anchor: "end", fill: MUTED, weight: 400 }));
+	return svg(w, h, spec.title, parts.join(""));
+}
+
+/** Markers set the frame so a world file still zooms to the lesson. */
+function geoBounds(
+	markers: { lat: number; lon: number }[],
+	land: { lat: number; lon: number }[],
+): { minLon: number; maxLon: number; minLat: number; maxLat: number } {
+	const src = markers.length ? markers : land;
+	if (!src.length) return { minLon: -180, maxLon: 180, minLat: -58, maxLat: 80 };
+	let minLon = Infinity;
+	let maxLon = -Infinity;
+	let minLat = Infinity;
+	let maxLat = -Infinity;
+	for (const p of src) {
+		minLon = Math.min(minLon, p.lon);
+		maxLon = Math.max(maxLon, p.lon);
+		minLat = Math.min(minLat, p.lat);
+		maxLat = Math.max(maxLat, p.lat);
+	}
+	const padLon = Math.max(markers.length ? 12 : 8, (maxLon - minLon) * 0.45);
+	const padLat = Math.max(markers.length ? 10 : 6, (maxLat - minLat) * 0.8);
+	return {
+		minLon: Math.max(-180, minLon - padLon),
+		maxLon: Math.min(180, maxLon + padLon),
+		minLat: Math.max(-85, minLat - padLat),
+		maxLat: Math.min(85, maxLat + padLat),
+	};
+}
+
+function safeHost(url: string): string {
+	try {
+		return new URL(url).host;
+	} catch {
+		return "";
+	}
 }
 
 function drawConjugation(spec: Extract<FigureSpec, { kind: "conjugation" }>): string {
