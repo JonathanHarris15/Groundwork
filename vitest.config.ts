@@ -9,5 +9,6 @@ export default defineConfig({
 	},
 	test: {
 		exclude: ["**/node_modules/**", "**/e2e/**", "playwright.config.ts"],
+		setupFiles: ["./packages/obsidian-plugin/test/shims/dom.ts"],
 	},
 });

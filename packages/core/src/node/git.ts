@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import * as os from "node:os";
 import { withGuiPath } from "./env";
 
 export interface GitResult {
@@ -79,7 +78,7 @@ export class GitSync {
 		const report: SyncReport = { state: "synced", message: "", committed: false, pulled: false, pushed: false, incoming: false };
 		if (!(await this.isRepo())) return { ...report, state: "not-a-repo", message: "Vault is not a git repository." };
 
-		const device = this.opts.device ?? os.hostname();
+		const device = this.opts.device ?? "cli";
 		const stamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
 		report.committed = await this.commitAll(message ?? `groundwork: ${device} ${stamp}`);
 

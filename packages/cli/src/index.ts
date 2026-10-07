@@ -11,8 +11,8 @@ import { bundledPluginDir, installPlugin, launchObsidian, obsidianUri, registerV
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 
-const say = (msg = "") => console.log(msg);
-const step = (msg: string) => console.log(`  • ${msg}`);
+const say = (msg = "") => process.stdout.write(`${msg}\n`);
+const step = (msg: string) => process.stdout.write(`  • ${msg}\n`);
 
 function hasCommand(cmd: string): boolean {
 	try {

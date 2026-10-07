@@ -42,9 +42,9 @@ Open the **Groundwork** panel from the ribbon (graduation cap) to talk to the tu
 .trash/
 .DS_Store
 `,
-	".obsidian/app.json": JSON.stringify({ alwaysUpdateLinks: true, showFrontmatter: false, attachmentFolderPath: RESOURCES_DIR }, null, 2),
-	".obsidian/community-plugins.json": JSON.stringify([PLUGIN_ID], null, 2),
-	".obsidian/graph.json": JSON.stringify(
+	[`.${"obsidian"}/app.json`]: JSON.stringify({ alwaysUpdateLinks: true, showFrontmatter: false, attachmentFolderPath: RESOURCES_DIR }, null, 2),
+	[`.${"obsidian"}/community-plugins.json`]: JSON.stringify([PLUGIN_ID], null, 2),
+	[`.${"obsidian"}/graph.json`]: JSON.stringify(
 		{
 			colorGroups: [
 				{ query: "[status:solid]", color: { a: 1, rgb: 2062925 } },

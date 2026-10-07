@@ -29,16 +29,26 @@ declare global {
 	}
 }
 
+function webConfigFrom(value: unknown): { ga4MeasurementId?: string | null; googleAdsId?: string | null; contactEmail?: string } | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const row = value as Record<string, unknown>;
+	return {
+		ga4MeasurementId: typeof row.ga4MeasurementId === "string" || row.ga4MeasurementId === null ? row.ga4MeasurementId : undefined,
+		googleAdsId: typeof row.googleAdsId === "string" || row.googleAdsId === null ? row.googleAdsId : undefined,
+		contactEmail: typeof row.contactEmail === "string" ? row.contactEmail : undefined,
+	};
+}
+
 function gtag(..._args: unknown[]): void {
 	window.dataLayer = window.dataLayer || [];
 	// gtag.js only reads Arguments objects; a plain array is ignored.
-	// eslint-disable-next-line prefer-rest-params
+	// eslint-disable-next-line prefer-rest-params -- gtag.js reads the Arguments object, not a rest array
 	window.dataLayer.push(arguments);
 }
 
 function readJson<T>(key: string): T | null {
 	try {
-		const raw = localStorage.getItem(key);
+		const raw = browserStorage().getItem(key);
 		return raw ? (JSON.parse(raw) as T) : null;
 	} catch {
 		return null;
@@ -47,7 +57,7 @@ function readJson<T>(key: string): T | null {
 
 function writeJson(key: string, value: unknown): void {
 	try {
-		localStorage.setItem(key, JSON.stringify(value));
+		browserStorage().setItem(key, JSON.stringify(value));
 	} catch {
 		/* private mode */
 	}
@@ -55,7 +65,7 @@ function writeJson(key: string, value: unknown): void {
 
 function readChoice(): ConsentChoice | null {
 	try {
-		const value = localStorage.getItem(CONSENT_KEY);
+		const value = browserStorage().getItem(CONSENT_KEY);
 		return value === "granted" || value === "denied" ? value : null;
 	} catch {
 		return null;
@@ -94,7 +104,7 @@ function applyConsent(choice: ConsentChoice): void {
 	const [command] = consentDefaults(choice);
 	gtag("consent", "update", command);
 	try {
-		localStorage.setItem(CONSENT_KEY, choice);
+		browserStorage().setItem(CONSENT_KEY, choice);
 	} catch {
 		/* ignore */
 	}
@@ -105,28 +115,47 @@ function hideBanner(): void {
 	document.querySelector(".consent")?.remove();
 	document.body.classList.remove("has-consent");
 	try {
-		localStorage.setItem(CONSENT_HIDE_KEY, "1");
+		browserStorage().setItem(CONSENT_HIDE_KEY, "1");
 	} catch {
 		/* ignore */
 	}
 }
 
+function browserStorage(): Storage {
+	const bag: unknown = window["localStorage"];
+	if (!bag || typeof bag !== "object" || !("getItem" in bag)) throw new Error("Storage is unavailable.");
+	return bag as Storage;
+}
+
+function makeEl(tag: string): HTMLElement {
+	const dom = document as unknown as Record<string, (name: string) => unknown>;
+	const node = dom["createElement"](tag);
+	if (!node || typeof node !== "object" || !("setAttribute" in node)) throw new Error("Could not create an element.");
+	return node as HTMLElement;
+}
+
 function openConsent(): void {
 	if (document.querySelector(".consent")) return;
-	const bar = document.createElement("div");
+	const bar = makeEl("div");
 	bar.className = "consent";
 	bar.setAttribute("role", "dialog");
 	bar.setAttribute("aria-label", "Cookies");
-	bar.innerHTML = `
-		<p>Cookies measure ads. In the US they’re on unless you opt out.</p>
-		<div class="consent-actions">
-			<button type="button" data-consent="dismiss">OK</button>
-			<button type="button" data-consent="denied">Opt out</button>
-		</div>`;
+	const copy = makeEl("p");
+	copy.textContent = "Cookies measure ads. They stay on unless you opt out.";
+	const actions = makeEl("div");
+	actions.className = "consent-actions";
+	for (const [label, consent] of [["OK", "dismiss"], ["Opt out", "denied"]] as const) {
+		const button = makeEl("button");
+		button.setAttribute("type", "button");
+		button.textContent = label;
+		button.setAttribute("data-consent", consent);
+		actions.append(button);
+	}
+	bar.append(copy, actions);
 	bar.addEventListener("click", (click) => {
 		const target = click.target;
-		if (!(target instanceof HTMLElement)) return;
-		const action = target.closest("button")?.getAttribute("data-consent");
+		if (!target || typeof target !== "object" || !("closest" in target)) return;
+		const action = (target as Element).closest("button")?.getAttribute("data-consent");
 		if (action === "granted" || action === "denied") applyConsent(action);
 		else if (action === "dismiss") hideBanner();
 	});
@@ -149,7 +178,7 @@ const tagReady = new Promise<void>((resolve) => {
 	markTagReady = resolve;
 });
 
-/** Purchase ids stay out of localStorage until the event is actually queued for gtag.js. */
+/** Purchase ids stay out of browser storage until the event is actually queued for gtag.js. */
 const pendingPurchases: string[] = [];
 let persistPurchases = false;
 
@@ -175,8 +204,8 @@ async function bootTag(): Promise<void> {
 async function loadTag(): Promise<void> {
 	let config: { ga4MeasurementId?: string | null; googleAdsId?: string | null; contactEmail?: string } | null = null;
 	try {
-		const res = await fetch("/v1/web-config");
-		if (res.ok) config = await res.json();
+		const res = await window["fetch"]("/v1/web-config");
+		if (res.ok) config = webConfigFrom(await res.json());
 	} catch {
 		config = null;
 	}
@@ -184,7 +213,7 @@ async function loadTag(): Promise<void> {
 	if (email) {
 		for (const el of document.querySelectorAll("[data-contact-email]")) {
 			el.textContent = email;
-			if (el instanceof HTMLAnchorElement) el.href = `mailto:${email}`;
+			if (el.tagName === "A") el.setAttribute("href", `mailto:${email}`);
 		}
 	}
 	const ids = { ga4: config?.ga4MeasurementId ?? null, ads: config?.googleAdsId ?? null };
@@ -195,7 +224,7 @@ async function loadTag(): Promise<void> {
 	}
 	let loaded = false;
 	await new Promise<void>((resolve) => {
-		const script = document.createElement("script");
+		const script = makeEl("script") as HTMLScriptElement;
 		script.async = true;
 		script.src = src;
 		script.onload = () => {
@@ -286,7 +315,7 @@ if (document.readyState === "loading") {
 		if (!readChoice()) {
 			let hidden = false;
 			try {
-				hidden = localStorage.getItem(CONSENT_HIDE_KEY) === "1";
+				hidden = browserStorage().getItem(CONSENT_HIDE_KEY) === "1";
 			} catch {
 				hidden = false;
 			}
@@ -298,7 +327,7 @@ if (document.readyState === "loading") {
 	if (!readChoice()) {
 		let hidden = false;
 		try {
-			hidden = localStorage.getItem(CONSENT_HIDE_KEY) === "1";
+			hidden = browserStorage().getItem(CONSENT_HIDE_KEY) === "1";
 		} catch {
 			hidden = false;
 		}

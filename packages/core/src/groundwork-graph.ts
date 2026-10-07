@@ -55,7 +55,7 @@ export function layoutGroundworkGraph(concepts: GraphConcept[], pinTopId?: strin
 		const countB = concepts.filter((c) => (domainOf.get(c.id) ?? c.title) === b).length;
 		return countB - countA || a.localeCompare(b);
 	});
-	const colorOf = new Map(domains.map((domain, i) => [domain, GROUNDWORK_COLORS[i % GROUNDWORK_COLORS.length]!]));
+	const colorOf = new Map(domains.map((domain, i) => [domain, GROUNDWORK_COLORS[i % GROUNDWORK_COLORS.length]]));
 	const legend = domains.filter((domain) => domain !== "Concepts").map((domain) => ({ domain, color: colorOf.get(domain) ?? GROUNDWORK_COLORS[0] }));
 
 	const edges: GroundworkGraphEdge[] = [];
@@ -198,7 +198,7 @@ function assignDomains(concepts: GraphConcept[]): Map<string, string> {
 			for (const n of neighbors.get(id) ?? []) if (!domain.has(n) && !seen.has(n)) stack.push(n);
 		}
 		if (comp.length === 1) {
-			isolates.push(comp[0]!);
+			isolates.push(comp[0]);
 			continue;
 		}
 		const name = componentName(comp, byId, neighbors);

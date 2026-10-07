@@ -1,3 +1,4 @@
+import { asRecord } from "@groundwork/core";
 import { existsSync, promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -13,7 +14,8 @@ export function configPath(): string {
 
 export async function readConfig(): Promise<CliConfig> {
 	try {
-		return JSON.parse(await fs.readFile(configPath(), "utf8"));
+		const parsed = asRecord(JSON.parse(await fs.readFile(configPath(), "utf8")));
+		return parsed && typeof parsed.vault === "string" ? { vault: parsed.vault } : {};
 	} catch {
 		return {};
 	}

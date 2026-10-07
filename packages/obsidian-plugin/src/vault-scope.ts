@@ -1,4 +1,4 @@
-import type { App, TAbstractFile, TFile, TFolder } from "obsidian";
+import { TFolder, type App, type TAbstractFile, type TFile } from "obsidian";
 
 /** Lists vault files under the given folder roots without scanning unrelated paths. */
 export function filesUnderFolderRoots(app: App, roots: readonly string[]): TFile[] {
@@ -9,8 +9,7 @@ export function filesUnderFolderRoots(app: App, roots: readonly string[]): TFile
 		if (!trimmed) continue;
 		const node = vault.getAbstractFileByPath(trimmed);
 		if (!node) continue;
-		const kids = (node as TFolder).children;
-		if (Array.isArray(kids)) walkFolder(node as TFolder, out);
+		if (node instanceof TFolder) walkFolder(node, out);
 		else if (isVaultFile(node)) out.push(node);
 	}
 	return out;
@@ -21,14 +20,13 @@ function walkFolder(folder: TFolder, out: TFile[]): void {
 }
 
 function collectFile(node: TAbstractFile, out: TFile[]): void {
-	const kids = (node as TFolder).children;
-	if (Array.isArray(kids)) {
-		for (const child of kids) collectFile(child, out);
+	if (node instanceof TFolder) {
+		for (const child of node.children) collectFile(child, out);
 		return;
 	}
 	if (isVaultFile(node)) out.push(node);
 }
 
 function isVaultFile(node: TAbstractFile): node is TFile {
-	return !Array.isArray((node as TFolder).children) && "extension" in node;
+	return !(node instanceof TFolder) && "extension" in node;
 }

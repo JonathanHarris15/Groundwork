@@ -114,7 +114,7 @@ type SyllabusCluster = {
 const SYNTHETIC_SYLLABUS: SyllabusCluster[] = [
 	{
 		domain: "Calculus",
-		color: GROUNDWORK_COLORS[0]!,
+		color: GROUNDWORK_COLORS[0],
 		chains: [
 			["Limits", "Continuity", "Derivative", "Product rule", "Chain rule", "Implicit diff", "Related rates"],
 			["Antiderivative", "Definite integral", "FTC", "Substitution", "Area between curves"],
@@ -122,7 +122,7 @@ const SYNTHETIC_SYLLABUS: SyllabusCluster[] = [
 	},
 	{
 		domain: "Linear algebra",
-		color: GROUNDWORK_COLORS[1]!,
+		color: GROUNDWORK_COLORS[1],
 		chains: [
 			["Vectors", "Dot product", "Matrices", "Row reduction", "Linear systems", "Determinant", "Eigenvalues"],
 			["Vector spaces", "Basis", "Dimension", "Linear maps", "Change of basis"],
@@ -130,7 +130,7 @@ const SYNTHETIC_SYLLABUS: SyllabusCluster[] = [
 	},
 	{
 		domain: "Probability",
-		color: GROUNDWORK_COLORS[2]!,
+		color: GROUNDWORK_COLORS[2],
 		chains: [
 			["Sample space", "Conditional probability", "Bayes' rule", "Random variables", "Expectation", "Variance"],
 			["Binomial", "Normal approximation", "CLT", "Estimators", "Confidence intervals"],
@@ -138,7 +138,7 @@ const SYNTHETIC_SYLLABUS: SyllabusCluster[] = [
 	},
 	{
 		domain: "Mechanics",
-		color: GROUNDWORK_COLORS[3]!,
+		color: GROUNDWORK_COLORS[3],
 		chains: [
 			["Position", "Velocity", "Acceleration", "Newton's laws", "Friction", "Work", "Energy"],
 			["Momentum", "Collisions", "Rotational kinematics", "Torque", "Angular momentum"],
@@ -170,9 +170,9 @@ export function buildSyntheticGraph(count: number, _density = 3): ForceGraphData
 		for (const chain of cluster.chains) {
 			let prev: string | null = null;
 			for (let i = 0; i < perChain && made < target; i++) {
-				const topic = chain[Math.min(i, chain.length - 1)]!;
+				const topic = chain[Math.min(i, chain.length - 1)];
 				const id = `c${made}`;
-				const status = STATUSES[made % STATUSES.length]!;
+				const status = STATUSES[made % STATUSES.length];
 				nodes.push({
 					id,
 					title: titleFor(cluster.domain, topic, i),
@@ -197,7 +197,7 @@ export function buildSyntheticGraph(count: number, _density = 3): ForceGraphData
 	}
 
 	while (made < target) {
-		const cluster = SYNTHETIC_SYLLABUS[made % SYNTHETIC_SYLLABUS.length]!;
+		const cluster = SYNTHETIC_SYLLABUS[made % SYNTHETIC_SYLLABUS.length];
 		const id = `c${made}`;
 		nodes.push({
 			id,
@@ -214,7 +214,7 @@ export function buildSyntheticGraph(count: number, _density = 3): ForceGraphData
 		});
 		const domainIds = byDomain.get(cluster.domain) ?? [];
 		if (domainIds.length) {
-			const anchor = domainIds[made % domainIds.length]!;
+			const anchor = domainIds[made % domainIds.length];
 			links.push({ from: anchor, to: id, bridge: false });
 		}
 		domainIds.push(id);
@@ -224,14 +224,14 @@ export function buildSyntheticGraph(count: number, _density = 3): ForceGraphData
 
 	const domains = SYNTHETIC_SYLLABUS.map((c) => c.domain);
 	for (let i = 0; i < domains.length; i++) {
-		const a = byDomain.get(domains[i]!) ?? [];
-		const b = byDomain.get(domains[(i + 1) % domains.length]!) ?? [];
+		const a = byDomain.get(domains[i]) ?? [];
+		const b = byDomain.get(domains[(i + 1) % domains.length]) ?? [];
 		if (!a.length || !b.length) continue;
-		const from = a[Math.floor(a.length / 3)]!;
-		const to = b[Math.floor(b.length / 2)]!;
+		const from = a[Math.floor(a.length / 3)];
+		const to = b[Math.floor(b.length / 2)];
 		links.push({ from, to, bridge: true });
 		if (a.length > 4 && b.length > 4) {
-			links.push({ from: a[a.length - 2]!, to: b[1]!, bridge: true });
+			links.push({ from: a[a.length - 2], to: b[1], bridge: true });
 		}
 	}
 

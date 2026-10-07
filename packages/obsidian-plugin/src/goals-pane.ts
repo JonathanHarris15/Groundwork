@@ -219,7 +219,7 @@ function renderGoalsUnpinned(main: HTMLElement, boards: GoalBoardView[], handler
 	} else if (handlers.onFocusWorkingGoal) {
 		const focus = el(empty, "button", "gw-next-btn");
 		focus.type = "button";
-		focus.textContent = "Choose in Working on";
+		focus.textContent = "Choose in working on";
 		focus.addEventListener("click", handlers.onFocusWorkingGoal);
 	}
 	const create = el(empty, "button", "gw-text-btn");
@@ -260,7 +260,7 @@ function workOption(parent: HTMLElement, primary: boolean, title: string, onClic
 }
 
 function icon(parent: HTMLElement, fragment: string): SVGElement {
-	const svg = parent.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
+	const svg = parent.ownerDocument.win.createSvg("svg");
 	svg.setAttribute("viewBox", "0 0 24 24");
 	svg.setAttribute("fill", "none");
 	svg.setAttribute("stroke", "currentColor");
@@ -273,7 +273,7 @@ function icon(parent: HTMLElement, fragment: string): SVGElement {
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(parent: HTMLElement, tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
-	const node = parent.ownerDocument.createElement(tag);
+	const node = parent.ownerDocument.win.createEl(tag);
 	if (cls) node.className = cls;
 	if (text != null) node.textContent = text;
 	parent.append(node);

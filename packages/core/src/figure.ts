@@ -1,4 +1,6 @@
 import type { Provider, ProviderRequest, ProviderResponse } from "./agent/types";
+import { later } from "./timers";
+import { asUnknown } from "./unknown";
 import { drawFigure } from "./figure-draw";
 import { geoPlate } from "./figure-geo";
 import type { FigureMedia } from "./figure-python";
@@ -396,7 +398,7 @@ export class DemoFigureProvider implements Provider {
 		for (const chunk of chunks) {
 			if (req.signal?.aborted) throw new Error("aborted");
 			req.onText(chunk);
-			if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
+			if (this.delayMs) await new Promise<void>((r) => later(() => r(), this.delayMs));
 		}
 		return { content: [{ type: "text", text }], stopReason: "end_turn" };
 	}
@@ -472,10 +474,10 @@ function parseGeo(o: Record<string, unknown>): Omit<Extract<FigureSpec, { kind: 
 	let polygons: Array<Array<[number, number]>> = [];
 	let lines: Array<Array<[number, number]>> = [];
 	if (o.geojson !== undefined) {
-		let raw = o.geojson;
+		let raw: unknown = o.geojson;
 		if (typeof raw === "string") {
 			try {
-				raw = JSON.parse(raw);
+				raw = asUnknown(JSON.parse(raw));
 			} catch {
 				throw new Error("geojson was not JSON.");
 			}
@@ -751,8 +753,17 @@ function optionalText(value: unknown, max: number): string | undefined {
 	return clip(value.trim(), max);
 }
 
+function stripControls(value: string): string {
+	let out = "";
+	for (const ch of value) {
+		const code = ch.codePointAt(0) ?? 0;
+		if (code >= 32) out += ch;
+	}
+	return out;
+}
+
 function clip(value: string, max: number): string {
-	const clean = value.replace(/[\u0000-\u001f]/g, "").trim();
+	const clean = stripControls(value).trim();
 	return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
 }
 

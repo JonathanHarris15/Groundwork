@@ -155,7 +155,7 @@ const TAB_ICONS: Record<PrimaryScreen, string> = {
 const PAPERCLIP_PATH = `<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.57 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>`;
 
 function paperclipIcon(doc: Document): SVGElement {
-	const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+	const svg = doc.win.createSvg("svg");
 	svg.setAttribute("viewBox", "0 0 24 24");
 	svg.setAttribute("fill", "none");
 	svg.setAttribute("stroke", "currentColor");
@@ -356,7 +356,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.flashPane = new FlashcardsPane(this.uiFlashEl, this.flashcardsHost());
 		this.uiSettingsEl = root.createDiv({ cls: "gw-settings" });
 		this.registerDomEvent(this.uiMessagesEl, "click", (evt) => {
-			const a = (evt.target as HTMLElement).closest("a.internal-link") as HTMLAnchorElement | null;
+			const a = (evt.target as HTMLElement).closest<HTMLAnchorElement>("a.internal-link");
 			if (!a) return;
 			evt.preventDefault();
 			const href = a.getAttribute("data-href") ?? a.getAttribute("href") ?? "";
@@ -650,20 +650,20 @@ export class ChatView extends ItemView implements ToolUI {
 			this.abort = null;
 			if (!this.record || this.record.id !== chatId) {
 				this.setBusy(false);
-				return;
-			}
-			this.finishSegment();
-			// A close resolves the open quiz as dismissed. Do not store that half-turn, or the question is gone on return.
-			if (!this.closing) {
-				if (agent instanceof AgentSession) {
-					this.record.messages = agent.messages;
-					this.record.messagesAt = this.record.items.length;
-				} else if (agent instanceof ClaudeCodeSession && agent.sessionId) {
-					this.record.claude = { device: this.plugin.deviceName(), sessionId: agent.sessionId, at: this.record.items.length };
+			} else {
+				this.finishSegment();
+				// A close resolves the open quiz as dismissed. Do not store that half-turn, or the question is gone on return.
+				if (!this.closing) {
+					if (agent instanceof AgentSession) {
+						this.record.messages = agent.messages;
+						this.record.messagesAt = this.record.items.length;
+					} else if (agent instanceof ClaudeCodeSession && agent.sessionId) {
+						this.record.claude = { device: this.plugin.deviceName(), sessionId: agent.sessionId, at: this.record.items.length };
+					}
 				}
+				this.setBusy(false);
+				await this.persist();
 			}
-			this.setBusy(false);
-			await this.persist();
 		}
 	}
 
@@ -818,13 +818,13 @@ export class ChatView extends ItemView implements ToolUI {
 		void this.persist();
 		return new Promise((resolve) => {
 			const settle = (v: QuizResponse | null) => {
-				this.pending.delete(settle as (v: null) => void);
+				this.pending.delete(settle);
 				this.quizSettle.delete(quiz.id);
 				if (v) this.reader.release();
 				void this.releaseQuiz(quiz, v, resolve);
 			};
 			this.quizSettle.set(quiz.id, settle);
-			this.pending.add(settle as (v: null) => void);
+			this.pending.add(settle);
 			this.waitingQuiz = quiz;
 			const top = this.reader.keepPlace(this.uiMessagesEl, () => {
 				this.mountOpenQuiz(quiz, (r) => settle(r));
@@ -920,12 +920,12 @@ export class ChatView extends ItemView implements ToolUI {
 			return;
 		}
 		const settle = (v: QuizResponse | null) => {
-			this.pending.delete(settle as (v: null) => void);
+			this.pending.delete(settle);
 			if (this.restoredQuizSettle === settle) this.restoredQuizSettle = null;
 			if (v) void this.answerRestoredQuiz(quiz, v);
 		};
-		this.restoredQuizSettle = settle as (v: null) => void;
-		this.pending.add(settle as (v: null) => void);
+		this.restoredQuizSettle = settle;
+		this.pending.add(settle);
 		this.mountOpenQuiz(quiz, (r) => settle(r));
 	}
 
@@ -967,10 +967,10 @@ export class ChatView extends ItemView implements ToolUI {
 		this.finishSegment();
 		return new Promise((resolve) => {
 			const settle = (v: TestResponse | null) => {
-				this.pending.delete(settle as (v: null) => void);
+				this.pending.delete(settle);
 				void this.releaseTest(test, v, resolve);
 			};
-			this.pending.add(settle as (v: null) => void);
+			this.pending.add(settle);
 			this.waitingTest = test;
 			const card = new TestCard(
 				this.turn(`test:${test.id}`),
@@ -1012,11 +1012,11 @@ export class ChatView extends ItemView implements ToolUI {
 		this.finishSegment();
 		return new Promise((resolve) => {
 			const settle = (v: AskResponse | null) => {
-				this.pending.delete(settle as (v: null) => void);
+				this.pending.delete(settle);
 				if (v) this.record.items.push({ kind: "ask", input, answer: v });
 				resolve(v);
 			};
-			this.pending.add(settle as (v: null) => void);
+			this.pending.add(settle);
 			new AskCard(this.uiMessagesEl, input, (el, md) => this.renderMd(el, md), (r) => settle(r));
 			this.keepThinkingLast();
 			this.scrollToBottom(true);
@@ -1207,9 +1207,11 @@ export class ChatView extends ItemView implements ToolUI {
 					text: "Preview with the demo tutor",
 					attr: { type: "button" },
 				});
-				demo.addEventListener("click", async () => {
-					await this.plugin.useDemo();
-					this.renderAll();
+				demo.addEventListener("click", () => {
+					void (async () => {
+						await this.plugin.useDemo();
+						this.renderAll();
+					})();
 				});
 			}
 		} else {
@@ -1417,7 +1419,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private registerFileDrop(root: HTMLElement): void {
 		const draggedVaultFiles = (): TFile[] => {
-			const d = (this.app as any).dragManager?.draggable;
+			const d = (this.app as App & { dragManager?: { draggable?: { type?: string; file?: unknown; files?: unknown } } }).dragManager?.draggable;
 			if (d?.type === "file" && d.file instanceof TFile) return [d.file];
 			if (d?.type === "files" && Array.isArray(d.files)) return d.files.filter((f: unknown): f is TFile => f instanceof TFile);
 			return [];
@@ -1469,7 +1471,7 @@ export class ChatView extends ItemView implements ToolUI {
 		};
 		const observer = new ResizeObserver(schedule);
 		observer.observe(this.contentEl);
-		const bar = this.contentEl.doc.querySelector(".status-bar");
+		const bar = this.contentEl.doc.querySelector<HTMLElement>(".status-bar");
 		if (bar) observer.observe(bar);
 		this.register(() => {
 			observer.disconnect();
@@ -1523,7 +1525,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private async ensureFlashcardsVisible(): Promise<void> {
 		if (!this.uiFlashEl?.isConnected) {
 			this.uiFlashEl =
-				(this.contentEl.querySelector(".gw-flash") as HTMLElement | null) ??
+				(this.contentEl.querySelector<HTMLElement>(".gw-flash")) ??
 				this.contentEl.createDiv({ cls: "gw-flash" });
 			this.flashPane = new FlashcardsPane(this.uiFlashEl, this.flashcardsHost());
 		}
@@ -1562,7 +1564,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private paintLibraryShell(): void {
 		if (!this.uiLibraryEl?.isConnected) {
 			this.uiLibraryEl =
-				(this.contentEl.querySelector(".gw-library") as HTMLElement | null) ??
+				(this.contentEl.querySelector<HTMLElement>(".gw-library")) ??
 				this.contentEl.createDiv({ cls: "gw-library" });
 		}
 		this.uiLibraryEl.empty();
@@ -1600,7 +1602,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private async renderSettingsScreen(): Promise<void> {
 		if (!this.uiSettingsEl?.isConnected) {
 			this.uiSettingsEl =
-				(this.contentEl.querySelector(".gw-settings") as HTMLElement | null) ??
+				(this.contentEl.querySelector<HTMLElement>(".gw-settings")) ??
 				this.contentEl.createDiv({ cls: "gw-settings" });
 		}
 		await this.plugin.refreshTutorRoute();
@@ -1610,14 +1612,14 @@ export class ChatView extends ItemView implements ToolUI {
 	/** Goals, concepts, and chats, one tab at a time. Nothing here opens a vault note. */
 	private async renderLibrary(): Promise<void> {
 		if (!this.uiLibraryEl?.isConnected) {
-			this.uiLibraryEl = this.contentEl.querySelector(".gw-library") ?? this.uiLibraryEl;
+			this.uiLibraryEl = this.contentEl.querySelector<HTMLElement>(".gw-library") ?? this.uiLibraryEl;
 		}
-		if (!this.uiLibraryEl.querySelector(".gw-library-top")) this.paintLibraryShell();
+		if (!this.uiLibraryEl.querySelector<HTMLElement>(".gw-library-top")) this.paintLibraryShell();
 		try {
 			await this.renderLibraryBody();
 		} catch (err) {
 			const scroll =
-				this.uiLibraryEl.querySelector(".gw-library-scroll") ??
+				this.uiLibraryEl.querySelector<HTMLElement>(".gw-library-scroll") ??
 				this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
 			scroll.empty();
 			scroll.createDiv({
@@ -1629,12 +1631,12 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private async renderLibraryBody(): Promise<void> {
 		const store = this.plugin.store;
-		if (!this.uiLibraryEl.querySelector(".gw-library-top")) this.paintLibraryShell();
-		const top = this.uiLibraryEl.querySelector(".gw-library-top") as HTMLElement | null;
+		if (!this.uiLibraryEl.querySelector<HTMLElement>(".gw-library-top")) this.paintLibraryShell();
+		const top = this.uiLibraryEl.querySelector<HTMLElement>(".gw-library-top");
 		if (!top) return;
-		const tabs = top.querySelector(".gw-lib-tabs") as HTMLElement | null;
+		const tabs = top.querySelector<HTMLElement>(".gw-lib-tabs");
 		if (!tabs) return;
-		let scroll = this.uiLibraryEl.querySelector(".gw-library-scroll") as HTMLElement | null;
+		let scroll = this.uiLibraryEl.querySelector<HTMLElement>(".gw-library-scroll");
 		if (!scroll) scroll = this.uiLibraryEl.createDiv({ cls: "gw-library-scroll" });
 		scroll.empty();
 
@@ -1683,7 +1685,7 @@ export class ChatView extends ItemView implements ToolUI {
 				onStudy: (deckId) => void this.studyDeck(deckId),
 				renderMarkdown: (el, md) => this.renderMd(el, md),
 				onCardsChanged: (count) => {
-					const badge = this.uiLibraryEl?.querySelector('.gw-lib-tab[title="Flashcards"] .gw-lib-count');
+					const badge = this.uiLibraryEl?.querySelector<HTMLElement>('.gw-lib-tab[title="Flashcards"] .gw-lib-count');
 					if (badge) badge.textContent = String(count);
 				},
 			});
@@ -1751,7 +1753,7 @@ export class ChatView extends ItemView implements ToolUI {
 				}
 				for (const concept of shown) {
 					const row = this.libraryRow(conceptList, concept.title, "");
-					const meta = row.querySelector(".gw-lib-meta") as HTMLElement | null;
+					const meta = row.querySelector<HTMLElement>(".gw-lib-meta");
 					meta?.empty();
 					if (meta) statusPill(meta, concept.stats.status);
 					if (sourceBoundConceptReason(concept.title) || concept.aliases.some((alias) => sourceBoundConceptReason(alias))) {
@@ -1791,7 +1793,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const store = this.plugin.store;
 		if (!this.uiSettingsEl?.isConnected) {
 			this.uiSettingsEl =
-				(this.contentEl.querySelector(".gw-settings") as HTMLElement | null) ??
+				(this.contentEl.querySelector<HTMLElement>(".gw-settings")) ??
 				this.contentEl.createDiv({ cls: "gw-settings" });
 		}
 		this.uiSettingsEl.empty();
@@ -2011,7 +2013,7 @@ export class ChatView extends ItemView implements ToolUI {
 				void this.plugin.saveSettings();
 			});
 		} else {
-			const modelInput = model.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: "default" } });
+			const modelInput = model.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: "Default" } });
 			modelInput.value = s.claudeModel;
 			modelInput.addEventListener("change", () => {
 				s.claudeModel = modelInput.value.trim();
@@ -2062,7 +2064,7 @@ export class ChatView extends ItemView implements ToolUI {
 			},
 		});
 		const icon = button.createSpan({ cls: "gw-view-icon" });
-		const svg = icon.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
+		const svg = icon.ownerDocument.win.createSvg("svg");
 		svg.setAttribute("viewBox", "0 0 24 24");
 		svg.setAttribute("fill", "none");
 		svg.setAttribute("stroke", "currentColor");
@@ -2379,11 +2381,11 @@ export class ChatView extends ItemView implements ToolUI {
 		const start = section.createEl("button", { cls: "gw-lib-btn is-danger", text: "Reset learning vault", attr: { type: "button" } });
 		const box = section.createDiv({ cls: "gw-reset-box" });
 		box.hide();
-		box.createDiv({ cls: "gw-lib-help", text: "Type RESET to confirm. This cannot be undone from here." });
+		box.createDiv({ cls: "gw-lib-help", text: "Type reset to confirm. This cannot be undone from here." });
 		const row = box.createDiv({ cls: "gw-reset-row" });
 		const input = row.createEl("input", {
 			cls: "gw-lib-filter",
-			attr: { type: "text", placeholder: "RESET", "aria-label": "Type RESET to confirm", autocomplete: "off", spellcheck: "false" },
+			attr: { type: "text", placeholder: "Reset", "aria-label": "Type reset to confirm", autocomplete: "off", spellcheck: "false" },
 		});
 		const go = row.createEl("button", { cls: "gw-lib-btn is-danger", text: "Reset everything", attr: { type: "button" } });
 		go.disabled = true;
@@ -2394,7 +2396,7 @@ export class ChatView extends ItemView implements ToolUI {
 			input.focus();
 		});
 		input.addEventListener("input", () => {
-			go.disabled = input.value.trim() !== "RESET";
+			go.disabled = input.value.trim().toLowerCase() !== "reset";
 		});
 		cancel.addEventListener("click", () => {
 			input.value = "";
@@ -2403,12 +2405,12 @@ export class ChatView extends ItemView implements ToolUI {
 			start.show();
 		});
 		go.addEventListener("click", () => {
-			if (input.value.trim() !== "RESET" || go.dataset.busy === "1") return;
+			if (input.value.trim().toLowerCase() !== "reset" || go.dataset.busy === "1") return;
 			go.dataset.busy = "1";
 			go.disabled = true;
 			void this.resetLearningVault().finally(() => {
 				go.dataset.busy = "";
-				if (go.isConnected) go.disabled = input.value.trim() !== "RESET";
+				if (go.isConnected) go.disabled = input.value.trim().toLowerCase() !== "reset";
 			});
 		});
 	}
@@ -2463,7 +2465,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private libraryButton(row: HTMLElement, label: string, onClick: () => void, primary = false): HTMLElement {
-		const actions = row.querySelector(".gw-lib-actions") as HTMLElement;
+		const actions = row.querySelector<HTMLElement>(".gw-lib-actions") as HTMLElement;
 		const button = actions.createEl("button", {
 			cls: `gw-lib-btn${primary ? " is-primary" : ""}`,
 			text: label,
@@ -2642,20 +2644,22 @@ export class ChatView extends ItemView implements ToolUI {
 		const sel = this.contentEl.win.getSelection();
 		if (!sel || sel.isCollapsed || !sel.rangeCount) return this.hideAskButton();
 		const range = sel.getRangeAt(0).cloneRange();
-		const elOf = (n: Node) => (n instanceof Element ? n : n.parentElement);
+		const elOf = (n: Node) => (n.instanceOf(Element) ? n : n.parentElement);
 		const start = elOf(range.startContainer);
 		const end = elOf(range.endContainer);
 		if (start?.closest(".gw-asides, .gw-figures, .gw-select-menu, textarea, input, .gw-free-editor, .gw-symbols-drawer")) return this.hideAskButton();
-		const startTurn = start?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
-		const endTurn = end?.closest(".gw-turn[data-anchor]") as HTMLElement | null;
+		const startTurn = start?.closest(".gw-turn[data-anchor]");
+		const endTurn = end?.closest(".gw-turn[data-anchor]");
 		const turn = startTurn ?? endTurn;
-		if (!turn || !this.uiMessagesEl.contains(turn)) return this.hideAskButton();
+		if (!turn?.instanceOf(HTMLElement) || !this.uiMessagesEl.contains(turn)) return this.hideAskButton();
 		// A drag that slips into the margin stays on the paragraph under the pointer.
 		clampSelection(range, turn);
 		expandToMath(range);
 		const quote = rangeText(range).trim();
 		if (quote.length < 2) return this.hideAskButton();
-		this.selection = { anchor: turn.dataset.anchor!, quote: quote.slice(0, 1200) };
+		const anchor = turn.getAttribute("data-anchor");
+		if (!anchor) return this.hideAskButton();
+		this.selection = { anchor, quote: quote.slice(0, 1200) };
 		this.markPicked(mathIn(turn, range));
 
 		const rects = [...range.getClientRects()].filter((rect) => rect.width > 0 || rect.height > 0);
@@ -2733,9 +2737,9 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private mountAside(thread: AsideThread): AsideCard | null {
 		if (thread.resolved || this.asideCards.has(thread.id)) return null;
-		const wrap = this.uiMessagesEl.querySelector(`.gw-turn[data-anchor="${CSS.escape(thread.anchor)}"]`) as HTMLElement | null;
+		const wrap = this.uiMessagesEl.querySelector<HTMLElement>(`.gw-turn[data-anchor="${CSS.escape(thread.anchor)}"]`);
 		if (!wrap) return null;
-		const list = (wrap.querySelector(":scope > .gw-asides") as HTMLElement | null) ?? wrap.createDiv({ cls: "gw-asides" });
+		const list = (wrap.querySelector<HTMLElement>(":scope > .gw-asides")) ?? wrap.createDiv({ cls: "gw-asides" });
 		const card = new AsideCard(list, thread, (el, md) => this.renderMd(el, md), {
 			send: (text) => void this.askAside(thread, text),
 			resolve: () => this.resolveAside(thread),
@@ -3025,7 +3029,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private mountSavedFigure(figure: SessionFigure): void {
 		if (this.figureCards.has(figure.id)) return;
-		let wrap = this.uiMessagesEl.querySelector(`.gw-turn[data-anchor="${CSS.escape(figure.anchor)}"]`) as HTMLElement | null;
+		let wrap = this.uiMessagesEl.querySelector<HTMLElement>(`.gw-turn[data-anchor="${CSS.escape(figure.anchor)}"]`);
 		if (!wrap) {
 			figure.anchor = figure.anchor || `figure:${figure.id}`;
 			wrap = this.turn(figure.anchor);
@@ -3036,7 +3040,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private mountFigure(figure: FigureCardModel, wrap: HTMLElement): FigureCard {
-		const list = (wrap.querySelector(":scope > .gw-figures") as HTMLElement | null) ?? wrap.createDiv({ cls: "gw-figures" });
+		const list = (wrap.querySelector<HTMLElement>(":scope > .gw-figures")) ?? wrap.createDiv({ cls: "gw-figures" });
 		if (list.parentElement === wrap && wrap.firstElementChild !== list) wrap.prepend(list);
 		let card!: FigureCard;
 		card = new FigureCard(list, figure, {
@@ -3074,7 +3078,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private async requestFigure(anchor: string, quote: string): Promise<void> {
-		const wrap = this.uiMessagesEl.querySelector(`.gw-turn[data-anchor="${CSS.escape(anchor)}"]`) as HTMLElement | null;
+		const wrap = this.uiMessagesEl.querySelector<HTMLElement>(`.gw-turn[data-anchor="${CSS.escape(anchor)}"]`);
 		if (!wrap) return;
 		const pendingId = `pending_${Date.now().toString(36)}`;
 		const card = this.mountFigure({ id: pendingId, title: "Making a visualization", quote, pending: true }, wrap);
@@ -3179,7 +3183,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private markMath(cls: string, ranges: Range[]): void {
 		this.uiMessagesEl?.querySelectorAll(`.math.${cls}`).forEach((el) => el.removeClass(cls));
 		for (const r of ranges) {
-			const root = r.commonAncestorContainer instanceof HTMLElement ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+			const root = r.commonAncestorContainer.instanceOf(HTMLElement) ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
 			if (root) for (const el of mathIn(root, r)) el.addClass(cls);
 		}
 	}
@@ -3313,8 +3317,8 @@ class VaultFileModal extends FuzzySuggestModal<TFile> {
 
 /** CSS Custom Highlight API: marks ranges without touching the rendered DOM. */
 function highlightApi(): { registry: Map<string, unknown>; Highlight: new (...ranges: Range[]) => unknown } | null {
-	const registry = (CSS as any).highlights;
-	const Highlight = (window as any).Highlight;
+	const registry = (CSS as { highlights?: Map<string, unknown> }).highlights;
+	const Highlight = (window as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
 	return registry && Highlight ? { registry, Highlight } : null;
 }
 

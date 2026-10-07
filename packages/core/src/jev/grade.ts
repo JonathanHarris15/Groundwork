@@ -1,3 +1,5 @@
+import { httpClient, type HttpClient } from "../http";
+import { asRecord } from "../unknown";
 import type { FreeResponseJudgment, PreparedQuiz, QuizResponse } from "../quiz";
 
 /**
@@ -169,7 +171,7 @@ export async function judgmentsFor(grader: AnswerGrader | undefined, items: Free
 }
 
 /** Calls the Groundwork server. The Jev key never leaves that server. */
-export function remoteAnswerGrader(baseUrl: string, fetchImpl: typeof fetch = fetch, authorization?: () => Promise<string | null>): AnswerGrader {
+export function remoteAnswerGrader(baseUrl: string, fetchImpl: HttpClient = httpClient(), authorization?: () => Promise<string | null>): AnswerGrader {
 	const root = baseUrl.replace(/\/$/, "");
 	return {
 		async grade(items, signal) {
@@ -183,8 +185,8 @@ export function remoteAnswerGrader(baseUrl: string, fetchImpl: typeof fetch = fe
 				signal,
 			});
 			if (!res.ok) throw new Error(`Grading failed (${res.status}).`);
-			const body = (await res.json()) as { judgments?: unknown };
-			if (!Array.isArray(body.judgments)) throw new Error("Grading returned no judgments.");
+			const body = asRecord(await res.json());
+			if (!body || !Array.isArray(body.judgments)) throw new Error("Grading returned no judgments.");
 			return body.judgments.map(asJudgment);
 		},
 	};

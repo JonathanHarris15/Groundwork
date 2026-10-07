@@ -12,6 +12,7 @@ import {
 	type TutorStatus,
 	type UserKeyProvider,
 } from "@groundwork/core";
+import type { FetchLike } from "./platform-fetch";
 
 export interface TutorCallContext {
 	view: AccountView;
@@ -19,7 +20,7 @@ export interface TutorCallContext {
 	saved: Partial<Record<UserKeyProvider, boolean>>;
 	userKey(provider: UserKeyProvider): Promise<string | undefined> | string | undefined;
 	openRouterKey: string | undefined;
-	fetchImpl: typeof fetch;
+	fetchImpl: FetchLike;
 	charge(costUsd: number): Promise<AccountView>;
 }
 

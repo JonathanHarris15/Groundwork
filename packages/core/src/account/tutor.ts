@@ -254,9 +254,9 @@ export function buildUpstream(decision: Extract<TutorDecision, { action: "hosted
 
 export function readUpstream(kind: UpstreamKind, body: unknown): { ok: true; result: UpstreamResult } | { ok: false; error: string } {
 	if (!body || typeof body !== "object") return { ok: false, error: "The model provider returned nothing." };
-	if (kind === "anthropic") return readAnthropic(body as AnthropicMessage);
-	if (kind === "openai") return readOpenAI(body as OpenAIMessage);
-	return readGoogle(body as GoogleMessage);
+	if (kind === "anthropic") return readAnthropic(body);
+	if (kind === "openai") return readOpenAI(body);
+	return readGoogle(body);
 }
 
 export function upstreamErrorMessage(body: unknown, secrets: string[]): string {

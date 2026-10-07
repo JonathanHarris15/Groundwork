@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { nodeHttpsClient, type HttpInit, type HttpResponse } from "./http";
 
 /** A raster the margin can hold, or a drawing small enough to save on the account. */
 export const PUBLIC_IMAGE_BYTES = 200_000;
@@ -14,7 +15,7 @@ export interface PublicBody {
 }
 
 export interface PublicFetchDeps {
-	fetch?: typeof fetch;
+	fetch?: (url: string | URL, init?: HttpInit) => Promise<HttpResponse>;
 	lookup?: (hostname: string) => Promise<string[]>;
 	signal?: AbortSignal;
 	/** Stop reading once the body passes this many bytes. */
@@ -43,13 +44,13 @@ export function assertPublicHttpsUrl(raw: string): URL {
 }
 
 export async function fetchPublic(raw: string, deps: PublicFetchDeps = {}): Promise<PublicBody> {
-	const fetchImpl = deps.fetch ?? fetch;
+	const fetchImpl = deps.fetch ?? ((url: string | URL, init?: HttpInit) => nodeHttpsClient(String(url), { ...init, maxBytes: (deps.maxBytes ?? PUBLIC_TEXT_BYTES) + 1 }));
 	const resolve = deps.lookup ?? defaultLookup;
 	let current = assertPublicHttpsUrl(raw);
 	const maxBytes = deps.maxBytes ?? PUBLIC_TEXT_BYTES;
 	for (let hop = 0; hop < 5; hop++) {
 		await assertResolved(current, resolve);
-		let response: Response;
+		let response: HttpResponse;
 		try {
 			response = await fetchImpl(current, {
 				method: "GET",
@@ -59,7 +60,7 @@ export async function fetchPublic(raw: string, deps: PublicFetchDeps = {}): Prom
 			});
 		} catch (err) {
 			if (deps.signal?.aborted) throw err;
-			throw new Error(`Could not reach that address. ${(err as Error).message}`);
+			throw new Error(`Could not reach that address. ${err instanceof Error ? err.message : "The request failed."}`);
 		}
 		if (response.status >= 300 && response.status < 400) {
 			const loc = response.headers.get("location");
@@ -172,7 +173,7 @@ async function defaultLookup(hostname: string): Promise<string[]> {
 	return records.map((record) => record.address);
 }
 
-async function readAtMost(response: Response, maxBytes: number): Promise<Uint8Array> {
+async function readAtMost(response: HttpResponse, maxBytes: number): Promise<Uint8Array> {
 	const reader = response.body?.getReader();
 	if (!reader) {
 		const buf = new Uint8Array(await response.arrayBuffer());

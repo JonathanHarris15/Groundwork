@@ -1,3 +1,17 @@
+export class TAbstractFile {
+	constructor(public path = "") {}
+}
+
+export class TFolder extends TAbstractFile {
+	children: TAbstractFile[] = [];
+}
+
+export class TFile extends TAbstractFile {
+	basename = "";
+	extension = "";
+	stat = { mtime: 0, ctime: 0, size: 0 };
+}
+
 export class Notice {
 	constructor(public message: string) {}
 }

@@ -1,5 +1,5 @@
-import { FileSystemAdapter, Notice, Plugin, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
+import { FileSystemAdapter, Notice, Plugin, requestUrl, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
+import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, setHttpClient, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type HttpInit, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal, parseGroundworkConcept, parseGroundworkRefresh } from "./open-link";
@@ -42,6 +42,7 @@ export default class GroundworkPlugin extends Plugin {
 	private bootstrapPromise: Promise<void> | null = null;
 
 	async onload(): Promise<void> {
+		setHttpClient(obsidianHttp);
 		await this.loadSettings();
 		this.memoryIO = new MemoryVaultIO();
 		this.store = new KnowledgeStore(this.memoryIO, {
@@ -166,7 +167,7 @@ export default class GroundworkPlugin extends Plugin {
 		if (!url) return;
 		try {
 			await Promise.race([
-				fetch(url, { cache: "no-store" }),
+				requestUrl({ url, method: "GET", throw: false }),
 				new Promise((resolve) => window.setTimeout(resolve, 1500)),
 			]);
 		} catch {
@@ -224,7 +225,7 @@ export default class GroundworkPlugin extends Plugin {
 			return;
 		}
 		try {
-			const res = await fetch(`${accountOrigin()}/v1/tutor`, { headers: { authorization: `Bearer ${token}` } });
+			const res = await obsidianHttp(`${accountOrigin()}/v1/tutor`, { headers: { authorization: `Bearer ${token}` } });
 			const body = (await res.json()) as TutorStatus & { error?: unknown };
 			if (!res.ok) {
 				if (res.status === 401 || res.status === 403) this.disconnectAccount();
@@ -276,7 +277,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	private async saveTutorWeight(token: string, weight: "light" | "heavy"): Promise<void> {
 		try {
-			const res = await fetch(`${accountOrigin()}/v1/tutor/weight`, {
+			const res = await obsidianHttp(`${accountOrigin()}/v1/tutor/weight`, {
 				method: "POST",
 				headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
 				body: JSON.stringify({ weight }),
@@ -318,7 +319,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	/** Jev grading goes through the website. This device never holds the Jev key. */
 	answerGrader(): AnswerGrader {
-		return remoteAnswerGrader(accountOrigin(), fetch, () => this.accountAccessToken());
+		return remoteAnswerGrader(accountOrigin(), obsidianHttp, () => this.accountAccessToken());
 	}
 
 	claudeCodeConfig(): ClaudeCodeConfig | null {
@@ -598,13 +599,13 @@ export default class GroundworkPlugin extends Plugin {
 	async saveMemory(manual: boolean): Promise<void> {
 		const client = await this.memoryClient();
 		if (!client) {
-			if (manual) new Notice("Groundwork: sign in on the website and choose Open Obsidian. Tutor memory stays on your account.");
+			if (manual) new Notice("Groundwork: sign in on the website and choose open Obsidian. Tutor memory stays on your account.");
 			return;
 		}
 		if (!this.memoryBaseline) {
 			if (!manual) return;
 			await this.connectMemory();
-			if (!this.memoryBaseline) new Notice("Groundwork: could not load tutor memory. Check the network, then choose Open Obsidian on the website again.");
+			if (!this.memoryBaseline) new Notice("Groundwork: could not load tutor memory. Check the network, then choose open Obsidian on the website again.");
 			return;
 		}
 		if (this.accountPublishing) {
@@ -761,6 +762,47 @@ export default class GroundworkPlugin extends Plugin {
 		this.resetAgent();
 		this.applyAppearance();
 	}
+}
+
+/** Obsidian's requestUrl, in the shape the shared account client uses. Redirects are followed by Obsidian. */
+function obsidianHttp(url: string, init: HttpInit = {}): Promise<HttpResponse> {
+	if (init.signal?.aborted) return Promise.reject(new DOMException("The request was aborted.", "AbortError"));
+	const pending = requestUrl({
+		url,
+		method: init.method,
+		headers: init.headers,
+		body: init.body,
+		throw: false,
+	}).then((res): HttpResponse => ({
+		ok: res.status >= 200 && res.status < 300,
+		status: res.status,
+		statusText: "",
+		headers: {
+			get(name: string) {
+				return res.headers[name] ?? res.headers[name.toLowerCase()] ?? null;
+			},
+		},
+		text: () => Promise.resolve(res.text),
+		json: () => Promise.resolve(asUnknown(res.json)),
+		arrayBuffer: () => Promise.resolve(res.arrayBuffer),
+		body: null,
+	}));
+	const signal = init.signal;
+	if (!signal) return pending;
+	return new Promise((resolve, reject) => {
+		const onAbort = () => reject(new DOMException("The request was aborted.", "AbortError"));
+		signal.addEventListener("abort", onAbort, { once: true });
+		pending.then(
+			(value) => {
+				signal.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(err: unknown) => {
+				signal.removeEventListener("abort", onAbort);
+				reject(err instanceof Error ? err : new Error("The request failed."));
+			},
+		);
+	});
 }
 
 function memoryFromConflict(body: unknown): TutorMemory | null {

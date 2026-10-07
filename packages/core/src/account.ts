@@ -9,6 +9,7 @@
  */
 
 import { EMPTY_GROUNDWORK_GRAPH, layoutGroundworkGraph, type GroundworkGraph } from "./groundwork-graph";
+import { httpClient, type HttpClient } from "./http";
 import type { ConceptStatus } from "./model";
 
 export const CONCEPT_STATUSES = ["unassessed", "learning", "shaky", "solid", "rusty"] as const;
@@ -362,15 +363,15 @@ export class AccountClient {
 		const headers: Record<string, string> = { Accept: "application/json" };
 		if (body !== undefined) headers["Content-Type"] = "application/json";
 		if (this.token) headers.Authorization = `Bearer ${this.token}`;
-		let response: Response;
+		let response: Awaited<ReturnType<HttpClient>>;
 		try {
-			response = await fetch(`${this.baseUrl.replace(/\/+$/, "")}${path}`, {
+			response = await httpClient()(`${this.baseUrl.replace(/\/+$/, "")}${path}`, {
 				method,
 				headers,
 				body: body === undefined ? undefined : JSON.stringify(body),
 			});
 		} catch (e) {
-			throw new AccountError(`Could not reach your account server. ${(e as Error).message}`, 0);
+			throw new AccountError(`Could not reach your account server. ${e instanceof Error ? e.message : "The request failed."}`, 0);
 		}
 		const text = await response.text();
 		let parsed: unknown = {};
@@ -382,7 +383,7 @@ export class AccountClient {
 			}
 		}
 		if (!response.ok) {
-			const message = parsed && typeof parsed === "object" && "error" in parsed && typeof (parsed as { error: unknown }).error === "string" ? (parsed as { error: string }).error : response.statusText;
+			const message = parsed && typeof parsed === "object" && "error" in parsed && typeof (parsed).error === "string" ? (parsed as { error: string }).error : response.statusText;
 			throw new AccountError(message || "Account request failed.", response.status, parsed);
 		}
 		return parsed as T;
@@ -395,16 +396,16 @@ export interface FirebaseSession {
 }
 
 /** Turn a website sign-in into an ID token. The plugin stores the refresh token, not a password. */
-export async function refreshFirebaseSession(refreshToken: string, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<FirebaseSession> {
-	let response: Response;
+export async function refreshFirebaseSession(refreshToken: string, apiKey: string, fetchImpl: HttpClient = httpClient()): Promise<FirebaseSession> {
+	let response: Awaited<ReturnType<HttpClient>>;
 	try {
 		response = await fetchImpl(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`, {
 			method: "POST",
 			headers: { "Content-Type": "application/x-www-form-urlencoded" },
-			body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+			body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }).toString(),
 		});
 	} catch (e) {
-		throw new AccountError(`Could not reach the website sign-in. ${(e as Error).message}`, 0);
+		throw new AccountError(`Could not reach the website sign-in. ${e instanceof Error ? e.message : "The request failed."}`, 0);
 	}
 	const text = await response.text();
 	let parsed: { id_token?: unknown; refresh_token?: unknown; error?: { message?: unknown } } = {};

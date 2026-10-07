@@ -41,7 +41,7 @@ export function parseGoalMermaid(source: string): { nodes: ParsedMermaidNode[]; 
 		if (!nodeMatch) continue;
 		const mermaidId = nodeMatch[1];
 		const rest = nodeMatch[2] + nodeMatch[3];
-		if (!/[\[\({]/.test(rest)) continue;
+		if (!/[[({]/.test(rest)) continue;
 		const parsed = parseNodeLabel(rest);
 		if (!parsed) continue;
 		nodes.set(mermaidId, {
@@ -60,7 +60,6 @@ export function parseGoalMermaid(source: string): { nodes: ParsedMermaidNode[]; 
 	}
 
 	const outNodes = [...nodes.values()];
-	const degree = degreeMap(links);
 	return {
 		nodes: outNodes,
 		links: links.filter((link) => nodes.has(link.from) && nodes.has(link.to)),

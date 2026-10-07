@@ -216,8 +216,8 @@ export class FlashcardsPane {
 		const empty = main.createDiv({ cls: "gw-fc-empty gw-fc-unpinned-empty" });
 		empty.createEl("h2", { cls: "gw-goals-unpinned-title", text: "No decks yet" });
 		const hint = empty.createEl("p", { cls: "gw-goals-unpinned-hint" });
-		hint.textContent = "Make a deck in Library. Add cards yourself, or ask the tutor to make them.";
-		const manage = empty.createEl("button", { cls: "gw-next-btn", text: "Manage cards", attr: { type: "button", title: "Edit decks and cards in Library" } });
+		hint.textContent = "Make a deck in library. Add cards yourself, or ask the tutor to make them.";
+		const manage = empty.createEl("button", { cls: "gw-next-btn", text: "Manage cards", attr: { type: "button", title: "Edit decks and cards in library" } });
 		manage.addEventListener("click", () => this.host.onManageCards());
 	}
 
@@ -249,7 +249,7 @@ export class FlashcardsPane {
 		const manage = top.createEl("button", {
 			cls: "gw-lib-btn gw-fc-manage",
 			text: "Manage cards",
-			attr: { type: "button", title: "Edit decks and cards in Library" },
+			attr: { type: "button", title: "Edit decks and cards in library" },
 		});
 		manage.addEventListener("click", () => this.host.onManageCards());
 	}
@@ -326,7 +326,7 @@ export class FlashcardsPane {
 		this.paintCardFace(back, card.back);
 		const src = face.createDiv({ cls: "gw-fcard-src" });
 		src.createSpan({ text: "From " });
-		src.createEl("span", { cls: "gw-fcard-src-name", text: card.concept });
+		src.createSpan({ cls: "gw-fcard-src-name", text: card.concept });
 		const path = this.deckPath(card);
 		if (path) {
 			src.createSpan({ text: " · " });

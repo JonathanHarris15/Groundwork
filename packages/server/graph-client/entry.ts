@@ -55,6 +55,26 @@ declare global {
 	}
 }
 
+installSiteDom();
+
 if (typeof window !== "undefined") {
 	window.GroundworkGraph = { mount: mountSiteGraph, mountMarketing: mountMarketingMap, buildSyntheticGraph, mountSyntheticHarness };
+}
+
+/** The shared canvas calls Obsidian's createEl. The website defines the same helpers on window. */
+function installSiteDom(): void {
+	if (typeof window === "undefined") return;
+	const bag = window as unknown as Record<string, unknown>;
+	if (typeof bag.createEl === "function") return;
+	const dom = document as unknown as {
+		createElement(name: string): HTMLElement;
+		createElementNS(ns: string, name: string): SVGElement;
+		createDocumentFragment(): DocumentFragment;
+	};
+	const make = (tag: string): HTMLElement => dom.createElement(tag);
+	bag.createDiv = (): HTMLElement => make("div");
+	bag.createSpan = (): HTMLElement => make("span");
+	bag.createEl = (tag: string): HTMLElement => make(tag);
+	bag.createSvg = (tag: string): SVGElement => dom.createElementNS("http://www.w3.org/2000/svg", tag);
+	bag.createFragment = (): DocumentFragment => dom.createDocumentFragment();
 }

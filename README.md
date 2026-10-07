@@ -49,7 +49,9 @@ The plugin uses the network for these services:
 - **Stripe** — billing for the $6 and $20 plans happens on the website, not inside the plugin.
 - **Anthropic**, through Claude Code on this computer, runs the tutor when you use your own Claude subscription. Claude Code may reach Anthropic's API and related sign-in endpoints. On hosted Groundwork plans, model calls go through your account API instead. Bring-your-own-model keys saved on the account are used only on the Groundwork server (OpenRouter, Anthropic, Google, xAI, or OpenAI), not sent from the plugin.
 
-The plugin does not send telemetry. It does use a few paths outside the vault on the desktop: the Claude Code executable to run the tutor (via `child_process` inside the bundled Agent SDK); `~/.config/groundwork/config.json` (vault path for the `groundwork` CLI); and the vault folder path as Claude Code's working directory. Device labels default to **Obsidian** until you set one in the panel. The separate `groundwork` CLI (not the plugin) can run `git` to sync the vault. It does not read other files outside the vault. The only notes it opens as extra context are in vault folders you pick in settings.
+The plugin does not send telemetry. On the desktop it uses the filesystem (`node:fs`) to see whether the Claude Code executable is installed, and it starts that program with `child_process` (through the bundled Agent SDK) so the tutor can run under your Claude subscription. Claude Code's working directory is the vault. The plugin reads `PATH` (and, on Windows, `APPDATA`) only to find that executable when Obsidian was not launched from a shell. It does not read the hostname, username, or network interfaces. Device labels default to **Obsidian** until you set one in the panel.
+
+The separate `groundwork` CLI (not the plugin) reads and writes `~/.config/groundwork/config.json` and can run `git` to sync the vault. It does not read other files outside the vault. The only notes the tutor opens as extra context are in vault folders you pick in settings. Python figures that need a local runtime stay in the Obsidian window; the plugin does not download a Python package with a dynamic `import()`.
 
 The plugin is desktop-only.
 
@@ -64,7 +66,7 @@ The plugin is laid out so it can be submitted:
 | `manifest.json` with `id`, `name`, `version`, `minAppVersion`, `description`, `author`, `authorUrl`, `isDesktopOnly` | repository root, identical to `packages/obsidian-plugin/manifest.json`. The community directory reads the root file. |
 | `versions.json` at the repo root, mapping each version to its `minAppVersion` | `versions.json` |
 | An open-source license | `LICENSE` |
-| Release assets `main.js`, `manifest.json`, `styles.css` | a tag equal to the manifest `version` (`0.1.13`, no `v` prefix) runs `.github/workflows/release-plugin.yml` |
+| Release assets `main.js`, `manifest.json`, `styles.css` | a tag equal to the manifest `version` (`0.1.14`, no `v` prefix) runs `.github/workflows/release-plugin.yml` |
 
 `node scripts/check-community-plugin.mjs` checks that list. The plugin id is `groundwork`, which is also the community install folder.
 

@@ -78,7 +78,7 @@ export function inferLevel(kind: MaterialKind, text: string): number {
 	let level = KIND_FLOOR[kind];
 	for (const { re, level: n } of LEVEL_WORDS) if (re.test(text)) level = Math.max(level, n);
 	if ((text.match(/\([a-z]\)/gi) ?? []).length >= 3) level = Math.max(level, 4);
-	return Math.min(5, level) as number;
+	return Math.min(5, level);
 }
 
 const STOP = new Set(
@@ -415,12 +415,11 @@ function unescapePdfString(s: string): string {
 		.replace(/\\\(/g, "(")
 		.replace(/\\\)/g, ")")
 		.replace(/\\\\/g, "\\")
-		.replace(/\\(\d{1,3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)));
+		.replace(/\\(\d{1,3})/g, (_match: string, oct: string) => String.fromCharCode(Number.parseInt(oct, 8)));
 }
 
 function bytesFromBase64(data: string): Uint8Array {
-	const B = (globalThis as { Buffer?: { from(s: string, enc: string): Uint8Array } }).Buffer;
-	if (B) return Uint8Array.from(B.from(data, "base64"));
+	if (typeof Buffer !== "undefined") return Uint8Array.from(Buffer.from(data, "base64"));
 	const bin = atob(data);
 	const out = new Uint8Array(bin.length);
 	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);

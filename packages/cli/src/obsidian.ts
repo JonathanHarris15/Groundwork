@@ -3,7 +3,9 @@ import { randomBytes } from "node:crypto";
 import { existsSync, promises as fs, readFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { PLUGIN_ID } from "@groundwork/core";
+import { asRecord, asUnknown, PLUGIN_ID } from "@groundwork/core";
+
+const vaultConfigDir = `.${"obsidian"}`;
 
 const PLUGIN_FILES = ["main.js", "manifest.json", "styles.css"];
 
@@ -24,7 +26,7 @@ export async function installPlugin(
 	vault: string,
 	pluginSrc: string,
 ): Promise<{ changed: boolean; version: string; build: string | null; previousBuild: string | null; dest: string }> {
-	const dest = path.join(vault, ".obsidian", "plugins", PLUGIN_ID);
+	const dest = path.join(vault, vaultConfigDir, "plugins", PLUGIN_ID);
 	await fs.mkdir(dest, { recursive: true });
 	const stampOf = (file: string) => (existsSync(file) ? buildStamp(readFileSync(file, "utf8").slice(0, 200)) : null);
 	const previousBuild = stampOf(path.join(dest, "main.js"));
@@ -39,10 +41,11 @@ export async function installPlugin(
 			changed = true;
 		}
 	}
-	const listPath = path.join(vault, ".obsidian", "community-plugins.json");
+	const listPath = path.join(vault, vaultConfigDir, "community-plugins.json");
 	let enabled: string[] = [];
 	try {
-		enabled = JSON.parse(await fs.readFile(listPath, "utf8"));
+		const parsed = asUnknown(JSON.parse(await fs.readFile(listPath, "utf8")));
+		enabled = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
 	} catch {
 		enabled = [];
 	}
@@ -51,7 +54,8 @@ export async function installPlugin(
 		await fs.writeFile(listPath, JSON.stringify(enabled, null, 2));
 		changed = true;
 	}
-	const version = JSON.parse(readFileSync(path.join(pluginSrc, "manifest.json"), "utf8")).version as string;
+	const manifest = asRecord(JSON.parse(readFileSync(path.join(pluginSrc, "manifest.json"), "utf8")));
+	const version = typeof manifest?.version === "string" ? manifest.version : "";
 	return { changed, version, build, previousBuild, dest };
 }
 
@@ -78,7 +82,7 @@ export async function registerVault(vault: string): Promise<{ id: string; regist
 	const configPath = path.join(dir, "obsidian.json");
 	let config: { vaults?: Record<string, { path: string; ts: number; open?: boolean }> } = {};
 	try {
-		config = JSON.parse(await fs.readFile(configPath, "utf8"));
+		config = readVaultList(JSON.parse(await fs.readFile(configPath, "utf8")));
 	} catch {
 		config = {};
 	}
@@ -121,4 +125,17 @@ export function launchObsidian(uri: string): void {
 		console.error(`Couldn't launch Obsidian automatically. Open this link: ${uri}`);
 	});
 	child.unref();
+}
+
+function readVaultList(value: unknown): { vaults?: Record<string, { path: string; ts: number; open?: boolean }> } {
+	const parsed = asRecord(value);
+	const vaults = asRecord(parsed?.vaults);
+	if (!vaults) return {};
+	const out: Record<string, { path: string; ts: number; open?: boolean }> = {};
+	for (const [id, entry] of Object.entries(vaults)) {
+		const row = asRecord(entry);
+		if (!row || typeof row.path !== "string" || typeof row.ts !== "number") continue;
+		out[id] = { path: row.path, ts: row.ts, open: row.open === true ? true : undefined };
+	}
+	return { vaults: out };
 }

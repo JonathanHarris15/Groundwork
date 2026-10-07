@@ -266,7 +266,7 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 async function exportDecks(host: FlashcardsLibraryHost): Promise<void> {
 	const folders = host.writeFolders();
 	if (!folders.length) {
-		new Notice("Pick a folder the tutor can write in Settings, then export again.");
+		new Notice("Pick a folder the tutor can write in settings, then export again.");
 		return;
 	}
 	try {
@@ -281,7 +281,7 @@ type CardInput = { concept: string; front: string; back: string };
 
 function cardForm(owner: HTMLElement, existing: Flashcard | null, save: (input: CardInput) => Promise<void>, onCancel: () => void): HTMLElement {
 	owner.querySelector(".gw-fc-lib-form.is-new")?.remove();
-	const form = owner.ownerDocument.createElement("div");
+	const form = owner.ownerDocument.win.createDiv();
 	form.className = `gw-fc-lib-form${existing ? "" : " is-new"}`;
 	form.createEl("p", { cls: "gw-fc-k", text: existing ? "Edit card" : "New card" });
 	const concept = form.createEl("input", { cls: "gw-fc-input", attr: { placeholder: "Concept", "aria-label": "Concept" } });
@@ -310,7 +310,7 @@ function cardForm(owner: HTMLElement, existing: Flashcard | null, save: (input: 
 }
 
 function deckNameForm(owner: HTMLElement, save: (title: string) => Promise<void>): HTMLElement {
-	const form = owner.ownerDocument.createElement("div");
+	const form = owner.ownerDocument.win.createDiv();
 	form.className = "gw-fc-lib-form is-deck";
 	form.createEl("p", { cls: "gw-fc-k", text: "New deck" });
 	const name = form.createEl("input", {
@@ -403,7 +403,7 @@ class ConfirmModal extends Modal {
 }
 
 function renameField(owner: HTMLElement, current: string, save: (title: string) => Promise<void>, onCancel: () => void): HTMLElement {
-	const form = owner.ownerDocument.createElement("div");
+	const form = owner.ownerDocument.win.createDiv();
 	form.className = "gw-fc-lib-rename";
 	const row = form.createDiv({ cls: "gw-fc-lib-rename-row" });
 	const name = row.createEl("input", {

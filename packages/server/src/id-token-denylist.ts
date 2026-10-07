@@ -1,3 +1,4 @@
+import { asUnknown } from "@groundwork/core";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type Firestore, type Timestamp } from "firebase-admin/firestore";
@@ -131,7 +132,8 @@ export class FirestoreIdTokenDenylist implements IdTokenDenylist {
 			db.collection("authSessions").doc(claims.uid).get(),
 			claims.jti ? db.collection("authRevokedJti").doc(claims.jti).get() : Promise.resolve(null),
 		]);
-		const revokedAfter = session.exists ? session.data()?.revokedAfter : undefined;
+		const data = session.exists ? asUnknown(session.data()) : undefined;
+		const revokedAfter = data && typeof data === "object" && "revokedAfter" in data ? data.revokedAfter : undefined;
 		const deniedJtis = jti?.exists ? new Set([claims.jti!]) : new Set<string>();
 		return tokenIsRevoked(claims, typeof revokedAfter === "number" ? revokedAfter : undefined, deniedJtis);
 	}

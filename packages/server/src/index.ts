@@ -13,6 +13,7 @@ import { FileTutorMemoryStore } from "./memory-file";
 import { BestEffortStore, FirestoreTutorMemoryStore } from "./memory-firestore";
 import { SecretDirectory } from "./secrets";
 import { FileSecretStore, FirestoreSecretStore } from "./secret-store";
+import { platformFetch } from "./platform-fetch";
 import { readSite } from "./static";
 
 const { port, host } = listenTarget();
@@ -31,7 +32,7 @@ const deps = {
 	memory: new MemoryDirectory(memoryStore),
 	grade: gradeWithJev,
 	openRouterKey: process.env.OPENROUTER_API_KEY?.trim() || undefined,
-	fetchImpl: fetch,
+	fetchImpl: platformFetch,
 };
 
 const server = createServer((req, res) => {
@@ -145,5 +146,5 @@ server.listen(port, host, () => {
 	const billing = deps.billing.configured ? "on" : "waiting for Stripe keys";
 	const firebase = deps.auth.firebase ? "on" : "waiting for a service account";
 	const models = deps.openRouterKey ? "on" : "waiting for OPENROUTER_API_KEY";
-	console.log(`Groundwork on http://${host}:${port} (jev ${deps.jev ? "on" : "off"}, models ${models}, firebase ${firebase}, billing ${billing})`);
+	process.stdout.write(`Groundwork on http://${host}:${port} (jev ${deps.jev ? "on" : "off"}, models ${models}, firebase ${firebase}, billing ${billing})\n`);
 });

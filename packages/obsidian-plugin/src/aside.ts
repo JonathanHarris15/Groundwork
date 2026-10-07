@@ -188,7 +188,7 @@ export function findQuoteRange(root: HTMLElement, quote: string): Range | null {
 	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
 		acceptNode: (n) => {
 			if (n.parentElement?.closest(skip)) return NodeFilter.FILTER_REJECT;
-			if (n instanceof Text) return NodeFilter.FILTER_ACCEPT;
+			if (n.instanceOf(Text)) return NodeFilter.FILTER_ACCEPT;
 			const el = n as HTMLElement;
 			if (el.matches(".math[data-tex]")) return NodeFilter.FILTER_ACCEPT;
 			return el.matches(skip) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
@@ -199,7 +199,7 @@ export function findQuoteRange(root: HTMLElement, quote: string): Range | null {
 	const offsets: number[] = [];
 	let hay = "";
 	for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-		const math = n instanceof Text ? null : (n as HTMLElement);
+		const math = n.instanceOf(Text) ? null : (n as HTMLElement);
 		const s = math ? mathQuote(math) : (n as Text).data;
 		for (let i = 0; i < s.length; i++) {
 			if (/\s/.test(s[i])) continue;

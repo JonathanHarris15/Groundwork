@@ -266,7 +266,7 @@ export class QuizCard {
 		for (const el of this.optionEls.values()) (el as HTMLButtonElement).disabled = true;
 		this.dontKnowEl.disabled = true;
 		this.sliderEl.disabled = true;
-		this.familiarityEl.querySelectorAll("button").forEach((b) => ((b as HTMLButtonElement).disabled = true));
+		this.familiarityEl.querySelectorAll("button").forEach((b) => ((b).disabled = true));
 		this.noteEl.disabled = true;
 		if (this.hintEl) this.hintEl.disabled = true;
 		this.submitEl?.remove();
@@ -643,6 +643,6 @@ export class AskCard {
 		});
 		if (answered) lock(answered);
 		else if (!onSubmit) lock({ selected: [] });
-		else setTimeout(() => (text ?? send).focus(), 0);
+		else window.setTimeout(() => (text ?? send).focus(), 0);
 	}
 }

@@ -1,4 +1,5 @@
 import { accessFromContext, pathInsideAny, type FolderAccess } from "./access";
+import type { MaterialKind } from "./exam";
 import { ensureDir } from "./io";
 import { basename, listVaultFiles, loadVaultFile, resolveSubmissionPath, resolveVaultFile, fileKind, type VaultFile } from "./files";
 import { demoteHeadings, setSection } from "./markdown";
@@ -93,7 +94,7 @@ export interface ToolResult {
 	files?: VaultFile[];
 }
 
-export interface ToolDef<I = any> {
+export interface ToolDef<I = unknown> {
 	name: string;
 	description: string;
 	inputSchema: JSONSchema;
@@ -699,7 +700,7 @@ export const TOOLS: ToolDef[] = [
 				createGoal: { type: "boolean", description: "Default true. Set false to only write the exam plan." },
 			},
 		},
-		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: any; path?: string }>; createGoal?: boolean }, ctx) {
+		async run(input: { title?: string; why?: string; userText?: string; files?: string[]; materials?: Array<{ name: string; text: string; kind?: MaterialKind; path?: string }>; createGoal?: boolean }, ctx) {
 			const { store, ui } = ctx;
 			if (!(input.files?.length || input.materials?.length)) {
 				return { text: "Pass files (vault paths) and/or materials (extracted text).", isError: true };
