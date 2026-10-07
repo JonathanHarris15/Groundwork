@@ -135,8 +135,8 @@ describe("website sign-in", () => {
 });
 
 describe("plans", () => {
-	it("gives the free plan $3 of hosted credit and keeps Jev off the key list", () => {
-		expect(PLANS.free.hostedCreditUsd).toBe(3);
+	it("gives the free plan $1.25 of hosted credit and keeps Jev off the key list", () => {
+		expect(PLANS.free.hostedCreditUsd).toBe(1.25);
 		expect(PLANS.free.priceUsdPerMonth).toBe(0);
 		expect(PLANS.byom.priceUsdPerMonth).toBe(6);
 		expect(PLANS.byom.hostedCreditUsd).toBe(0);
@@ -175,13 +175,13 @@ describe("hosted credit", () => {
 		expect(view.remainingUsd).toBe(0);
 	});
 
-	it("draws the free $3 and stops at the cap", () => {
+	it("draws the free $1.25 and stops at the cap", () => {
 		const chosen = choosePlan(emptyAccount("u", now), "free", now);
-		const first = spendHosted(chosen, 1.25, now);
+		const first = spendHosted(chosen, 0.5, now);
 		expect(first.ok).toBe(true);
 		if (!first.ok) return;
-		expect(viewAccount(first.account, now).remainingUsd).toBe(1.75);
-		const over = spendHosted(first.account, 2, now);
+		expect(viewAccount(first.account, now).remainingUsd).toBe(0.75);
+		const over = spendHosted(first.account, 1, now);
 		expect(over.ok).toBe(false);
 		if (over.ok) return;
 		expect(over.reason).toMatch(/used up/);

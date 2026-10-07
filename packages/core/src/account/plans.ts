@@ -33,7 +33,7 @@ export const PLANS: Record<PlanId, Plan> = {
 		id: "free",
 		name: "Free",
 		priceUsdPerMonth: 0,
-		hostedCreditUsd: 3,
+		hostedCreditUsd: 1.25,
 		ownModel: false,
 		summary: "Groundwork's smaller model. Enough to actually study.",
 	},

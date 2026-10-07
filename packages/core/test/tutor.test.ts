@@ -65,7 +65,7 @@ describe("tutor route", () => {
 	});
 
 	it("stops a hosted turn when the budget is gone and never states a dollar amount", () => {
-		const spent = spendHosted(choosePlan(emptyAccount("u", now), "free", now), 3, now);
+		const spent = spendHosted(choosePlan(emptyAccount("u", now), "free", now), 1.25, now);
 		expect(spent.ok).toBe(true);
 		if (!spent.ok) return;
 		const decision = tutorDecision(viewAccount(spent.account, now), { via: "claude", provider: null }, saved);
@@ -88,7 +88,7 @@ describe("hosted ledger", () => {
 	});
 
 	it("lets the last turn finish and then stops", () => {
-		const spent = spendHosted(choosePlan(emptyAccount("u", now), "free", now), 2.99, now);
+		const spent = spendHosted(choosePlan(emptyAccount("u", now), "free", now), 1.24, now);
 		expect(spent.ok).toBe(true);
 		if (!spent.ok) return;
 		const settled = settleHosted(spent.account, 0.05, now);
