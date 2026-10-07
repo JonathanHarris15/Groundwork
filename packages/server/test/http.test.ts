@@ -58,7 +58,7 @@ describe("account server", () => {
 		expect(listed).toContain('"priceUsdPerMonth":20');
 		expect(listed).not.toContain('"priceUsdPerMonth":4');
 		expect(listed).not.toContain('"priceUsdPerMonth":15');
-		expect(listed).not.toMatch(/hostedCreditUsd|creditUsd|remainingUsd|\$3|\$8/);
+		expect(listed).not.toMatch(/hostedCreditUsd|creditUsd|remainingUsd|\$1\.25|\$3|\$8/);
 		const account = await route("GET", "/v1/account", null, server);
 		expect(account.json).toMatchObject({ needsPlan: true, budgetUsed: 0 });
 		expect(account.json).not.toHaveProperty("creditUsd");

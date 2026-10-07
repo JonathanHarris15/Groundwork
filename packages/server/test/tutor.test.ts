@@ -69,7 +69,7 @@ describe("tutor API", () => {
 		expect(JSON.stringify(result.json)).not.toContain("sk-or-groundwork");
 		expect(JSON.stringify(result.json)).not.toMatch(/\$\d|creditUsd|remainingUsd|hostedCredit/);
 		expect(result.json).toMatchObject({ route: { action: "hosted", provider: "openrouter" }, budgetUsed: expect.any(Number) });
-		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0.0034, remainingUsd: 2.9966 });
+		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0.0034, remainingUsd: 1.2466 });
 
 		const described = await route("GET", "/v1/tutor", null, server);
 		expect(described.json).toMatchObject({ action: "hosted", label: "Light", weight: "light", model: "google/gemini-3.8-flash" });
