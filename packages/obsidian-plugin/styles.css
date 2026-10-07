@@ -2233,6 +2233,42 @@ body .gw-root button.gw-lib-tab.is-active {
 }
 
 /* attachments */
+.gw-attach-warn[hidden] {
+	display: none;
+}
+.gw-attach-warn:not([hidden]) {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	margin: 0 0 8px;
+	padding: 8px 10px;
+	border-radius: 8px;
+	border: 1px solid color-mix(in srgb, var(--gw-tone-shaky) 45%, var(--background-modifier-border));
+	background: color-mix(in srgb, var(--gw-tone-shaky) 12%, var(--background-primary));
+	font-size: var(--font-ui-small);
+	line-height: 1.45;
+}
+.gw-attach-warn-title {
+	font-weight: 600;
+	color: var(--gw-tone-shaky-ink);
+	text-wrap: pretty;
+}
+.gw-attach-warn-detail {
+	margin: 0;
+	color: var(--gw-tone-shaky-ink);
+	text-wrap: pretty;
+}
+.gw-attach-warn .gw-lib-btn {
+	margin-top: 4px;
+}
+.gw-attach-warn .gw-lib-btn:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+#gw-read-folders {
+	scroll-margin-top: 12px;
+}
 .gw-pending {
 	display: flex;
 	flex-wrap: wrap;

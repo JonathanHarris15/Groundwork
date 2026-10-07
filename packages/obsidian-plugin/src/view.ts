@@ -103,6 +103,7 @@ import {
 } from "./pane-layout";
 import { masteryPill, statusPill } from "./mastery-ui";
 import { COMPOSER_INPUT_MIN_HEIGHT_PX } from "./ui-invariants";
+import { MISSING_READ_FOLDER_DETAIL, MISSING_READ_FOLDER_TITLE, MissingReadFolderError, missingReadFolderNotice } from "./attach-warning";
 import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
 import { filesUnderFolderRoots } from "./vault-scope";
 
@@ -248,6 +249,8 @@ export class ChatView extends ItemView implements ToolUI {
 	private learnerDraft: string | null = null;
 	private uiSendBtn!: HTMLButtonElement;
 	private uiPendingEl!: HTMLElement;
+	private uiAttachWarn!: HTMLElement;
+	private uiAttachBtn!: HTMLButtonElement;
 	private uiFileInput!: HTMLInputElement;
 	private pendingFiles: PendingFile[] = [];
 
@@ -366,18 +369,30 @@ export class ChatView extends ItemView implements ToolUI {
 		const composer = root.createDiv({ cls: "gw-composer" });
 		const box = composer.createDiv({ cls: "gw-box" });
 		this.uiPendingEl = box.createDiv({ cls: "gw-pending" });
+		this.uiAttachWarn = box.createDiv({ cls: "gw-attach-warn", attr: { hidden: "", role: "status" } });
+		this.uiAttachWarn.createDiv({ cls: "gw-attach-warn-title", text: MISSING_READ_FOLDER_TITLE });
+		this.uiAttachWarn.createEl("p", { cls: "gw-attach-warn-detail", text: MISSING_READ_FOLDER_DETAIL });
+		const openReadFolders = this.uiAttachWarn.createEl("button", {
+			cls: "gw-lib-btn",
+			text: "Open Vault folders",
+			attr: { type: "button" },
+		});
+		this.registerDomEvent(openReadFolders, "click", () => void this.openReadFolderSettings());
 		this.uiInputEl = box.createEl("textarea", {
 			cls: "gw-input",
 			attr: { rows: "1", placeholder: "Answer, ask a question, or say what you want to learn", title: "Enter to send · Shift+Enter for a new line · paste or drop files to attach" },
 		});
 		const row = box.createDiv({ cls: "gw-box-row" });
 		const tools = row.createDiv({ cls: "gw-box-tools" });
-		const attach = tools.createEl("button", {
+		this.uiAttachBtn = tools.createEl("button", {
 			cls: "clickable-icon gw-icon-btn gw-attach",
 			attr: { "aria-label": "Attach files", title: "Attach files", type: "button" },
 		});
-		attach.append(paperclipIcon(tools.ownerDocument));
-		this.registerDomEvent(attach, "click", (e) => this.showAttachMenu(e));
+		this.uiAttachBtn.append(paperclipIcon(tools.ownerDocument));
+		this.registerDomEvent(this.uiAttachBtn, "click", (e) => {
+			if (this.blockedWithoutReadFolder()) return;
+			this.showAttachMenu(e);
+		});
 		this.uiFileInput = tools.createEl("input", { type: "file", attr: { multiple: "", hidden: "" } });
 		this.registerDomEvent(this.uiFileInput, "change", () => {
 			this.addFiles([...(this.uiFileInput.files ?? [])]);
@@ -605,6 +620,10 @@ export class ChatView extends ItemView implements ToolUI {
 		try {
 			attachments = [...new Set([...(await this.saveAttachments(pending)), ...this.linkedFiles(text)])];
 		} catch (err) {
+			if (err instanceof MissingReadFolderError) {
+				this.showMissingReadFolderWarning(true);
+				return;
+			}
 			new Notice(`Couldn't save the attachment: ${err instanceof Error ? err.message : String(err)}`);
 			return;
 		}
@@ -1091,7 +1110,9 @@ export class ChatView extends ItemView implements ToolUI {
 			this.uiProviderEl.setAttr("title", provider.label);
 		}
 		const folders = this.plugin.settings.readFolders;
+		this.uiAttachBtn?.setAttr("title", folders.length ? "Attach files" : `${MISSING_READ_FOLDER_TITLE}. Settings → Vault folders.`);
 		if (folders.length) {
+			this.uiAttachWarn?.setAttr("hidden", "");
 			this.uiContextEl.show();
 			this.uiContextEl.setText(folders[0]);
 			this.uiContextEl.setAttr("title", `Vault folder the tutor can read: ${folders[0]}`);
@@ -1297,17 +1318,49 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private showAttachMenu(evt: MouseEvent): void {
 		const menu = new Menu();
-		menu.addItem((i) => i.setTitle("Upload from this computer…").setIcon("upload").onClick(() => this.uiFileInput.click()));
+		menu.addItem((i) =>
+			i.setTitle("Upload from this computer…").setIcon("upload").onClick(() => {
+				if (this.blockedWithoutReadFolder()) return;
+				this.uiFileInput.click();
+			}),
+		);
 		menu.addItem((i) =>
 			i
 				.setTitle("Choose from the vault…")
 				.setIcon("folder-open")
-				.onClick(() => new VaultFileModal(this.app, folderAccessFrom(this.plugin.settings).readFolders, (f) => this.addVaultFile(f.path)).open()),
+				.onClick(() => {
+					if (this.blockedWithoutReadFolder()) return;
+					new VaultFileModal(this.app, folderAccessFrom(this.plugin.settings).readFolders, (f) => this.addVaultFile(f.path)).open();
+				}),
 		);
 		menu.showAtMouseEvent(evt);
 	}
 
+	/** True when attaching is refused because no read folder is set. The composer explains where to add one. */
+	private blockedWithoutReadFolder(): boolean {
+		if (folderAccessFrom(this.plugin.settings).readFolders.length) return false;
+		this.showMissingReadFolderWarning();
+		return true;
+	}
+
+	private showMissingReadFolderWarning(forceAnnounce = false): void {
+		const warn = this.uiAttachWarn;
+		const fresh = warn.hasAttribute("hidden");
+		warn.removeAttribute("hidden");
+		if (fresh || forceAnnounce) new Notice(missingReadFolderNotice(), 12_000);
+		if (fresh) warn.querySelector("button")?.focus();
+	}
+
+	/** Settings opens on the read-folder field, which is where an upload is saved. */
+	private openReadFolderSettings(): void {
+		void this.openSettings().then(() => {
+			this.uiSettingsEl?.querySelector("#gw-read-folders")?.scrollIntoView({ block: "start" });
+		});
+	}
+
 	private addFiles(files: File[]): void {
+		if (!files.length) return;
+		if (this.blockedWithoutReadFolder()) return;
 		for (const file of files) {
 			if (file.size > MAX_UPLOAD_BYTES) {
 				new Notice(`${file.name} is over ${MAX_UPLOAD_BYTES / 1024 / 1024} MB, too large to attach.`);
@@ -1321,6 +1374,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private addVaultFile(path: string): void {
+		if (this.blockedWithoutReadFolder()) return;
 		if (!this.pendingFiles.some((p) => p.path === path)) this.pendingFiles.push({ name: basename(path), path });
 		this.renderPending();
 		this.uiInputEl.focus();
@@ -1334,7 +1388,11 @@ export class ChatView extends ItemView implements ToolUI {
 			const chip = el.createDiv({ cls: "gw-file-chip" });
 			setIcon(chip.createSpan({ cls: "gw-file-icon" }), iconForFile(p.name));
 			const readFolder = folderAccessFrom(this.plugin.settings).readFolders[0];
-			chip.createSpan({ cls: "gw-file-name", text: p.name, attr: { title: p.path ?? (readFolder ? `Will be saved to ${readFolder}/` : "Pick a read folder in settings first") } });
+			chip.createSpan({
+				cls: "gw-file-name",
+				text: p.name,
+				attr: { title: p.path ?? (readFolder ? `Will be saved to ${readFolder}/` : missingReadFolderNotice()) },
+			});
 			const x = chip.createEl("button", { cls: "clickable-icon gw-file-remove", attr: { "aria-label": `Remove ${p.name}` } });
 			setIcon(x, "x");
 			x.addEventListener("click", () => {
@@ -1347,17 +1405,18 @@ export class ChatView extends ItemView implements ToolUI {
 	/** Uploads go into the first folder the tutor is allowed to read, so it can open them again later. */
 	private async saveAttachments(pending: PendingFile[]): Promise<string[]> {
 		const access = folderAccessFrom(this.plugin.settings);
+		if (!access.readFolders.length && pending.length) throw new MissingReadFolderError();
 		const out: string[] = [];
 		for (const p of pending) {
 			if (p.path) {
 				if (!pathInsideAny(p.path, access.readFolders)) {
-					throw new Error(`${p.path} is outside the folders Groundwork can read. Add that folder in Settings → Groundwork.`);
+					throw new Error(`${p.path} is outside the folders the tutor can read. Add that folder in Settings → Vault folders, under “Folders the tutor can read”.`);
 				}
 				out.push(p.path);
 				continue;
 			}
 			const dir = access.readFolders[0];
-			if (!dir) throw new Error("Add a folder Groundwork can read before attaching files.");
+			if (!dir) throw new MissingReadFolderError();
 			await this.ensureVaultFolder(dir);
 			const path = this.availablePath(`${dir}/${safeName(p.name)}`);
 			await this.app.vault.createBinary(path, await p.file!.arrayBuffer());
@@ -1386,15 +1445,21 @@ export class ChatView extends ItemView implements ToolUI {
 	private linkedFiles(text: string): string[] {
 		const access = folderAccessFrom(this.plugin.settings);
 		const out: string[] = [];
+		let missingFolder = false;
 		for (const m of text.matchAll(/!?\[\[([^\]|#^]+)[^\]]*\]\]/g)) {
 			const file = this.app.metadataCache.getFirstLinkpathDest(m[1].trim(), this.record.notePath ?? "");
 			if (!file || file.extension === "md" || fileKind(file.path).kind === "other") continue;
+			if (!access.readFolders.length) {
+				missingFolder = true;
+				continue;
+			}
 			if (!pathInsideAny(file.path, access.readFolders)) {
-				new Notice(`${file.name} is outside the folders Groundwork can read. Add its folder in Settings → Groundwork.`);
+				new Notice(`${file.name} is outside the folders the tutor can read. Add its folder in Settings → Vault folders, under “Folders the tutor can read”.`);
 				continue;
 			}
 			out.push(file.path);
 		}
+		if (missingFolder) this.showMissingReadFolderWarning();
 		return out;
 	}
 
@@ -1873,6 +1938,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private folderEditor(parent: HTMLElement, key: "readFolders" | "writeFolders", name: string, desc: string): void {
 		const s = this.plugin.settings;
 		const field = this.settingField(parent, name, desc);
+		if (key === "readFolders") field.setAttr("id", "gw-read-folders");
 		if (!s[key].length) field.createDiv({ cls: "gw-setting-desc", text: "None yet." });
 		for (const folder of s[key]) {
 			const row = field.createDiv({ cls: "gw-folder-row" });
