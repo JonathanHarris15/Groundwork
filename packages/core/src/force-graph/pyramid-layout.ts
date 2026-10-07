@@ -60,7 +60,7 @@ export function placePyramidLayout(
 	}
 	// Nudge isolated top layer when only one node (goal) so it reads centered.
 	if (maxLayer === 0 && concepts.length === 1) {
-		const only = concepts[0]!;
+		const only = concepts[0];
 		out.set(only.id, { x: opts.width / 2, y: bottomY });
 	}
 	return out;

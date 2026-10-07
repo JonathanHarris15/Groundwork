@@ -42,7 +42,7 @@ export function mountGoalMermaidGraph(
 ): boolean {
 	const data = forceGraphFromGoalMermaid(source);
 	if (!data) return false;
-	const view = pane.querySelector(".gw-graph-view") as HTMLElement | null;
+	const view = pane.querySelector<HTMLElement>(".gw-graph-view");
 	if (!view) return false;
 	mountInteractiveGraph(view, data, options);
 	return true;
@@ -53,7 +53,7 @@ export function mountConceptMapGraph(
 	model: ConceptMapModel,
 	options: ForceGraphHostOptions & { onStudy?: (title: string, move: StudyMove) => void } = {},
 ): void {
-	const slot = wrap.querySelector(".gw-force-slot") as HTMLElement | null;
+	const slot = wrap.querySelector<HTMLElement>(".gw-force-slot");
 	if (!slot) return;
 	const data = buildFromConceptMap(model);
 	const byId = new Map(model.nodes.map((n) => [n.id, n]));
@@ -86,7 +86,7 @@ export function createGraphPane(parent: HTMLElement, title = "Map"): { pane: HTM
 	const pctEl = bar.createSpan({ cls: "gw-graph-pct", text: "Fit" });
 	const tools = bar.createDiv({ cls: "gw-graph-tools" });
 	const view = pane.createDiv({ cls: "gw-graph-view gw-force-host" });
-	view.createDiv({ cls: "gw-force-slot" });
+	const slotEl = view.createDiv({ cls: "gw-force-slot" });
 
 	const btn = (icon: string, label: string, fn: () => void) => {
 		const b = tools.createEl("button", { cls: "clickable-icon gw-graph-btn", attr: { "aria-label": label, type: "button" } });
@@ -99,7 +99,7 @@ export function createGraphPane(parent: HTMLElement, title = "Map"): { pane: HTM
 		return b;
 	};
 
-	const slot = () => view.querySelector(".gw-force-slot") as HTMLElement;
+	const slot = () => slotEl;
 	const handle = () => handles.get(slot());
 
 	btn("zoom-out", "Zoom out", () => {

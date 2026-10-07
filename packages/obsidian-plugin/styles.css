@@ -1,12 +1,12 @@
 /* Groundwork panel. Website canvas is #0f1115. Obsidian follows the vault theme. Dark and Light are Groundwork palettes, buttons included. */
 @import url("https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap");
 
-.gw-root {
+body .gw-root {
 	position: relative;
 	display: flex;
 	flex-direction: column;
 	height: 100%;
-	padding: 0 !important;
+	padding: 0;
 	container-type: inline-size;
 	--gw-overlay-top: 48px;
 	/* Mastery tones: one palette for pills, dots, bars, map nodes, path markers, and the legend.
@@ -1194,19 +1194,19 @@ body .gw-root button.gw-lib-tab.is-active {
 	transform-origin: 0 0;
 	will-change: transform;
 }
-.gw-graph .mermaid,
-.gw-graph .block-language-mermaid,
-.gw-graph pre.language-mermaid {
-	margin: 0 !important;
-	background: transparent !important;
+.gw-root .gw-graph .mermaid,
+.gw-root .gw-graph .block-language-mermaid,
+.gw-root .gw-graph pre.language-mermaid {
+	margin: 0;
+	background: transparent;
 	overflow: visible;
 }
-.gw-graph-stage svg {
-	max-width: none !important;
+.gw-root .gw-graph-stage svg {
+	max-width: none;
 	display: block;
 }
-.gw-graph-source-hidden {
-	display: none !important;
+.gw-root .gw-graph-source-hidden {
+	display: none;
 }
 .gw-force-host,
 .gw-force-map {
@@ -1247,8 +1247,8 @@ body .gw-root button.gw-lib-tab.is-active {
 	pointer-events: none;
 	z-index: 2;
 }
-.gw-tight {
-	margin: 0 !important;
+.gw-root .gw-tight {
+	margin: 0;
 }
 
 .gw-tool,
@@ -2187,7 +2187,7 @@ body .gw-root button.gw-lib-tab.is-active {
 }
 .gw-statusbar[data-state="ok"] .gw-statusbar-dot,
 .gw-statusbar[data-state="disabled"] .gw-statusbar-dot {
-	display: none !important;
+	display: none;
 }
 .gw-statusbar[data-state="syncing"] .gw-statusbar-dot {
 	background: transparent;
@@ -2198,8 +2198,6 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-statusbar.is-actionable {
 	cursor: pointer;
 	text-decoration: underline;
-	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
-	text-underline-offset: 2px;
 }
 .gw-statusbar[data-state="offline"],
 .gw-statusbar[data-state="error"] {
@@ -2382,7 +2380,7 @@ body .gw-root button.gw-lib-tab.is-active {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 	align-items: center;
-	column-gap: 12px;
+	gap: 12px;
 }
 .gw-root.gw-theme-dark .gw-brand,
 .gw-root.gw-theme-light .gw-brand,
@@ -2539,13 +2537,13 @@ body .gw-root button.gw-lib-tab.is-active {
 	font-size: 12px; color: var(--gw-ink); white-space: nowrap;
 }
 .gw-chip[hidden] {
-	display: none !important;
+	display: none;
 }
 .gw-notice-reload-btn {
 	margin-top: 8px;
 }
 .gw-root .mod-cta, .gw-root button.mod-cta {
-	background: var(--gw-cta-bg) !important; color: var(--gw-cta-ink) !important; border: 0; border-radius: 10px;
+	background: var(--gw-cta-bg); color: var(--gw-cta-ink); border: 0; border-radius: 10px;
 }
 .gw-send { width: 34px; height: 34px; border-radius: 10px; padding: 0; }
 .gw-icon-btn, .gw-root .clickable-icon { color: var(--gw-muted); }
@@ -2751,7 +2749,7 @@ body .gw-root button.gw-step.is-off { color: var(--gw-muted); }
 .gw-days { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .gw-days b { font-size: 56px; font-weight: 500; line-height: 1; color: var(--gw-ink-strong); font-variant-numeric: tabular-nums; }
 .gw-days span { font-size: 18px; color: var(--gw-muted); }
-.gw-pace { font-size: 12px !important; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; align-self: center; }
+.gw-root .gw-pace { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; align-self: center; }
 .gw-pace.is-on-pace, .gw-pace.is-ahead, .gw-pace.is-done {
 	color: var(--gw-tone-solid-ink);
 	background: color-mix(in srgb, var(--gw-tone-solid) var(--gw-tone-pill-mix), var(--gw-raised));
@@ -2851,8 +2849,6 @@ body .gw-root button.gw-text-btn {
 	background: transparent;
 	color: var(--gw-muted);
 	text-decoration: underline;
-	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
-	text-underline-offset: 3px;
 }
 body .gw-root button.gw-text-btn:hover {
 	color: var(--gw-ink-strong);

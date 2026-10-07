@@ -188,6 +188,11 @@ export function shouldFireObsidianConnected(first: boolean): boolean {
 
 function cleanField(value: string | null | undefined): string | undefined {
 	if (!value) return undefined;
-	const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, FIELD_MAX);
+	let cleaned = "";
+	for (const ch of value) {
+		const code = ch.codePointAt(0) ?? 0;
+		if (code >= 32 && code !== 127) cleaned += ch;
+	}
+	cleaned = cleaned.trim().slice(0, FIELD_MAX);
 	return cleaned || undefined;
 }

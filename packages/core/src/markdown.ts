@@ -1,4 +1,5 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { asUnknown } from "./unknown";
 
 export interface ParsedNote {
 	frontmatter: Record<string, unknown>;
@@ -12,8 +13,8 @@ export function parseNote(text: string): ParsedNote {
 	if (!m) return { frontmatter: {}, body: text };
 	let frontmatter: Record<string, unknown> = {};
 	try {
-		const parsed = parseYaml(m[1]);
-		if (parsed && typeof parsed === "object") frontmatter = parsed as Record<string, unknown>;
+		const parsed = asUnknown(parseYaml(m[1]));
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) frontmatter = parsed as Record<string, unknown>;
 	} catch {
 		// A hand-edited note with broken YAML keeps its body; stats are rebuilt from evidence.
 	}

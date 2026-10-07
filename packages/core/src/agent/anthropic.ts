@@ -24,12 +24,12 @@ export class AnthropicProvider implements Provider {
 	}
 
 	async complete(req: ProviderRequest): Promise<ProviderResponse> {
-		const tools: any[] = req.tools.map((t, i) => ({
+		const tools = req.tools.map((t, i) => ({
 			name: t.name,
 			description: t.description,
 			input_schema: t.input_schema,
-			...(i === req.tools.length - 1 ? { cache_control: { type: "ephemeral" } } : {}),
-		}));
+			...(i === req.tools.length - 1 ? { cache_control: { type: "ephemeral" as const } } : {}),
+		})) as Anthropic.ToolUnion[];
 		if (this.opts.webSearch) tools.push({ type: "web_search_20250305", name: "web_search", max_uses: 5 });
 
 		const stream = this.client.messages.stream(
@@ -37,7 +37,7 @@ export class AnthropicProvider implements Provider {
 				model: this.opts.model,
 				max_tokens: this.opts.maxTokens ?? 8192,
 				system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
-				messages: req.messages as any,
+				messages: req.messages as unknown as Anthropic.MessageParam[],
 				tools,
 			},
 			{ signal: req.signal },

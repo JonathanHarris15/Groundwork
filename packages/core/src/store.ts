@@ -26,7 +26,8 @@ import {
 import { pickReadyStep, refineGoalInput, resolveForEvidence, type ResolvedConcept } from "./judgments";
 import { type JevClient } from "./jev";
 import { masteryTone } from "./mastery-tone";
-import { computeStats, describeEdge, emptyStats, isDue, type ConceptStats, type ConceptStatus, type Evidence } from "./model";
+import { computeStats, describeEdge, emptyStats, isDue, type ConceptStats, type ConceptStatus, type Evidence, type EvidenceKind, type Outcome } from "./model";
+import { asRecord } from "./unknown";
 
 export const PATHS = {
 	concepts: "concepts",
@@ -410,7 +411,8 @@ export class KnowledgeStore {
 		for (const line of (await this.io.read(path)).split("\n")) {
 			if (!line.trim()) continue;
 			try {
-				out.push(JSON.parse(line));
+				const row = evidenceFromLine(JSON.parse(line));
+				if (row) out.push(row);
 			} catch {
 				// A conflicted or truncated line is skipped rather than poisoning the replay.
 			}
@@ -434,7 +436,7 @@ export class KnowledgeStore {
 		await this.io.append(this.evidencePath(concept.id), `${JSON.stringify(event)}\n`);
 		const after = await this.refreshConcept(concept.id);
 		await this.refreshGoalsContaining(concept.id);
-		return { concept: (await this.requireConcept(concept.id))!, before, after };
+		return { concept: (await this.requireConcept(concept.id)), before, after };
 	}
 
 	/** Recomputes a concept's stats from evidence and rewrites its generated frontmatter and history. */
@@ -1121,18 +1123,21 @@ export class KnowledgeStore {
 		const nodes = goal.nodes
 			.map((id) => index.get(id))
 			.filter((c): c is Concept => !!c)
-			.map((c) => ({
-				id: c.id,
-				title: c.title,
-				prerequisites: c.prerequisites.filter((p) => inGoal.has(p)),
-				status: c.stats.status,
-				current: c.stats.current,
-				edge: describeEdge(c.stats),
-				nextReview: c.stats.nextReview,
-				openMisconceptions: c.stats.openMisconceptions,
-				floor: c.stats.floor,
-				role: (open.has(c.id) ? "target" : built.has(c.id) ? "built" : "path") as "target" | "built" | "path",
-			}));
+			.map((c) => {
+				const role: "target" | "built" | "path" = open.has(c.id) ? "target" : built.has(c.id) ? "built" : "path";
+				return {
+					id: c.id,
+					title: c.title,
+					prerequisites: c.prerequisites.filter((p) => inGoal.has(p)),
+					status: c.stats.status,
+					current: c.stats.current,
+					edge: describeEdge(c.stats),
+					nextReview: c.stats.nextReview,
+					openMisconceptions: c.stats.openMisconceptions,
+					floor: c.stats.floor,
+					role,
+				};
+			});
 		const report: GoalReport = {
 			goal,
 			nodes,
@@ -1628,6 +1633,18 @@ function parseRequiredLevels(v: unknown): Record<string, number> {
 		if (Number.isFinite(level)) out[slugify(unwikilink(k))] = clampLevel(level);
 	}
 	return out;
+}
+
+const EVIDENCE_OUTCOMES = new Set<Outcome>(["correct", "partial", "incorrect", "dont_know"]);
+const EVIDENCE_KINDS = new Set<EvidenceKind>(["probe", "check", "review", "explain", "test"]);
+
+function evidenceFromLine(value: unknown): Evidence | null {
+	const row = asRecord(value);
+	if (!row || typeof row.ts !== "string" || typeof row.concept !== "string") return null;
+	if (typeof row.outcome !== "string" || !EVIDENCE_OUTCOMES.has(row.outcome as Outcome)) return null;
+	if (typeof row.kind !== "string" || !EVIDENCE_KINDS.has(row.kind as EvidenceKind)) return null;
+	if (typeof row.difficulty !== "number") return null;
+	return row as unknown as Evidence;
 }
 
 function clampLevel(n: number): number {

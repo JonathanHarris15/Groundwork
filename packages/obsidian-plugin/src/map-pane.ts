@@ -31,7 +31,7 @@ export function renderStartedVaultMap(parent: HTMLElement, data: ForceGraphData,
 	});
 	const bar = el(wrap, "div", "gw-map-toolbar");
 	const hint = el(bar, "p", "gw-map-click-hint");
-	hint.textContent = "Concepts you have started. Pin a goal in Working on to see the path to it. Click a concept to study it.";
+	hint.textContent = "Concepts you have started. Pin a goal in working on to see the path to it. Click a concept to study it.";
 	appendMapKey(wrap, { tones: MASTERY_TONES.filter((tone) => tone !== "unstarted"), pinned: false });
 }
 
@@ -128,7 +128,7 @@ function drawStep(parent: HTMLElement, step: PathStep, options: MapPaneOptions):
 
 /** The node's own mark: a filled disc in its tone, a dashed ring when not started, the goal's ring and flag, and the next ring. */
 function stepMark(doc: Document, step: PathStep, next: boolean): HTMLElement {
-	const span = doc.createElement("span");
+	const span = doc.win.createSpan();
 	span.className = `gw-step-n${next ? " is-next" : ""}`;
 	setTone(span, step.tone);
 	if (step.tone === "goal") goalMark(span);
@@ -163,7 +163,7 @@ function icon(doc: Document, fragment: string): SVGElement {
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(parent: HTMLElement, tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
-	const node = parent.ownerDocument.createElement(tag);
+	const node = parent.ownerDocument.win.createEl(tag);
 	if (cls) node.className = cls;
 	if (text != null) node.textContent = text;
 	parent.append(node);

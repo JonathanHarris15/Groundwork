@@ -1,3 +1,5 @@
+import { later } from "../timers";
+import { asRecord, asText } from "../unknown";
 import type { ChatMessage, ContentBlock, Provider, ProviderRequest, ProviderResponse } from "./types";
 
 /**
@@ -15,7 +17,7 @@ export class DemoProvider implements Provider {
 	async complete(req: ProviderRequest): Promise<ProviderResponse> {
 		const step = this.nextStep(req.messages);
 		for (const block of step) {
-			if (block.type === "text") await this.stream(block.text, req);
+			if (block.type === "text" && typeof block.text === "string") await this.stream(block.text, req);
 		}
 		const hasTool = step.some((b) => b.type === "tool_use");
 		return { content: step, stopReason: hasTool ? "tool_use" : "end_turn" };
@@ -26,7 +28,7 @@ export class DemoProvider implements Provider {
 		for (const c of chunks) {
 			if (req.signal?.aborted) throw new Error("aborted");
 			req.onText(c);
-			if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
+			if (this.delayMs) await new Promise<void>((r) => later(() => r(), this.delayMs));
 		}
 	}
 
@@ -100,10 +102,10 @@ export class DemoProvider implements Provider {
 	private nextStep(messages: ChatMessage[]): ContentBlock[] {
 		const last = messages[messages.length - 1];
 		const results = Array.isArray(last?.content) ? last.content.filter((b) => b.type === "tool_result") : [];
-		const lastToolNames = results.map((r) => toolNameFor(messages, (r as any).tool_use_id));
+		const lastToolNames = results.map((r) => toolNameFor(messages, r.type === "tool_result" && typeof r.tool_use_id === "string" ? r.tool_use_id : ""));
 		const userTurns = messages.filter(isLearnerTurn).length;
 		const learnerSpoke = !!last && isLearnerTurn(last);
-		const resultText = results.map((r) => String((r as any).content)).join("\n");
+		const resultText = results.map((r) => (r.type === "tool_result" && typeof r.content === "string" ? r.content : "")).join("\n");
 
 		if (learnerSpoke && /practice test/i.test(learnerText(last))) return this.practiceTest();
 		if (lastToolNames.includes("practice_test") || lastToolNames.includes("grade_practice_test")) {
@@ -156,7 +158,7 @@ export class DemoProvider implements Provider {
 		if (lastToolNames.includes("set_goal")) {
 			let mermaid = "";
 			try {
-				mermaid = JSON.parse(resultText).mermaid ?? "";
+				mermaid = asText(asRecord(JSON.parse(resultText))?.mermaid);
 			} catch {
 				// keep the prose-only plan
 			}
@@ -417,8 +419,8 @@ function toolNameFor(messages: ChatMessage[], toolUseId: string): string | undef
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const m = messages[i];
 		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
-		const hit = m.content.find((b) => b.type === "tool_use" && (b as any).id === toolUseId);
-		if (hit) return (hit as any).name;
+		const hit = m.content.find((b) => b.type === "tool_use" && typeof b.id === "string" && b.id === toolUseId);
+		if (hit?.type === "tool_use" && typeof hit.name === "string") return hit.name;
 	}
 	return undefined;
 }

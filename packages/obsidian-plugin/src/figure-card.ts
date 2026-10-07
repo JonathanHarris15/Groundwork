@@ -147,8 +147,7 @@ export class FigureCard {
 			this.openStage(full);
 		});
 		const view = this.el.ownerDocument.defaultView;
-		const matchMedia = view?.matchMedia;
-		const reduceMotion = typeof matchMedia === "function" && matchMedia.call(view, "(prefers-reduced-motion: reduce)").matches;
+		const reduceMotion = view?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 		const gif = this.model.media?.mime === "image/gif";
 		const animatedSvg = this.model.svg?.includes("<animate") ?? false;
 		const holdStill = reduceMotion && (gif || animatedSvg);
@@ -202,36 +201,36 @@ let activeStageClose: (() => void) | null = null;
 /** Covers the tutor with the figure. Closes on Escape, the close button, or leaving full screen. */
 export function openFigureStage(doc: Document, host: HTMLElement, model: FigureCardModel, opener?: HTMLElement): () => void {
 	activeStageClose?.();
-	const stage = doc.createElement("div");
+	const stage = doc.win.createDiv();
 	stage.className = "gw-figure-stage";
 	stage.setAttribute("role", "dialog");
 	stage.setAttribute("aria-modal", "true");
 	stage.setAttribute("aria-label", model.title || "Figure");
-	const bar = doc.createElement("div");
+	const bar = doc.win.createDiv();
 	bar.className = "gw-figure-stage-bar";
-	const title = doc.createElement("div");
+	const title = doc.win.createDiv();
 	title.className = "gw-figure-stage-title";
 	title.textContent = model.title || "Figure";
-	const closeBtn = doc.createElement("button");
+	const closeBtn = doc.win.createEl("button");
 	closeBtn.type = "button";
 	closeBtn.className = "gw-figure-stage-close";
 	closeBtn.textContent = "Close";
 	closeBtn.setAttribute("aria-label", "Close full screen figure");
 	bar.append(title, closeBtn);
-	const frame = doc.createElement("div");
+	const frame = doc.win.createDiv();
 	frame.className = "gw-figure-stage-frame";
 	mountStagePicture(doc, frame, model);
 	stage.append(bar, frame);
 	const note = [model.caption, model.credit].filter(Boolean).join(" — ");
 	if (note) {
-		const caption = doc.createElement("div");
+		const caption = doc.win.createDiv();
 		caption.className = "gw-figure-stage-caption";
 		caption.textContent = note;
 		stage.append(caption);
 	}
 	const frozen: HTMLElement[] = [];
 	for (const child of [...host.children]) {
-		if (child instanceof HTMLElement) {
+		if (child.instanceOf(HTMLElement)) {
 			child.setAttribute("inert", "");
 			child.dataset.gwStageInert = "1";
 			frozen.push(child);
@@ -280,8 +279,7 @@ export function openFigureStage(doc: Document, host: HTMLElement, model: FigureC
 }
 
 function mountStagePicture(doc: Document, frame: HTMLElement, model: FigureCardModel): void {
-	const matchMedia = doc.defaultView?.matchMedia;
-	const reduceMotion = typeof matchMedia === "function" && matchMedia.call(doc.defaultView, "(prefers-reduced-motion: reduce)").matches;
+	const reduceMotion = doc.defaultView?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 	const gif = model.media?.mime === "image/gif";
 	const animatedSvg = model.svg?.includes("<animate") ?? false;
 	const holdStill = reduceMotion && (gif || animatedSvg);
@@ -298,7 +296,7 @@ function mountStagePicture(doc: Document, frame: HTMLElement, model: FigureCardM
 
 function renderFigureImage(doc: Document, model: FigureCardModel): HTMLImageElement {
 	const media = model.media!;
-	const img = doc.createElement("img");
+	const img = doc.win.createEl("img");
 	img.className = "gw-figure-img";
 	img.alt = model.title;
 	img.width = media.width || 640;
@@ -312,7 +310,7 @@ export function downloadFigure(doc: Document, title: string, svg: string, media?
 	const ext = media ? (EXTENSION[media.mime] ?? "img") : "svg";
 	const blob = media ? new Blob([bytesFromBase64(media.base64).buffer as ArrayBuffer], { type: media.mime }) : new Blob([svg], { type: "image/svg+xml" });
 	const url = URL.createObjectURL(blob);
-	const a = doc.createElement("a");
+	const a = doc.win.createEl("a");
 	a.href = url;
 	a.download = `${slug}.${ext}`;
 	a.rel = "noopener";

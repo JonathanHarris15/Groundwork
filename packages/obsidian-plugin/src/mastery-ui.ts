@@ -45,7 +45,7 @@ export function setTone(el: HTMLElement, tone: MapTone): void {
 }
 
 function toned(parent: HTMLElement, tag: "span" | "i", cls: string, tone: MapTone, text?: string): HTMLElement {
-	const node = parent.ownerDocument.createElement(tag);
+	const node = parent.ownerDocument.win.createEl(tag);
 	node.className = cls;
 	node.dataset.tone = tone;
 	if (text != null) node.textContent = text;

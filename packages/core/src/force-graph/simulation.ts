@@ -90,9 +90,9 @@ export function simulationTick(
 	}
 
 	for (let i = 0; i < n; i += stride) {
-		const a = nodes[i]!;
+		const a = nodes[i];
 		for (let j = i + 1; j < n; j += stride) {
-			const b = nodes[j]!;
+			const b = nodes[j];
 			let dx = a.x - b.x;
 			let dy = a.y - b.y;
 			const dist2 = dx * dx + dy * dy || 0.01;
@@ -188,8 +188,8 @@ function separate(nodes: ForceGraphNode[], minDist: number): void {
 		let moved = false;
 		for (let i = 0; i < nodes.length; i++) {
 			for (let j = i + 1; j < nodes.length; j++) {
-				const a = nodes[i]!;
-				const b = nodes[j]!;
+				const a = nodes[i];
+				const b = nodes[j];
 				let dx = b.x - a.x;
 				let dy = b.y - a.y;
 				const dist = Math.hypot(dx, dy) || 0.01;

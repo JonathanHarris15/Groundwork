@@ -1,5 +1,6 @@
 import { sanitizeSvg } from "./figure-svg";
 import { bytesToBase64, sniffBytes } from "./figure-net";
+import { asUnknown } from "./unknown";
 
 export interface FigureMedia {
 	mime: string;
@@ -60,7 +61,7 @@ interface PyodideLike {
 	runPython(code: string): unknown;
 	setStdout(options: { batched: (output: string) => void }): void;
 	setStderr(options: { batched: (output: string) => void }): void;
-	loadPackagesFromImports(code: string): Promise<void>;
+	loadPackagesFromImports(code: string): Promise<unknown>;
 }
 
 /**
@@ -166,10 +167,12 @@ export async function runOnPyodide(py: PyodideLike, source: string): Promise<Pyt
 	const files = new Map<string, Uint8Array>();
 	try {
 		const raw = py.runPython(COLLECT);
-		const parsed = JSON.parse(String(raw ?? "{}")) as Record<string, string>;
+		const rawText = typeof raw === "string" && raw ? raw : "{}";
+		const parsedRaw = asUnknown(JSON.parse(rawText));
+		const parsed = parsedRaw && typeof parsedRaw === "object" && !Array.isArray(parsedRaw) ? parsedRaw as Record<string, unknown> : {};
 		for (const name of OUTPUTS) {
 			const encoded = parsed[name];
-			if (!encoded) continue;
+			if (typeof encoded !== "string" || !encoded) continue;
 			const bytes = decode64(encoded);
 			if (bytes.byteLength) files.set(name, bytes);
 		}
@@ -182,30 +185,7 @@ export async function runOnPyodide(py: PyodideLike, source: string): Promise<Pyt
 async function defaultPythonSpawn(source: string, signal?: AbortSignal): Promise<PythonRun> {
 	if (signal?.aborted) return { code: null, stdout: "", stderr: "", timedOut: true, files: new Map() };
 	if (typeof Worker === "function" && typeof document !== "undefined") return browserSpawn(source, signal);
-	return nodeSpawn(source, signal);
-}
-
-let nodeReady: Promise<PyodideLike> | null = null;
-
-async function nodeSpawn(source: string, signal?: AbortSignal): Promise<PythonRun> {
-	const py = await loadNodePyodide();
-	if (signal?.aborted) return { code: null, stdout: "", stderr: "", timedOut: true, files: new Map() };
-	return runOnPyodide(py, source);
-}
-
-function loadNodePyodide(): Promise<PyodideLike> {
-	if (!nodeReady) {
-		nodeReady = (async () => {
-			// A computed specifier stays out of the Obsidian bundle. Node tests resolve the package.
-			const spec = ["py", "odide"].join("");
-			const mod = (await import(/* @vite-ignore */ spec)) as { loadPyodide: () => Promise<PyodideLike> };
-			return mod.loadPyodide();
-		})().catch((err: unknown) => {
-			nodeReady = null;
-			throw err instanceof Error ? err : new Error(String(err));
-		});
-	}
-	return nodeReady;
+	throw new Error("Python figures run in the Obsidian window.");
 }
 
 let workerTail: Promise<void> = Promise.resolve();

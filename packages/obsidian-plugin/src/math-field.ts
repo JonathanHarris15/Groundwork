@@ -116,9 +116,9 @@ export class MathField {
 		private readonly opts: MathFieldOptions,
 	) {
 		this.doc = parent.ownerDocument;
-		this.box = this.doc.createElement("div");
+		this.box = this.doc.win.createDiv();
 		this.box.className = "gw-free-box";
-		this.editor = this.doc.createElement("div");
+		this.editor = this.doc.win.createDiv();
 		this.editor.className = "gw-free-editor";
 		this.editor.contentEditable = "true";
 		this.editor.spellcheck = false;
@@ -126,11 +126,11 @@ export class MathField {
 		this.editor.setAttribute("role", "textbox");
 		this.editor.setAttribute("aria-multiline", "true");
 		this.editor.setAttribute("aria-label", "Your answer");
-		this.drawer = this.doc.createElement("div");
+		this.drawer = this.doc.win.createDiv();
 		this.drawer.className = "gw-symbols-drawer";
 		this.drawer.hidden = true;
 		this.buildDrawer();
-		this.tab = this.doc.createElement("button");
+		this.tab = this.doc.win.createEl("button");
 		this.tab.type = "button";
 		this.tab.className = "gw-symbols-tab";
 		this.tab.textContent = "∑";
@@ -141,7 +141,7 @@ export class MathField {
 		this.tab.addEventListener("click", () => this.toggleDrawer());
 		this.box.append(this.editor, this.drawer, this.tab);
 		parent.append(this.box);
-		const hint = this.doc.createElement("div");
+		const hint = this.doc.win.createDiv();
 		hint.className = "gw-free-hint";
 		hint.textContent = opts.hint;
 		parent.append(hint);
@@ -197,7 +197,7 @@ export class MathField {
 		this.editor.contentEditable = "false";
 		this.tab.disabled = true;
 		this.drawer.querySelectorAll("button").forEach((b) => {
-			(b as HTMLButtonElement).disabled = true;
+			(b).disabled = true;
 		});
 	}
 
@@ -206,22 +206,22 @@ export class MathField {
 	}
 
 	private buildDrawer(): void {
-		const head = this.doc.createElement("div");
+		const head = this.doc.win.createDiv();
 		head.className = "gw-symbols-head";
 		head.textContent = "Symbols";
 		this.drawer.append(head);
-		const note = this.doc.createElement("div");
+		const note = this.doc.win.createDiv();
 		note.className = "gw-symbols-note";
 		note.textContent = "Inserted at the cursor.";
 		this.drawer.append(note);
 		for (const group of SYMBOL_GROUPS) {
-			const label = this.doc.createElement("div");
+			const label = this.doc.win.createDiv();
 			label.className = "gw-symbol-group";
 			label.textContent = group.title;
-			const grid = this.doc.createElement("div");
+			const grid = this.doc.win.createDiv();
 			grid.className = "gw-symbol-grid";
 			for (const item of group.items) {
-				const btn = this.doc.createElement("button");
+				const btn = this.doc.win.createEl("button");
 				btn.type = "button";
 				btn.className = "gw-symbol-btn";
 				btn.textContent = item.label;
@@ -319,14 +319,14 @@ export class MathField {
 			list.push(atom);
 			reuse.set(atom.dataset.source ?? "", list);
 		}
-		const frag = this.doc.createDocumentFragment();
+		const frag = this.doc.win.createFragment();
 		for (const piece of pieces) {
 			if (piece.kind === "text") {
 				if (piece.text) frag.append(this.doc.createTextNode(piece.text));
 				continue;
 			}
 			if (piece.live) {
-				const live = this.doc.createElement("span");
+				const live = this.doc.win.createSpan();
 				live.className = "gw-math-live";
 				live.append(this.doc.createTextNode(piece.raw));
 				frag.append(live);
@@ -342,7 +342,7 @@ export class MathField {
 	}
 
 	private makeAtom(piece: Extract<AnswerPiece, { kind: "math" }>): HTMLElement {
-		const atom = this.doc.createElement("span");
+		const atom = this.doc.win.createSpan();
 		atom.className = `gw-math-atom${piece.display ? " is-display" : ""}`;
 		atom.contentEditable = "false";
 		atom.dataset.source = piece.raw;
@@ -385,7 +385,7 @@ export class MathField {
 				left -= len;
 				continue;
 			}
-			if (!(child instanceof HTMLElement)) continue;
+			if (!(child.instanceOf(HTMLElement))) continue;
 			if (child.classList.contains("gw-math-live")) {
 				const text = child.firstChild ?? child.appendChild(this.doc.createTextNode(""));
 				const len = text.textContent?.length ?? 0;
@@ -443,7 +443,7 @@ function boundaryMath(source: string, caret: number, key: string): number | null
 function isClean(root: HTMLElement): boolean {
 	for (const child of root.childNodes) {
 		if (child.nodeType === Node.TEXT_NODE) continue;
-		if (child instanceof HTMLElement && (child.classList.contains("gw-math-atom") || child.classList.contains("gw-math-live"))) continue;
+		if (child.instanceOf(HTMLElement) && (child.classList.contains("gw-math-atom") || child.classList.contains("gw-math-live"))) continue;
 		return false;
 	}
 	return true;
@@ -476,7 +476,7 @@ function offsetAt(root: HTMLElement, node: Node, nodeOffset: number): number {
 		const range = root.ownerDocument.createRange();
 		range.setStart(root, 0);
 		range.setEnd(root, at);
-		const holder = root.ownerDocument.createElement("div");
+		const holder = root.ownerDocument.win.createDiv();
 		holder.append(range.cloneContents());
 		return sourceOf(holder).length;
 	}
@@ -519,7 +519,7 @@ function walkEditable(root: HTMLElement, hooks: { text: (text: string, node: Tex
 			lineStart = text.endsWith("\n");
 			return;
 		}
-		if (!(node instanceof HTMLElement)) return;
+		if (!(node.instanceOf(HTMLElement))) return;
 		if (node.classList.contains("gw-math-atom")) {
 			hooks.atom(node.dataset.source ?? "", node);
 			lineStart = false;
@@ -532,7 +532,7 @@ function walkEditable(root: HTMLElement, hooks: { text: (text: string, node: Tex
 		}
 		const children = [...node.childNodes];
 		children.forEach((child, i) => {
-			const block = child instanceof HTMLElement && (child.tagName === "DIV" || child.tagName === "P");
+			const block = child.instanceOf(HTMLElement) && (child.tagName === "DIV" || child.tagName === "P");
 			if (block && (!lineStart || i > 0)) {
 				hooks.nl();
 				lineStart = true;
@@ -542,7 +542,7 @@ function walkEditable(root: HTMLElement, hooks: { text: (text: string, node: Tex
 	};
 	const children = [...root.childNodes];
 	children.forEach((child, i) => {
-		const block = child instanceof HTMLElement && (child.tagName === "DIV" || child.tagName === "P");
+		const block = child.instanceOf(HTMLElement) && (child.tagName === "DIV" || child.tagName === "P");
 		if (block && (!lineStart || i > 0)) {
 			hooks.nl();
 			lineStart = true;

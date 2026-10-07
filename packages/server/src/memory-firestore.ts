@@ -14,7 +14,7 @@ export function splitUtf8(text: string, maxBytes: number): string[] {
 	while (start < buf.length) {
 		let end = Math.min(start + maxBytes, buf.length);
 		if (end < buf.length) {
-			while (end > start && (buf[end]! & 0xc0) === 0x80) end--;
+			while (end > start && (buf[end] & 0xc0) === 0x80) end--;
 			if (end === start) end = Math.min(start + maxBytes, buf.length);
 		}
 		parts.push(buf.subarray(start, end).toString("utf8"));

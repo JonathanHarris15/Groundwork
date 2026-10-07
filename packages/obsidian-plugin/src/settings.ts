@@ -1,4 +1,4 @@
-import { App, FuzzySuggestModal, PluginSettingTab, Setting, TFolder } from "obsidian";
+import { App, FuzzySuggestModal, PluginSettingTab, Setting, TFolder, type SettingDefinitionItem } from "obsidian";
 import { cleanFolderList, DEFAULT_READ_FOLDERS, DEFAULT_WRITE_FOLDERS, type FolderAccess } from "@groundwork/core";
 import { appearanceFrom, type GroundworkAppearance } from "./appearance";
 import { BUILD } from "./build";
@@ -86,7 +86,52 @@ export class GroundworkSettingTab extends PluginSettingTab {
 		private readonly plugin: GroundworkPlugin,
 	) {
 		super(app, plugin);
+		// Obsidian 1.13 reads getSettingDefinitions without calling display().
+		void this.plugin.installedBuild().then((onDisk) => {
+			if (onDisk && onDisk !== BUILD) this.newerBuild = onDisk;
+		});
 	}
+
+	/** Obsidian 1.13+ settings search. `display()` stays for older installs. */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return [
+			{
+				name: "Groundwork",
+				desc: "Vault folders, the tutor, and appearance are in the Groundwork panel.",
+			},
+			{
+				name: "Open the panel",
+				desc: "Change those settings there.",
+				action: () => {
+					void this.plugin.openGroundworkSettings();
+				},
+			},
+			{
+				name: "Website",
+				desc: "Sign in, plans, and billing are on the Groundwork website. Tutor memory is stored with that account.",
+			},
+			{
+				name: "Open website",
+				action: () => {
+					window.open(accountOrigin());
+				},
+			},
+			{
+				name: "Running build",
+				desc: this.newerBuild ? `${BUILD}. A newer build is installed: ${this.newerBuild}.` : BUILD,
+			},
+			{
+				name: "Reload Groundwork",
+				desc: "Load the build already on disk.",
+				visible: () => !!this.newerBuild,
+				action: () => {
+					void this.plugin.reloadSelf();
+				},
+			},
+		];
+	}
+
+	private newerBuild: string | null = null;
 
 	display(): void {
 		const { containerEl } = this;
@@ -108,6 +153,7 @@ export class GroundworkSettingTab extends PluginSettingTab {
 		const version = new Setting(containerEl).setName("Running build").setDesc(BUILD);
 		void this.plugin.installedBuild().then((onDisk) => {
 			if (!onDisk || onDisk === BUILD) return;
+			this.newerBuild = onDisk;
 			version.setDesc(`${BUILD}. A newer build is installed: ${onDisk}.`);
 			version.addButton((b) => b.setButtonText("Reload Groundwork").setCta().onClick(() => void this.plugin.reloadSelf()));
 		});

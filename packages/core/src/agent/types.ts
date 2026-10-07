@@ -2,10 +2,10 @@ import type { VaultFile } from "../files";
 
 export type ContentBlock =
 	| { type: "text"; text: string }
-	| { type: "tool_use"; id: string; name: string; input: any }
+	| { type: "tool_use"; id: string; name: string; input: unknown }
 	| { type: "tool_result"; tool_use_id: string; content: string | ContentBlock[]; is_error?: boolean }
 	// Server-side tool blocks (web search), thinking, etc. are passed through untouched.
-	| { type: string; [key: string]: any };
+	| { type: string; [key: string]: unknown };
 
 export interface ChatMessage {
 	role: "user" | "assistant";
@@ -47,7 +47,7 @@ export interface TutorSession {
 
 export type AgentEvent =
 	| { type: "text_delta"; text: string }
-	| { type: "tool_start"; id: string; name: string; input: any }
+	| { type: "tool_start"; id: string; name: string; input: unknown }
 	| { type: "tool_end"; id: string; name: string; summary?: string; isError?: boolean; text: string }
 	| { type: "turn_end" }
 	| { type: "error"; message: string };

@@ -3,7 +3,8 @@ import { isTutorMemoryPath } from "../src/account";
 import { figureFile, figureForChat, parseFigureSpec, renderFigure, saveFigure } from "../src/figure";
 import { sanitizeSvg } from "../src/figure-svg";
 import { assertPublicHttpsUrl, fetchPublic, isPrivateAddress } from "../src/figure-net";
-import { runPythonFigure } from "../src/figure-python";
+import { loadPyodide } from "pyodide";
+import { runOnPyodide, runPythonFigure, type PythonRun } from "../src/figure-python";
 import { MemoryVaultIO } from "../src/io";
 import { KnowledgeStore } from "../src/store";
 import { toolByName } from "../src/tools";
@@ -136,19 +137,29 @@ describe("public figures", () => {
 
 	it("runs a Python program that writes the figure, without the tutor's secrets", async () => {
 		process.env.GW_FIGURE_SENTINEL = "secret-value";
+		const spawn = nodePyodideSpawn();
 		try {
 			const produced = await runPythonFigure(`import os
 open("figure.svg","w").write('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="8" cy="20" r="4"><animate attributeName="cx" from="8" to="32" dur="1s" repeatCount="indefinite"/></circle><text>' + os.environ.get("GW_FIGURE_SENTINEL","missing") + '</text></svg>')
-`);
+`, spawn);
 			expect(produced.svg).toContain("<animate");
 			expect(produced.svg).toContain("missing");
 			expect(produced.svg).not.toContain("secret-value");
-			await expect(runPythonFigure("print('no figure here')")).rejects.toThrow(/figure\.svg/);
-			await expect(runPythonFigure("print('no figure here')")).rejects.not.toThrow(/install/i);
+			await expect(runPythonFigure("print('no figure here')", spawn)).rejects.toThrow(/figure\.svg/);
+			await expect(runPythonFigure("print('no figure here')", spawn)).rejects.not.toThrow(/install/i);
 		} finally {
 			delete process.env.GW_FIGURE_SENTINEL;
 		}
 	}, 120_000);
+
+function nodePyodideSpawn(): (source: string, signal?: AbortSignal) => Promise<PythonRun> {
+	let py: Awaited<ReturnType<typeof loadPyodide>> | null = null;
+	return async (source, signal) => {
+		if (signal?.aborted) return { code: null, stdout: "", stderr: "", timedOut: true, files: new Map() };
+		py ??= await loadPyodide();
+		return runOnPyodide(py, source);
+	};
+}
 
 	it("fetch_public refuses a local address before any request", async () => {
 		const tool = toolByName("fetch_public");

@@ -1,6 +1,7 @@
 import { cleanFolderList, pathInsideAny } from "./access";
 import type { ChatMessage, ContentBlock } from "./agent/types";
 import type { VaultIO } from "./io";
+import { asUnknown } from "./unknown";
 
 /** Where attachments and the learner's reference material live. */
 export const RESOURCES_DIR = "resources";
@@ -112,12 +113,18 @@ export function mcpContent(text: string, files: VaultFile[] = [], override?: (f:
 
 const OMITTED = "[A file was attached here. It isn't kept in saved history; open it again with read_vault_file if you need it.]";
 
+function isContentBlock(value: unknown): value is ContentBlock {
+	return !!value && typeof value === "object" && "type" in value && typeof value.type === "string";
+}
+
 /** Chat history without base64 file contents, so saved chats stay small in git. */
 export function withoutFileData(messages: ChatMessage[]): ChatMessage[] {
 	const strip = (blocks: ContentBlock[]): ContentBlock[] =>
 		blocks.map((b) => {
-			if ((b.type === "image" || b.type === "document") && b.source?.type === "base64") return { type: "text", text: OMITTED };
-			if (b.type === "tool_result" && Array.isArray(b.content)) return { ...b, content: strip(b.content) };
+			const source = "source" in b ? asUnknown(b.source) : undefined;
+			const sourceType = source && typeof source === "object" && "type" in source ? asUnknown(source.type) : undefined;
+			if ((b.type === "image" || b.type === "document") && sourceType === "base64") return { type: "text", text: OMITTED };
+			if (b.type === "tool_result" && Array.isArray(b.content)) return { ...b, content: strip(b.content.filter(isContentBlock)) };
 			return b;
 		});
 	return messages.map((m) => (Array.isArray(m.content) ? { ...m, content: strip(m.content) } : m));
@@ -196,8 +203,7 @@ export function resolveSubmissionPath(raw: string, writeFolders: readonly string
 
 export function toBase64(buf: ArrayBuffer | Uint8Array): string {
 	const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-	const B = (globalThis as { Buffer?: { from(b: ArrayBuffer, o: number, l: number): { toString(enc: string): string } } }).Buffer;
-	if (B) return B.from(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+	if (typeof Buffer !== "undefined") return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
 	let s = "";
 	for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
 	return btoa(s);

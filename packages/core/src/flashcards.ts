@@ -120,7 +120,7 @@ export function flashcardContentKey(concept: string, front: string, back: string
 
 function newId(prefix: string): string {
 	const bytes = new Uint8Array(8);
-	const cryptoObj = globalThis.crypto;
+	const cryptoObj = typeof window !== "undefined" ? window.crypto : typeof crypto !== "undefined" ? crypto : undefined;
 	if (cryptoObj?.getRandomValues) cryptoObj.getRandomValues(bytes);
 	else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
 	return prefix + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -163,9 +163,9 @@ export function applySessionRating(queue: readonly Flashcard[], rating: CardRati
 	if (!queue.length) return [];
 	const [card, ...rest] = queue;
 	if (rating === "good" || rating === "easy") return rest;
-	if (rating === "again") return [card!, ...rest];
+	if (rating === "again") return [card, ...rest];
 	const gap = Math.min(SESSION_HARD_GAP, rest.length);
-	return [...rest.slice(0, gap), card!, ...rest.slice(gap)];
+	return [...rest.slice(0, gap), card, ...rest.slice(gap)];
 }
 
 /** Remember the rating. Does not move `due` or the interval. */

@@ -75,13 +75,13 @@ function prefersReducedMotion(): boolean {
 }
 
 export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options: ForceGraphMountOptions = {}): ForceGraphHandle {
-	const canvas = document.createElement("canvas");
+	const canvas = createEl("canvas");
 	canvas.className = options.className ?? "gw-force-canvas";
 	canvas.setAttribute("role", "img");
 	canvas.setAttribute("aria-label", "Interactive concept graph");
 	host.replaceChildren(canvas);
 
-	const tip = document.createElement("div");
+	const tip = createDiv();
 	tip.className = "gw-force-tip";
 	tip.hidden = true;
 	host.append(tip);
@@ -241,7 +241,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		candidates.sort((a, b) => b.priority - a.priority);
 
 		for (const { node, alpha } of candidates) {
-			const { text, w, h } = measureLabel(ctx, node.title);
+			const { w, h } = measureLabel(ctx, node.title);
 			const base = worldToScreen(node.x, node.y + node.radius + 5);
 			const offsets = [
 				{ x: 0, y: 0 },
@@ -250,7 +250,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 				{ x: -w * 0.35, y: 0 },
 				{ x: 0, y: -(h + 6) },
 			];
-			let chosen = offsets[0]!;
+			let chosen = offsets[0];
 			for (const off of offsets) {
 				const box = {
 					x: base.x - w / 2 + off.x,

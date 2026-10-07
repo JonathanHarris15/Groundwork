@@ -1,4 +1,5 @@
 import type { Provider, ProviderRequest, ProviderResponse } from "./agent/types";
+import { later } from "./timers";
 import type { PreparedQuiz } from "./quiz";
 
 /**
@@ -251,7 +252,7 @@ export class DemoAsideProvider implements Provider {
 		for (const c of chunks) {
 			if (req.signal?.aborted) throw new Error("aborted");
 			req.onText(c);
-			if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
+			if (this.delayMs) await new Promise<void>((r) => later(() => r(), this.delayMs));
 		}
 		return { content: [{ type: "text", text }], stopReason: "end_turn" };
 	}

@@ -1,4 +1,6 @@
 export * from "./access";
+export * from "./http";
+export * from "./unknown";
 export * from "./account";
 export * from "./groundwork-graph";
 export * from "./force-graph";

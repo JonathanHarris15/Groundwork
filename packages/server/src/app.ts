@@ -1,4 +1,4 @@
-import { isPlanId, isTutorWeight, isUserKeyProvider, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
+import { asText, isPlanId, isTutorWeight, isUserKeyProvider, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
@@ -8,6 +8,7 @@ import { completeTutor, describeTutor } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
 import { attributionFromHeader } from "./tracking";
 import { allowCheckoutAmount } from "./public-limit";
+import { platformFetch, type FetchLike } from "./platform-fetch";
 import { webConfig } from "./web-config";
 
 export interface ServerDeps {
@@ -20,7 +21,7 @@ export interface ServerDeps {
 	grade(items: FreeResponseToGrade[], signal?: AbortSignal): Promise<Array<FreeResponseJudgment | null>>;
 	/** Shared key for Free and Groundwork. Absent until the server is configured. */
 	openRouterKey?: string;
-	fetchImpl?: typeof fetch;
+	fetchImpl?: FetchLike;
 }
 
 export interface RouteResult {
@@ -146,7 +147,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 					saved: await deps.secrets.saved(uid),
 					userKey: (provider) => deps.secrets.get(uid, provider),
 					openRouterKey: deps.openRouterKey,
-					fetchImpl: deps.fetchImpl ?? fetch,
+					fetchImpl: deps.fetchImpl ?? platformFetch,
 					charge: (cost) => deps.accounts.charge(uid, cost),
 				},
 				body,
@@ -157,7 +158,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 		if (method === "POST" && path === "/v1/secrets") {
 			const input = body as { provider?: unknown; apiKey?: unknown } | null;
-			const saved = await deps.secrets.save(uid, String(input?.provider ?? ""), String(input?.apiKey ?? ""));
+			const saved = await deps.secrets.save(uid, asText(input?.provider), asText(input?.apiKey));
 			return { status: 200, json: { saved, providers: await deps.secrets.saved(uid) } };
 		}
 		if (method === "GET" && path === "/v1/groundwork") {

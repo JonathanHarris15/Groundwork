@@ -12,7 +12,7 @@ export function parseGroundworkConcept(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const title = value.trim().replace(/\s+/g, " ");
 	if (!title || title.length > 120) return null;
-	if (/[\u0000-\u001f\u007f]/.test(title)) return null;
+	if ([...title].some((ch) => { const code = ch.codePointAt(0) ?? 0; return code < 32 || code === 127; })) return null;
 	return title;
 }
 

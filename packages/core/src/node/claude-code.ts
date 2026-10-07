@@ -2,8 +2,8 @@ import { existsSync, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { query, type AccountInfo, type HookCallback, type ModelInfo, type Options, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk/core";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { later, cancelLater } from "../timers";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { accessFromContext, tutorMayReadPath, type FolderAccess } from "../access";
 import { basename, fileBlocks, mcpContent, userContent, type McpContent, type VaultFile } from "../files";
@@ -200,7 +200,7 @@ export class ClaudeCodeSession implements TutorSession {
 		this.input!.push({ type: "user", message: { role: "user", content: content as SDKUserMessage["message"]["content"] }, parent_tool_use_id: null });
 
 		const streamed = new Set<string>();
-		const external = new Map<string, { name: string; input: any }>();
+		const external = new Map<string, { name: string; input: unknown }>();
 		let reported = false;
 		const iter = this.q!;
 		while (true) {
@@ -224,7 +224,7 @@ export class ClaudeCodeSession implements TutorSession {
 	}
 
 	/** Returns true when it reported an error to the UI. */
-	private handle(msg: SDKMessage, onEvent: (e: AgentEvent) => void, streamed: Set<string>, external: Map<string, { name: string; input: any }>): boolean {
+	private handle(msg: SDKMessage, onEvent: (e: AgentEvent) => void, streamed: Set<string>, external: Map<string, { name: string; input: unknown }>): boolean {
 		if ("parent_tool_use_id" in msg && msg.parent_tool_use_id) return false;
 		switch (msg.type) {
 			case "system":
@@ -290,22 +290,24 @@ export class ClaudeCodeSession implements TutorSession {
 				includePartialMessages: true,
 				hooks: { PreToolUse: [{ matcher: READ_TOOL, hooks: [this.guardVaultRead] }] },
 				resume: this.sessionId,
-				mcpServers: { [MCP_NAME]: { type: "sdk", name: MCP_NAME, instance: this.toolServer() as unknown as McpServer } },
+				mcpServers: { [MCP_NAME]: { type: "sdk", name: MCP_NAME, instance: this.toolServer() } },
 			},
 		});
 	}
 
-	private toolServer(): Server {
-		const server = new Server({ name: MCP_NAME, version: "0.1.0" }, { capabilities: { tools: {} } });
+	private toolServer(): McpServer {
+		const mcp = new McpServer({ name: MCP_NAME, version: "0.1.0" }, { capabilities: { tools: {} } });
+		const server = mcp.server;
 		const tools = this.opts.tools;
 		server.setRequestHandler(ListToolsRequestSchema, async () => ({
-			tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema as any })),
+			tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
 		}));
 		let n = 0;
 		server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
 			const { name } = req.params;
 			const input = req.params.arguments ?? {};
-			const id = String(req.params._meta?.["claudecode/toolUseId"] ?? `gw_${++n}`);
+			const rawId = req.params._meta?.["claudecode/toolUseId"];
+			const id = typeof rawId === "string" && rawId ? rawId : `gw_${++n}`;
 			const emit = this.emit;
 			const tool = tools.find((t) => t.name === name);
 			emit?.({ type: "tool_start", id, name, input });
@@ -324,7 +326,7 @@ export class ClaudeCodeSession implements TutorSession {
 			emit?.({ type: "tool_end", id, name, summary, isError: !!result.isError, text: result.text });
 			return { content, isError: !!result.isError };
 		});
-		return server;
+		return mcp;
 	}
 
 	private async readPointer(f: VaultFile): Promise<string> {
@@ -385,7 +387,7 @@ export class ClaudeCodeSession implements TutorSession {
 		if (!q) return;
 		q.interrupt().catch(() => this.teardown());
 		// If Claude Code doesn't wind the turn down promptly, drop the process; the next message resumes the session.
-		setTimeout(() => {
+		later(() => {
 			if (this.running && this.q === q) this.teardown();
 		}, 5_000);
 	}
@@ -403,10 +405,12 @@ export class ClaudeCodeSession implements TutorSession {
 	}
 }
 
-function externalSummary(name: string, input: any): string {
+function externalSummary(name: string, input: unknown): string {
 	if (name === "WebSearch") return "Searched the web";
 	if (name === "WebFetch") return "Read a web page";
-	if (name === READ_TOOL && typeof input?.file_path === "string") return `Opened ${basename(input.file_path.replace(/\\/g, "/"))}`;
+	if (name === READ_TOOL && input && typeof input === "object" && "file_path" in input && typeof input.file_path === "string" && input.file_path) {
+		return `Opened ${basename(input.file_path.replace(/\\/g, "/"))}`;
+	}
 	return name;
 }
 
@@ -434,15 +438,15 @@ function capitalize(s: string): string {
 
 function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
 	return new Promise((resolve, reject) => {
-		const t = setTimeout(() => reject(new Error(message)), ms);
+		const t = later(() => reject(new Error(message)), ms);
 		p.then(
 			(v) => {
-				clearTimeout(t);
+				cancelLater(t);
 				resolve(v);
 			},
-			(e) => {
-				clearTimeout(t);
-				reject(e);
+			(e: unknown) => {
+				cancelLater(t);
+				reject(e instanceof Error ? e : new Error("The request failed."));
 			},
 		);
 	});

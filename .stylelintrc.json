@@ -1,0 +1,22 @@
+{
+  "plugins": ["stylelint-no-unsupported-browser-features"],
+  "rules": {
+    "declaration-no-important": [
+      true,
+      {
+        "severity": "error",
+        "message": "Avoid !important — override styles by increasing selector specificity or using CSS variables instead."
+      }
+    ],
+    "declaration-block-no-duplicate-properties": [true, { "severity": "error" }],
+    "plugin/no-unsupported-browser-features": [
+      true,
+      {
+        "severity": "error",
+        "browsers": ["electron >= 31"],
+        "ignore": ["css-nesting", "css-cascade-layers"],
+        "ignorePartialSupport": false
+      }
+    ]
+  }
+}

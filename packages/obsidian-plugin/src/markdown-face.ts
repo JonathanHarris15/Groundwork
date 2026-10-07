@@ -9,13 +9,13 @@ export function paintMarkdown<K extends keyof HTMLElementTagNameMap>(
 	render: RenderMarkdown | undefined,
 ): void {
 	const doc = parent.ownerDocument;
-	const plain = doc.createElement(tag);
+	const plain = doc.win.createEl(tag);
 	if (cls) plain.className = cls;
 	plain.textContent = text;
 	parent.append(plain);
 	if (!render) return;
 	// The renderer appends, so it fills a fresh element that replaces the plain-text stand-in.
-	const rendered = doc.createElement(tag);
+	const rendered = doc.win.createEl(tag);
 	if (cls) rendered.className = cls;
 	render(rendered, text).then(
 		() => {

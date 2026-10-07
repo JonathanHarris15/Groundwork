@@ -37,7 +37,7 @@ export function clampSelection(range: Range, turn: HTMLElement): void {
 }
 
 function blockOf(node: Node, body: HTMLElement): HTMLElement {
-	const el = node instanceof Element ? node : node.parentElement;
+	const el = node.instanceOf(Element) ? node : node.parentElement;
 	const block = el?.closest(BLOCK);
 	if (block instanceof HTMLElement && body.contains(block)) return block;
 	return body;

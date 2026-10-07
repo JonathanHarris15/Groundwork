@@ -189,7 +189,8 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 	if (attempts === 0) return emptyStats();
 
 	const mastery = sigmoid(ability);
-	const memoryAt = recalledAt ?? first ?? (last as number);
+	const memoryAt = recalledAt ?? first ?? last;
+	if (memoryAt === undefined) return emptyStats();
 	const elapsedDays = Math.max(0, (now.getTime() - memoryAt) / DAY_MS);
 	const retention = Math.pow(2, -elapsedDays / halfLife);
 	const current = sigmoid(ability - 2.5 * (1 - retention));

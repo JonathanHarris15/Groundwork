@@ -1,4 +1,5 @@
 import { MAX_FAMILIARITY, type EvidenceKind, type Outcome } from "./model";
+import { asUnknown } from "./unknown";
 import { normalizeTutorMarkdown } from "./tutor-markdown";
 
 export type QuizFormat = "choice" | "free";
@@ -181,8 +182,8 @@ function coerceAnswer(answer: string | string[]): string[] {
 	const t = String(answer ?? "").trim();
 	if (t.startsWith("[") && t.endsWith("]")) {
 		try {
-			const parsed = JSON.parse(t);
-			if (Array.isArray(parsed)) return parsed.map(String);
+			const parsed = asUnknown(JSON.parse(t));
+			if (Array.isArray(parsed)) return parsed.map((item) => (typeof item === "string" ? item : ""));
 		} catch {
 			// fall through: treat as a literal value
 		}
