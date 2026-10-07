@@ -86,6 +86,10 @@ export class GroundworkSettingTab extends PluginSettingTab {
 		private readonly plugin: GroundworkPlugin,
 	) {
 		super(app, plugin);
+		// Obsidian 1.13 reads getSettingDefinitions without calling display().
+		void this.plugin.installedBuild().then((onDisk) => {
+			if (onDisk && onDisk !== BUILD) this.newerBuild = onDisk;
+		});
 	}
 
 	/** Obsidian 1.13+ settings search. `display()` stays for older installs. */
