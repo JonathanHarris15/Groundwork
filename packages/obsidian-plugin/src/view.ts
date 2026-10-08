@@ -374,7 +374,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.uiAttachWarn.createEl("p", { cls: "gw-attach-warn-detail", text: MISSING_READ_FOLDER_DETAIL });
 		const openReadFolders = this.uiAttachWarn.createEl("button", {
 			cls: "gw-lib-btn",
-			text: "Open Vault folders",
+			text: "Open vault folders",
 			attr: { type: "button" },
 		});
 		this.registerDomEvent(openReadFolders, "click", () => void this.openReadFolderSettings());
