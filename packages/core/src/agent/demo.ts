@@ -45,7 +45,7 @@ export class DemoProvider implements Provider {
 				title: "Derivative basics (demo)",
 				objective:
 					"Whether you can do the three things the derivative rests on: find a slope, apply the power rule, and write the limit definition. Together they show whether you're ready for derivative problems on an exam.",
-				instructions: "Answer every question, then press **Submit test**. Use $...$ for math in written answers.",
+				instructions: "Answer every question, then press **Submit test**. Type math in the math field.",
 				timeLimitMinutes: 10,
 				questions: [
 					{
@@ -107,7 +107,7 @@ export class DemoProvider implements Provider {
 				title: "Calc 1 final · Practice 1",
 				goal: "Calc 1 final",
 				objective: "Whether limits, the power rule, the product rule, the chain rule, and the derivative of sine hold up on a Calc 1 final.",
-				instructions: "Answer every question, then press **Submit test**. Use $...$ for math in a written answer. No feedback until you submit.",
+				instructions: "Answer every question, then press **Submit test**. Type math in the math field. No feedback until you submit.",
 				timeLimitMinutes: 25,
 				questions: [
 					choice(

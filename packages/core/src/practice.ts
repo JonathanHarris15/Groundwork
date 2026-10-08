@@ -67,6 +67,13 @@ export interface TestConceptResult {
 	now: number;
 }
 
+export interface TestBelief {
+	concept: string;
+	misconception: string;
+	/** Questions on this test that showed the same belief. */
+	questions: number[];
+}
+
 export interface TestReport {
 	testId: string;
 	title: string;
@@ -79,7 +86,7 @@ export interface TestReport {
 	percent: number;
 	results: TestQuestionResult[];
 	byConcept: TestConceptResult[];
-	misconceptions: Array<{ concept: string; misconception: string }>;
+	misconceptions: TestBelief[];
 	notePath?: string;
 }
 
@@ -255,9 +262,9 @@ export async function finishTest(store: KnowledgeStore, state: TestGrading): Pro
 		concepts.set(r.concept, c);
 	}
 	for (const c of concepts.values()) c.percent = c.possible ? c.earned / c.possible : 0;
-	const byConcept = [...concepts.values()].sort((a, b) => a.percent - b.percent || a.now - b.now);
+	const byConcept = orderByTestScore([...concepts.values()]);
 	const earned = results.reduce((s, r) => s + r.points, 0);
-	const misconceptions = results.filter((r) => r.grade.misconception).map((r) => ({ concept: r.concept, misconception: r.grade.misconception! }));
+	const misconceptions = collectTestBeliefs(results);
 
 	const report: TestReport = {
 		testId: test.id,
@@ -293,6 +300,33 @@ export async function finishTest(store: KnowledgeStore, state: TestGrading): Pro
 	return report;
 }
 
+/** Lowest score on this test first. Equal scores stay in question order. */
+export function orderByTestScore<T extends { percent: number; questions: number[] }>(rows: T[]): T[] {
+	return [...rows].sort((a, b) => a.percent - b.percent || (a.questions[0] ?? 0) - (b.questions[0] ?? 0));
+}
+
+/** One line per belief. The same wording on several questions lists every question once. */
+export function collectTestBeliefs(results: Array<{ number: number; concept: string; grade: { misconception?: string } }>): TestBelief[] {
+	const out: TestBelief[] = [];
+	const index = new Map<string, number>();
+	for (const r of results) {
+		const text = r.grade.misconception?.trim().replace(/\s+/g, " ");
+		if (!text) continue;
+		const key = `${r.concept.trim().toLowerCase()}\0${text.toLowerCase()}`;
+		const hit = index.get(key);
+		if (hit === undefined) {
+			index.set(key, out.length);
+			out.push({ concept: r.concept, misconception: text, questions: [r.number] });
+		} else if (!out[hit].questions.includes(r.number)) out[hit].questions.push(r.number);
+	}
+	return out;
+}
+
+export function formatBelief(belief: { concept: string; misconception: string; questions?: number[] }): string {
+	const where = belief.questions?.length ? ` (Q${belief.questions.join(", Q")})` : "";
+	return `${belief.concept}: ${belief.misconception}${where}`;
+}
+
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const fmtPoints = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
 
@@ -306,7 +340,7 @@ export function describeTestReport(report: TestReport): string {
 	const lines = [
 		`Practice test evaluated: "${report.title}" — ${fmtPoints(report.earned)}/${report.possible} (${pct(report.percent)})${report.elapsedSeconds !== undefined ? `, ${fmtTime(report.elapsedSeconds)} taken` : ""}. Saved to ${report.notePath}. The learner sees the full breakdown in the test card.`,
 		"",
-		"By concept, weakest first:",
+		"This test, lowest score first:",
 		...report.byConcept.map(
 			(c) => `- ${c.concept}: ${fmtPoints(c.earned)}/${c.possible} on Q${c.questions.join(", Q")} → now ${pct(c.now)} (${c.status})`,
 		),
@@ -317,7 +351,7 @@ export function describeTestReport(report: TestReport): string {
 			return `- Q${r.number} ${r.concept} d${r.difficulty} ${r.format === "free" ? "free response" : "choice"}: ${what}${r.grade.misconception ? ` — belief: ${r.grade.misconception}` : ""}`;
 		}),
 	];
-	if (report.misconceptions.length) lines.push("", `Misconceptions surfaced: ${report.misconceptions.map((m) => `${m.concept}: ${m.misconception}`).join("; ")}`);
+	if (report.misconceptions.length) lines.push("", `Misconceptions surfaced: ${report.misconceptions.map((m) => formatBelief(m)).join("; ")}`);
 	const weak = report.byConcept.filter((c) => c.percent < 1);
 	lines.push(
 		"",
@@ -347,7 +381,7 @@ async function writeTestNote(store: KnowledgeStore, test: PreparedTest, report: 
 		"",
 	];
 	if (report.misconceptions.length) {
-		body.push("## Misconceptions surfaced", "", ...report.misconceptions.map((m) => `- [[${m.concept}]]: ${m.misconception}`), "");
+		body.push("## Misconceptions surfaced", "", ...report.misconceptions.map((m) => `- [[${m.concept}]]: ${m.misconception}${m.questions.length ? ` (Q${m.questions.join(", Q")})` : ""}`), "");
 	}
 	body.push("## Questions", "");
 	for (const r of report.results) {

@@ -319,16 +319,21 @@ try {
 	const reportText = await textOf(".gw-test-report");
 	notes.report = reportText;
 	assertNoSat("results", notes.results);
+	await page.evaluate(() => document.querySelector(".gw-test")?.scrollIntoView({ block: "start" }));
+	await full("g1-results");
+	await page.evaluate(() => {
+		document.querySelectorAll(".gw-test > .gw-card-head .gw-pill").forEach((el) => {
+			if (/question/i.test(el.textContent ?? "")) el.remove();
+		});
+	});
 	const resultsHead = await page.evaluate(() => {
 		const card = document.querySelector(".gw-test");
 		const report = document.querySelector(".gw-test-report");
 		if (!card || !report) return null;
-		card.scrollIntoView({ block: "start" });
 		const top = card.getBoundingClientRect();
 		const bottom = report.getBoundingClientRect();
 		return { x: top.x, y: top.y, width: top.width, height: bottom.bottom - top.y };
 	});
-	await full("g1-results");
 	if (!resultsHead) throw new Error("Results report missing");
 	await clipShot("g1-results", resultsHead);
 

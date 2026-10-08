@@ -1925,6 +1925,14 @@ body .gw-root button.gw-lib-tab.is-active {
 	font-size: var(--font-ui-smaller);
 	margin-bottom: 4px;
 }
+.gw-mastery-kind {
+	flex: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+.gw-test-concept .gw-bar-fill.is-good { background: var(--gw-solid); }
+.gw-test-concept .gw-bar-fill.is-ok { background: var(--gw-shaky); }
+.gw-test-concept .gw-bar-fill.is-low { background: var(--gw-learning); }
 .gw-mastery-delta {
 	margin-left: auto;
 	font-variant-numeric: tabular-nums;

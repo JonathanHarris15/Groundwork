@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { clearLadder, ladderFor } from "../src/diagnose";
 import type { QuizOutcome } from "../src/grading";
 import { MemoryVaultIO } from "../src/io";
-import type { PracticeTestInput, PreparedTest, TestReport, TestResponse } from "../src/practice";
+import { collectTestBeliefs, orderByTestScore, type PracticeTestInput, type PreparedTest, type TestReport, type TestResponse } from "../src/practice";
 import { KnowledgeStore } from "../src/store";
 import { toolByName, type ToolUI } from "../src/tools";
 
@@ -156,6 +156,67 @@ describe("practice tests", () => {
 		expect(r.text).toContain("Rings a bell");
 	});
 
+	it("lists a repeated belief once and orders concepts by this test's score", async () => {
+		await store.upsertConcept({ title: "Chain rule" });
+		await store.upsertConcept({ title: "Power rule" });
+		const input: PracticeTestInput = {
+			title: "Chain check",
+			questions: [
+				{
+					concept: "Chain rule",
+					question: "First chain-rule question?",
+					options: [
+						{ label: "right", value: "right" },
+						{ label: "wrong", value: "wrong", misconception: "forgets the inner derivative" },
+					],
+					correctAnswer: "right",
+					explanation: "Multiply by the inner derivative.",
+					difficulty: 2,
+				},
+				{
+					concept: "Power rule",
+					question: "Power-rule question?",
+					options: [
+						{ label: "right", value: "right" },
+						{ label: "wrong", value: "wrong" },
+					],
+					correctAnswer: "right",
+					explanation: "Bring the exponent down.",
+					difficulty: 2,
+				},
+				{
+					concept: "Chain rule",
+					question: "Second chain-rule question?",
+					options: [
+						{ label: "right", value: "right" },
+						{ label: "wrong", value: "wrong", misconception: "  forgets   the inner derivative " },
+					],
+					correctAnswer: "right",
+					explanation: "Multiply by the inner derivative.",
+					difficulty: 3,
+				},
+			],
+		};
+		answer = (t) => ({
+			answers: {
+				[t.questions[0].id]: { dontKnow: false, selected: ["wrong"] },
+				[t.questions[1].id]: { dontKnow: false, selected: ["right"] },
+				[t.questions[2].id]: { dontKnow: false, selected: ["wrong"] },
+			},
+		});
+		const done = await toolByName("practice_test")!.run(input, { store, ui, session });
+		expect(graded!.byConcept.map((c) => [c.concept, c.earned, c.possible])).toEqual([
+			["Chain rule", 0, 2],
+			["Power rule", 1, 1],
+		]);
+		expect(graded!.misconceptions).toEqual([{ concept: "Chain rule", misconception: "forgets the inner derivative", questions: [1, 3] }]);
+		expect(done.text.split("Misconceptions surfaced: ")[1]?.split("\n")[0]).toBe("Chain rule: forgets the inner derivative (Q1, Q3)");
+		const note = io.files.get(graded!.notePath!)!;
+		const summary = note.split("## Questions")[0];
+		expect(summary).toContain("- [[Chain rule]]: forgets the inner derivative (Q1, Q3)");
+		expect(summary.match(/forgets the inner derivative/g)).toHaveLength(1);
+	});
+
 	it("rejects unknown concepts and invalid questions up front", async () => {
 		answer = () => ({ answers: {} });
 		const unknown = await toolByName("practice_test")!.run({ ...testInput, questions: [{ ...testInput.questions[0], concept: "Nope" }] }, { store, ui, session });
@@ -164,6 +225,31 @@ describe("practice tests", () => {
 		await expect(
 			toolByName("practice_test")!.run({ ...testInput, questions: [{ ...testInput.questions[1], referenceAnswer: "" }] }, { store, ui, session }),
 		).rejects.toThrow(/Question 1: .*referenceAnswer/);
+	});
+});
+
+describe("practice-test ordering", () => {
+	it("breaks score ties by question number, not by overall mastery", () => {
+		const rows = orderByTestScore([
+			{ concept: "Product rule", percent: 1, questions: [3], now: 0.2 },
+			{ concept: "Power rule", percent: 1, questions: [2, 6], now: 0.9 },
+			{ concept: "Limits", percent: 0.5, questions: [1, 8], now: 0.95 },
+		]);
+		expect(rows.map((row) => row.concept)).toEqual(["Limits", "Power rule", "Product rule"]);
+	});
+
+	it("collapses the same belief across questions", () => {
+		expect(
+			collectTestBeliefs([
+				{ number: 4, concept: "Chain rule", grade: { misconception: "forgets the inner derivative" } },
+				{ number: 1, concept: "Limits", grade: { misconception: "plugs in before simplifying" } },
+				{ number: 7, concept: "Chain rule", grade: { misconception: "Forgets the inner derivative" } },
+				{ number: 2, concept: "Power rule", grade: {} },
+			]),
+		).toEqual([
+			{ concept: "Chain rule", misconception: "forgets the inner derivative", questions: [4, 7] },
+			{ concept: "Limits", misconception: "plugs in before simplifying", questions: [1] },
+		]);
 	});
 });
 
