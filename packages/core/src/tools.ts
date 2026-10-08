@@ -2,6 +2,7 @@ import { accessFromContext, pathInsideAny, type FolderAccess } from "./access";
 import type { MaterialKind } from "./exam";
 import { ensureDir } from "./io";
 import { basename, listVaultFiles, loadVaultFile, resolveSubmissionPath, resolveVaultFile, fileKind, type VaultFile } from "./files";
+import { formatSurvey, surveyDocuments } from "./survey";
 import { demoteHeadings, setSection } from "./markdown";
 import { awaitJudgment, describeQuizOutcome, recordQuizAnswer, takeAwaiting, type QuizOutcome } from "./grading";
 import { describeEdge, type EvidenceKind, type Outcome } from "./model";
@@ -763,9 +764,24 @@ export const TOOLS: ToolDef[] = [
 		},
 	},
 	{
+		name: "survey_documents",
+		description:
+			"Read the learner's context documents for a summary. Returns each text file up to a size budget, and names files that were not read. Call this when they ask to summarize, survey, or see what is in their documents or notes. A list of names is not a summary.",
+		inputSchema: { type: "object", properties: {} },
+		async run(_input, ctx) {
+			const reads = accessFromContext(ctx).readFolders;
+			if (!reads.length) {
+				return { text: "No folders are open for reading. The learner picks them in Settings → Groundwork.", isError: true, summary: "No read folders" };
+			}
+			const read = await surveyDocuments(ctx.store.context, reads);
+			const opened = read.hits.filter((hit) => hit.text).length;
+			return { text: formatSurvey(read, reads), summary: opened ? `Read ${opened} document${opened === 1 ? "" : "s"}` : "No documents to read" };
+		},
+	},
+	{
 		name: "list_vault_files",
 		description:
-			"List files inside the folders the learner allowed (named in your instructions). Omit folder to list every allowed folder. Pass a folder only when it is one of those, or a subfolder of one. The rest of the vault stays closed.",
+			"List file names inside the folders the learner allowed (named in your instructions). Names and kinds only. Omit folder to list every allowed folder. Pass a folder only when it is one of those, or a subfolder of one. The rest of the vault stays closed. To summarize the documents, call survey_documents.",
 		inputSchema: { type: "object", properties: { folder: str("A read folder, or a subfolder of one. Omit it to list every folder the learner allowed.") } },
 		async run({ folder }: { folder?: string }, ctx) {
 			const { store } = ctx;

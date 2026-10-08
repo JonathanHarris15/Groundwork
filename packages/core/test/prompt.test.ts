@@ -25,6 +25,8 @@ describe("teaching method", () => {
 		expect(method).toContain(STUDY_FOLLOW_UP);
 		expect(method).toContain("Do not end with a question that checks them");
 		expect(method).toContain("Then stop. No goal, no concepts, no quiz");
+		expect(method).toContain("survey_documents");
+		expect(method).toContain("A list of file names is not the summary");
 		expect(method).toContain("Start this shape only after they opt in");
 		expect(method).toContain("The dropdown does not opt them in");
 		expect(method).toContain("Start this only when they ask to study for one");

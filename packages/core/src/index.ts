@@ -6,6 +6,7 @@ export * from "./groundwork-graph";
 export * from "./force-graph";
 export * from "./io";
 export * from "./files";
+export * from "./survey";
 export * from "./flashcards";
 export * from "./exam";
 export * from "./concept-title";

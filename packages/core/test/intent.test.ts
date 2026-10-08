@@ -70,5 +70,7 @@ describe("classifyLearnerAsk", () => {
 		expect(studyToolBlock("set_goal", [{ role: "user", text: "I have a Calc 1 final Dec 9, help me study" }])).toBeNull();
 		expect(studyToolBlock("practice_test", [{ role: "user", text: practiceTestRequest() }])).toBeNull();
 		expect(studyToolBlock("ingest_exam_materials", [{ role: "user", text: "help me study for the midterm" }])).toBeNull();
+		expect(studyToolBlock("set_goal", [{ role: "user", text: "summarize my documents" }])?.isError).toBe(true);
+		expect(studyToolBlock("survey_documents", [{ role: "user", text: "summarize my documents" }])).toBeNull();
 	});
 });
