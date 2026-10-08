@@ -157,10 +157,68 @@ export function clientAttribution(stored: StoredAttribution | null | undefined):
 	return out;
 }
 
-/** Bring your own model is $6/month. Groundwork is $20/month. */
+/**
+ * List price of a plan, in dollars. Display only.
+ * A GA4 purchase uses the Checkout Session `amount_total`, never this number.
+ */
 export function purchaseValue(plan: string | null | undefined): 6 | 20 | null {
 	if (plan === "byom") return 6;
 	if (plan === "included") return 20;
+	return null;
+}
+
+const PRODUCTION_HOSTS = new Set(["groundworklearn.com", "www.groundworklearn.com"]);
+
+/**
+ * The production tag loads only for a real visitor on the live site.
+ * Local servers, Playwright (`navigator.webdriver`), and headless agents must not hit G-F4236HGZSM.
+ */
+export function shouldLoadMeasurementTag(input: { hostname: string; webdriver: boolean; userAgent?: string }): boolean {
+	if (input.webdriver) return false;
+	if (/HeadlessChrome|PhantomJS|Playwright/i.test(input.userAgent ?? "")) return false;
+	const host = input.hostname.trim().toLowerCase().replace(/\.$/, "");
+	return PRODUCTION_HOSTS.has(host);
+}
+
+/** GA4 client id, the `123.456` pair from the `_ga` cookie or `gtag('get', …, 'client_id')`. */
+export function cleanGaClientId(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const id = value.trim();
+	return /^\d{1,20}\.\d{1,20}$/.test(id) ? id : null;
+}
+
+/** GA4 session id is a decimal string. */
+export function cleanGaSessionId(value: unknown): string | null {
+	if (typeof value !== "string" && typeof value !== "number") return null;
+	const id = String(value).trim();
+	return /^\d{1,20}$/.test(id) ? id : null;
+}
+
+/** Google click id stored on the Checkout Session so a server purchase can join the ad click. */
+export function cleanGclid(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const id = value.trim();
+	return /^[A-Za-z0-9._-]{10,250}$/.test(id) ? id : null;
+}
+
+/** Last two dot-separated numbers of a `_ga` cookie. */
+export function gaClientIdFromCookie(cookie: string): string | null {
+	const match = /(?:^|; )_ga=GA\d+\.\d+\.(\d+\.\d+)(?:;|$)/.exec(cookie);
+	return cleanGaClientId(match?.[1] ?? null);
+}
+
+/** Session id from a GA4 `_ga_<stream>` cookie (GS1 or GS2). */
+export function gaSessionIdFromCookie(cookie: string): string | null {
+	for (const part of cookie.split(";")) {
+		const trimmed = part.trim();
+		const split = trimmed.indexOf("=");
+		if (split < 0 || !trimmed.slice(0, split).startsWith("_ga_")) continue;
+		const value = trimmed.slice(split + 1);
+		const gs2 = /^GS2\.\d+\.s(\d+)(?:\$|$)/.exec(value);
+		if (gs2) return cleanGaSessionId(gs2[1]);
+		const gs1 = /^GS1\.\d+\.(\d+)\./.exec(value);
+		if (gs1) return cleanGaSessionId(gs1[1]);
+	}
 	return null;
 }
 

@@ -133,7 +133,7 @@ describe("account server", () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/force-graph.js?v=4"');
-		expect(site?.body).toContain('src="/app.js?v=21"');
+		expect(site?.body).toContain('src="/app.js?v=22"');
 		expect(site?.body).toContain('href="/styles.css?v=13"');
 		expect(site?.body).toContain("/hero/concept-map-768.webp");
 		expect(site?.body).toContain("image/avif");
@@ -227,16 +227,28 @@ describe("account server", () => {
 		const paid = await route("POST", "/v1/account/plan", { plan: "included" }, server);
 		expect(paid.status).toBe(503);
 
+		let checkoutGa: unknown;
 		const checkoutServer = deps({
 			billing: billing({
 				configured: true,
-				async checkout(_uid, _email, plan) {
+				async checkout(_uid, _email, plan, _origin, ga) {
+					checkoutGa = ga;
 					return `https://checkout.stripe.test/${plan}`;
 				},
 			}),
 		});
 		const checkout = await route("POST", "/v1/billing/checkout", { plan: "byom" }, checkoutServer, undefined, { origin: "https://groundwork.test" });
 		expect(checkout.json).toEqual({ url: "https://checkout.stripe.test/byom" });
+		const tracked = await route(
+			"POST",
+			"/v1/billing/checkout",
+			{ plan: "included", gaClientId: "123.456", gaSessionId: "99", gclid: "not valid", gaConsent: "denied" },
+			checkoutServer,
+			undefined,
+			{ origin: "https://groundwork.test", attribution: encodeURIComponent(JSON.stringify({ gclid: "CjwKCtestclick" })) },
+		);
+		expect(tracked.json).toEqual({ url: "https://checkout.stripe.test/included" });
+		expect(checkoutGa).toEqual({ gaClientId: "123.456", gaSessionId: "99", gclid: "CjwKCtestclick", consent: "denied" });
 		const amountServer = deps({
 			auth: {
 				firebase: true,

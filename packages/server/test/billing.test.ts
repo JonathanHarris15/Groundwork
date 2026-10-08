@@ -69,6 +69,93 @@ describe("checkout promotion codes", () => {
 		await expect(accounts.customerId("ada")).resolves.toBe("cus_new");
 	});
 
+	it("stores the analytics client id on the Checkout Session and leaves client_reference_id as the account", async () => {
+		const accounts = new AccountDirectory();
+		let created: Record<string, unknown> | undefined;
+		const stripe = {
+			customers: {
+				async create() {
+					return { id: "cus_new" };
+				},
+			},
+			checkout: {
+				sessions: {
+					async create(params: Record<string, unknown>) {
+						created = params;
+						return { url: "https://checkout.stripe.test/session" };
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await billing.checkout("ada", "ada@example.com", "included", "https://groundwork.test", {
+			gaClientId: "123.456",
+			gaSessionId: "1700000001",
+			gclid: "CjwKCtestclick",
+			consent: "granted",
+		});
+		expect(created).toMatchObject({
+			client_reference_id: "ada",
+			metadata: {
+				uid: "ada",
+				plan: "included",
+				ga_client_id: "123.456",
+				ga_session_id: "1700000001",
+				gclid: "CjwKCtestclick",
+				ga_consent: "granted",
+			},
+		});
+		await billing.checkout("ada", "ada@example.com", "byom", "https://groundwork.test", {
+			gaClientId: "<script>",
+			gaSessionId: "nope",
+			gclid: "bad id",
+			consent: null,
+		});
+		expect(created?.metadata).toEqual({ uid: "ada", plan: "byom" });
+	});
+
+	it("reports a completed checkout from the webhook, and retries the report if the first send fails", async () => {
+		const accounts = new AccountDirectory();
+		const calls: string[] = [];
+		let fail = true;
+		const stripe = {
+			webhooks: {
+				constructEvent(raw: string) {
+					return JSON.parse(raw) as Stripe.Event;
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts, {
+			async report(row) {
+				calls.push(row.id ?? "");
+				if (fail) {
+					fail = false;
+					throw new Error("GA4 Measurement Protocol request failed.");
+				}
+			},
+		});
+		const body = JSON.stringify({
+			id: "evt_purchase",
+			type: "checkout.session.completed",
+			data: {
+				object: {
+					id: "cs_live_abc",
+					status: "complete",
+					payment_status: "no_payment_required",
+					amount_total: 0,
+					currency: "usd",
+					metadata: { uid: "ada", plan: "included" },
+					client_reference_id: "ada",
+					customer: "cus_ada",
+				},
+			},
+		});
+		await expect(billing.applyEvent(body, "sig")).rejects.toThrow(/Measurement Protocol/);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
+		await billing.applyEvent(body, "sig");
+		expect(calls).toEqual(["cs_live_abc", "cs_live_abc"]);
+	});
+
 	it("reads the amount paid from the Checkout session, including a free promotion", async () => {
 		const accounts = new AccountDirectory();
 		const stripe = {

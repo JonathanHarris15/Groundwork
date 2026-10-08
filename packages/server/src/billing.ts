@@ -1,10 +1,21 @@
 import type { PlanId } from "@groundwork/core";
 import Stripe from "stripe";
 import type { AccountDirectory } from "./accounts";
+import { loadGa4PurchaseReporter } from "./ga4-purchase-runtime";
+import { noopCheckoutPurchaseReporter, type CheckoutPurchaseReporter } from "./ga4-purchase";
+import { cleanGaClientId, cleanGaSessionId, cleanGclid } from "./tracking";
+
+/** Analytics ids captured in the browser at the moment Checkout starts. */
+export interface CheckoutGaContext {
+	gaClientId: string | null;
+	gaSessionId: string | null;
+	gclid: string | null;
+	consent: "granted" | "denied" | null;
+}
 
 export interface Billing {
 	readonly configured: boolean;
-	checkout(uid: string, email: string | undefined, plan: PlanId, origin: string): Promise<string>;
+	checkout(uid: string, email: string | undefined, plan: PlanId, origin: string, ga?: CheckoutGaContext): Promise<string>;
 	portal(uid: string, origin: string): Promise<string>;
 	/** Apply a verified Stripe webhook. `raw` is the request body exactly as Stripe sent it. */
 	applyEvent(raw: string, signature: string | undefined): Promise<void>;
@@ -13,7 +24,10 @@ export interface Billing {
 	 * A Stripe outage must not fail the request.
 	 */
 	sync?(uid: string, email?: string): Promise<void>;
-	/** Dollars paid on a Checkout Session, from amount_total. Zero is a real payment. */
+	/**
+	 * Dollars paid on a Checkout Session, from amount_total. Zero is a real payment.
+	 * The browser must not turn this into a GA4 purchase. The webhook reports the purchase.
+	 */
 	checkoutAmount?(sessionId: string): Promise<number | null>;
 }
 
@@ -92,7 +106,7 @@ export function loadBilling(accounts: AccountDirectory): Billing {
 			included: extraPrices("STRIPE_PRICE_INCLUDED_PREVIOUS"),
 		},
 	};
-	return createBilling(new Stripe(key), prices, webhookSecret, accounts);
+	return createBilling(new Stripe(key), prices, webhookSecret, accounts, loadGa4PurchaseReporter());
 }
 
 export interface StripeMembershipClient {
@@ -104,14 +118,20 @@ export interface StripeMembershipClient {
 	};
 }
 
-export function createBilling(stripe: Stripe, prices: MembershipPrices, webhookSecret: string, accounts: AccountDirectory): Billing {
+export function createBilling(
+	stripe: Stripe,
+	prices: MembershipPrices,
+	webhookSecret: string,
+	accounts: AccountDirectory,
+	reporter: CheckoutPurchaseReporter = noopCheckoutPurchaseReporter,
+): Billing {
 	const freshUntil = new Map<string, number>();
 	return {
 		configured: true,
-		async checkout(uid, email, plan, origin) {
+		async checkout(uid, email, plan, origin, ga) {
 			if (!isPaid(plan)) throw badRequest("That plan is free. Choose it without checkout.");
 			return withStripeCustomer(stripe, accounts, uid, email, false, (customer) =>
-				checkoutSession(stripe, prices, customer, uid, plan, origin),
+				checkoutSession(stripe, prices, customer, uid, plan, origin, ga),
 			);
 		},
 		async portal(uid, origin) {
@@ -126,6 +146,18 @@ export function createBilling(stripe: Stripe, prices: MembershipPrices, webhookS
 			const event = stripe.webhooks.constructEvent(raw, signature, webhookSecret);
 			freshUntil.clear();
 			await applyStripeEvent(accounts, event, prices);
+			if (event.type === "checkout.session.completed") {
+				const session = event.data.object;
+				await reporter.report({
+					id: session.id,
+					status: session.status,
+					payment_status: session.payment_status,
+					amount_total: session.amount_total,
+					currency: session.currency,
+					metadata: session.metadata,
+					client_reference_id: session.client_reference_id,
+				});
+			}
 		},
 		async checkoutAmount(sessionId) {
 			if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return null;
@@ -287,6 +319,7 @@ async function checkoutSession(
 	uid: string,
 	plan: "byom" | "included",
 	origin: string,
+	ga?: CheckoutGaContext,
 ): Promise<string> {
 	const session = await stripe.checkout.sessions.create({
 		mode: "subscription",
@@ -295,7 +328,7 @@ async function checkoutSession(
 		line_items: [{ price: prices[plan], quantity: 1 }],
 		success_url: checkoutSuccessUrl(origin, plan),
 		cancel_url: `${origin}/?billing=cancel`,
-		metadata: { uid, plan },
+		metadata: { uid, plan, ...gaMetadata(ga) },
 		subscription_data: { metadata: { uid, plan } },
 		allow_promotion_codes: true,
 		// A 100% off code makes the total $0. Stripe then skips the card.
@@ -355,6 +388,19 @@ export function paidAmountUsd(amountTotal: number | null | undefined): number | 
 /** Stripe replaces `{CHECKOUT_SESSION_ID}` so a refresh of the success page can be deduped. */
 export function checkoutSuccessUrl(origin: string, plan: "byom" | "included"): string {
 	return `${origin}/?billing=success&session_id={CHECKOUT_SESSION_ID}&plan=${plan}`;
+}
+
+function gaMetadata(ga: CheckoutGaContext | undefined): Record<string, string> {
+	if (!ga) return {};
+	const out: Record<string, string> = {};
+	const clientId = cleanGaClientId(ga.gaClientId);
+	const sessionId = cleanGaSessionId(ga.gaSessionId);
+	const gclid = cleanGclid(ga.gclid);
+	if (clientId) out.ga_client_id = clientId;
+	if (sessionId) out.ga_session_id = sessionId;
+	if (gclid) out.gclid = gclid;
+	if (ga.consent === "granted" || ga.consent === "denied") out.ga_consent = ga.consent;
+	return out;
 }
 
 function isPaid(plan: unknown): plan is "byom" | "included" {
