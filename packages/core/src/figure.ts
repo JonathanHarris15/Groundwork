@@ -143,29 +143,18 @@ export interface SessionFigure {
 }
 
 export const FIGURE_GUIDANCE = `# Figures
-When a picture teaches the step better than another paragraph, call \`show_figure\` and then talk about what it shows. The learner sees it in the left margin of that turn. They can minimize it, and it is saved on their account.
+When a picture teaches better than another paragraph, call \`show_figure\`, then say what to look at. It sits in the left margin and is saved on their account. One figure per idea. Do not paste it into the chat. Mermaid is only for a goal's dependency map.
 
-You choose how to make the picture:
-- A plate, when the shape is exact: \`plot\`, \`plot3d\`, \`story\`, \`conjugation\`, \`sentence\`, or a rough \`map\`.
-- A real place: the rough \`map\` is only a schematic. For a campaign, a country, or a city, \`fetch_public\` a public image (Wikimedia Commons is a good first stop) and \`show_figure\` with kind \`"image"\` and that url. Or \`fetch_public\` a public GeoJSON API and \`show_figure\` with kind \`"geo"\`, that url, and markers or movements to draw on top. Name the source in \`credit\` or the caption.
-- Your own drawing: kind \`"svg"\` and \`markup\`. No scripts and no remote images. An \`<animate>\` element is how you show change without a library.
-- A Python program: kind \`"program"\`, language \`"python"\`, and \`source\` that writes \`figure.svg\`, \`figure.png\`, \`figure.gif\`, or \`figure.webp\`. Python runs inside Groundwork, so the learner does not install it. The standard library is always there. matplotlib, numpy, and pillow load when the program imports them. The run stops after 20 seconds. Only those output files are shown. The program cannot see the learner's files or environment.
+The tool fields are the spec. Plates, when the shape is exact: plot, plot3d, story, conjugation, sentence, or a rough map. A real place: kind image with a public url (Wikimedia is a good first stop), or kind geo with a public GeoJSON url plus markers. Name the source in \`credit\`. kind svg is a drawing you write: no scripts, no remote images, \`<animate>\` for motion. kind program is Python that writes figure.svg, figure.png, figure.gif, or figure.webp. It runs inside Groundwork for at most 20 seconds, with the standard library plus matplotlib, numpy, and pillow when imported. It cannot see their files.
 
-\`fetch_public\` reads one public https URL (a page, JSON, or GeoJSON) so you can choose. It refuses private addresses. Web search, when you have it, is how you find the URL. Image bytes must be under 200000; ask the API for a thumbnail when the file is larger.
+\`fetch_public\` reads one public https URL so you can choose. It refuses private addresses. Image bytes must be under 200000.
 
-- \`plot\`: \`points\` as [x, y] pairs, or \`expr\` in x. The curve is that expression evaluated on a fine grid. It breaks at a gap or an asymptote. Operators are + - * / ^ and parentheses. Functions: sin, cos, tan, asin, acos, atan, exp, log, ln, log10, sqrt, abs. Constants: pi, e. Write 2*x, not 2x. \`^\` is right-associative, and \`-x^2\` means \`-(x^2)\`.
-- \`plot3d\`: z from an \`expr\` in x and y. The picture is a still perspective view of those values.
-- \`story\`: beats in order, each with a stage (exposition, rising, climax, falling, resolution) and a short label.
-- \`map\`: a schematic only. Markers have name, lat, and lon. \`side\` groups them. \`movements\` draw an arrow between marker names.
-- \`conjugation\`: \`rows\` are person and form. \`highlight\` is the person or form to mark.
-- \`sentence\`: words in order, each with text and a role (subject, verb, object, complement, modifier). A modifier's \`of\` is the index of the word it hangs from.
-
-One figure per idea. Do not paste the picture into the chat. Mermaid stays for a goal's dependency map, not for these.`;
+Plot expressions use + - * / ^ and parentheses. Functions: sin, cos, tan, asin, acos, atan, exp, log, ln, log10, sqrt, abs. Constants: pi, e. Write 2*x, not 2x. \`^\` is right-associative, and \`-x^2\` means \`-(x^2)\`. A plot breaks at a gap or an asymptote. plot3d is z from an expression in x and y, drawn as a still.`;
 
 export const FIGURE_PROMPT = `# You draw one figure
-The learner highlighted a passage and asked for a visualization. You may call \`fetch_public\` to read a public https URL (a page, a JSON or GeoJSON API, or to confirm an image). Then reply with one JSON object and nothing else: no markdown fence, no explanation.
+They highlighted a passage and asked for a picture. You may call \`fetch_public\` for one public https URL. Then reply with one JSON object and nothing else.
 
-Choose the kind that fits the passage:
+Choose the kind that fits:
 - plot — a function, a data series, or bars. Fields: title, kind "plot", xLabel, yLabel, series: [{ name, expr (in x) or points: [[x,y],...], mark: "line"|"scatter"|"bar" }]
 - plot3d — a surface. Fields: title, kind "plot3d", expr (z in x and y), xMin, xMax, yMin, yMax, xLabel, yLabel, zLabel
 - story — narrative shape. Fields: title, kind "story", beats: [{ stage: "exposition"|"rising"|"climax"|"falling"|"resolution", label }]

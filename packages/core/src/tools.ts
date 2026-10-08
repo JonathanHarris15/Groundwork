@@ -113,14 +113,14 @@ const evidenceKinds = ["probe", "check", "review", "explain"];
 const questionProperties: Record<string, JSONSchema> = {
 	concept: str("Title of the concept this question measures (create it with upsert_concept or set_goal first)."),
 	question: str(
-		"Exactly one question, fully self-contained: the learner sees only this card, not your files. State every given, and define every symbol and term the first time it appears (e.g. 'where $\\mu$ is the coefficient of friction'). Never write 'as in the lecture' or rely on notation from a document. Markdown and LaTeX allowed.",
+		"One self-contained question. They see only this card. State every given and define every symbol. Never 'as in the lecture'. Markdown and LaTeX.",
 	),
 	details: str("Setup shown under the question: the scenario, the givens, and what each symbol means."),
 	format: {
 		type: "string",
 		enum: ["choice", "free"],
 		description:
-			'"choice" (default): multiple choice, graded instantly. "free": the learner types an answer (markdown + LaTeX; math renders in the answer box) and YOU grade it against referenceAnswer with grade_answer. Use free when the skill is producing something: a computation, an expression, a derivation step, a definition in their words.',
+			'"choice" (default) grades instantly. "free": they type an answer (LaTeX renders) and you grade it with grade_answer unless the result says already graded. Use free when they must produce something.',
 	},
 	options: {
 		type: "array",
@@ -157,9 +157,7 @@ export const quizInputSchema: JSONSchema = {
 	type: "object",
 	properties: {
 		...questionProperties,
-		purpose: str(
-			"Shown above the question, one plain sentence to the learner: what this checks and why it matters for where you are headed, e.g. 'Checking you can find a slope from two points — the derivative is built from exactly this.'",
-		),
+		purpose: str("One sentence above the question: what this checks and why it matters now."),
 		kind: { type: "string", enum: evidenceKinds.slice(0, 3), description: "probe = mapping the edge, check = confirming a node just taught, review = spaced retrieval." },
 	},
 	required: ["concept", "question", "purpose", "explanation", "difficulty", "kind"],
@@ -208,7 +206,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_learner_overview",
 		description:
-			"Call FIRST in every learning session. Returns the learner profile, tutorContext (extra notes the learner wrote in Settings — read them, do not rewrite them or copy them into the learner profile), knowledge counts, active goals (each goal is the targets not yet built), workingGoal (the goal pinned in the dropdown, or null when they left it on \"you choose\"), due spaced reviews, recently practiced concepts, and open misconceptions. Use it to recall what they already hold about the topic they brought. A pin is not a reason to ignore a topic or file they just brought.",
+			"After they opt in to study, not for a direct answer, a summary, or a study guide. Returns the profile, tutorContext (read it; do not copy it into the profile), goals, workingGoal (the dropdown pin, or null for \"you choose\"), due reviews, recent concepts, and open misconceptions. Teach what they brought. A pin is not a reason to switch topics.",
 		inputSchema: { type: "object", properties: {} },
 		async run(_i, { store }) {
 			const o = await store.overview();
@@ -226,20 +224,20 @@ export const TOOLS: ToolDef[] = [
 		inputSchema: { type: "object", properties: {} },
 		async run(_i, { store }) {
 			const step = await store.studyNext();
-			if (!step) return { text: "Nothing is waiting in the vault. Ask what they want to learn.", summary: "Nothing queued to study" };
+			if (!step) return { text: "Nothing is waiting on the account. Ask what they want to learn.", summary: "Nothing queued to study" };
 			return { text: json(step), summary: `Suggested ${step.concept}` };
 		},
 	},
 	{
 		name: "search_knowledge",
-		description: "Search the learner's vault for concepts and goals related to a topic. Use before probing so you build on recorded knowledge.",
+		description: "Search concepts and goals on the account. Use before probing so you build on what is already recorded.",
 		inputSchema: { type: "object", properties: { query: str("Keywords.") }, required: ["query"] },
 		async run({ query }: { query: string }, { store }) {
 			const hits = await store.search(query);
 			return {
 				text: hits.length
 					? json(hits.map((h) => (h.concept ? { kind: h.kind, ...conceptSummary(h.concept) } : { kind: h.kind, title: h.title })))
-					: `Nothing in the vault matches "${query}" yet.`,
+					: `Nothing on the account matches "${query}" yet.`,
 				summary: `Searched memory for “${query}” — ${hits.length} hits`,
 			};
 		},
@@ -279,7 +277,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "upsert_concept",
 		description:
-			"Create or update a concept note in the vault. Only after the learner asked to study, to be quizzed, or to make a goal — not to answer a question, summarize files, or write a study guide. A concept is a reusable idea (Linear functions, Affine compositions), never a source document or a task tied to one (Lecture Note 1 fluency, Practice Exam 1, Prepare for the midterm). Those are goals: put the file in the goal's sources. Prerequisites are DIRECT dependencies (missing ones are created as stubs) and are merged with existing ones unless replacePrerequisites is true. Sections are markdown and replace the existing section. Do not mention a file path or a document title in the note.",
+			"Create or update a concept on the account. Only after they opt in to study. A concept is a reusable idea, never a file or a task on a file (that is a goal; put the file in sources). Direct prerequisites only; missing ones are created as stubs and merged unless replacePrerequisites is true. Sections replace. No path or document title in the note.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -308,7 +306,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal. Only after the learner asked to study, to be quizzed, or to make a goal. A direct question, a summary, or a study guide is not that ask. A goal is the list of targets: concepts the learner has not built yet. The title may name a course, exam, or document (Lecture 1 note fluency, Prepare for the midterm). targets and nodes must be abstract concepts that would still make sense in another class — never a file and never fluency on a file. Pass sources for the vault files this goal draws on. nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Pass due as YYYY-MM-DD when the learner has a deadline; omit it and a new goal is due in 14 days. Pass weights when a syllabus says how much each concept counts (percents). Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
+			"Save a learning goal. Only after they opt in to study. A goal is its targets: concepts not yet built. The title may name a course, exam, or document. targets and nodes are reusable ideas, never a file. Pass sources for the vault files. nodes are the targets plus foundations, direct prerequisites only. due is YYYY-MM-DD; omit it and a new goal is due in 14 days. weights are percents. Concepts they already hold are stored as built. Returns open targets, built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -386,7 +384,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_goal",
 		description:
-			"Calibrated status of a goal the learner is already working: the targets not yet built, what is already built, per-node role and edge, the frontier, and a mermaid map. `next` is the step to take on this goal, not a reason to switch away from something else they asked to learn.",
+			"Status of a goal they are already studying: open targets, built, frontier, and a mermaid map. next is the step on this goal, not a reason to switch topics.",
 		inputSchema: { type: "object", properties: { goal: str("Goal title.") }, required: ["goal"] },
 		async run({ goal }: { goal: string }, { store }) {
 			const r = await store.goalReport(goal);
@@ -445,7 +443,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_working_goal",
 		description:
-			'Set the goal shown in the learner\'s dropdown. Only during a study session they opted into. Pass the goal title, or "you choose" when they are not pinned to one. Call this when you create a goal, switch goals, or merge into one, so the dropdown matches the conversation.',
+			'Set the dropdown goal. Only after they opt in to study. Pass a goal title, or "you choose". Call it when you create, switch, or merge a goal.',
 		inputSchema: {
 			type: "object",
 			properties: { goal: str('Goal title, or "you choose".') },
@@ -493,7 +491,7 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask ONE graded question and wait for the learner's answer; it is recorded as calibrated evidence on the concept. Only after they asked to study or to be quizzed. Never end a direct answer with this. Multiple choice (format choice) is graded instantly and shown with the explanation. Free response (format free) lets the learner type an answer with LaTeX. When the result says the answer was already graded, teach from it and do not call grade_answer. Otherwise grade it with grade_answer. Use for probing the edge (kind probe), confirming a node (check), and spaced review (review). 'I don't know' (with a familiarity slider from 'never seen this' to 'almost have it') and a note are always offered automatically. The result includes a 'Next move' from the diagnosis ladder: follow it.",
+			"Ask one graded question and wait. Only after they opt in to study. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session, grader, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
@@ -544,7 +542,7 @@ export const TOOLS: ToolDef[] = [
 		name: "practice_test",
 		interactive: true,
 		description:
-			"Give the learner a full practice test (exam prep): many questions at once, multiple choice and free response mixed, with no feedback until they submit. Only when they asked for a practice test, a mock exam, or to be tested, or when exam prep they opted into reaches a checkpoint. Multiple choice is graded on submit. Written answers are graded with the result when Groundwork can; otherwise you grade them with grade_practice_test. Every answer is recorded as evidence, and an evaluation (score, per-concept breakdown, misconceptions) is saved to tests/ and shown to the learner. Build it from the exam plan or goal: cover every topic, at the required levels, in the real exam's proportions.",
+			"A full practice test: many questions, no feedback until they submit. Only when they asked for a test, or exam prep they opted into hits a checkpoint. Choice grades on submit. Grade written answers with grade_practice_test unless the result already graded them. Cover the exam plan or goal at the required levels. The evaluation is saved to tests/ and shown to them.",
 		inputSchema: practiceTestInputSchema,
 		async run(input: PracticeTestInput, { store, ui, session, grader, signal }) {
 			if (!ui?.test) return { text: "practice_test needs an interactive surface; quiz them one question at a time instead.", isError: true };
@@ -611,7 +609,7 @@ export const TOOLS: ToolDef[] = [
 		name: "ask_user",
 		interactive: true,
 		description:
-			"Ask the learner a question with NO right answer (their goal, preference, direction, energy). Only during a study session they opted into. A direct question is answered in chat. Offer options when useful; free text is allowed by default. For anything gradable use quiz instead.",
+			"Ask something with no right answer (goal, preference, direction). Only after they opt in to study. A direct question is answered in chat. Anything gradable uses quiz.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -636,7 +634,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "record_evidence",
 		description:
-			"Record a graded observation you judged yourself from conversation, e.g. an explanation they typed in chat. Only during a study session they opted into. Prefer quiz (choice or free response) for anything you ask on purpose: it records automatically and feeds the diagnosis ladder.",
+			"Record a grade you judged from conversation, not from a quiz. Only after they opt in to study. Prefer quiz for anything you ask on purpose.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -675,7 +673,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "ingest_exam_materials",
 		description:
-			"Parse course files (lecture slides, homeworks, study guides, practice exams) into the topics and the level each must be learned to, save an exam plan, and create a teaching goal. Call this only after they asked to study for an exam or from these files — not to summarize, and not to write a study guide. Pass vault paths and/or the text you extracted. Returns the blueprint, required levels (1–5), and the goal map.",
+			"Turn course files into topics and the level each must reach, save an exam plan, and create a goal. Only after they asked to study for an exam or from these files. Not for a summary or a study guide. Pass vault paths and any text you extracted. Returns the blueprint, required levels (1–5), and the goal map.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -856,7 +854,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "save_flashcard",
 		description:
-			"Save one flashcard on the learner's account when they asked for a card. It is not copied into the vault unless they ask to write the cards down. One concept, one atomic question, back is a few words (no comma lists). deck is any deck name. A new name creates that deck. Omit it for the Unsorted deck. If they deleted that deck, this starts it again without the cards they removed. Use the deck's current name.",
+			"Save one flashcard on the account when they asked for a card. Not copied into the vault unless they ask. One question, back is a few words. deck creates a deck if the name is new. Omit it for Unsorted. A deleted deck name starts that deck again, without the cards they removed.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -913,7 +911,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "update_learner_profile",
 		description:
-			"Write durable observations about the learner to learner.md: background, how they learn best, patterns seen across several sessions. Not a list of weak topics (per-concept mastery already lives in the evidence), and never a conclusion from one or two misses or from slips. When later evidence contradicts an observation, rewrite the section with mode replace.",
+			"Update the learner profile: background, how they learn, patterns across several sessions. Not weak topics, not tutorContext, and never a conclusion from one or two misses or from slips. If later evidence contradicts a section, mode replace.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -931,7 +929,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "fetch_public",
 		description:
-			"Read one public https URL: a page, a JSON or GeoJSON API, or the size of an image. Use it before show_figure when a real picture or map dataset would teach better than a schematic. Private and local addresses are refused. Image bytes are not returned; pass the URL to show_figure.",
+			"Read one public https URL (page, JSON, or GeoJSON) before show_figure. Private and local addresses are refused. Image bytes are not returned; pass the URL to show_figure.",
 		inputSchema: {
 			type: "object",
 			properties: { url: str("https URL of a public page, API, GeoJSON file, or image.") },
@@ -951,7 +949,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "show_figure",
 		description:
-			"Show a figure in the left margin of this turn. Use a plate (plot, plot3d, story, conjugation, sentence, or a rough map) when the shape is exact. For a real place, pass kind image with a public image url, or kind geo with a GeoJSON url plus markers drawn on top. kind svg is a drawing you write, including an animated SVG. kind program is Python that writes figure.svg, figure.png, figure.gif, or figure.webp. Python runs inside Groundwork. The learner sees it immediately. In your next sentence, say what to look at. Do not paste the picture into the chat.",
+			"Show one figure in the left margin. Plates: plot, plot3d, story, conjugation, sentence, or a rough map. A real place: kind image or geo with a public url. kind svg is your drawing. kind program is Python that writes figure.svg, figure.png, figure.gif, or figure.webp inside Groundwork. Then say what to look at. Do not paste the picture.",
 		inputSchema: {
 			type: "object",
 			properties: {
