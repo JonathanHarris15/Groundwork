@@ -5,7 +5,9 @@ import {
 	familiarityLabel,
 	gradeQuiz,
 	letter,
+	formatBelief,
 	masteryTone,
+	orderByTestScore,
 	MAX_FAMILIARITY,
 	type AskInput,
 	type AskResponse,
@@ -368,6 +370,40 @@ export class QuizCard {
 const fmtClock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const fmtPoints = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
 
+/** Same bands as the big score: 80% and up, 60% and up, then below. */
+export function testScoreMark(percent: number): "is-good" | "is-ok" | "is-low" {
+	const pct = Math.round(percent * 100);
+	return pct >= 80 ? "is-good" : pct >= 60 ? "is-ok" : "is-low";
+}
+
+/**
+ * `$...$` is a placeholder for "put LaTeX here". Markdown typesets it and the
+ * dollars disappear, so the line reads "Use ... for math". Say what to do instead.
+ */
+export function readableTestInstructions(md: string): string {
+	const typed = "Type math in the math field.";
+	const sentence = md.replace(/Use\s+\$+\s*\.{2,}\s*\$+\s+for math(?:\s+in\s+(?:a\s+)?written answers?)?\.?/gi, typed);
+	return sentence.replace(/\$+\s*\.{2,}\s*\$+/g, "the math field");
+}
+
+function dedupedBeliefs(items: TestReport["misconceptions"]): TestReport["misconceptions"] {
+	const out: TestReport["misconceptions"] = [];
+	const index = new Map<string, number>();
+	for (const item of items) {
+		const text = item.misconception.trim().replace(/\s+/g, " ");
+		if (!text) continue;
+		const key = `${item.concept.trim().toLowerCase()}\0${text.toLowerCase()}`;
+		const hit = index.get(key);
+		if (hit === undefined) {
+			index.set(key, out.length);
+			out.push({ concept: item.concept, misconception: text, questions: [...(item.questions ?? [])] });
+		} else {
+			for (const n of item.questions ?? []) if (!out[hit].questions.includes(n)) out[hit].questions.push(n);
+		}
+	}
+	return out;
+}
+
 export class TestCard {
 	readonly el: HTMLElement;
 	private cards: QuizCard[] = [];
@@ -401,7 +437,7 @@ export class TestCard {
 			setIcon(why.createSpan({ cls: "gw-purpose-icon" }), "compass");
 			void this.renderMd(why.createDiv({ cls: "gw-purpose-text" }), test.objective);
 		}
-		if (test.instructions) void this.renderMd(this.el.createDiv({ cls: "gw-quiz-details" }), test.instructions);
+		if (test.instructions) void this.renderMd(this.el.createDiv({ cls: "gw-quiz-details" }), readableTestInstructions(test.instructions));
 
 		const bar = this.el.createDiv({ cls: "gw-test-bar" });
 		this.progressEl = bar.createSpan({ cls: "gw-test-progress" });
@@ -525,7 +561,7 @@ export class TestCard {
 		this.reportEl.addClass("is-ready");
 		const top = this.reportEl.createDiv({ cls: "gw-test-score" });
 		const pct = Math.round(report.percent * 100);
-		top.createDiv({ cls: `gw-test-score-big ${pct >= 80 ? "is-good" : pct >= 60 ? "is-ok" : "is-low"}`, text: `${pct}%` });
+		top.createDiv({ cls: `gw-test-score-big ${testScoreMark(report.percent)}`, text: `${pct}%` });
 		const meta = top.createDiv({ cls: "gw-test-score-meta" });
 		meta.createDiv({ text: `${fmtPoints(report.earned)} of ${report.possible} points` });
 		const counts = { correct: 0, partial: 0, incorrect: 0, dont_know: 0 };
@@ -542,28 +578,29 @@ export class TestCard {
 				.join(" · "),
 		});
 		if (report.notePath && this.openNote) {
-			const link = meta.createEl("a", { cls: "gw-note-link", text: "Open evaluation note" });
+			const link = meta.createEl("a", { cls: "gw-note-link", text: "Open results note" });
 			link.addEventListener("click", () => this.openNote!(report.notePath!));
 		}
 
 		const concepts = this.reportEl.createDiv({ cls: "gw-test-concepts" });
-		concepts.createDiv({ cls: "gw-free-label", text: "By concept, weakest first" });
-		for (const c of report.byConcept) {
+		concepts.createDiv({ cls: "gw-free-label", text: "This test, lowest score first" });
+		for (const c of orderByTestScore(report.byConcept)) {
 			const row = concepts.createDiv({ cls: "gw-test-concept" });
 			const label = row.createDiv({ cls: "gw-mastery-label" });
 			label.createSpan({ text: c.concept });
+			label.createSpan({ cls: "gw-mastery-kind", text: "Mastery" });
 			statusPill(label, c.status);
 			label.createSpan({ cls: "gw-mastery-delta", text: `${fmtPoints(c.earned)}/${c.possible} · Q${c.questions.join(", Q")}` });
 			const bar = row.createDiv({ cls: "gw-bar" });
 			const p = Math.round(c.percent * 100);
-			const fill = bar.createDiv({ cls: "gw-bar-fill" });
-			setTone(fill, masteryTone(c.status));
+			const fill = bar.createDiv({ cls: `gw-bar-fill ${testScoreMark(c.percent)}` });
 			fill.style.width = `${Math.max(3, p)}%`;
 		}
-		if (report.misconceptions.length) {
+		const beliefs = dedupedBeliefs(report.misconceptions);
+		if (beliefs.length) {
 			const m = this.reportEl.createDiv({ cls: "gw-test-misconceptions" });
 			m.createDiv({ cls: "gw-free-label", text: "Beliefs to fix" });
-			for (const x of report.misconceptions) m.createDiv({ cls: "gw-misconception", text: `${x.concept}: ${x.misconception}` });
+			for (const x of beliefs) m.createDiv({ cls: "gw-misconception", text: formatBelief(x) });
 		}
 	}
 }
