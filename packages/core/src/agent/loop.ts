@@ -1,4 +1,5 @@
 import type { FolderAccess } from "../access";
+import { dialogueFromMessages, studyToolBlock } from "../intent";
 import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
@@ -72,6 +73,7 @@ export class AgentSession implements TutorSession {
 			if (!uses.length) return;
 
 			const results: ContentBlock[] = [];
+			const dialogue = dialogueFromMessages(this.messages);
 			for (const use of uses) {
 				if (signal?.aborted) {
 					results.push({ type: "tool_result", tool_use_id: use.id, content: "Cancelled by the learner.", is_error: true });
@@ -83,23 +85,30 @@ export class AgentSession implements TutorSession {
 				let isError = false;
 				let summary: string | undefined;
 				let files: VaultFile[] | undefined;
-				try {
-					if (!tool) throw new Error(`Unknown tool ${use.name}`);
-					const r = await tool.run(use.input ?? {}, {
-						store: this.opts.store,
-						ui: this.opts.ui,
-						session: this.opts.session,
-						signal,
-						access: this.opts.access,
-						grader: this.opts.grader,
-					});
-					text = r.text;
-					isError = !!r.isError;
-					summary = r.summary;
-					files = r.files;
-				} catch (err) {
-					text = `Error: ${errorMessage(err)}`;
+				const blocked = studyToolBlock(use.name, dialogue);
+				if (blocked) {
+					text = blocked.text;
 					isError = true;
+					summary = blocked.summary;
+				} else {
+					try {
+						if (!tool) throw new Error(`Unknown tool ${use.name}`);
+						const r = await tool.run(use.input ?? {}, {
+							store: this.opts.store,
+							ui: this.opts.ui,
+							session: this.opts.session,
+							signal,
+							access: this.opts.access,
+							grader: this.opts.grader,
+						});
+						text = r.text;
+						isError = !!r.isError;
+						summary = r.summary;
+						files = r.files;
+					} catch (err) {
+						text = `Error: ${errorMessage(err)}`;
+						isError = true;
+					}
 				}
 				onEvent({ type: "tool_end", id: use.id, name: use.name, summary, isError, text });
 				const content = files?.length ? [{ type: "text", text }, ...files.flatMap(fileBlocks)] : text;

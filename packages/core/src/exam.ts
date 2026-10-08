@@ -1,4 +1,5 @@
 import { directSourceReference, sourceBoundConceptReason } from "./concept-title";
+import { classifyLearnerAsk } from "./intent";
 import { basename, loadVaultFile, type VaultFile } from "./files";
 import { slugify } from "./markdown";
 import type { VaultIO } from "./io";
@@ -55,6 +56,11 @@ export function shouldAutoIngest(names: string[], userText = ""): boolean {
 	if (/\b(exam|midterm|final|quiz|homework|pset|study\s*guide|prep(?:are|ping)?)\b/i.test(userText)) return names.length > 0;
 	const coursework = names.filter((n) => looksLikeCoursework(n));
 	return coursework.length > 0;
+}
+
+/** Attachments become an exam goal only when the message is exam prep they asked for. A summary or a study guide does not. */
+export function shouldStartExamPrep(names: string[], userText = ""): boolean {
+	return names.length > 0 && shouldAutoIngest(names, userText) && classifyLearnerAsk(userText) === "study";
 }
 
 const LEVEL_WORDS: Array<{ re: RegExp; level: number }> = [
@@ -385,8 +391,8 @@ export function examPrepInstruction(plan: ExamBlueprint): string {
 		"Topics:",
 		table || "(no topics extracted — read the files with read_vault_file, then call ingest_exam_materials)",
 		plan.notes.join("\n"),
-		"Do this next: call get_learner_overview, refine the graph if needed, save it with set_goal. Targets are reusable ideas (linear functions, affine compositions), never a document and never fluency on a lecture. The goal title may name the exam or the file. Put the files in sources. Include requiredLevel on each node, then teach from the frontier toward those targets. Install each node with a small check on a new case of the one feature you just taught. Once that lands, one check at the node's required level is what marks it built.",
-		"The learner has not necessarily read these files. Define every symbol and term from them the first time you use it, and restate any problem you take from them in full.",
+		"Do this next: get_learner_overview, then set_goal. Targets are reusable ideas, never a document. The goal title may name the exam. Put the files in sources. Include requiredLevel on each node (the need level in the list above). Teach from the frontier: a small check installs the node, and one check at that need level marks it built.",
+		"They have not necessarily read these files. Define every symbol the first time you use it, and restate any problem in full.",
 		"</exam_plan>",
 	]
 		.filter(Boolean)

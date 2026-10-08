@@ -6,6 +6,7 @@ import {
 	extractPdfText,
 	materialFromVaultFile,
 	shouldAutoIngest,
+	shouldStartExamPrep,
 } from "../src/exam";
 import { MemoryVaultIO } from "../src/io";
 import { KnowledgeStore } from "../src/store";
@@ -121,6 +122,15 @@ describe("exam material parsing", () => {
 		expect(shouldAutoIngest(["HW2.md"], "")).toBe(true);
 		expect(shouldAutoIngest(["notes.png"], "prep me for the midterm")).toBe(true);
 		expect(shouldAutoIngest(["vacation.png"], "what is this?")).toBe(false);
+	});
+
+	it("starts an exam goal only when they asked to study", () => {
+		expect(shouldStartExamPrep(["HW2.md"], "")).toBe(false);
+		expect(shouldStartExamPrep(["HW2.md"], "summarize my documents")).toBe(false);
+		expect(shouldStartExamPrep(["HW2.md"], "put together a study guide")).toBe(false);
+		expect(shouldStartExamPrep(["notes.png"], "prep me for the midterm")).toBe(true);
+		expect(shouldStartExamPrep(["notes.pdf"], "I have a Calc 1 final Dec 9, help me study")).toBe(true);
+		expect(shouldStartExamPrep(["vacation.png"], "what is this?")).toBe(false);
 	});
 
 	it("ingest_exam_materials writes an exam plan and a goal with required levels", async () => {

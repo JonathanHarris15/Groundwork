@@ -45,7 +45,7 @@ export function describeQuizOutcome(o: QuizOutcome): string {
 	if (grade.misconception) lines.push(`Diagnosed misconception: ${grade.misconception}`);
 	if (response.note) lines.push(`Learner's note: ${response.note}`);
 	lines.push(
-		`Recorded in vault → ${o.conceptTitle}: ${before.attempts ? pct(before.current) : "unassessed"} → ${pct(after.current)} (status ${after.status}; ${describeEdge(after)}; d${quiz.difficulty} ${quiz.kind}).`,
+		`Recorded on the account → ${o.conceptTitle}: ${before.attempts ? pct(before.current) : "unassessed"} → ${pct(after.current)} (status ${after.status}; ${describeEdge(after)}; d${quiz.difficulty} ${quiz.kind}).`,
 	);
 	lines.push(`Predicted chance on next d${Math.min(5, quiz.difficulty + 1)}: ${pct(predictCorrect(after, quiz.difficulty + 1))}.`);
 	if (o.judgmentNote) lines.push(o.judgmentNote);

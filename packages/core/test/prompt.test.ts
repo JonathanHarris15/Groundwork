@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STUDY_FOLLOW_UP } from "../src/intent";
 import { buildSystemPrompt } from "../src/prompt";
 
 describe("teaching method", () => {
@@ -17,6 +18,16 @@ describe("teaching method", () => {
 	it("re-teaches a miss in the other representation", () => {
 		expect(method).toContain("Re-teach in the other representation");
 		expect(method).toContain("wrong kind of thing");
+	});
+
+	it("answers first and starts a goal only after they opt in", () => {
+		expect(method.startsWith("# Answer first")).toBe(true);
+		expect(method).toContain(STUDY_FOLLOW_UP);
+		expect(method).toContain("Do not end with a question that checks them");
+		expect(method).toContain("Then stop. No goal, no concepts, no quiz");
+		expect(method).toContain("Start this shape only after they opt in");
+		expect(method).toContain("The dropdown does not opt them in");
+		expect(method).toContain("Start this only when they ask to study for one");
 	});
 
 	it("names the default read and write folders, including a file to submit", () => {
