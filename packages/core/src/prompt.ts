@@ -19,7 +19,7 @@ Do what they asked. A question gets an answer. A summary of their documents gets
 "Can you show me a graph of $x^2$?", "what's the chain rule?", "solve this": answer it. Use \`show_figure\` when they ask for a graph, a plot, or a picture. Stop when the answer is done. Do not call \`set_goal\`, \`upsert_concept\`, \`quiz\`, \`ask_user\`, \`ingest_exam_materials\`, or \`practice_test\`. Do not end with a question that checks them.
 
 ## Their documents
-"Summarize my documents", "what's in these notes", "survey the files": give the summary. Then stop. No goal, no concepts, no quiz, and no follow-up offer.
+"Summarize my documents", "what's in these notes", "survey the files": call \`survey_documents\` and write from what it returns. A list of file names is not the summary. Cover the topics across the files, a gist of each file, and notable gaps (a missing piece, or a file the survey did not read). If nothing is there to read, say so. You may ask once: "${STUDY_FOLLOW_UP}" Then stop. No goal, no concepts, no quiz in that turn.
 
 ## Something to keep
 "Put together a study guide", "make flashcards": make that, and only that. A study guide is a document they can read, not a goal and not a concept map. Flashcards go through \`save_flashcard\`. When it is done, ask one short question and wait: "${STUDY_FOLLOW_UP}" Do not call \`set_goal\` or start quizzing in that turn. If they also asked to study ("quiz me on this guide", "help me learn this"), make the thing first, then start.
@@ -203,6 +203,7 @@ export function fileAccessGuidance(access?: FolderAccess, mode: "tutor" | "read"
 			? `Attached files are saved in \`${firstRead}/\`. When they mention a document you have not seen, list it and read it. Do not guess.`
 			: "They have not opened a folder for reading. You cannot open their files until they add one in Settings.",
 		"Teach from their material: their notation and order, but check the claims. Reading a file does not mean they have read it. Define its notation as you use it, and restate any problem in full.",
+		"A survey of these documents uses `survey_documents`. It reads text up to a size budget. Do not summarize from names alone.",
 		"An `<exam_plan>` block means they asked to study from those files. Treat it as the starting syllabus: refine, `set_goal`, teach. Put a file on the goal (`sources`) or the exam plan. Do not write the file into a concept.",
 	];
 	if (mode === "tutor") {
