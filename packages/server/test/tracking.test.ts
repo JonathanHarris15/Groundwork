@@ -122,7 +122,7 @@ describe("ads tracking", () => {
 	});
 
 	it("publishes real pages with the contact email and no draft markers", () => {
-		const paths = ["/", "/pricing", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms", "/404.html"];
+		const paths = ["/", "/pricing", "/practice-tests", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms", "/404.html"];
 		for (const href of paths) {
 			const body = readSite(href)?.body ?? "";
 			expect(body.length).toBeGreaterThan(200);
@@ -139,6 +139,33 @@ describe("ads tracking", () => {
 		expect(readSite("/quizzes-flashcards")?.body).toContain("Quiz cards can come straight from the notes and lecture slides already in your vault.");
 		expect(readSite("/exam-prep")?.body).toContain("for a midterm or final");
 		expect(readSite("/exam-prep")?.body).toContain("plans in Obsidian");
+		const practice = String(readSite("/practice-tests")?.body ?? "");
+		expect(practice).toContain("Practice tests for college exams, in Obsidian | Groundwork");
+		expect(practice).toContain("Practice questions and practice tests for calculus, statistics, and chemistry exams. See which concept broke, with explanations after each question.");
+		expect(practice).toContain("<h1>Practice tests that show what broke.</h1>");
+		expect(practice).toContain("Name a topic, or add your slides, notes, or a practice exam.");
+		expect(practice).toContain('href="/#signin"');
+		expect(practice).toContain("Requires Obsidian desktop. Sign up here, install on your computer.");
+		expect(practice).toContain('src="/tracking.js?v=6"');
+		expect(practice).toContain('href="/practice-tests">Practice tests</a>');
+		expect(practice).not.toMatch(/\b\d+\s+questions?\b/i);
+		expect(practice.toLowerCase()).not.toContain("personalized feedback on every answer");
+		expect(practice).not.toMatch(/re-?teach/i);
+		const withoutDenial = practice.replace(/Are these real exam questions\?/g, "");
+		expect(withoutDenial).not.toMatch(/real exam questions|official exam questions|official questions/i);
+		expect(practice).not.toMatch(/\b(guarantee|guaranteed)\b/i);
+		expect(practice).not.toMatch(/score increase|improve your grade|improve your score|raise your grade|raise your score/i);
+		expect(practice).not.toMatch(/spaced repetition|\bscheduling\b/i);
+		expect(practice.match(/<h1>([^<]*)<\/h1>/)?.[1] ?? "").not.toMatch(/\bAI\b/i);
+		expect(practice).not.toMatch(/\b(AP|SAT|ACT|ACS|Chegg|Quizlet|Course Hero)\b/i);
+		expect(practice).not.toMatch(/Obsidian (approves|endorses|endorsed|approved)/i);
+		expect(practice).toContain("18 and older");
+		expect(String(readSite("/terms")?.body)).toContain("You must be 18 or older to use Groundwork");
+		expect(String(readSite("/privacy")?.body)).toContain("anyone under 18, including children under 13");
+		expect(String(readSite("/privacy")?.body)).toContain("methoddev1505@gmail.com");
+		expect(sitemapXml()).toContain("https://groundworklearn.com/practice-tests");
+		const home = readFileSync(path.join(root, "packages/server/public/index.html"), "utf8");
+		expect(home).toContain('href="/practice-tests"');
 		expect(readSite("/privacy")?.body).toContain("adssettings.google.com");
 		expect(readSite("/privacy")?.body).toContain("Groundwork’s model provider on Free and the $20 plan");
 		expect(readSite("/pricing")?.body).toContain("Choose $6");
@@ -155,7 +182,6 @@ describe("ads tracking", () => {
 		expect(sitemapXml()).not.toContain("graph-harness");
 		expect(robotsTxt()).toContain("Disallow: /v1/");
 		expect(renderSite("/nope")).toBeNull();
-		const home = readFileSync(path.join(root, "packages/server/public/index.html"), "utf8");
 		expect(home).toContain("not started");
 		expect(home).not.toContain("not built");
 		expect(home).toContain("Quiz yourself on your own notes and lecture slides");

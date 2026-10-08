@@ -229,6 +229,7 @@ function showSignIn() {
 					${config.firebase ? `<button class="btn btn-ink" id="google" type="button">Sign in with Google</button>` : ""}
 					${config.localDev ? `<button class="btn ${localOnly ? "btn-ink" : "btn-line"}" id="local-dev" type="button">Continue on this device</button>` : ""}
 				</div>
+				<p class="fine">By continuing you confirm you're 18 or older and agree to the <a href="/terms">Terms</a>.</p>
 				${config.localDev ? `<p class="fine">Local-only sign-in. Use Google on the live site.</p>` : ""}
 			</div>
 			${heroMark()}

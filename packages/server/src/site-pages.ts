@@ -88,6 +88,7 @@ function footer(): string {
 			<button type="button" class="foot-button" data-consent-open>Cookies</button>
 		</nav>
 		<nav class="foot-features" aria-label="Features">
+			<a href="/practice-tests">Practice tests</a>
 			<a href="/exam-prep">Exam prep</a>
 			<a href="/concept-map">Concept map</a>
 			<a href="/quizzes-flashcards">Quizzes &amp; flashcards</a>
@@ -193,6 +194,71 @@ function pricingPage(): string {
 				<h3>Does my progress carry over between plans?</h3>
 				<p>Yes. Your goals, concept map, and quiz history stay on your account when you change plans. Progress syncs across your computers either way.</p>
 			</section>
+			${cta("/#signin", "Start free")}
+		`,
+	});
+}
+
+function practicePage(): string {
+	return page({
+		path: "/practice-tests",
+		title: "Practice tests for college exams, in Obsidian | Groundwork",
+		description: "Practice questions and practice tests for calculus, statistics, and chemistry exams. See which concept broke, with explanations after each question.",
+		main: `
+			<h1>Practice tests that show what broke.</h1>
+			<p class="mkt-sub">Name a topic, or add your slides, notes, or a practice exam. Groundwork writes practice questions and practice tests for your midterm or final, then shows which concept broke. Requires Obsidian desktop.</p>
+			${cta("/#signin", "Start free")}
+			${shotFigure({
+				base: "/shots/practice-chat",
+				width: 1656,
+				height: 634,
+				eager: true,
+				alt: "Chat asking for a practice test on a Calc 1 final, with the practice test card opened.",
+			})}
+			${section("Start from a topic", ["Name the exam. Calc 1 final, Stats midterm: hypothesis tests, or Gen chem: stoichiometry. Adding slides, notes, or a practice exam is optional, and it makes the questions closer to your course. Groundwork only reads the vault folders you allow."])}
+			${section("Take a practice test", ["Multiple choice and written answers. Math is typed live in LaTeX. You can turn on a countdown. It does not cut the test off, and there is no feedback until you submit."], shotFigure({
+				base: "/shots/practice-mid",
+				width: 1656,
+				height: 1026,
+				alt: "A practice test card in progress, with a countdown and no feedback yet.",
+			}))}
+			${section("See what broke", ["You get a score, the points you earned, and how the answers split between correct, partial, and wrong. Concepts are listed weakest first, with the beliefs to fix. Each question includes an explanation. A written answer also shows a model answer. A multiple-choice question marks the correct choice. The results are saved as a note in your vault."], shotFigure({
+				base: "/shots/practice-results",
+				width: 1656,
+				height: 1186,
+				alt: "Practice test results for Calc 1 final, Practice 1, with the score, concepts weakest first, and beliefs to fix.",
+			}))}
+			${section("Practice questions that explain themselves", ["An explanation follows each question. A wrong pick can show the likely mistake behind it. On a written answer, partial credit counts, equivalent forms are accepted, and a careless slip is not counted as a gap. There is a hint button when you are stuck."], shotFigure({
+				base: "/shots/practice-quiz",
+				width: 1656,
+				height: 932,
+				alt: "A chain rule quiz answered wrong, with the likely belief and an explanation.",
+			}))}
+			${section("Every answer updates your map", ["Answers are recorded on your concept map, so you can see which concepts are solid and which are shaky before the exam. Set the exam date as the goal’s due date."], `${shotFigure({
+				base: "/shots/practice-goals",
+				width: 2696,
+				height: 1862,
+				alt: "Goals tab for Calc 1 final, with the exam date on the goal.",
+			})}${shotFigure({
+				base: "/shots/practice-map",
+				width: 2744,
+				height: 2764,
+				alt: "Concept map for Calc 1 final, with the goal concepts and the foundations under them.",
+			})}`)}
+			${section("Questions", [], `
+				<h3>Who is Groundwork for?</h3>
+				<p>College students and adult learners, 18 and older. It isn’t built for high-school students.</p>
+				<h3>Which subjects?</h3>
+				<p>Any course you can name. Calculus, statistics, and chemistry work well because math renders in LaTeX.</p>
+				<h3>Do I need to upload anything?</h3>
+				<p>No. A topic is enough. Slides, notes, or a practice exam make the questions closer to your course.</p>
+				<h3>Are these real exam questions?</h3>
+				<p>No. Groundwork writes new practice questions. It doesn’t have your professor’s exam.</p>
+				<h3>Does it run on a Chromebook, phone, or tablet?</h3>
+				<p>No. It’s a plugin for Obsidian on a Windows, Mac, or Linux computer.</p>
+				<h3>Is it free?</h3>
+				<p>Yes. Free uses Groundwork’s smaller model and has a monthly limit. Bring your own model is $6 a month. Groundwork running the models is $20 a month.</p>
+			`)}
 			${cta("/#signin", "Start free")}
 		`,
 	});
@@ -366,6 +432,7 @@ function privacyPage(): string {
 			${section("Keys you paste", ["On the Bring your own model plan you can save a key for OpenRouter, Anthropic, Google, xAI, or OpenAI. The key is stored on your account and used only on Groundwork’s server to call that provider. The plugin does not send the key.", "Claude on your computer is separate. If you use a Claude subscription, Claude Code runs on your machine. That login stays there. Groundwork does not receive it."])}
 			${section("Billing", ["Paid plans are billed by Stripe. Stripe gets what it needs to charge the card and send receipts. Groundwork stores the Stripe customer id and which plan you’re on."])}
 			${section("Cookies, ads, and analytics", ["We use Google Analytics and Google Ads to see which ads bring people here, and whether they create an account, connect Obsidian, or start a paid plan. When checkout completes, the server reports that purchase to Google Analytics with the amount Stripe charged. Google may also use these cookies to personalize the ads you see. You can change that at <a href='https://adssettings.google.com'>adssettings.google.com</a>.", "If you’re in the United States, those cookies are on unless you opt out. Everywhere else they stay off. OK closes the notice and leaves that as it is. Opt out turns them off in this browser. Cookies in the footer opens the notice again."])}
+			${section("Children", [`We don’t knowingly collect personal information from anyone under 18, including children under 13. If we learn that we have, we delete it. Email <a href="mailto:${EMAIL}" data-contact-email>${EMAIL}</a>.`])}
 			${section("Deletion and questions", [`Email <a href="mailto:${EMAIL}" data-contact-email>${EMAIL}</a> to ask for a copy of your account data or to delete it. Deleting the account removes the study record, saved keys, and the billing link we store. It does not delete files in your Obsidian vault. Cancel a paid plan from Manage billing on your account page, or ask us to cancel it when you write.`])}
 			<p class="fine">See also the <a href="/terms">terms</a>.</p>
 		`,
@@ -381,6 +448,7 @@ function termsPage(): string {
 			<h1>Terms</h1>
 			<p class="mkt-sub">These terms cover the Groundwork website and the Groundwork plugin for Obsidian desktop.</p>
 			${section("The product", ["Groundwork is a tutor that runs inside Obsidian on a desktop computer. It does not run on a phone. You need an account. You sign in with Google at groundworklearn.com."])}
+			${section("Age", ["You must be 18 or older to use Groundwork. You must be at least 18 to create an account or use Groundwork. Groundwork isn’t directed to anyone under 18, and we close accounts we learn belong to someone under 18."])}
 			${section("Plans", ["Free is $0. It uses Groundwork’s smaller model and has a monthly limit on tutor use. Your account shows the share of that month you’ve used.", "Bring your own model is $6 per month. You use the Claude subscription on your computer, or a key you paste. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 is for Groundwork.", "Groundwork is $20 per month. We run the models. Light by default.", "The study tools are the same on each plan. What changes is which model answers, and who pays for that use. Prices are listed on <a href=\"/pricing\">Plans</a>."])}
 			${section("Billing and cancellation", ["Paid plans are billed monthly by Stripe. You can switch plans on your account page. To change or cancel a paid plan, open Manage billing, which takes you to Stripe. Canceling stops the next charge. It does not delete your study record.", "Stripe may add tax where it has to."])}
 			${section("Your notes", ["Your vault is yours. Groundwork reads and writes only the folders you allow. You’re responsible for the files you attach and for having the right to use them."])}
@@ -392,6 +460,7 @@ function termsPage(): string {
 
 const PAGES: Array<{ path: string; file: string; html: () => string }> = [
 	{ path: "/pricing", file: "pricing/index.html", html: pricingPage },
+	{ path: "/practice-tests", file: "practice-tests/index.html", html: practicePage },
 	{ path: "/exam-prep", file: "exam-prep/index.html", html: examPage },
 	{ path: "/concept-map", file: "concept-map/index.html", html: conceptPage },
 	{ path: "/quizzes-flashcards", file: "quizzes-flashcards/index.html", html: quizzesPage },

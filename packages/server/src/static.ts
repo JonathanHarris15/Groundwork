@@ -19,7 +19,7 @@ const FILES: Record<string, { file: string; type: string }> = {
 };
 
 const HERO_FILE = /^concept-map(?:-phone)?(?:-\d+)?\.(?:webp|avif|png)$/;
-const SHOT_FILE = /^(?:quiz|flashcards|exam-chat|exam-map|goals)(?:-\d+)?\.(?:webp|avif|png)$/;
+const SHOT_FILE = /^(?:quiz|flashcards|exam-chat|exam-map|goals|practice-chat|practice-mid|practice-results|practice-quiz|practice-goals|practice-map)(?:-\d+)?\.(?:webp|avif|png)$/;
 
 /** The home hero is one replaceable shot: `public/hero/concept-map.png`, plus the webp and avif sizes built from it. */
 function imageType(name: string): string {

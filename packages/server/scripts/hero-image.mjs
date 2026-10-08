@@ -3,7 +3,7 @@
  * Replace a png, then run: node packages/server/scripts/hero-image.mjs
  *
  * Home and /concept-map share public/hero/concept-map.png.
- * Feature pages use public/shots/{quiz,flashcards,exam-chat,exam-map,goals}.png.
+ * Feature pages use public/shots/{quiz,flashcards,exam-chat,exam-map,goals,practice-chat,practice-mid,practice-results,practice-quiz,practice-goals,practice-map}.png.
  */
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../public");
 export const heroWidths = [480, 768, 1200];
-export const shotNames = ["quiz", "flashcards", "exam-chat", "exam-map", "goals"];
+export const shotNames = ["quiz", "flashcards", "exam-chat", "exam-map", "goals", "practice-chat", "practice-mid", "practice-results", "practice-quiz", "practice-goals", "practice-map"];
 
 async function writeSet(dir, name) {
 	const src = path.join(dir, `${name}.png`);

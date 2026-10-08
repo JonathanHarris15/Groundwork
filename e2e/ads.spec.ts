@@ -6,7 +6,7 @@ import { inflateSync } from "node:zlib";
 const shots = "/opt/cursor/artifacts/site-ads";
 mkdirSync(shots, { recursive: true });
 
-const pages = ["/", "/pricing", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms"];
+const pages = ["/", "/pricing", "/practice-tests", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms"];
 
 function slug(href: string): string {
 	return href === "/" ? "home" : href.slice(1);
@@ -94,7 +94,7 @@ test("public pages, footer email, and screenshots", async ({ page }, testInfo) =
 				});
 			}
 		}
-		if (["/concept-map", "/quizzes-flashcards", "/exam-prep", "/goals"].includes(href)) {
+		if (["/concept-map", "/quizzes-flashcards", "/exam-prep", "/goals", "/practice-tests"].includes(href)) {
 			const shotImg = page.locator(".mkt-shot img").first();
 			await expect(shotImg).toBeVisible();
 			await expect.poll(async () => shotImg.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);

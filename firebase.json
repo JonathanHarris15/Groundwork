@@ -17,6 +17,7 @@
       { "source": "/v1/**", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/health", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/pricing", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/practice-tests", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/exam-prep", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/concept-map", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/quizzes-flashcards", "run": { "serviceId": "groundwork", "region": "us-central1" } },

@@ -83,6 +83,192 @@ export class DemoProvider implements Provider {
 		];
 	}
 
+	/** Scripted Calc 1 final: a mixed practice test, then one chain-rule check. No follow-up teaching. */
+	private calcPracticeTest(): ContentBlock[] {
+		const choice = (
+			concept: string,
+			question: string,
+			correct: { label: string; value: string },
+			wrongs: Array<{ label: string; value: string; misconception?: string }>,
+			explanation: string,
+			difficulty = 2,
+		) => ({
+			concept,
+			question,
+			options: [correct, ...wrongs],
+			correctAnswer: correct.value,
+			explanation,
+			difficulty,
+			shuffle: false,
+		});
+		return [
+			{ type: "text", text: "Here's a practice test for your Calc 1 final. No feedback until you submit.\n" },
+			this.tool("practice_test", {
+				title: "Calc 1 final · Practice 1",
+				goal: "Calc 1 final",
+				objective: "Whether limits, the power rule, the product rule, the chain rule, and the derivative of sine hold up on a Calc 1 final.",
+				instructions: "Answer every question, then press **Submit test**. Use $...$ for math in a written answer. No feedback until you submit.",
+				timeLimitMinutes: 25,
+				questions: [
+					choice(
+						"Limits",
+						"What is $\\lim_{x \\to 2} \\frac{x^2-4}{x-2}$?",
+						{ label: "$4$", value: "four" },
+						[
+							{ label: "$0$", value: "zero", misconception: "plugs in before simplifying a 0/0 form" },
+							{ label: "$2$", value: "two", misconception: "uses the x-value as the limit" },
+						],
+						"Factor $x^2-4 = (x-2)(x+2)$, cancel the shared factor, and the limit is $4$.",
+					),
+					choice(
+						"Power rule",
+						"Find $\\frac{d}{dx} x^4$.",
+						{ label: "$4x^3$", value: "four-x-cubed" },
+						[
+							{ label: "$x^3$", value: "x-cubed", misconception: "forgets to bring the exponent down" },
+							{ label: "$4x^4$", value: "four-x-fourth", misconception: "does not lower the exponent" },
+						],
+						"Bring the exponent down and lower it by one: $4x^3$.",
+					),
+					choice(
+						"Product rule",
+						"Find $\\frac{d}{dx}\\left(x^2 \\sin x\\right)$.",
+						{ label: "$2x\\sin x + x^2\\cos x$", value: "product" },
+						[
+							{ label: "$2x\\cos x$", value: "two-x-cos", misconception: "differentiates both factors and multiplies those derivatives" },
+							{ label: "$x^2\\cos x$", value: "x-squared-cos", misconception: "differentiates only the second factor" },
+						],
+						"Product rule: $2x\\sin x + x^2\\cos x$.",
+					),
+					choice(
+						"Chain rule",
+						"What is $\\frac{d}{dx}\\sin(x^2)$?",
+						{ label: "$2x\\cos(x^2)$", value: "full" },
+						[
+							{ label: "$\\cos(x^2)$", value: "outer-only", misconception: "forgets to multiply by the inner derivative" },
+							{ label: "$2x\\sin(x^2)$", value: "inner-sine", misconception: "differentiates the inner function and leaves the outer as sine" },
+						],
+						"Outer derivative $\\cos(x^2)$ times inner derivative $2x$ gives $2x\\cos(x^2)$.",
+					),
+					{
+						concept: "Derivative of sine",
+						question: "Find $\\frac{d}{dx}\\sin(3x)$.",
+						format: "free",
+						referenceAnswer: "$3\\cos(3x)$",
+						rubric: "Full credit: $3\\cos(3x)$. Partial: $\\cos(3x)$ without the factor $3$.",
+						explanation: "The derivative of $\\sin(3x)$ is $\\cos(3x)$ times $3$.",
+						difficulty: 3,
+					},
+					choice(
+						"Power rule",
+						"Find $\\frac{d}{dx} x^5$.",
+						{ label: "$5x^4$", value: "five-x-fourth" },
+						[
+							{ label: "$x^4$", value: "x-fourth", misconception: "forgets to bring the exponent down" },
+							{ label: "$5x^5$", value: "five-x-fifth", misconception: "does not lower the exponent" },
+						],
+						"Bring the exponent down and lower it by one: $5x^4$.",
+					),
+					choice(
+						"Chain rule",
+						"What is $\\frac{d}{dx}(x^2+1)^3$?",
+						{ label: "$6x(x^2+1)^2$", value: "full-power" },
+						[
+							{ label: "$3(x^2+1)^2$", value: "outer-only-power", misconception: "forgets to multiply by the inner derivative" },
+							{ label: "$3x(x^2+1)^2$", value: "half-inner", misconception: "uses $x$ instead of the inner derivative $2x$" },
+						],
+						"Outer derivative $3(x^2+1)^2$ times inner derivative $2x$ gives $6x(x^2+1)^2$.",
+						3,
+					),
+					choice(
+						"Limits",
+						"What is $\\lim_{x \\to 0} \\frac{\\sin x}{x}$?",
+						{ label: "$1$", value: "one" },
+						[
+							{ label: "$0$", value: "zero-limit", misconception: "treats $\\sin x$ as $0$ and the quotient as $0$" },
+							{ label: "undefined", value: "undefined", misconception: "stops because the denominator is $0$" },
+						],
+						"This standard limit equals $1$.",
+					),
+					choice(
+						"Chain rule",
+						"Find $\\frac{d}{dx} e^{2x}$.",
+						{ label: "$2e^{2x}$", value: "two-e" },
+						[
+							{ label: "$e^{2x}$", value: "e-only", misconception: "forgets to multiply by the inner derivative" },
+							{ label: "$2xe^{2x}$", value: "two-x-e", misconception: "treats the exponent like a power of $x$" },
+						],
+						"The derivative of $e^{2x}$ is $e^{2x}$ times $2$.",
+					),
+					choice(
+						"Derivative of sine",
+						"Find $\\frac{d}{dx}\\sin x$.",
+						{ label: "$\\cos x$", value: "cos" },
+						[
+							{ label: "$-\\cos x$", value: "neg-cos", misconception: "uses the derivative of cosine" },
+							{ label: "$\\sin x$", value: "sin", misconception: "leaves the function unchanged" },
+						],
+						"The derivative of $\\sin x$ is $\\cos x$.",
+					),
+				],
+			}),
+		];
+	}
+
+	private calcGrade(testId: string): ContentBlock[] {
+		return [
+			this.tool("grade_practice_test", {
+				test_id: testId,
+				grades: [
+					{
+						question: 5,
+						outcome: "partial",
+						feedback: "The outer derivative is right. The inner derivative of $3x$ is $3$, so the answer is $3\\cos(3x)$.",
+					},
+				],
+			}),
+		];
+	}
+
+	private calcChainQuiz(): ContentBlock[] {
+		return [
+			this.tool("quiz", {
+				concept: "Chain rule",
+				purpose: "Whether you multiply by the inner derivative.",
+				question: "What is $\\frac{d}{dx}\\sin(x^2)$?",
+				options: [
+					{ label: "$\\cos(x^2)$", value: "outer-only", misconception: "Differentiates the outer function and forgets the inner derivative" },
+					{ label: "$2x\\cos(x^2)$", value: "full" },
+					{ label: "$2x\\sin(x^2)$", value: "inner-sine" },
+				],
+				correctAnswer: "full",
+				explanation: "Outer derivative $\\cos(x^2)$ times inner derivative $2x$ gives $2x\\cos(x^2)$.",
+				difficulty: 2,
+				kind: "check",
+				shuffle: false,
+			}),
+		];
+	}
+
+	private calcFinalStep(messages: ChatMessage[]): ContentBlock[] {
+		const last = messages[messages.length - 1];
+		const results = Array.isArray(last?.content) ? last.content.filter((b) => b.type === "tool_result") : [];
+		const lastToolNames = results.map((r) => toolNameFor(messages, r.type === "tool_result" && typeof r.tool_use_id === "string" ? r.tool_use_id : ""));
+		const learnerSpoke = !!last && isLearnerTurn(last);
+		const said = learnerSpoke ? learnerText(last) : "";
+		const resultText = results.map((r) => (r.type === "tool_result" && typeof r.content === "string" ? r.content : "")).join("\n");
+		if (learnerSpoke && /practice test/i.test(said)) return this.calcPracticeTest();
+		if (learnerSpoke && /chain rule/i.test(said)) return this.calcChainQuiz();
+		if (lastToolNames.includes("practice_test") || lastToolNames.includes("grade_practice_test")) {
+			const testId = /test_id "([^"]+)"/.exec(resultText)?.[1];
+			if (testId && /They wrote:/.test(resultText)) return this.calcGrade(testId);
+			return [];
+		}
+		if (lastToolNames.includes("quiz")) return [];
+		if (learnerSpoke) return this.calcPracticeTest();
+		return [];
+	}
+
 	/** The demo "grades" by looking for the key expression, so the flow is visible without a model. */
 	private gradeTest(testId: string, resultText: string): ContentBlock[] {
 		const answers = [...resultText.matchAll(/### Question (\d+)[\s\S]*?They wrote:\n([\s\S]*?)\nReference answer:/g)];
@@ -100,6 +286,7 @@ export class DemoProvider implements Provider {
 	}
 
 	private nextStep(messages: ChatMessage[]): ContentBlock[] {
+		if (messages.some((m) => /calc 1 final/i.test(messageText(m)))) return this.calcFinalStep(messages);
 		const last = messages[messages.length - 1];
 		const results = Array.isArray(last?.content) ? last.content.filter((b) => b.type === "tool_result") : [];
 		const lastToolNames = results.map((r) => toolNameFor(messages, r.type === "tool_result" && typeof r.tool_use_id === "string" ? r.tool_use_id : ""));
@@ -395,6 +582,18 @@ export class DemoProvider implements Provider {
 function learnerText(m: ChatMessage): string {
 	if (typeof m.content === "string") return m.content;
 	return m.content.map((b) => (b.type === "text" ? b.text : "")).join(" ");
+}
+
+function messageText(m: ChatMessage): string {
+	if (typeof m.content === "string") return m.content;
+	return m.content
+		.map((b) => {
+			if (b.type === "text") return b.text;
+			if (b.type === "tool_result" && typeof b.content === "string") return b.content;
+			if (b.type === "tool_use") return JSON.stringify(b.input ?? "");
+			return "";
+		})
+		.join(" ");
 }
 
 function isLearnerTurn(m: ChatMessage): boolean {
