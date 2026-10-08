@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latexToPlain, mathSources, normalizeTutorMarkdown } from "../src/tutor-markdown";
+import { latexToPlain, mathSources, normalizeTutorMarkdown, promotePlainCode } from "../src/tutor-markdown";
 import { prepareQuiz } from "../src/quiz";
 
 const GRADIENT_EXPLANATION =
@@ -106,6 +106,47 @@ describe("normalizeTutorMarkdown", () => {
 		expect(q.options[0].label).toBe("$\\nabla g^\\top y$");
 		expect(q.explanation).not.toContain("==");
 		expect(q.explanation).toContain("$h$ is the composition of $g$");
+	});
+});
+
+describe("promotePlainCode", () => {
+	it("fences a Python block and keeps its indentation", () => {
+		const src = ["Try this.", "", "def factorial(n):", "    if n <= 1:", "        return 1", "    return n * factorial(n - 1)", "", "Then call it."].join("\n");
+		expect(promotePlainCode(src)).toBe(
+			["Try this.", "", "```python", "def factorial(n):", "    if n <= 1:", "        return 1", "    return n * factorial(n - 1)", "```", "", "Then call it."].join("\n"),
+		);
+	});
+
+	it("fences one JavaScript line and an indented Python block", () => {
+		const src = ["    def factorial(n):", "        return n", "", "const total = items.reduce((sum, item) => sum + item.price, 0);"].join("\n");
+		expect(promotePlainCode(src)).toBe(
+			["```python", "def factorial(n):", "    return n", "```", "", "```javascript", "const total = items.reduce((sum, item) => sum + item.price, 0);", "```"].join("\n"),
+		);
+	});
+
+	it("leaves formulas, equations, and ordinary sentences alone", () => {
+		const samples = [
+			"The derivative of $x^2$ is $2x$.",
+			"y = mx + b",
+			"if the limit exists, the derivative is continuous.",
+			"return the value of the limit",
+			"class notes are in the folder",
+			"if (the limit) exists, stop.",
+			"function of the outer map",
+		];
+		for (const sample of samples) expect(promotePlainCode(sample), sample).toBe(sample);
+	});
+
+	it("does not rewrite code that is already fenced, and stays idempotent", () => {
+		const src = "before\n```python\ndef f(n):\n    return n\n```\nafter $\\alpha$";
+		const out = normalizeTutorMarkdown(src);
+		expect(out).toContain("```python\ndef f(n):\n    return n\n```");
+		expect(out).toContain("after $\\alpha$");
+		const plain = "def f(n):\n    return n";
+		const once = normalizeTutorMarkdown(plain);
+		expect(once).toContain("```python");
+		expect(once).toContain("    return n");
+		expect(normalizeTutorMarkdown(once)).toBe(once);
 	});
 });
 

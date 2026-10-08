@@ -255,6 +255,21 @@ export class MathField {
 		this.opts.onChange();
 	}
 
+	/** Drop one indent from the line under the caret. A line that is not indented stays put. */
+	private outdent(): void {
+		const { source, start, end } = this.capture();
+		if (start !== end) return;
+		const lineStart = source.lastIndexOf("\n", start - 1) + 1;
+		const line = source.slice(lineStart, start);
+		const indent = line.match(/^(?:\t| {1,4})/);
+		if (!indent) return;
+		const next = source.slice(0, lineStart) + source.slice(lineStart + indent[0].length);
+		const caret = start - indent[0].length;
+		this.remembered = { start: caret, end: caret };
+		this.paint(next, caret, true);
+		this.opts.onChange();
+	}
+
 	private insertRaw(text: string): void {
 		if (this.disabled || this.painting) return;
 		const { source, start, end } = this.capture();
@@ -270,6 +285,12 @@ export class MathField {
 		if (e.key === "Enter" && !(e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
 			this.insertRaw("\n");
+			return;
+		}
+		if (e.key === "Tab") {
+			e.preventDefault();
+			if (e.shiftKey) this.outdent();
+			else this.insertRaw("\t");
 			return;
 		}
 		if (e.key !== "Backspace" && e.key !== "Delete" && e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;

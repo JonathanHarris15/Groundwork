@@ -32,8 +32,19 @@ const FENCE_LINE = /^(```+|~~~+)/;
 
 export function normalizeTutorMarkdown(md: string): string {
 	if (!md) return md;
-	const parts = splitFences(unescapeOverEscaped(md));
-	return parts.map((p) => (p.fence ? p.text : normalizeQuoted(p.text))).join("");
+	return normalizeParts(unescapeOverEscaped(md));
+}
+
+function normalizeParts(md: string): string {
+	const parts = splitFences(md);
+	return parts.map((p) => (p.fence ? p.text : normalizeProse(p.text))).join("");
+}
+
+/** Fence obvious code, then repair math in the prose that is left. */
+function normalizeProse(text: string): string {
+	const promoted = promotePlainCode(text);
+	if (promoted !== text) return normalizeParts(promoted);
+	return normalizeQuoted(text);
 }
 
 const QUOTE_PREFIX = /^((?:[ \t]*>[ \t]?)+)/;
@@ -379,6 +390,89 @@ function continuesMath(s: string, i: number): boolean {
 		return word.length === 1 || LATEX_NAMED.has(word);
 	}
 	return false;
+}
+
+/**
+ * Turn a reply's obvious program text into fenced code so the renderer keeps
+ * its indentation and can highlight it. Only whole lines that start like
+ * Python or JavaScript, plus the indented lines under them. A formula, a
+ * sentence, or `y = mx + b` stays prose.
+ */
+export function promotePlainCode(md: string): string {
+	const lines = md.split("\n");
+	const out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		const block = codeBlockAt(lines, i);
+		if (!block) {
+			out.push(lines[i]);
+			i++;
+			continue;
+		}
+		if (out.length && out[out.length - 1] !== "") out.push("");
+		out.push("```" + block.lang, ...block.lines, "```");
+		i = block.next;
+		if (i < lines.length && lines[i] !== "") out.push("");
+	}
+	return out.join("\n");
+}
+
+function codeBlockAt(lines: string[], i: number): { lang: string; lines: string[]; next: number } | null {
+	const line = lines[i];
+	if (!line || skipCodeLine(line)) return null;
+	if (/^(?: {4,}|\t)/.test(line)) return indentedCodeBlock(lines, i);
+	const lang = codeLang(line);
+	if (!lang) return null;
+	const body = [line];
+	let j = i + 1;
+	while (j < lines.length) {
+		const next = lines[j];
+		if (!next.trim() || skipCodeLine(next)) break;
+		if (/^\s+\S/.test(next) || /^[)}\];]+$/.test(next.trim()) || codeLang(next)) {
+			body.push(next);
+			j++;
+			continue;
+		}
+		break;
+	}
+	return { lang, lines: body, next: j };
+}
+
+function indentedCodeBlock(lines: string[], i: number): { lang: string; lines: string[]; next: number } | null {
+	const body: string[] = [];
+	let j = i;
+	while (j < lines.length && /^(?: {4,}|\t)\S/.test(lines[j]) && !skipCodeLine(lines[j])) {
+		body.push(lines[j]);
+		j++;
+	}
+	if (!body.length) return null;
+	const dedented = body.map((line) => (line.startsWith("\t") ? line.slice(1) : line.slice(4)));
+	const lang = dedented.map((line) => codeLang(line)).find(Boolean) ?? "";
+	if (!lang) return null;
+	return { lang, lines: dedented, next: j };
+}
+
+/** A line we will not treat as the start or the body of promoted code. */
+function skipCodeLine(line: string): boolean {
+	return /\$|`|\\[a-zA-Z]/.test(line) || /^(?:>|#{1,6}\s|[-*+]\s|\d+\.\s)/.test(line.trim());
+}
+
+/** Whole-line Python or JavaScript. Bare equations and English sentences are not code. */
+function codeLang(line: string): "python" | "javascript" | "" {
+	const s = line.trim();
+	if (!s || s.includes("$") || s.includes("`") || /\\[a-zA-Z]/.test(s)) return "";
+	if (/^class\s+[A-Za-z_]\w*(?:\([^)]*\))?\s*:/.test(s)) return "python";
+	if (/^(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(/.test(s)) return "javascript";
+	if (/^(?:export\s+)?class\s+[A-Za-z_$][\w$]*(?:\s+extends\s+[A-Za-z_$][\w$]*)?\s*\{/.test(s)) return "javascript";
+	if (/^(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*\S/.test(s)) return "javascript";
+	if (/^import\s+.+\s+from\s+['"]/.test(s)) return "javascript";
+	if (/^console\.(?:log|debug|info|warn|error)\s*\(/.test(s)) return "javascript";
+	if (/^(?:if|for|while|switch)\s*\(/.test(s) && /[;{}]|=>|[=<>!]=?/.test(s)) return "javascript";
+	if (/^(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(/.test(s)) return "python";
+	if (/^(?:from\s+[A-Za-z_][\w.]*\s+import\s+\S+|import\s+[A-Za-z_][\w.]*(?:\s+as\s+[A-Za-z_]\w*)?)$/.test(s)) return "python";
+	if (/^print\s*\(/.test(s)) return "python";
+	if (/^(?:for|while|with|if|elif)\s+.+:$/.test(s) && /[()[\]=<>!]|\d/.test(s)) return "python";
+	return "";
 }
 
 function splitFences(md: string): Array<{ fence: boolean; text: string }> {

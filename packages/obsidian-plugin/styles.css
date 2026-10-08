@@ -97,6 +97,26 @@ body .gw-root {
 	--text-on-accent: var(--gw-cta-ink);
 	--interactive-accent: var(--gw-cta-bg);
 	--interactive-accent-hover: #ffffff;
+	--code-background: #2a2a2a;
+	--code-normal: #f3f3f3;
+	--code-comment: #b7bcc4;
+	--code-punctuation: #d5d6d8;
+	--code-keyword: #ff8fab;
+	--code-string: #79d98c;
+	--code-function: #d7b4ff;
+	--code-property: #8ecbff;
+	--code-operator: #ffb086;
+	--code-important: #ffb086;
+	--code-tag: #ff8fab;
+	--code-value: #d7b4ff;
+	--code-white-space: pre;
+	--color-red: #ff8b7a;
+	--color-orange: #ffb086;
+	--color-yellow: #e6d56a;
+	--color-green: #79d98c;
+	--color-cyan: #8ecbff;
+	--color-purple: #d7b4ff;
+	--color-pink: #ff8fab;
 	background: var(--gw-paper);
 	color: var(--gw-ink);
 	font-family: var(--gw-font);
@@ -140,6 +160,26 @@ body .gw-root {
 	--text-on-accent: var(--gw-cta-ink);
 	--interactive-accent: var(--gw-cta-bg);
 	--interactive-accent-hover: #111110;
+	--code-background: #efeae3;
+	--code-normal: #1c1b19;
+	--code-comment: #5c564e;
+	--code-punctuation: #3a3632;
+	--code-keyword: #a31545;
+	--code-string: #0b6b2c;
+	--code-function: #5b3cc4;
+	--code-property: #0c5f86;
+	--code-operator: #9a3412;
+	--code-important: #9a3412;
+	--code-tag: #a31545;
+	--code-value: #5b3cc4;
+	--code-white-space: pre;
+	--color-red: #a31545;
+	--color-orange: #9a3412;
+	--color-yellow: #6b4f00;
+	--color-green: #0b6b2c;
+	--color-cyan: #0c5f86;
+	--color-purple: #5b3cc4;
+	--color-pink: #a31545;
 	background: var(--gw-paper);
 	color: var(--gw-ink);
 	font-family: var(--gw-font);
@@ -1664,8 +1704,9 @@ body .gw-root button.gw-lib-tab.is-active {
 	min-height: 96px;
 	padding: 8px 10px;
 	outline: none;
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
+	white-space: break-spaces;
+	tab-size: 4;
+	overflow-wrap: break-word;
 	line-height: 1.55;
 	font-size: var(--font-ui-small);
 }
@@ -2901,16 +2942,38 @@ body .gw-root button.gw-text-btn:hover {
 .gw-library, .gw-settings, .gw-lib-row, .gw-aside { background: var(--gw-paper); color: var(--gw-ink); }
 .gw-lib-row, .gw-aside { background: var(--gw-raised); border-color: var(--gw-line); }
 
+.gw-root {
+	--code-white-space: pre;
+}
 .gw-root .markdown-rendered {
 	min-width: 0;
 	overflow-wrap: anywhere;
 }
+.gw-root .markdown-rendered :is(pre, code, kbd, samp) {
+	font-family: var(--font-monospace);
+}
+.gw-root .markdown-rendered :not(pre) > code {
+	color: var(--code-normal);
+	background-color: var(--code-background);
+	border-radius: var(--code-radius, 4px);
+	font-size: var(--code-size);
+	padding: 0.12em 0.35em;
+	white-space: break-spaces;
+	tab-size: 4;
+}
+.gw-root .markdown-rendered pre,
+.gw-root .markdown-rendered pre code,
+.gw-root .markdown-rendered pre code[class*="language-"] {
+	white-space: pre;
+	overflow-wrap: normal;
+	word-break: normal;
+	tab-size: 4;
+}
 .gw-root .markdown-rendered pre {
 	max-width: 100%;
 	overflow-x: auto;
-}
-.gw-root .markdown-rendered pre code {
-	white-space: pre;
+	color: var(--code-normal);
+	background-color: var(--code-background);
 }
 .gw-root .markdown-rendered :is(img, svg, video) {
 	max-width: 100%;
