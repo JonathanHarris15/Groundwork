@@ -8,9 +8,14 @@ import { readSite } from "../src/static";
 import {
 	attributionFromHeader,
 	attributionFromSearch,
+	cleanGaClientId,
+	cleanGaSessionId,
+	cleanGclid,
 	cleanTransactionId,
 	consentDefaults,
 	CONTACT_EMAIL_DEFAULT,
+	gaClientIdFromCookie,
+	gaSessionIdFromCookie,
 	measurementIds,
 	mergeAttribution,
 	PRODUCTION_GA4_MEASUREMENT_ID,
@@ -19,6 +24,7 @@ import {
 	resolveMeasurementIds,
 	shouldFireObsidianConnected,
 	shouldFireSignUp,
+	shouldLoadMeasurementTag,
 	shouldRecordPurchase,
 	tagScriptUrl,
 } from "../src/tracking";
@@ -91,6 +97,28 @@ describe("ads tracking", () => {
 		expect(resolveMeasurementIds({ ga4: undefined, ads: "AW-123", production: false })).toEqual({ ga4: null, ads: "AW-123" });
 		expect(resolveMeasurementIds({ ga4: "G-OTHER1", ads: undefined, production: true })).toEqual({ ga4: "G-OTHER1", ads: null });
 		expect(resolveMeasurementIds({ ga4: "nope", ads: undefined, production: true })).toEqual({ ga4: null, ads: null });
+	});
+
+	it("loads the measurement tag only for a real visitor on the live host", () => {
+		expect(shouldLoadMeasurementTag({ hostname: "groundworklearn.com", webdriver: false, userAgent: "Mozilla/5.0" })).toBe(true);
+		expect(shouldLoadMeasurementTag({ hostname: "www.groundworklearn.com", webdriver: false, userAgent: "Mozilla/5.0" })).toBe(true);
+		expect(shouldLoadMeasurementTag({ hostname: "GroundworkLearn.com.", webdriver: false, userAgent: "Mozilla/5.0" })).toBe(true);
+		expect(shouldLoadMeasurementTag({ hostname: "127.0.0.1", webdriver: false, userAgent: "Mozilla/5.0" })).toBe(false);
+		expect(shouldLoadMeasurementTag({ hostname: "localhost", webdriver: false, userAgent: "Mozilla/5.0" })).toBe(false);
+		expect(shouldLoadMeasurementTag({ hostname: "evilgroundworklearn.com", webdriver: false, userAgent: "Mozilla/5.0" })).toBe(false);
+		expect(shouldLoadMeasurementTag({ hostname: "groundworklearn.com", webdriver: true, userAgent: "Mozilla/5.0" })).toBe(false);
+		expect(shouldLoadMeasurementTag({ hostname: "groundworklearn.com", webdriver: false, userAgent: "Mozilla HeadlessChrome/120" })).toBe(false);
+		expect(cleanGaClientId("123.456")).toBe("123.456");
+		expect(cleanGaClientId("not-an-id")).toBeNull();
+		expect(cleanGaSessionId("1700000001")).toBe("1700000001");
+		expect(cleanGaSessionId("12ab")).toBeNull();
+		expect(cleanGclid("CjwKCtestclick")).toBe("CjwKCtestclick");
+		expect(cleanGclid("short")).toBeNull();
+		expect(gaClientIdFromCookie("theme=dark; _ga=GA1.1.12345.67890; other=1")).toBe("12345.67890");
+		expect(gaClientIdFromCookie("_ga=nope")).toBeNull();
+		expect(gaSessionIdFromCookie("_ga_F4236HGZSM=GS1.1.1700000001.1.1.1700000001.0.0.0")).toBe("1700000001");
+		expect(gaSessionIdFromCookie("_ga_F4236HGZSM=GS2.1.s1700000002$o1$g0$t1700000002$j0$l0$h0")).toBe("1700000002");
+		expect(gaSessionIdFromCookie("a=b")).toBeNull();
 	});
 
 	it("publishes real pages with the contact email and no draft markers", () => {

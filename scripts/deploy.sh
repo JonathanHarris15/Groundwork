@@ -4,7 +4,8 @@
 # Run from any working directory. Do not pass environment variables to Cloud Run:
 # the Stripe keys and the other server secrets are already on the service.
 # GA4 is the production default (G-F4236HGZSM) when GA4_MEASUREMENT_ID is unset.
-# GOOGLE_ADS_ID and conversion labels are optional. Deploy does not require them.
+# GOOGLE_ADS_ID and GA4_API_SECRET are optional. Deploy does not set or replace them.
+# GA4_API_SECRET is the Measurement Protocol secret. Without it, purchase events are not sent.
 
 set -euo pipefail
 
