@@ -244,19 +244,38 @@ test("a returning account does not fire sign_up", async ({ page }) => {
 	expect(await countEvents(page, "sign_up")).toBe(0);
 });
 
-test("purchase fires once per checkout session", async ({ page }) => {
-	await page.goto("/?billing=success&session_id=cs_test_1&plan=byom");
-	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_1", value: 6, currency: "USD" }]);
-	await page.goto("/?billing=success&session_id=cs_test_1&plan=byom");
+test("the success page does not emit a purchase", async ({ page }) => {
+	let amountHits = 0;
+	const google: string[] = [];
+	await page.route("**/v1/billing/checkout-amount**", async (route) => {
+		amountHits += 1;
+		await route.fulfill({ status: 500, body: "no" });
+	});
+	await page.route("**/v1/web-config", async (route) => {
+		const response = await route.fetch();
+		const json = await response.json();
+		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: "AW-123" } });
+	});
+	page.on("request", (request) => {
+		const url = request.url();
+		if (/googletagmanager|google-analytics|\/g\/collect/.test(url)) google.push(url);
+	});
+	await page.goto("/?billing=success&session_id=cs_test_1&plan=included");
+	await page.waitForFunction(() => Boolean((window as unknown as { GroundworkTracking?: unknown }).GroundworkTracking));
+	await page.waitForLoadState("networkidle");
+	expect(await purchaseParams(page)).toEqual([]);
+	expect(await countEvents(page, "purchase")).toBe(0);
+	expect(await countEvents(page, "conversion")).toBe(0);
+	expect(amountHits).toBe(0);
+	expect(google).toEqual([]);
+	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toBeNull();
+
+	await page.goto("/?billing=success&subscription_id=sub_123&plan=byom");
 	await page.waitForFunction(() => Boolean((window as unknown as { GroundworkTracking?: unknown }).GroundworkTracking));
 	expect(await countEvents(page, "purchase")).toBe(0);
-	await page.goto("/?billing=success&session_id=cs_test_2&plan=included");
-	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_test_2", value: 20, currency: "USD" }]);
-	expect(await countEvents(page, "conversion")).toBe(0);
-	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toContain("cs_test_1");
 });
 
-test("gtag.js sends purchase to /g/collect for a full price and a free promotion", async ({ page }) => {
+test("automation does not send page_view, sign_up, or purchase to the production property", async ({ page }) => {
 	const hits: string[] = [];
 	await page.addInitScript(() => {
 		localStorage.setItem("gw-consent", "granted");
@@ -264,54 +283,26 @@ test("gtag.js sends purchase to /g/collect for a full price and a free promotion
 	await page.route("**/v1/web-config", async (route) => {
 		const response = await route.fetch();
 		const json = await response.json();
-		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: null } });
-	});
-	await page.route("**/v1/billing/checkout-amount**", async (route) => {
-		const sessionId = new URL(route.request().url()).searchParams.get("session_id") ?? "";
-		const amountUsd = sessionId.includes("free") ? 0 : 20;
-		await route.fulfill({ json: { amountUsd, currency: "USD" } });
+		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: "AW-123" } });
 	});
 	await page.route(COLLECT, async (route) => {
-		const request = route.request();
-		hits.push(`${request.url()} ${request.postData() ?? ""}`);
+		hits.push(route.request().url());
 		await route.abort();
 	});
-	await page.goto("/?billing=success&session_id=cs_full_price&plan=included");
-	await expect.poll(() => hits.some((hit) => hit.includes("en=purchase") && hit.includes("epn.value=20") && hit.includes("cu=USD") && hit.includes("cs_full_price"))).toBe(true);
-	const before = hits.length;
-	await page.goto("/?billing=success&session_id=cs_free_promo&plan=included");
-	await expect.poll(() => hits.slice(before).some((hit) => hit.includes("en=purchase") && hit.includes("epn.value=0") && hit.includes("cu=USD") && hit.includes("cs_free_promo"))).toBe(true);
-});
-
-test("a free promotion still fires purchase with the amount paid", async ({ page }) => {
-	await page.route("**/v1/billing/checkout-amount**", async (route) => {
-		await route.fulfill({ json: { amountUsd: 0, currency: "USD" } });
-	});
-	await page.goto("/?billing=success&session_id=cs_promo_0&plan=included");
-	await expect.poll(async () => purchaseParams(page)).toEqual([{ transaction_id: "cs_promo_0", value: 0, currency: "USD" }]);
-});
-
-test("gtag.js sends page_view and sign_up to /g/collect", async ({ page }) => {
-	const hits: string[] = [];
-	await page.addInitScript(() => {
-		localStorage.setItem("gw-consent", "granted");
-	});
-	await page.route("**/v1/web-config", async (route) => {
-		const response = await route.fetch();
-		const json = await response.json();
-		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: null } });
-	});
-	await page.route(COLLECT, async (route) => {
-		const request = route.request();
-		hits.push(`${request.url()} ${request.postData() ?? ""}`);
-		await route.abort();
+	const scripts: string[] = [];
+	page.on("request", (request) => {
+		if (request.url().includes("googletagmanager.com")) scripts.push(request.url());
 	});
 	await page.goto("/");
-	await expect.poll(() => hits.some((hit) => hit.includes("en=page_view") || hit.includes("en%3Dpage_view"))).toBe(true);
+	await page.waitForFunction(() => Boolean((window as unknown as { GroundworkTracking?: { noteSignUp?: unknown } }).GroundworkTracking));
 	await page.evaluate(() => {
 		(window as unknown as { GroundworkTracking?: { noteSignUp: (created: boolean, method: string) => void } }).GroundworkTracking?.noteSignUp(true, "Google");
 	});
-	await expect.poll(() => hits.some((hit) => hit.includes("en=sign_up"))).toBe(true);
+	await expect.poll(async () => countEvents(page, "sign_up")).toBe(1);
+	await page.waitForLoadState("networkidle");
+	expect(hits).toEqual([]);
+	expect(scripts).toEqual([]);
+	expect(await page.evaluate(() => navigator.webdriver)).toBe(true);
 });
 
 test("utm and gclid survive navigation and ride on the account request", async ({ page }) => {

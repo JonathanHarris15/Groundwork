@@ -11,8 +11,6 @@ const billingNote = billingFlag === "success"
 	: billingFlag === "cancel"
 		? "Checkout was canceled. Your plan is unchanged."
 		: "";
-if (billingFlag === "success") void reportCheckoutPurchase();
-
 const NODE = { free: "green", byom: "blue", included: "orange" };
 const PROVIDER_LABEL = { anthropic: "Anthropic", openrouter: "OpenRouter", google: "Google", xai: "xAI", openai: "OpenAI" };
 
@@ -176,24 +174,6 @@ function consumeBillingQuery() {
 	next.delete("plan");
 	const qs = next.toString();
 	history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
-}
-
-async function reportCheckoutPurchase() {
-	const sessionId = params.get("session_id") || params.get("subscription_id");
-	const plan = params.get("plan");
-	let amount = null;
-	if (sessionId && sessionId.startsWith("cs_")) {
-		try {
-			const res = await fetch(`/v1/billing/checkout-amount?session_id=${encodeURIComponent(sessionId)}`);
-			if (res.ok) {
-				const body = await res.json();
-				if (typeof body.amountUsd === "number") amount = body.amountUsd;
-			}
-		} catch {
-			/* The list price is the fallback when Checkout cannot be read. */
-		}
-	}
-	window.GroundworkTracking?.notePurchase(sessionId, plan, amount);
 }
 
 function showLanding() {
@@ -940,7 +920,7 @@ async function choose(plan) {
 			paint();
 			return;
 		}
-		const { url } = await send("/v1/billing/checkout", { plan }, token);
+		const { url } = await send("/v1/billing/checkout", await checkoutBody(plan), token);
 		location.href = url;
 	} catch (err) {
 		actionError = err.message;
@@ -1114,6 +1094,21 @@ async function openPortal() {
 		actionError = err.message;
 		paint();
 	}
+}
+
+async function checkoutBody(plan) {
+	const body = { plan };
+	try {
+		const extra = await window.GroundworkTracking?.checkoutContext?.();
+		if (!extra) return body;
+		if (extra.gaClientId) body.gaClientId = extra.gaClientId;
+		if (extra.gaSessionId) body.gaSessionId = extra.gaSessionId;
+		if (extra.gclid) body.gclid = extra.gclid;
+		if (extra.consent === "granted" || extra.consent === "denied") body.gaConsent = extra.consent;
+	} catch {
+		/* Checkout still starts when the browser cannot read the analytics id. */
+	}
+	return body;
 }
 
 function trackingHeaders() {

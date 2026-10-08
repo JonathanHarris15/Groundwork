@@ -6,7 +6,7 @@ import { MemoryConflict, type MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
 import { completeTutor, describeTutor } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
-import { attributionFromHeader } from "./tracking";
+import { attributionFromHeader, cleanGaClientId, cleanGaSessionId, cleanGclid } from "./tracking";
 import { allowCheckoutAmount } from "./public-limit";
 import { platformFetch, type FetchLike } from "./platform-fetch";
 import { webConfig } from "./web-config";
@@ -106,9 +106,17 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: presentAccount(await deps.accounts.setPlan(uid, plan)) };
 		}
 		if (method === "POST" && path === "/v1/billing/checkout") {
-			const plan = (body as { plan?: unknown } | null)?.plan;
+			const payload = body as { plan?: unknown; gaClientId?: unknown; gaSessionId?: unknown; gclid?: unknown; gaConsent?: unknown } | null;
+			const plan = payload?.plan;
 			if (plan !== "byom" && plan !== "included") return { status: 400, json: { error: "Choose a paid plan." } };
-			const url = await deps.billing.checkout(uid, identity.email ?? view.email ?? undefined, plan, meta.origin || "http://127.0.0.1:8787");
+			const stored = attributionFromHeader(meta.attribution);
+			const consent = payload?.gaConsent === "granted" || payload?.gaConsent === "denied" ? payload.gaConsent : null;
+			const url = await deps.billing.checkout(uid, identity.email ?? view.email ?? undefined, plan, meta.origin || "http://127.0.0.1:8787", {
+				gaClientId: cleanGaClientId(payload?.gaClientId),
+				gaSessionId: cleanGaSessionId(payload?.gaSessionId),
+				gclid: cleanGclid(payload?.gclid) ?? cleanGclid(stored?.gclid) ?? null,
+				consent,
+			});
 			return { status: 200, json: { url } };
 		}
 		if (method === "POST" && path === "/v1/billing/portal") {

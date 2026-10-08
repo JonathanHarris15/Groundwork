@@ -1,9 +1,14 @@
-import { configureMeasurementTags, emitObsidianConnected, emitPurchase, emitSignUp, type Ga4EventClient } from "./ga4-events";
+import { configureMeasurementTags, emitObsidianConnected, emitSignUp, type Ga4EventClient } from "./ga4-events";
 import {
 	attributionFromSearch,
+	cleanGaClientId,
+	cleanGaSessionId,
 	consentDefaults,
+	gaClientIdFromCookie,
+	gaSessionIdFromCookie,
 	hasClientAttribution,
 	mergeAttribution,
+	shouldLoadMeasurementTag,
 	tagScriptUrl,
 	type Attribution,
 	type ConsentChoice,
@@ -13,7 +18,6 @@ const ATTR_KEY = "gw-attribution";
 const CONSENT_KEY = "gw-consent";
 const CONSENT_HIDE_KEY = "gw-consent-hide";
 const SIGNUP_KEY = "gw-sign-up";
-const PURCHASE_KEY = "gw-purchases";
 
 declare global {
 	interface Window {
@@ -22,7 +26,7 @@ declare global {
 			event: (name: string, params?: Record<string, unknown>) => void;
 			noteSignUp: (created: boolean, method: string) => void;
 			noteObsidian: (body: { first?: boolean } | null) => void;
-			notePurchase: (sessionId: string | null, plan: string | null, amountUsd?: number | null) => boolean;
+			checkoutContext: () => Promise<{ gaClientId: string | null; gaSessionId: string | null; gclid: string | null; consent: ConsentChoice | null }>;
 			attributionHeader: () => string;
 			openConsent: () => void;
 		};
@@ -96,6 +100,7 @@ function eventParams(extra?: Record<string, unknown>): Record<string, unknown> {
 }
 
 function event(name: string, params?: Record<string, unknown>): void {
+	if (name === "purchase") return;
 	const payload = eventParams(params);
 	void tagReady.then(() => gtag("event", name, payload));
 }
@@ -178,20 +183,8 @@ const tagReady = new Promise<void>((resolve) => {
 	markTagReady = resolve;
 });
 
-/** Purchase ids stay out of browser storage until the event is actually queued for gtag.js. */
-const pendingPurchases: string[] = [];
-let persistPurchases = false;
-
-function flushPurchases(): void {
-	if (!persistPurchases || pendingPurchases.length === 0) return;
-	const already = readJson<string[]>(PURCHASE_KEY) ?? [];
-	const next = [...already];
-	for (const id of pendingPurchases) {
-		if (!next.includes(id)) next.push(id);
-	}
-	pendingPurchases.length = 0;
-	writeJson(PURCHASE_KEY, next.slice(-50));
-}
+/** Set only after gtag.js has loaded on the live site. Checkout reads the client id from it. */
+let loadedMeasurementId: string | null = null;
 
 async function bootTag(): Promise<void> {
 	try {
@@ -218,10 +211,13 @@ async function loadTag(): Promise<void> {
 	}
 	const ids = { ga4: config?.ga4MeasurementId ?? null, ads: config?.googleAdsId ?? null };
 	const src = tagScriptUrl(ids);
-	if (!src) {
-		persistPurchases = true;
-		return;
-	}
+	const nav = window["navigator"] as Navigator | undefined;
+	const allowed = shouldLoadMeasurementTag({
+		hostname: location.hostname,
+		webdriver: nav?.webdriver === true,
+		userAgent: nav?.userAgent ?? "",
+	});
+	if (!src || !allowed) return;
 	let loaded = false;
 	await new Promise<void>((resolve) => {
 		const script = makeEl("script") as HTMLScriptElement;
@@ -245,14 +241,13 @@ async function loadTag(): Promise<void> {
 	if (attr.utm_content) campaign.campaign_content = attr.utm_content;
 	if (attr.gclid) campaign.gclid = attr.gclid;
 	configureMeasurementTags(gtag, ids, campaign);
-	persistPurchases = true;
+	loadedMeasurementId = ids.ga4;
 }
 
 const ga4Client: Ga4EventClient = {
 	gtag: (...args: unknown[]) => {
 		void tagReady.then(() => {
 			gtag(...args);
-			flushPurchases();
 		});
 	},
 	attribution: () => readAttribution() ?? {},
@@ -270,18 +265,10 @@ const ga4Client: Ga4EventClient = {
 			/* ignore */
 		}
 	},
-	recordedPurchases: () => [...(readJson<string[]>(PURCHASE_KEY) ?? []), ...pendingPurchases],
-	rememberPurchase(id) {
-		if (!pendingPurchases.includes(id)) pendingPurchases.push(id);
-	},
 };
 
 function noteSignUp(created: boolean, method: string): void {
 	emitSignUp(ga4Client, created, method);
-}
-
-function notePurchase(sessionId: string | null, plan: string | null, amountUsd?: number | null): boolean {
-	return emitPurchase(ga4Client, sessionId, plan, amountUsd);
 }
 
 function noteObsidian(body: { first?: boolean } | null): void {
@@ -291,11 +278,40 @@ function noteObsidian(body: { first?: boolean } | null): void {
 bootConsent();
 capture();
 
+function readGaField(field: "client_id" | "session_id"): Promise<string | null> {
+	const id = loadedMeasurementId;
+	if (!id) return Promise.resolve(null);
+	return new Promise((resolve) => {
+		let settled = false;
+		const done = (value: string | null) => {
+			if (settled) return;
+			settled = true;
+			resolve(value);
+		};
+		window.setTimeout(() => done(null), 400);
+		gtag("get", id, field, (value: unknown) => {
+			if (typeof value === "number" && Number.isFinite(value)) done(String(Math.trunc(value)));
+			else if (typeof value === "string") done(value);
+			else done(null);
+		});
+	});
+}
+
+async function checkoutContext(): Promise<{ gaClientId: string | null; gaSessionId: string | null; gclid: string | null; consent: ConsentChoice | null }> {
+	const [gotClient, gotSession] = await Promise.all([readGaField("client_id"), readGaField("session_id")]);
+	return {
+		gaClientId: cleanGaClientId(gotClient) ?? gaClientIdFromCookie(document.cookie),
+		gaSessionId: cleanGaSessionId(gotSession) ?? gaSessionIdFromCookie(document.cookie),
+		gclid: readAttribution()?.gclid ?? null,
+		consent: readChoice(),
+	};
+}
+
 window.GroundworkTracking = {
 	event,
 	noteSignUp,
 	noteObsidian,
-	notePurchase,
+	checkoutContext,
 	attributionHeader() {
 		const stored = readAttribution();
 		if (!hasClientAttribution(stored)) return "";
