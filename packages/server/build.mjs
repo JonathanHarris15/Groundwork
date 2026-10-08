@@ -9,7 +9,7 @@ mkdirSync(path.join(here, "dist"), { recursive: true });
 mkdirSync(path.join(here, "public"), { recursive: true });
 
 const heroWidths = [480, 768, 1200];
-const shotNames = ["quiz", "flashcards", "exam-chat", "exam-map", "goals"];
+const shotNames = ["quiz", "flashcards", "exam-chat", "exam-map", "goals", "practice-chat", "practice-mid", "practice-results", "practice-quiz", "practice-goals", "practice-map"];
 function imageSetReady(dir, name) {
 	return heroWidths.every((width) => existsSync(path.join(here, dir, `${name}-${width}.webp`)) && existsSync(path.join(here, dir, `${name}-${width}.avif`)));
 }

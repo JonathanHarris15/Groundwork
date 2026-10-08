@@ -9,6 +9,7 @@ packages/server/public/tracking.js
 packages/server/public/sitemap.xml
 packages/server/public/robots.txt
 packages/server/public/pricing/
+packages/server/public/practice-tests/
 packages/server/public/exam-prep/
 packages/server/public/concept-map/
 packages/server/public/quizzes-flashcards/

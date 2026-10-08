@@ -133,7 +133,7 @@ describe("account server", () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/force-graph.js?v=4"');
-		expect(site?.body).toContain('src="/app.js?v=22"');
+		expect(site?.body).toContain('src="/app.js?v=23"');
 		expect(site?.body).toContain('href="/styles.css?v=13"');
 		expect(site?.body).toContain("/hero/concept-map-768.webp");
 		expect(site?.body).toContain("image/avif");
@@ -186,6 +186,7 @@ describe("account server", () => {
 		const signIn = script.slice(script.indexOf("function showSignIn"), script.indexOf("function showPlans"));
 		expect(signIn).toContain("Sign in with Google");
 		expect(signIn).toContain("Continue on this device");
+		expect(signIn).toContain("By continuing you confirm you're 18 or older and agree to the <a href=\"/terms\">Terms</a>.");
 		expect(script).toContain("conceptGraphHost");
 		expect(script).toContain("graph-shell");
 		expect(script).toContain("is-empty");
