@@ -1316,6 +1316,40 @@ body .gw-root button.gw-lib-tab.is-active {
 	align-self: stretch;
 	padding: 8px 10px;
 }
+.gw-continue {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	padding: 8px 10px;
+	border-radius: 8px;
+	background: var(--background-secondary);
+	align-self: flex-start;
+	max-width: 100%;
+}
+body .gw-root .gw-continue button {
+	height: auto;
+	padding: 4px 10px;
+	border-radius: 999px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+}
+body .gw-root .gw-continue button:hover {
+	border-color: var(--gw-learning);
+}
+body .gw-root .gw-continue button:focus-visible {
+	outline: 2px solid var(--gw-learning);
+	outline-offset: 2px;
+}
+body .gw-root .gw-continue button:disabled {
+	cursor: default;
+	color: var(--text-muted);
+}
 .gw-tool-icon {
 	display: inline-flex;
 }

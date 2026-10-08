@@ -50,4 +50,6 @@ export type AgentEvent =
 	| { type: "tool_start"; id: string; name: string; input: unknown }
 	| { type: "tool_end"; id: string; name: string; summary?: string; isError?: boolean; text: string }
 	| { type: "turn_end" }
-	| { type: "error"; message: string };
+	| { type: "error"; message: string }
+	/** The step cap was hit. `text` sits with a Continue button; the partial answer is already in the thread. */
+	| { type: "continue_offer"; text: string };

@@ -3,7 +3,8 @@ import { dialogueFromMessages, studyToolBlock } from "../intent";
 import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
-import type { AgentEvent, ChatMessage, ContentBlock, Provider, TutorSession } from "./types";
+import { ResearchTurn, WEB_RESEARCH_TOOLS, forcingAnswer, researchClosedNote, stepsClosedNote, unfinishedTurn } from "./research";
+import type { AgentEvent, ChatMessage, ContentBlock, Provider, ProviderTool, TutorSession } from "./types";
 
 export interface AgentOptions {
 	provider: Provider;
@@ -56,11 +57,16 @@ export class AgentSession implements TutorSession {
 
 	private async run(onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
 		const maxSteps = this.opts.maxSteps ?? 40;
-		const tools = this.opts.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema }));
+		const catalog = this.opts.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema }));
+		const research = new ResearchTurn();
+		const turnAt = this.messages.length;
 		for (let step = 0; step < maxSteps; step++) {
 			if (signal?.aborted) return;
+			const force = forcingAnswer(step, maxSteps);
+			const tools = toolsForStep(catalog, research, force);
+			const note = force ? stepsClosedNote() : research.exhausted ? researchClosedNote() : "";
 			const res = await this.opts.provider.complete({
-				system: this.opts.system,
+				system: note ? `${this.opts.system}\n\n${note}` : this.opts.system,
 				messages: this.messages,
 				tools,
 				signal,
@@ -85,8 +91,15 @@ export class AgentSession implements TutorSession {
 				let isError = false;
 				let summary: string | undefined;
 				let files: VaultFile[] | undefined;
-				const blocked = studyToolBlock(use.name, dialogue);
-				if (blocked) {
+				const gate = force
+					? { text: "Tools are closed for this reply. Tell the learner where this stands, in text. Do not ask another question.", isError: true, summary: "Wrapping up" }
+					: research.intercept(use.name, use.input);
+				const blocked = gate ? null : studyToolBlock(use.name, dialogue);
+				if (gate) {
+					text = gate.text;
+					isError = gate.isError;
+					summary = gate.summary;
+				} else if (blocked) {
 					text = blocked.text;
 					isError = true;
 					summary = blocked.summary;
@@ -110,13 +123,45 @@ export class AgentSession implements TutorSession {
 						isError = true;
 					}
 				}
+				if (!gate && WEB_RESEARCH_TOOLS.has(use.name)) {
+					research.record(use.name, use.input, text, !isError);
+					const warning = research.warning(use.name, use.input);
+					if (warning && !isError) text += `\n\n${warning}`;
+				}
 				onEvent({ type: "tool_end", id: use.id, name: use.name, summary, isError, text });
 				const content = files?.length ? [{ type: "text", text }, ...files.flatMap(fileBlocks)] : text;
 				results.push({ type: "tool_result", tool_use_id: use.id, content, ...(isError ? { is_error: true } : {}) });
 			}
 			this.messages.push({ role: "user", content: results });
 		}
-		onEvent({ type: "error", message: `Stopped after ${maxSteps} steps without finishing.` });
+		this.finishUnfinished(onEvent, turnAt);
+	}
+
+	/** The step cap still hit. Leave a partial answer and a way to continue, never a bare error. */
+	private finishUnfinished(onEvent: (e: AgentEvent) => void, turnAt: number): void {
+		this.closeDanglingTools();
+		const unfinished = unfinishedTurn(this.messages, turnAt);
+		if (unfinished.answer) onEvent({ type: "text_delta", text: unfinished.answer });
+		const last = this.messages[this.messages.length - 1];
+		const blocks = last && Array.isArray(last.content) ? last.content : null;
+		if (unfinished.answer && last?.role === "assistant" && blocks && !blocks.some((block) => block.type === "tool_use")) {
+			blocks.push({ type: "text", text: unfinished.answer });
+		} else if (last?.role !== "assistant") {
+			this.messages.push({ role: "assistant", content: [{ type: "text", text: unfinished.answer || unfinished.note }] });
+		}
+		onEvent({ type: "continue_offer", text: unfinished.note });
+	}
+
+	/** A paused turn can stop on a tool call that never received a result. */
+	private closeDanglingTools(): void {
+		const last = this.messages[this.messages.length - 1];
+		if (last?.role !== "assistant" || !Array.isArray(last.content)) return;
+		const uses = last.content.filter((block) => block.type === "tool_use") as Array<{ id: string }>;
+		if (!uses.length) return;
+		this.messages.push({
+			role: "user",
+			content: uses.map((use) => ({ type: "tool_result", tool_use_id: use.id, content: "Stopped before this tool ran.", is_error: true })),
+		});
 	}
 
 	/** Keep history valid for the API: every tool_use needs a tool_result, and turns must alternate. */
@@ -141,4 +186,10 @@ export class AgentSession implements TutorSession {
 export function errorMessage(err: unknown): string {
 	if (err instanceof Error) return err.message;
 	return String(err);
+}
+
+function toolsForStep(catalog: ProviderTool[], research: ResearchTurn, force: boolean): ProviderTool[] {
+	if (force) return [];
+	if (!research.exhausted) return catalog;
+	return catalog.filter((tool) => !WEB_RESEARCH_TOOLS.has(tool.name));
 }

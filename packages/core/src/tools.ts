@@ -945,21 +945,22 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "fetch_public",
 		description:
-			"Read one public https URL (page, JSON, or GeoJSON) before show_figure. Private and local addresses are refused. Image bytes are not returned; pass the URL to show_figure.",
+			"Read one public https URL (page, JSON, or GeoJSON). The result is readable text, starting at the #fragment when the URL has one. Fetching it again returns that same text. Private and local addresses are refused. Image bytes are not returned; pass the URL to show_figure.",
 		inputSchema: {
 			type: "object",
 			properties: { url: str("https URL of a public page, API, GeoJSON file, or image.") },
 			required: ["url"],
 		},
 		async run({ url }: { url?: string }, { signal }) {
-			const body = await fetchPublic(String(url ?? ""), { signal });
+			const requested = String(url ?? "");
+			const body = await fetchPublic(requested, { signal });
 			let host = body.finalUrl;
 			try {
 				host = new URL(body.finalUrl).host;
 			} catch {
 				/* the fetched URL is already checked */
 			}
-			return { text: describePublicBody(body), summary: `Read ${host}` };
+			return { text: describePublicBody(body, requested), summary: `Read ${host}` };
 		},
 	},
 	{

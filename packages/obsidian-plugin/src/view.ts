@@ -116,7 +116,8 @@ type DisplayItem =
 	| { kind: "quiz"; quiz: PreparedQuiz; response: QuizResponse; grade: QuizGrade; before?: ConceptStats; after?: ConceptStats }
 	| { kind: "test"; test: PreparedTest; response: TestResponse; report?: TestReport }
 	| { kind: "ask"; input: AskInput; answer: AskResponse }
-	| { kind: "error"; text: string };
+	| { kind: "error"; text: string }
+	| { kind: "continue"; text: string; used?: boolean };
 
 interface ChatRecord {
 	id: string;
@@ -780,6 +781,10 @@ export class ChatView extends ItemView implements ToolUI {
 				this.finishSegment();
 				this.pushItem({ kind: "error", text: e.message });
 				break;
+			case "continue_offer":
+				this.finishSegment();
+				this.pushItem({ kind: "continue", text: e.text });
+				break;
 			case "turn_end":
 				this.finishSegment();
 				this.flushOrphanFigures();
@@ -1187,7 +1192,27 @@ export class ChatView extends ItemView implements ToolUI {
 				el.createSpan({ text: item.text });
 				break;
 			}
+			case "continue":
+				this.renderContinue(item);
+				break;
 		}
+	}
+
+	private renderContinue(item: Extract<DisplayItem, { kind: "continue" }>): void {
+		const row = this.uiMessagesEl.createDiv({ cls: "gw-continue" });
+		row.createSpan({ text: item.text });
+		const button = row.createEl("button", {
+			text: item.used ? "Continued" : "Continue",
+			attr: { type: "button" },
+		});
+		if (item.used) button.disabled = true;
+		button.addEventListener("click", () => {
+			if (item.used || this.agent?.busy) return;
+			item.used = true;
+			button.disabled = true;
+			button.setText("Continued");
+			void this.continueTutor("Continue from where you stopped and finish the answer.");
+		});
 	}
 
 	private pushItem(item: DisplayItem): void {
@@ -3499,6 +3524,9 @@ function transcript(items: DisplayItem[], asides: AsideThread[] = [], figures: S
 				break;
 			case "error":
 				out.push(`> [!warning] ${item.text}`, "");
+				break;
+			case "continue":
+				out.push(`> [!note] ${item.text}`, "");
 				break;
 		}
 	}

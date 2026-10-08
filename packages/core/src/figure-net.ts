@@ -12,7 +12,16 @@ export interface PublicBody {
 	finalUrl: string;
 	contentType: string;
 	bytes: Uint8Array;
+	/** The response `Link` header, when the server sent one. */
+	link?: string | null;
 }
+
+/**
+ * How much readable text one fetch returns. A book chapter's HTML is mostly
+ * the table of contents; the chapter itself starts far past a short raw clip.
+ * One excerpt has to reach the section the learner asked about.
+ */
+export const PUBLIC_EXCERPT_CHARS = 48_000;
 
 export interface PublicFetchDeps {
 	fetch?: (url: string | URL, init?: HttpInit) => Promise<HttpResponse>;
@@ -75,13 +84,13 @@ export async function fetchPublic(raw: string, deps: PublicFetchDeps = {}): Prom
 			throw new Error(`That response is ${advertised} bytes. The margin can hold ${maxBytes} bytes. Use a smaller file or a thumbnail.`);
 		}
 		const bytes = await readAtMost(response, maxBytes);
-		return { finalUrl: current.toString(), contentType, bytes };
+		return { finalUrl: current.toString(), contentType, bytes, link: response.headers.get("link") };
 	}
 	throw new Error("The address redirected too many times.");
 }
 
 /** What the tutor should read back. Image bytes stay out of the prompt. */
-export function describePublicBody(body: PublicBody): string {
+export function describePublicBody(body: PublicBody, requestedUrl?: string): string {
 	const host = new URL(body.finalUrl).host;
 	const sniffed = sniffBytes(body.bytes);
 	if (sniffed.kind === "raster" || /^image\//i.test(body.contentType.split(";")[0] ?? "")) {
@@ -94,10 +103,136 @@ export function describePublicBody(body: PublicBody): string {
 	if (sniffed.kind === "svg") {
 		return `Public SVG from ${host} (${body.bytes.byteLength} bytes). Pass this exact URL to show_figure as kind "image": ${body.finalUrl}`;
 	}
-	const text = new TextDecoder().decode(body.bytes);
-	const clip = 12_000;
-	const excerpt = text.length > clip ? `${text.slice(0, clip)}\n…[truncated]` : text;
-	return `Public text from ${host} (${body.contentType || "unknown type"}, ${body.bytes.byteLength} bytes):\n${excerpt}`;
+	const raw = new TextDecoder().decode(body.bytes);
+	const fragment = urlFragment(requestedUrl) ?? urlFragment(body.finalUrl);
+	const readable = readableFrom(raw, body.contentType, fragment);
+	const clipped = clipReadable(readable);
+	const pages = hasNextPage(body.link) ? "\n\n[This is one page of a longer list. Do not walk the rest of the pages.]" : "";
+	return `Public text from ${host} (${body.contentType || "unknown type"}, ${body.bytes.byteLength} bytes):\n${clipped.text}${clipped.note}${pages}`;
+}
+
+function urlFragment(raw: string | undefined): string | null {
+	if (!raw) return null;
+	try {
+		const id = new URL(raw).hash.replace(/^#/, "");
+		return id ? decodeURIComponent(id) : null;
+	} catch {
+		return null;
+	}
+}
+
+function readableFrom(raw: string, contentType: string, fragment: string | null): string {
+	if (!isHtml(contentType, raw)) return raw;
+	const stripped = raw.replace(/<!--[\s\S]*?-->/g, "").replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, "");
+	const body = dropChrome(stripped);
+	const sliced = sliceAtFragment(body, fragment) ?? sliceMain(body) ?? body;
+	return htmlToReadable(sliced);
+}
+
+/** The table of contents and site chrome sit in front of the chapter and name the GitHub repo. */
+function dropChrome(html: string): string {
+	return html
+		.replace(/<head\b[\s\S]*?<\/head>/gi, "")
+		.replace(/<nav\b[\s\S]*?<\/nav>/gi, "")
+		.replace(/<header\b[\s\S]*?<\/header>/gi, "")
+		.replace(/<footer\b[\s\S]*?<\/footer>/gi, "")
+		.replace(/<aside\b[\s\S]*?<\/aside>/gi, "");
+}
+
+function isHtml(contentType: string, raw: string): boolean {
+	if (/html/i.test(contentType)) return true;
+	const head = raw.slice(0, 240).trimStart().toLowerCase();
+	return head.startsWith("<!doctype html") || head.startsWith("<html");
+}
+
+function sliceAtFragment(html: string, fragment: string | null): string | null {
+	if (!fragment) return null;
+	const escaped = fragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = new RegExp(`id=["']${escaped}["']`, "i").exec(html);
+	return match ? html.slice(tagStart(html, match.index)) : null;
+}
+
+function sliceMain(html: string): string | null {
+	const patterns = [/class=["'][^"']*\bbook-body\b[^"']*["']/i, /<main\b/i, /role=["']main["']/i, /<article\b/i];
+	let at = -1;
+	for (const pattern of patterns) {
+		const match = pattern.exec(html);
+		if (match && (at < 0 || match.index < at)) at = match.index;
+	}
+	return at < 0 ? null : html.slice(tagStart(html, at));
+}
+
+function tagStart(html: string, index: number): number {
+	const tag = html.lastIndexOf("<", index);
+	return tag < 0 ? index : tag;
+}
+
+function htmlToReadable(html: string): string {
+	const pres: string[] = [];
+	let text = html.replace(/<pre\b[\s\S]*?<\/pre>/gi, (block) => {
+		const code = decodeEntities(block.replace(/<[^>]+>/g, ""));
+		pres.push(code.replace(/\n{3,}/g, "\n\n").trim());
+		return `\n\n@@PRE${pres.length - 1}@@\n\n`;
+	});
+	text = text.replace(/<h([1-3])\b[^>]*>/gi, (_, level: string) => `\n\n${"#".repeat(Number(level))} `);
+	text = text.replace(/<br\s*\/?>/gi, "\n");
+	text = text.replace(/<\/(p|div|section|article|li|tr|blockquote|h[1-6]|figcaption|header|footer|nav|main|aside|pre)>/gi, "\n");
+	text = text.replace(/<[^>]+>/g, "");
+	text = decodeEntities(text);
+	text = text.replace(/\r/g, "");
+	text = text.replace(/[ \t]+\n/g, "\n");
+	text = text.replace(/[ \t]{2,}/g, " ");
+	text = text.replace(/\n{3,}/g, "\n\n");
+	text = text.replace(/@@PRE(\d+)@@/g, (_, index: string) => pres[Number(index)] ?? "");
+	return text.trim();
+}
+
+function decodeEntities(text: string): string {
+	return text
+		.replace(/&amp;/g, "&")
+		.replace(/&nbsp;/g, " ")
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;|&apos;/g, "'")
+		.replace(/&#(\d+);/g, (_, value: string) => safeCodePoint(Number(value)))
+		.replace(/&#x([0-9a-f]+);/gi, (_, value: string) => safeCodePoint(Number.parseInt(value, 16)));
+}
+
+function safeCodePoint(value: number): string {
+	if (!Number.isFinite(value) || value < 0 || value > 0x10ffff) return "";
+	try {
+		return String.fromCodePoint(value);
+	} catch {
+		return "";
+	}
+}
+
+function clipReadable(text: string): { text: string; note: string } {
+	if (text.length <= PUBLIC_EXCERPT_CHARS) return { text, note: "" };
+	const omitted = text.length - PUBLIC_EXCERPT_CHARS;
+	const later = laterHeadings(text.slice(PUBLIC_EXCERPT_CHARS));
+	const sections = later.length ? ` Later sections: ${later.join("; ")}.` : "";
+	return {
+		text: text.slice(0, PUBLIC_EXCERPT_CHARS),
+		note: `\n\n[This excerpt stops here. ${omitted.toLocaleString("en")} more characters from this page were left out. Fetching this URL again will not return the rest.${sections} Answer from this excerpt.]`,
+	};
+}
+
+function laterHeadings(omitted: string): string[] {
+	const found: string[] = [];
+	for (const line of omitted.split("\n")) {
+		const heading = /^#{1,3}\s+(\S.*)$/.exec(line.trim());
+		if (!heading) continue;
+		found.push(heading[1].trim());
+		if (found.length === 8) break;
+	}
+	return found;
+}
+
+function hasNextPage(link: string | null | undefined): boolean {
+	if (!link) return false;
+	return /<[^>]+>;\s*rel="?next"?/i.test(link);
 }
 
 export function sniffBytes(bytes: Uint8Array): { kind: "raster"; mime: string; width?: number; height?: number } | { kind: "svg" } | { kind: "other" } {
