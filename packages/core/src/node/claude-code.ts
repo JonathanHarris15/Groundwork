@@ -11,6 +11,7 @@ import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolResult, ToolUI } from "../tools";
 import type { AgentEvent, TutorSession } from "../agent/types";
 import { errorMessage } from "../agent/loop";
+import { studyToolBlock, type DialogueTurn } from "../intent";
 import { guiPathDirs, withGuiPath } from "./env";
 import { pdfLayout, type PdfLayout } from "./pdf-parts";
 
@@ -142,10 +143,13 @@ export class ClaudeCodeSession implements TutorSession {
 	private emit: ((e: AgentEvent) => void) | null = null;
 	private signal: AbortSignal | undefined;
 	private history: string | undefined;
+	/** Learner and tutor text, so a goal or quiz is refused until they opt in. */
+	private dialogue: DialogueTurn[] = [];
 
 	constructor(private readonly opts: ClaudeCodeSessionOptions) {
 		this.sessionId = opts.resume;
 		this.history = opts.history?.trim() ? opts.history.slice(-MAX_HISTORY_CHARS) : undefined;
+		if (this.history) this.dialogue.push({ role: "user", text: this.history });
 	}
 
 	get busy(): boolean {
@@ -157,6 +161,7 @@ export class ClaudeCodeSession implements TutorSession {
 		this.running = true;
 		this.emit = onEvent;
 		this.signal = signal;
+		this.dialogue.push({ role: "user", text });
 		const onAbort = () => this.interrupt();
 		signal?.addEventListener("abort", onAbort, { once: true });
 		try {
@@ -183,6 +188,12 @@ export class ClaudeCodeSession implements TutorSession {
 
 	close(): void {
 		this.teardown();
+	}
+
+	private noteAssistant(text: string): void {
+		const last = this.dialogue[this.dialogue.length - 1];
+		if (last?.role === "assistant") last.text += text;
+		else this.dialogue.push({ role: "assistant", text });
 	}
 
 	private async turn(text: string, files: VaultFile[] | undefined, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
@@ -236,7 +247,10 @@ export class ClaudeCodeSession implements TutorSession {
 			case "stream_event": {
 				const ev = msg.event;
 				if (ev.type === "message_start") streamed.add(ev.message.id);
-				else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") onEvent({ type: "text_delta", text: ev.delta.text });
+				else if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
+					this.noteAssistant(ev.delta.text);
+					onEvent({ type: "text_delta", text: ev.delta.text });
+				}
 				return false;
 			}
 			case "assistant": {
@@ -247,7 +261,10 @@ export class ClaudeCodeSession implements TutorSession {
 				}
 				const wasStreamed = streamed.has(msg.message.id);
 				for (const block of msg.message.content) {
-					if (block.type === "text" && !wasStreamed) onEvent({ type: "text_delta", text: block.text });
+					if (block.type === "text" && !wasStreamed) {
+						this.noteAssistant(block.text);
+						onEvent({ type: "text_delta", text: block.text });
+					}
 					if (block.type === "tool_use" && !block.name.startsWith(MCP_PREFIX)) {
 						external.set(block.id, { name: block.name, input: block.input });
 						onEvent({ type: "tool_start", id: block.id, name: block.name, input: block.input });
@@ -314,7 +331,8 @@ export class ClaudeCodeSession implements TutorSession {
 			let result: ToolResult;
 			try {
 				if (!tool) throw new Error(`Unknown tool ${name}`);
-				result = await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader });
+				const blocked = studyToolBlock(name, this.dialogue);
+				result = blocked ?? (await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader }));
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}

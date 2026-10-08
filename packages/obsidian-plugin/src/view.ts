@@ -37,7 +37,7 @@ import {
 	normalizeVaultPath,
 	parseNote,
 	practiceTestRequest,
-	shouldAutoIngest,
+	shouldStartExamPrep,
 	pathInsideAny,
 	removeFlashcardMirrors,
 	PATHS,
@@ -648,7 +648,7 @@ export class ChatView extends ItemView implements ToolUI {
 		try {
 			const files = await Promise.all(attachments.map((p) => loadVaultFile(this.plugin.store.context, p)));
 			let toSend = text;
-			if (attachments.length && shouldAutoIngest(attachments.map(basename), text)) {
+			if (attachments.length && shouldStartExamPrep(attachments.map(basename), text)) {
 				const ingested = await this.plugin.store.ingestExamMaterials({
 					files: attachments,
 					userText: text,

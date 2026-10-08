@@ -1,4 +1,5 @@
 import { directSourceReference, sourceBoundConceptReason } from "./concept-title";
+import { classifyLearnerAsk } from "./intent";
 import { basename, loadVaultFile, type VaultFile } from "./files";
 import { slugify } from "./markdown";
 import type { VaultIO } from "./io";
@@ -55,6 +56,11 @@ export function shouldAutoIngest(names: string[], userText = ""): boolean {
 	if (/\b(exam|midterm|final|quiz|homework|pset|study\s*guide|prep(?:are|ping)?)\b/i.test(userText)) return names.length > 0;
 	const coursework = names.filter((n) => looksLikeCoursework(n));
 	return coursework.length > 0;
+}
+
+/** Attachments become an exam goal only when the message is exam prep they asked for. A summary or a study guide does not. */
+export function shouldStartExamPrep(names: string[], userText = ""): boolean {
+	return names.length > 0 && shouldAutoIngest(names, userText) && classifyLearnerAsk(userText) === "study";
 }
 
 const LEVEL_WORDS: Array<{ re: RegExp; level: number }> = [

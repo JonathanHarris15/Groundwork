@@ -22,6 +22,7 @@ export * from "./grading";
 export * from "./jev";
 export * from "./practice";
 export * from "./tools";
+export * from "./intent";
 export * from "./prompt";
 export * from "./aside";
 export * from "./figure";

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/agent/loop";
 import { DemoProvider } from "../src/agent/demo";
-import type { AgentEvent } from "../src/agent/types";
+import type { AgentEvent, ChatMessage, Provider } from "../src/agent/types";
+import { STUDY_FOLLOW_UP } from "../src/intent";
 import { MemoryVaultIO } from "../src/io";
 import type { TestReport } from "../src/practice";
 import { buildSystemPrompt, practiceTestRequest } from "../src/prompt";
@@ -66,4 +67,49 @@ describe("AgentSession with the demo tutor", () => {
 			}
 		}
 	});
+
+	it("blocks a goal on a direct question and allows one after they opt in", async () => {
+		const io = new MemoryVaultIO();
+		const store = new KnowledgeStore(io);
+		await store.ensureLayout();
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				const last = req.messages[req.messages.length - 1];
+				const text = messageText(last);
+				const say = (reply: string) => {
+					req.onText(reply);
+					return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+				};
+				if (/Not yet/.test(text)) return say(`Here is $y = x^2$.\n\n${STUDY_FOLLOW_UP}`);
+				if (/graph of x\^2/i.test(text)) {
+					return {
+						content: [{ type: "tool_use" as const, id: "g1", name: "set_goal", input: { title: "Parabolas", targets: ["Parabola"], nodes: [{ title: "Parabola" }] } }],
+						stopReason: "tool_use" as const,
+					};
+				}
+				if (/^yes$/i.test(text.trim())) {
+					return {
+						content: [{ type: "tool_use" as const, id: "g2", name: "set_goal", input: { title: "Parabolas", targets: ["Parabola"], nodes: [{ title: "Parabola" }] } }],
+						stopReason: "tool_use" as const,
+					};
+				}
+				return say("Saved.");
+			},
+		};
+		const agent = new AgentSession({ provider, store, tools: TOOLS, system: buildSystemPrompt(), session: { id: "s" } });
+		const events: AgentEvent[] = [];
+		await agent.send("can you show me a graph of x^2?", (e) => events.push(e));
+		expect(events.some((e) => e.type === "tool_end" && e.name === "set_goal" && e.isError)).toBe(true);
+		expect(await store.goals()).toEqual([]);
+		expect(events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("")).toContain(STUDY_FOLLOW_UP);
+
+		await agent.send("yes", (e) => events.push(e));
+		expect((await store.goals()).map((g) => g.title)).toEqual(["Parabolas"]);
+	});
 });
+
+function messageText(message: ChatMessage): string {
+	if (typeof message.content === "string") return message.content;
+	return message.content.map((block) => (block.type === "text" && typeof block.text === "string" ? block.text : block.type === "tool_result" ? String(block.content) : "")).join("\n");
+}

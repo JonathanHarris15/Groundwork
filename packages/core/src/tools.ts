@@ -279,7 +279,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "upsert_concept",
 		description:
-			"Create or update a concept note in the vault. A concept is a reusable idea (Linear functions, Affine compositions), never a source document or a task tied to one (Lecture Note 1 fluency, Practice Exam 1, Prepare for the midterm). Those are goals: put the file in the goal's sources. Prerequisites are DIRECT dependencies (missing ones are created as stubs) and are merged with existing ones unless replacePrerequisites is true. Sections are markdown and replace the existing section. Do not mention a file path or a document title in the note.",
+			"Create or update a concept note in the vault. Only after the learner asked to study, to be quizzed, or to make a goal — not to answer a question, summarize files, or write a study guide. A concept is a reusable idea (Linear functions, Affine compositions), never a source document or a task tied to one (Lecture Note 1 fluency, Practice Exam 1, Prepare for the midterm). Those are goals: put the file in the goal's sources. Prerequisites are DIRECT dependencies (missing ones are created as stubs) and are merged with existing ones unless replacePrerequisites is true. Sections are markdown and replace the existing section. Do not mention a file path or a document title in the note.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -308,7 +308,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal. A goal is the list of targets: concepts the learner has not built yet. The title may name a course, exam, or document (Lecture 1 note fluency, Prepare for the midterm). targets and nodes must be abstract concepts that would still make sense in another class — never a file and never fluency on a file. Pass sources for the vault files this goal draws on. nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Pass due as YYYY-MM-DD when the learner has a deadline; omit it and a new goal is due in 14 days. Pass weights when a syllabus says how much each concept counts (percents). Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
+			"Save a learning goal. Only after the learner asked to study, to be quizzed, or to make a goal. A direct question, a summary, or a study guide is not that ask. A goal is the list of targets: concepts the learner has not built yet. The title may name a course, exam, or document (Lecture 1 note fluency, Prepare for the midterm). targets and nodes must be abstract concepts that would still make sense in another class — never a file and never fluency on a file. Pass sources for the vault files this goal draws on. nodes is the construction graph: the targets plus the foundations they rest on, each with its direct prerequisites. Pass due as YYYY-MM-DD when the learner has a deadline; omit it and a new goal is due in 14 days. Pass weights when a syllabus says how much each concept counts (percents). Concepts the learner already holds are stored as built, not as open targets. Returns the open targets, what is already built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -445,7 +445,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_working_goal",
 		description:
-			'Set the goal shown in the learner\'s dropdown. Pass the goal title, or "you choose" when they are not pinned to one. Call this when you create a goal, switch goals, or merge into one, so the dropdown matches the conversation.',
+			'Set the goal shown in the learner\'s dropdown. Only during a study session they opted into. Pass the goal title, or "you choose" when they are not pinned to one. Call this when you create a goal, switch goals, or merge into one, so the dropdown matches the conversation.',
 		inputSchema: {
 			type: "object",
 			properties: { goal: str('Goal title, or "you choose".') },
@@ -493,7 +493,7 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask ONE graded question and wait for the learner's answer; it is recorded as calibrated evidence on the concept. Multiple choice (format choice) is graded instantly and shown with the explanation. Free response (format free) lets the learner type an answer with LaTeX. When the result says the answer was already graded, teach from it and do not call grade_answer. Otherwise grade it with grade_answer. Use for probing the edge (kind probe), confirming a node (check), and spaced review (review). 'I don't know' (with a familiarity slider from 'never seen this' to 'almost have it') and a note are always offered automatically. The result includes a 'Next move' from the diagnosis ladder: follow it.",
+			"Ask ONE graded question and wait for the learner's answer; it is recorded as calibrated evidence on the concept. Only after they asked to study or to be quizzed. Never end a direct answer with this. Multiple choice (format choice) is graded instantly and shown with the explanation. Free response (format free) lets the learner type an answer with LaTeX. When the result says the answer was already graded, teach from it and do not call grade_answer. Otherwise grade it with grade_answer. Use for probing the edge (kind probe), confirming a node (check), and spaced review (review). 'I don't know' (with a familiarity slider from 'never seen this' to 'almost have it') and a note are always offered automatically. The result includes a 'Next move' from the diagnosis ladder: follow it.",
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session, grader, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
@@ -544,7 +544,7 @@ export const TOOLS: ToolDef[] = [
 		name: "practice_test",
 		interactive: true,
 		description:
-			"Give the learner a full practice test (exam prep): many questions at once, multiple choice and free response mixed, with no feedback until they submit. Multiple choice is graded on submit. Written answers are graded with the result when Groundwork can; otherwise you grade them with grade_practice_test. Every answer is recorded as evidence, and an evaluation (score, per-concept breakdown, misconceptions) is saved to tests/ and shown to the learner. Build it from the exam plan or goal: cover every topic, at the required levels, in the real exam's proportions.",
+			"Give the learner a full practice test (exam prep): many questions at once, multiple choice and free response mixed, with no feedback until they submit. Only when they asked for a practice test, a mock exam, or to be tested, or when exam prep they opted into reaches a checkpoint. Multiple choice is graded on submit. Written answers are graded with the result when Groundwork can; otherwise you grade them with grade_practice_test. Every answer is recorded as evidence, and an evaluation (score, per-concept breakdown, misconceptions) is saved to tests/ and shown to the learner. Build it from the exam plan or goal: cover every topic, at the required levels, in the real exam's proportions.",
 		inputSchema: practiceTestInputSchema,
 		async run(input: PracticeTestInput, { store, ui, session, grader, signal }) {
 			if (!ui?.test) return { text: "practice_test needs an interactive surface; quiz them one question at a time instead.", isError: true };
@@ -611,7 +611,7 @@ export const TOOLS: ToolDef[] = [
 		name: "ask_user",
 		interactive: true,
 		description:
-			"Ask the learner a question with NO right answer (their goal, preference, direction, energy). Offer options when useful; free text is allowed by default. For anything gradable use quiz instead.",
+			"Ask the learner a question with NO right answer (their goal, preference, direction, energy). Only during a study session they opted into. A direct question is answered in chat. Offer options when useful; free text is allowed by default. For anything gradable use quiz instead.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -636,7 +636,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "record_evidence",
 		description:
-			"Record a graded observation you judged yourself from conversation, e.g. an explanation they typed in chat. Prefer quiz (choice or free response) for anything you ask on purpose: it records automatically and feeds the diagnosis ladder.",
+			"Record a graded observation you judged yourself from conversation, e.g. an explanation they typed in chat. Only during a study session they opted into. Prefer quiz (choice or free response) for anything you ask on purpose: it records automatically and feeds the diagnosis ladder.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -675,7 +675,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "ingest_exam_materials",
 		description:
-			"Parse course files (lecture slides, homeworks, study guides, practice exams) into the topics and the level each must be learned to, save an exam plan, and create a teaching goal. Call this as soon as the learner attaches or mentions those files — do not wait to 'just start teaching'. Pass vault paths and/or the text you extracted. Returns the blueprint, required levels (1–5), and the goal map.",
+			"Parse course files (lecture slides, homeworks, study guides, practice exams) into the topics and the level each must be learned to, save an exam plan, and create a teaching goal. Call this only after they asked to study for an exam or from these files — not to summarize, and not to write a study guide. Pass vault paths and/or the text you extracted. Returns the blueprint, required levels (1–5), and the goal map.",
 		inputSchema: {
 			type: "object",
 			properties: {
