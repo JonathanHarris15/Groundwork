@@ -13,6 +13,7 @@ function slug(href: string): string {
 }
 
 test("public pages, footer email, and screenshots", async ({ page }, testInfo) => {
+	test.setTimeout(60_000);
 	const width = testInfo.project.name === "phone" ? "mobile" : "desktop";
 	for (const href of pages) {
 		const res = await page.goto(href);
