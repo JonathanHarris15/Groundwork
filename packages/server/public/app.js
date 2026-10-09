@@ -111,6 +111,11 @@ async function continueLocalDev() {
 		problem = "";
 		actionError = "";
 		user = localDevUser();
+		try {
+			localStorage.setItem("gw-e2e-user", "local");
+		} catch {
+			/* ignore */
+		}
 		await refresh();
 		paint();
 	} catch (err) {
@@ -361,7 +366,8 @@ function renderChip() {
 	const email = user.email || account.email || "";
 	const letter = escapeHtml(String(name).slice(0, 1).toUpperCase() || "?");
 	const photo = user.photoURL ? `<img alt="" src="${escapeAttr(user.photoURL)}" />` : letter;
-	chip.innerHTML = `<span class="avatar">${photo}</span><span class="who"><span class="who-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span><button class="link-btn chip-signout" id="sign-out" type="button" aria-label="Sign out">Sign out</button>`;
+	const admin = account.isAdmin ? `<a class="link-btn" href="/admin/usage">Admin</a>` : "";
+	chip.innerHTML = `<span class="avatar">${photo}</span><span class="who"><span class="who-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span>${admin}<button class="link-btn chip-signout" id="sign-out" type="button" aria-label="Sign out">Sign out</button>`;
 	chip.querySelector("#sign-out").addEventListener("click", () => {
 		void (async () => {
 			actionError = "";
@@ -373,6 +379,7 @@ function renderChip() {
 				groundwork = emptyGroundwork();
 				try {
 					localStorage.removeItem("groundwork-obsidian-linked");
+					localStorage.removeItem("gw-e2e-user");
 				} catch {
 					/* ignore */
 				}

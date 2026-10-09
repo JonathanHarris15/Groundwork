@@ -10,6 +10,7 @@ const FILES: Record<string, { file: string; type: string }> = {
 	"/index.html": { file: "index.html", type: "text/html; charset=utf-8" },
 	"/404.html": { file: "404.html", type: "text/html; charset=utf-8" },
 	"/app.js": { file: "app.js", type: "text/javascript; charset=utf-8" },
+	"/site-session.js": { file: "site-session.js", type: "text/javascript; charset=utf-8" },
 	"/force-graph.js": { file: "force-graph.js", type: "text/javascript; charset=utf-8" },
 	"/tracking.js": { file: "tracking.js", type: "text/javascript; charset=utf-8" },
 	"/graph-harness.html": { file: "graph-harness.html", type: "text/html; charset=utf-8" },
@@ -36,6 +37,11 @@ function readImage(urlPath: string, folder: "hero" | "shots", pattern: RegExp): 
 	const file = path.join(publicDir, folder, name);
 	if (!existsSync(file)) return null;
 	return { body: readFileSync(file), type: imageType(name) };
+}
+
+/** Account and admin JSON. A missing file must reach the route table, not the marketing 404. */
+export function isDynamicPath(urlPath: string): boolean {
+	return urlPath.startsWith("/v1/") || urlPath.startsWith("/api/") || urlPath === "/health";
 }
 
 export function readSite(urlPath: string): { body: string | Buffer; type: string } | null {

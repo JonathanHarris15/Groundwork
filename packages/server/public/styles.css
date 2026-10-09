@@ -160,6 +160,10 @@ html body [hidden][hidden] { display: none; }
 	font-size: 16px;
 	text-decoration: none;
 	min-height: 44px;
+	max-width: 46vw;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	display: inline-flex;
 	align-items: center;
 	padding: 0 18px;
@@ -167,6 +171,13 @@ html body [hidden][hidden] { display: none; }
 	border-radius: 999px;
 	transition: border-color 0.3s, background 0.3s;
 }
+
+button.cta {
+	border: 0;
+	cursor: pointer;
+	font-family: inherit;
+}
+button.cta:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
 .sign-link:hover { border-color: rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.05); color: #fff; }
 
@@ -1664,6 +1675,19 @@ body.has-consent textarea {
 	.skip:focus { transform: none; }
 }
 
+.usage-main { max-width: 1120px; }
+.page.mkt .usage-dash {
+	color: #16181d;
+	background: #fff;
+	border-radius: 18px;
+	padding: 28px 22px 32px;
+	margin: 8px auto 32px;
+}
+.page.mkt .usage-dash h1,
+.page.mkt .usage-dash h2,
+.page.mkt .usage-dash h3,
+.page.mkt .usage-dash a { color: #16181d; }
+.usage-actions { margin: 12px 0 0; }
 .usage-dash { max-width: 1080px; }
 .usage-dash h1 { font-size: 42px; text-wrap: balance; }
 .usage-section { margin-top: 40px; }

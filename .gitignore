@@ -17,6 +17,7 @@ packages/server/public/goals/
 packages/server/public/get-started/
 packages/server/public/privacy/
 packages/server/public/terms/
+packages/server/public/admin/
 *.log
 .DS_Store
 /demo-vault/

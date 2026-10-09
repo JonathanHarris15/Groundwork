@@ -1,8 +1,11 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { e2eIdentity } from "../src/auth";
+import { isUsageAdmin, USAGE_ADMIN_EMAILS, usageAdminEmails } from "../src/admin-access";
 import { promotionCodesFrom } from "../src/billing";
+import { isDynamicPath, readSite } from "../src/static";
 import { AccountDirectory } from "../src/accounts";
 import { route, type ServerDeps } from "../src/app";
 import type { Auth } from "../src/auth";
@@ -131,42 +134,70 @@ describe("admin usage gate", () => {
 	const auth: Auth = {
 		firebase: true,
 		async uid(authorization) {
-			if (authorization === "Bearer admin") return { uid: "jono", email: "jono591737@gmail.com", name: "Jonathan" };
-			if (authorization === "Bearer ada") return { uid: "ada", email: "ada@example.com", name: "Ada" };
+			if (authorization === "Bearer admin") return { uid: "jono", email: "  Jono591737@gmail.com ", name: "Jonathan", emailVerified: true };
+			if (authorization === "Bearer unverified") return { uid: "jono", email: "jono591737@gmail.com", name: "Jonathan", emailVerified: false };
+			if (authorization === "Bearer ada") return { uid: "ada", email: "ada@example.com", name: "Ada", emailVerified: true };
 			throw Object.assign(new Error("Sign in required."), { status: 401 });
 		},
 		async revokeRefreshTokens() {},
 	};
 
-	it("returns 404 to everyone except the allowlisted account", async () => {
-		const server = deps({ auth, usage: new UsageDirectory(new MemoryUsageStore()) });
-		const anonymous = await route("GET", "/admin/usage", null, server);
-		expect(anonymous.status).toBe(404);
-		expect(anonymous.text).toContain("Page not found");
-		expect(anonymous.text).not.toContain("Proposed Free limit");
-		const stranger = await route("GET", "/admin/usage", null, server, "Bearer ada");
-		expect(stranger.status).toBe(404);
-		expect(JSON.stringify(stranger.json)).not.toContain("hostedCredit");
-		const csv = await route("GET", "/admin/usage.csv", null, server, "Bearer ada");
-		expect(csv.status).toBe(404);
-		const api = await route("GET", "/v1/admin/usage", null, server, "Bearer ada");
-		expect(api.status).toBe(404);
+	it("allowlists the Firebase support address, and a test address only outside Cloud Run", () => {
+		const firebase = JSON.parse(readFileSync(path.resolve("firebase.json"), "utf8")) as { auth: { providers: { googleSignIn: { supportEmail: string } } } };
+		expect(USAGE_ADMIN_EMAILS.map((email) => email.trim().toLowerCase())).toContain(firebase.auth.providers.googleSignIn.supportEmail.trim().toLowerCase());
+		expect(usageAdminEmails({ GROUNDWORK_E2E: "1", GROUNDWORK_E2E_ADMIN_EMAIL: " usage-admin@groundwork.test " })).toContain("usage-admin@groundwork.test");
+		expect(usageAdminEmails({ GROUNDWORK_E2E: "1", K_SERVICE: "groundwork", GROUNDWORK_E2E_ADMIN_EMAIL: "usage-admin@groundwork.test" })).not.toContain("usage-admin@groundwork.test");
+		expect(e2eIdentity("Bearer e2e:Usage-Admin@groundwork.test", { GROUNDWORK_E2E: "1" })).toMatchObject({ email: "usage-admin@groundwork.test", emailVerified: true });
+		expect(e2eIdentity("Bearer e2e:a@b.test", { GROUNDWORK_E2E: "1", K_SERVICE: "groundwork" })).toBeNull();
+		expect(isUsageAdmin({ email: " JONO591737@gmail.com ", emailVerified: true }, { localDev: false })).toBe(true);
+		expect(isUsageAdmin({ email: "jono591737@gmail.com", emailVerified: false }, { localDev: false })).toBe(false);
+		expect(isUsageAdmin({ email: "ada@example.com", emailVerified: true }, { localDev: false })).toBe(false);
 	});
 
-	it("shows the dashboard and the CSV to the allowlisted account", async () => {
+	it("returns 404 from the data endpoint unless the email is an allowlisted verified address", async () => {
 		const server = deps({ auth, usage: new UsageDirectory(new MemoryUsageStore()) });
-		const page = await route("GET", "/admin/usage", null, server, "Bearer admin");
+		const anonymous = await route("GET", "/api/admin/usage", null, server);
+		expect(anonymous.status).toBe(404);
+		expect(anonymous.json).toEqual({ error: "Not found." });
+		expect(anonymous.text).toBeUndefined();
+		const stranger = await route("GET", "/api/admin/usage", null, server, "Bearer ada");
+		expect(stranger.status).toBe(404);
+		expect(JSON.stringify(stranger.json)).not.toContain("hostedCredit");
+		const unverified = await route("GET", "/api/admin/usage", null, server, "Bearer unverified");
+		expect(unverified.status).toBe(404);
+		const csv = await route("GET", "/api/admin/usage.csv", null, server, "Bearer ada");
+		expect(csv.status).toBe(404);
+		const ada = await route("GET", "/v1/account", null, server, "Bearer ada");
+		expect(ada.json).toMatchObject({ isAdmin: false });
+	});
+
+	it("returns the dashboard JSON and the CSV to the allowlisted account", async () => {
+		const server = deps({ auth, usage: new UsageDirectory(new MemoryUsageStore()) });
+		const page = await route("GET", "/api/admin/usage", null, server, "Bearer admin");
 		expect(page.status).toBe(200);
-		expect(page.type).toContain("text/html");
-		expect(page.text).toContain("A consistent user is active on at least one day in 3 of the last 4 ISO weeks");
-		expect(page.text).toContain("Proposed Free limit");
-		expect(page.text).toContain("The sample is too small");
-		expect(page.text).toContain("$1.25");
-		expect(page.text).not.toContain("indigo");
-		const csv = await route("GET", "/admin/usage.csv", null, server, "Bearer admin");
+		expect(page.json).not.toHaveProperty("isAdmin");
+		const body = page.json as { html?: string };
+		expect(body.html).toContain("A consistent user is active on at least one day in 3 of the last 4 ISO weeks");
+		expect(body.html).toContain("Proposed Free limit");
+		expect(body.html).toContain("The sample is too small");
+		expect(body.html).toContain("$1.25");
+		expect(body.html).toContain('id="download-csv"');
+		expect(body.html).not.toContain("indigo");
+		const account = await route("GET", "/v1/account", null, server, "Bearer admin");
+		expect(account.json).toMatchObject({ isAdmin: true });
+		const csv = await route("GET", "/api/admin/usage.csv", null, server, "Bearer admin");
 		expect(csv.status).toBe(200);
 		expect(csv.text).toContain("consistent_user");
 		expect(csv.headers?.["content-disposition"]).toContain("groundwork-usage.csv");
+		expect(isDynamicPath("/api/admin/usage")).toBe(true);
+		expect(isDynamicPath("/api/admin/usage.csv")).toBe(true);
+		expect(isDynamicPath("/nope")).toBe(false);
+		const shell = readSite("/admin/usage");
+		expect(shell?.body).toContain('id="usage-root"');
+		expect(shell?.body).toContain("data-admin-link");
+		expect(shell?.body).toContain("/site-session.js");
+		expect(String(shell?.body)).not.toContain("$1.25");
+		expect(String(shell?.body)).not.toContain("Proposed Free limit");
 	});
 
 	it("reads GROUNDWORKTESTER off a Stripe discount", () => {
