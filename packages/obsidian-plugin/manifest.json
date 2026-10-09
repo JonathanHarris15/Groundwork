@@ -1,7 +1,7 @@
 {
 	"id": "groundwork",
 	"name": "Groundwork",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"minAppVersion": "1.8.7",
 	"description": "Plans from first principles, quizzes what you know, and keeps memory on your Groundwork account. Study in a side panel beside your notes; your vault only holds files you ask to save.",
 	"author": "Jonathan Harris",
