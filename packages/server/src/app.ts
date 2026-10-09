@@ -10,6 +10,10 @@ import { attributionFromHeader, cleanGaClientId, cleanGaSessionId, cleanGclid } 
 import { allowCheckoutAmount } from "./public-limit";
 import { platformFetch, type FetchLike } from "./platform-fetch";
 import { webConfig } from "./web-config";
+import { isUsageAdmin } from "./admin-access";
+import { readSite } from "./static";
+import type { UsageDirectory } from "./usage";
+import { usageCsv, usagePage } from "./usage-page";
 
 export interface ServerDeps {
 	auth: Auth;
@@ -23,11 +27,16 @@ export interface ServerDeps {
 	/** Shared key for Free and Groundwork. Absent until the server is configured. */
 	openRouterKey?: string;
 	fetchImpl?: FetchLike;
+	usage?: UsageDirectory;
 }
 
 export interface RouteResult {
 	status: number;
 	json: unknown;
+	/** When set, the HTTP handler sends this body instead of JSON. */
+	text?: string;
+	type?: string;
+	headers?: Record<string, string>;
 }
 
 export interface RouteMeta {
@@ -43,6 +52,9 @@ export interface RouteMeta {
 
 export async function route(method: string, path: string, body: unknown, deps: ServerDeps, authorization?: string, meta: RouteMeta = {}): Promise<RouteResult> {
 	try {
+		if (method === "GET" && (path === "/admin/usage" || path === "/admin/usage.csv" || path === "/v1/admin/usage")) {
+			return adminUsage(path, deps, authorization);
+		}
 		const opened = obsidianOpen(method, path);
 		if (opened) return opened;
 		if (method === "GET" && path === "/health") {
@@ -118,6 +130,11 @@ export async function route(method: string, path: string, body: unknown, deps: S
 				gclid: cleanGclid(payload?.gclid) ?? cleanGclid(stored?.gclid) ?? null,
 				consent,
 			});
+			try {
+				await deps.usage?.recordEvent({ uid, at: new Date().toISOString(), kind: "checkout", plan });
+			} catch (err) {
+				console.error("Could not record a checkout start.", err);
+			}
 			return { status: 200, json: { url } };
 		}
 		if (method === "POST" && path === "/v1/billing/portal") {
@@ -158,6 +175,11 @@ export async function route(method: string, path: string, body: unknown, deps: S
 					openRouterKey: deps.openRouterKey,
 					fetchImpl: deps.fetchImpl ?? platformFetch,
 					charge: (cost) => deps.accounts.charge(uid, cost),
+					record: deps.usage
+						? async (entry) => {
+								await deps.usage?.record(uid, { ...entry, plan: view.plan ?? "none", calls: 1 });
+							}
+						: undefined,
 				},
 				body,
 			);
@@ -199,6 +221,20 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			const parsed = items.map(parseItem);
 			if (parsed.some((item) => !item)) return { status: 400, json: { error: "Each answer needs a question, a reference, and the text they wrote." } };
 			const judgments = await deps.grade(parsed as FreeResponseToGrade[]);
+			try {
+				await deps.usage?.record(uid, {
+					plan: view.plan ?? "none",
+					model: "unknown",
+					feature: "grading",
+					calls: parsed.length,
+					costUsd: 0,
+					chargedUsd: 0,
+					inputTokens: 0,
+					outputTokens: 0,
+				});
+			} catch (err) {
+				console.error("Could not record grading usage.", err);
+			}
 			return { status: 200, json: { judgments } };
 		}
 		return { status: 404, json: { error: "Not found." } };
@@ -212,6 +248,36 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		const message = err instanceof Error ? err.message : "Request failed.";
 		return { status, json: { error: message } };
 	}
+}
+
+async function adminUsage(path: string, deps: ServerDeps, authorization: string | undefined): Promise<RouteResult> {
+	let email: string | undefined;
+	try {
+		email = (await deps.auth.uid(authorization)).email;
+	} catch {
+		return notFound();
+	}
+	if (!isUsageAdmin({ email }, { localDev: !deps.auth.firebase })) return notFound();
+	const usage = deps.usage;
+	if (!usage) return { status: 200, json: { error: "Usage logging is not attached." }, text: path.endsWith(".csv") ? "" : "<p>Usage logging is not attached.</p>", type: path.endsWith(".csv") ? "text/csv; charset=utf-8" : "text/html; charset=utf-8" };
+	try {
+		await usage.backfill(deps.accounts, () => deps.billing.couponHolders?.() ?? Promise.resolve([]));
+	} catch (err) {
+		console.error("Could not backfill usage.", err);
+	}
+	const report = await usage.report(deps.accounts);
+	const headers = { "cache-control": "private, no-store" };
+	if (path === "/admin/usage.csv") {
+		return { status: 200, json: { ok: true }, text: usageCsv(report), type: "text/csv; charset=utf-8", headers: { ...headers, "content-disposition": "attachment; filename=\"groundwork-usage.csv\"" } };
+	}
+	if (path === "/v1/admin/usage") return { status: 200, json: report, headers };
+	return { status: 200, json: { ok: true }, text: usagePage(report), type: "text/html; charset=utf-8", headers };
+}
+
+function notFound(): RouteResult {
+	const page = readSite("/404.html");
+	if (!page || typeof page.body !== "string") return { status: 404, json: { error: "Not found." } };
+	return { status: 404, json: { error: "Not found." }, text: page.body, type: page.type, headers: { "cache-control": "private, no-store" } };
 }
 
 function isPermissionDenied(err: unknown): boolean {

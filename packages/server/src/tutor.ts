@@ -1,4 +1,5 @@
 import {
+	asRecord,
 	buildUpstream,
 	hostedCostUsd,
 	parseTutorCall,
@@ -7,9 +8,11 @@ import {
 	tutorDecision,
 	tutorStatus,
 	upstreamErrorMessage,
+	usageFeatureFromClient,
 	type AccountView,
 	type TutorChoice,
 	type TutorStatus,
+	type UsageFeature,
 	type UserKeyProvider,
 } from "@groundwork/core";
 import type { FetchLike } from "./platform-fetch";
@@ -21,7 +24,9 @@ export interface TutorCallContext {
 	userKey(provider: UserKeyProvider): Promise<string | undefined> | string | undefined;
 	openRouterKey: string | undefined;
 	fetchImpl: FetchLike;
-	charge(costUsd: number): Promise<AccountView>;
+	charge(costUsd: number): Promise<{ view: AccountView; chargedUsd: number }>;
+	/** Counts and costs for this call. Omit to skip the usage log. */
+	record?(entry: { feature: UsageFeature; model: "light" | "heavy" | "unknown"; costUsd: number; chargedUsd: number; inputTokens: number; outputTokens: number }): Promise<void>;
 }
 
 export function describeTutor(ctx: Pick<TutorCallContext, "view" | "choice" | "saved">): TutorStatus {
@@ -99,7 +104,29 @@ export async function completeTutor(ctx: TutorCallContext, body: unknown): Promi
 	if (!read.ok) return { status: 502, json: { error: upstreamErrorMessage({ error: read.error }, [apiKey]) } };
 
 	let view = ctx.view;
-	if (decision.action === "hosted") view = await ctx.charge(hostedCostUsd(read.result.usage, decision.weight));
+	let chargedUsd = 0;
+	let costUsd = 0;
+	const model = decision.action === "hosted" ? decision.weight : "unknown";
+	if (decision.action === "hosted") {
+		costUsd = hostedCostUsd(read.result.usage, decision.weight);
+		const billed = await ctx.charge(costUsd);
+		view = billed.view;
+		chargedUsd = billed.chargedUsd;
+	}
+	if (ctx.record) {
+		try {
+			await ctx.record({
+				feature: usageFeatureFromClient(featureOf(body)),
+				model,
+				costUsd,
+				chargedUsd,
+				inputTokens: read.result.usage.input,
+				outputTokens: read.result.usage.output,
+			});
+		} catch (err) {
+			console.error("Could not record tutor usage.", err);
+		}
+	}
 	const shown = presentAccount(view);
 	return {
 		status: 200,
@@ -111,6 +138,10 @@ export async function completeTutor(ctx: TutorCallContext, body: unknown): Promi
 			route: { action: decision.action, model: upstreamModel(decision, call.model), provider: decision.provider, label: tutorStatus(decision, view, ctx.choice).label },
 		},
 	};
+}
+
+function featureOf(body: unknown): unknown {
+	return asRecord(body)?.feature;
 }
 
 function upstreamModel(decision: Extract<ReturnType<typeof tutorDecision>, { action: "hosted" | "key" }>, requested: string | undefined): string {

@@ -3,6 +3,7 @@ import {
 	clearStripeCustomer,
 	currentAccount,
 	emptyAccount,
+	periodKey,
 	rememberProfile,
 	setDisplayName,
 	setStripeCustomer,
@@ -18,17 +19,27 @@ import {
 	type TutorChoice,
 	type TutorWeight,
 } from "@groundwork/core";
-import type { AccountStore } from "./account-store";
+import type { AccountStore, ListedAccount } from "./account-store";
 
 /**
  * Accounts for signed-in learners.
  * With a store, the plan, name, billing customer, tutor choice, and monthly spend
  * survive a restart and are visible to every server process.
  */
+export interface AccountHooks {
+	/** The stored month is about to roll forward. `closed` still has that month's spend. */
+	onPeriodClose?(closed: AccountRecord): Promise<void>;
+	/** Hosted spend was just written. */
+	onSpend?(record: AccountRecord): Promise<void>;
+}
+
 export class AccountDirectory {
 	private readonly accounts = new Map<string, AccountRecord>();
 
-	constructor(private readonly store?: AccountStore) {}
+	constructor(
+		private readonly store?: AccountStore,
+		private readonly hooks?: AccountHooks,
+	) {}
 
 	async get(uid: string, now: Date = new Date()): Promise<AccountView> {
 		return viewAccount(await this.record(uid, now), now);
@@ -95,8 +106,36 @@ export class AccountDirectory {
 	}
 
 	/** Apply one hosted tutor turn to the allowance. */
-	async charge(uid: string, costUsd: number, now: Date = new Date()): Promise<AccountView> {
-		return this.commit(uid, now, (record) => settleHosted(record, costUsd, now).account);
+	async charge(uid: string, costUsd: number, now: Date = new Date()): Promise<{ view: AccountView; chargedUsd: number }> {
+		let chargedUsd = 0;
+		const view = await this.commit(uid, now, (record) => {
+			const settled = settleHosted(record, costUsd, now);
+			chargedUsd = settled.chargedUsd;
+			return settled.account;
+		});
+		const saved = await this.readRecord(uid);
+		if (saved && saved.spentUsd > 0) await this.safeHook(this.hooks?.onSpend?.bind(this.hooks), saved);
+		return { view, chargedUsd };
+	}
+
+	async list(): Promise<ListedAccount[]> {
+		if (!this.store) return [...this.accounts.values()].map((record) => ({ record }));
+		return this.store.list();
+	}
+
+	/** Stamp a signup time discovered from the account document. Does not invent one. */
+	async rememberCreated(uid: string, createdAt: string, now: Date = new Date()): Promise<void> {
+		const existing = await this.readRecord(uid);
+		if (!existing || existing.createdAt) return;
+		await this.commit(uid, now, (record) => (record.createdAt ? record : { ...record, createdAt }));
+	}
+
+	async markCoupon(uid: string, code: string, now: Date = new Date()): Promise<void> {
+		const cleaned = code.trim();
+		if (!/^[A-Za-z0-9_-]{1,64}$/.test(cleaned)) return;
+		const existing = await this.readRecord(uid);
+		if (!existing || existing.couponCode === cleaned) return;
+		await this.commit(uid, now, (record) => (record.couponCode === cleaned ? record : { ...record, couponCode: cleaned }));
 	}
 
 	async findByCustomer(customerId: string): Promise<AccountRecord | undefined> {
@@ -128,18 +167,41 @@ export class AccountDirectory {
 	 */
 	private async commit(uid: string, now: Date, change: (record: AccountRecord) => AccountRecord): Promise<AccountView> {
 		if (!this.store) {
-			const next = change(this.accounts.get(uid) ?? emptyAccount(uid, now));
+			const current = this.accounts.get(uid) ?? null;
+			await this.closePeriod(current, now);
+			const next = stampCreated(current, change(current ?? emptyAccount(uid, now)), now);
 			this.accounts.set(uid, next);
 			return viewAccount(next, now);
 		}
 		const existing = await this.store.read(uid);
+		await this.closePeriod(existing, now);
 		const base = existing ?? emptyAccount(uid, now);
-		const preview = change(base);
+		const preview = stampCreated(existing, change(base), now);
 		if (existing && sameAccount(existing, preview)) return viewAccount(preview, now);
 		if (!existing && sameAccount(preview, emptyAccount(uid, now))) return viewAccount(preview, now);
-		const saved = await this.store.update(uid, (record) => change(record ?? emptyAccount(uid, now)));
+		const saved = await this.store.update(uid, (record) => stampCreated(record, change(record ?? emptyAccount(uid, now)), now));
 		return viewAccount(saved, now);
 	}
+
+	private async closePeriod(record: AccountRecord | null, now: Date): Promise<void> {
+		if (!record || !(record.spentUsd > 0) || record.period === periodKey(now)) return;
+		await this.safeHook(this.hooks?.onPeriodClose?.bind(this.hooks), record);
+	}
+
+	private async safeHook(hook: ((record: AccountRecord) => Promise<void>) | undefined, record: AccountRecord): Promise<void> {
+		if (!hook) return;
+		try {
+			await hook(record);
+		} catch (err) {
+			console.error("Could not snapshot hosted spend.", err);
+		}
+	}
+}
+
+function stampCreated(previous: AccountRecord | null, next: AccountRecord, now: Date): AccountRecord {
+	if (previous?.createdAt || next.createdAt) return next;
+	if (previous) return next;
+	return { ...next, createdAt: now.toISOString() };
 }
 
 function sameAccount(a: AccountRecord, b: AccountRecord): boolean {
@@ -155,6 +217,8 @@ function sameAccount(a: AccountRecord, b: AccountRecord): boolean {
 		a.tutorProvider === b.tutorProvider &&
 		a.tutorWeight === b.tutorWeight &&
 		a.obsidianConnectedAt === b.obsidianConnectedAt &&
+		a.createdAt === b.createdAt &&
+		a.couponCode === b.couponCode &&
 		attributionKey(a.attribution) === attributionKey(b.attribution)
 	);
 }

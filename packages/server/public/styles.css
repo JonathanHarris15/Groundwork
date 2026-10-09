@@ -1663,3 +1663,26 @@ body.has-consent textarea {
 @media (prefers-reduced-motion: reduce) {
 	.skip:focus { transform: none; }
 }
+
+.usage-dash { max-width: 1080px; }
+.usage-dash h1 { font-size: 42px; text-wrap: balance; }
+.usage-section { margin-top: 40px; }
+.usage-section h2 { margin-top: 0; }
+.usage-section h3 { margin: 22px 0 8px; font-size: 18px; font-weight: 500; }
+.usage-dash a:focus-visible { outline: 2px solid #2e9be6; outline-offset: 3px; }
+.usage-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
+.usage-card { border: 1px solid #e3e5e8; border-radius: 14px; padding: 14px 16px; background: #fff; }
+.usage-card .k { margin: 0; color: #4a4f57; font-size: 14px; }
+.usage-card .v { margin: 6px 0 0; font-size: 26px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.usage-warn { margin: 16px 0 0; padding: 12px 14px; border: 1px solid #f59e2b; border-radius: 12px; background: #fff6e8; color: #16181d; }
+.usage-scroll { overflow-x: auto; margin-top: 12px; }
+.usage-table { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+.usage-table caption { text-align: left; font-size: 14px; color: #4a4f57; margin-bottom: 6px; }
+.usage-table th, .usage-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e3e5e8; vertical-align: top; white-space: nowrap; }
+.usage-table th { font-weight: 500; color: #4a4f57; }
+.usage-chart { display: block; width: 100%; max-width: 640px; height: auto; margin-top: 12px; }
+
+@container (max-width: 520px) {
+	.usage-dash h1 { font-size: 32px; }
+	.usage-card .v { font-size: 22px; }
+}

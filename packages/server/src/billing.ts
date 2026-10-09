@@ -29,6 +29,12 @@ export interface Billing {
 	 * The browser must not turn this into a GA4 purchase. The webhook reports the purchase.
 	 */
 	checkoutAmount?(sessionId: string): Promise<number | null>;
+	/** Accounts carrying the GROUNDWORKTESTER promotion, when Stripe can say so. */
+	couponHolders?(): Promise<Array<{ uid: string; code: string }>>;
+}
+
+export interface BillingHooks {
+	onUpgrade?(uid: string, plan: "byom" | "included"): Promise<void>;
 }
 
 /** Stripe-standard grace: past_due keeps paid entitlements until canceled, unpaid, or deleted. */
@@ -92,7 +98,7 @@ export function planFromSubscription(subscription: SubscriptionLike, prices: Mem
 	return "unknown";
 }
 
-export function loadBilling(accounts: AccountDirectory): Billing {
+export function loadBilling(accounts: AccountDirectory, hooks?: BillingHooks): Billing {
 	const key = process.env.STRIPE_SECRET_KEY?.trim();
 	const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
 	const byom = process.env.STRIPE_PRICE_BYOM?.trim();
@@ -106,7 +112,7 @@ export function loadBilling(accounts: AccountDirectory): Billing {
 			included: extraPrices("STRIPE_PRICE_INCLUDED_PREVIOUS"),
 		},
 	};
-	return createBilling(new Stripe(key), prices, webhookSecret, accounts, loadGa4PurchaseReporter());
+	return createBilling(new Stripe(key), prices, webhookSecret, accounts, loadGa4PurchaseReporter(), hooks);
 }
 
 export interface StripeMembershipClient {
@@ -124,6 +130,7 @@ export function createBilling(
 	webhookSecret: string,
 	accounts: AccountDirectory,
 	reporter: CheckoutPurchaseReporter = noopCheckoutPurchaseReporter,
+	hooks?: BillingHooks,
 ): Billing {
 	const freshUntil = new Map<string, number>();
 	return {
@@ -145,7 +152,7 @@ export function createBilling(
 			if (!signature) throw badRequest("Missing Stripe signature.");
 			const event = stripe.webhooks.constructEvent(raw, signature, webhookSecret);
 			freshUntil.clear();
-			await applyStripeEvent(accounts, event, prices);
+			await applyStripeEvent(accounts, event, prices, hooks);
 			if (event.type === "checkout.session.completed") {
 				const session = event.data.object;
 				await reporter.report({
@@ -168,6 +175,9 @@ export function createBilling(
 				return null;
 			}
 		},
+		async couponHolders() {
+			return listTesterCoupons(stripe, accounts);
+		},
 		async sync(uid) {
 			const now = Date.now();
 			if ((freshUntil.get(uid) ?? 0) > now) return;
@@ -188,7 +198,7 @@ export function createBilling(
  * price change in the billing portal.
  * When `prices` is omitted, an entitled subscription still falls back to metadata.
  */
-export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event, prices?: MembershipPrices): Promise<void> {
+export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event, prices?: MembershipPrices, hooks?: BillingHooks): Promise<void> {
 	if (event.id && !rememberStripeEvent(event.id)) return;
 	if (event.type === "checkout.session.completed") {
 		const session = event.data.object;
@@ -196,7 +206,12 @@ export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe
 		const plan = session.metadata?.plan;
 		const customer = typeof session.customer === "string" ? session.customer : session.customer?.id;
 		if (uid && customer) await accounts.attachCustomer(uid, customer);
-		if (uid && isPaid(plan)) await accounts.setPlan(uid, plan);
+		if (uid) await rememberTesterCoupon(accounts, uid, session);
+		if (uid && isPaid(plan)) {
+			const before = await accounts.get(uid);
+			await accounts.setPlan(uid, plan);
+			if (before.plan !== plan) await hooks?.onUpgrade?.(uid, plan);
+		}
 		return;
 	}
 	if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
@@ -204,19 +219,77 @@ export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe
 		const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
 		const uid = subscription.metadata?.uid || (await accounts.findByCustomer(customer))?.uid;
 		if (!uid) return;
+		await rememberTesterCoupon(accounts, uid, subscription);
 		const entitled = event.type === "customer.subscription.updated" && subscriptionIsEntitled(subscription.status);
 		if (!entitled) {
 			await accounts.setPlan(uid, "free");
 			return;
 		}
-		if (prices) {
-			const plan = planFromSubscription(subscription, prices);
-			if (plan === "byom" || plan === "included") await accounts.setPlan(uid, plan);
+		const planned = prices ? planFromSubscription(subscription, prices) : subscription.metadata?.plan;
+		if (planned === "byom" || planned === "included") {
+			const before = await accounts.get(uid);
+			await accounts.setPlan(uid, planned);
+			if (before.plan !== planned) await hooks?.onUpgrade?.(uid, planned);
+		}
+	}
+}
+
+const TESTER_COUPON = "GROUNDWORKTESTER";
+
+/** Promotion codes and coupon names on a Checkout Session or Subscription. */
+export function promotionCodesFrom(value: unknown): string[] {
+	const found = new Set<string>();
+	const visit = (node: unknown, depth: number) => {
+		if (depth > 8 || !node || typeof node !== "object") return;
+		if (Array.isArray(node)) {
+			for (const item of node) visit(item, depth + 1);
 			return;
 		}
-		const plan = subscription.metadata?.plan;
-		if (isPaid(plan)) await accounts.setPlan(uid, plan);
+		const record = node as Record<string, unknown>;
+		if (typeof record.code === "string" && record.code.trim()) found.add(record.code.trim());
+		if (typeof record.name === "string" && record.name.toUpperCase() === TESTER_COUPON) found.add(record.name.trim());
+		for (const [key, child] of Object.entries(record)) {
+			if (key === "metadata") continue;
+			if (child && typeof child === "object") visit(child, depth + 1);
+		}
+	};
+	if (!value || typeof value !== "object") return [];
+	const root = value as Record<string, unknown>;
+	visit(root.discounts, 0);
+	visit(root.discount, 0);
+	visit(root.total_details, 0);
+	return [...found];
+}
+
+async function rememberTesterCoupon(accounts: AccountDirectory, uid: string, value: unknown): Promise<void> {
+	const match = promotionCodesFrom(value).find((code) => code.toUpperCase() === TESTER_COUPON);
+	if (match) await accounts.markCoupon(uid, TESTER_COUPON);
+}
+
+async function listTesterCoupons(stripe: Stripe, accounts: AccountDirectory): Promise<Array<{ uid: string; code: string }>> {
+	const found = new Map<string, string>();
+	let promoId = "";
+	try {
+		const promos = await stripe.promotionCodes.list({ code: TESTER_COUPON, limit: 1 });
+		promoId = promos.data[0]?.id ?? "";
+	} catch (err) {
+		console.error("Could not look up the tester promotion.", err);
 	}
+	let startingAfter: string | undefined;
+	for (let page = 0; page < 20; page++) {
+		const listed = await stripe.subscriptions.list({ status: "all", limit: 100, starting_after: startingAfter });
+		for (const subscription of listed.data) {
+			const codes = promotionCodesFrom(subscription);
+			const mentionsPromo = promoId ? JSON.stringify(subscription.discounts ?? "").includes(promoId) : false;
+			if (!codes.some((code) => code.toUpperCase() === TESTER_COUPON) && !mentionsPromo) continue;
+			const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+			const uid = subscription.metadata?.uid || (await accounts.findByCustomer(customer))?.uid;
+			if (uid) found.set(uid, TESTER_COUPON);
+		}
+		if (!listed.has_more || !listed.data.length) break;
+		startingAfter = listed.data[listed.data.length - 1]?.id;
+	}
+	return [...found.entries()].map(([uid, code]) => ({ uid, code }));
 }
 
 /**

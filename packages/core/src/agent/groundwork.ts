@@ -1,3 +1,4 @@
+import { usageFeatureFromThread } from "../account/usage-feature";
 import { httpClient, type HttpClient } from "../http";
 import { asRecord } from "../unknown";
 import type { Provider, ProviderRequest, ProviderResponse } from "./types";
@@ -30,6 +31,7 @@ export class GroundworkProvider implements Provider {
 				messages: req.messages,
 				tools: req.tools,
 				maxTokens: this.opts.maxTokens,
+				feature: usageFeatureFromThread(req.messages),
 			}),
 			signal: req.signal,
 		});

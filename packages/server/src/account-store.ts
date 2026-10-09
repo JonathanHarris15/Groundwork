@@ -11,6 +11,13 @@ export interface AccountStore {
 	/** Read-modify-write. `change` sees the record currently stored, not a stale copy. */
 	update(uid: string, change: (record: AccountRecord | null) => AccountRecord): Promise<AccountRecord>;
 	findByCustomer(customerId: string): Promise<string | null>;
+	list(): Promise<ListedAccount[]>;
+}
+
+export interface ListedAccount {
+	record: AccountRecord;
+	/** Firestore document create time, when the store has one. */
+	createTime?: string;
 }
 
 export function serializeAccount(record: AccountRecord): Record<string, unknown> {
@@ -26,6 +33,8 @@ export function serializeAccount(record: AccountRecord): Record<string, unknown>
 	if (record.tutorProvider) out.tutorProvider = record.tutorProvider;
 	if (record.tutorWeight) out.tutorWeight = record.tutorWeight;
 	if (record.obsidianConnectedAt) out.obsidianConnectedAt = record.obsidianConnectedAt;
+	if (record.createdAt) out.createdAt = record.createdAt;
+	if (record.couponCode) out.couponCode = record.couponCode;
 	if (record.attribution) out.attribution = record.attribution;
 	return out;
 }
@@ -49,6 +58,8 @@ export function parseStoredAccount(uid: string, data: unknown): AccountRecord | 
 	if (isUserKeyProvider(raw.tutorProvider)) record.tutorProvider = raw.tutorProvider;
 	if (isTutorWeight(raw.tutorWeight)) record.tutorWeight = raw.tutorWeight;
 	if (typeof raw.obsidianConnectedAt === "string" && raw.obsidianConnectedAt.trim()) record.obsidianConnectedAt = raw.obsidianConnectedAt.trim();
+	if (typeof raw.createdAt === "string" && /^\d{4}-\d{2}-\d{2}T/.test(raw.createdAt)) record.createdAt = raw.createdAt;
+	if (typeof raw.couponCode === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(raw.couponCode)) record.couponCode = raw.couponCode;
 	const attribution = attributionFromUnknown(raw.attribution);
 	if (attribution) record.attribution = attribution;
 	return record;
@@ -89,6 +100,16 @@ export class FileAccountStore implements AccountStore {
 			if (row.stripeCustomerId === customerId) return uid;
 		}
 		return null;
+	}
+
+	async list(): Promise<ListedAccount[]> {
+		const db = await this.load();
+		const out: ListedAccount[] = [];
+		for (const [uid, row] of Object.entries(db.users)) {
+			const record = parseStoredAccount(uid, row);
+			if (record) out.push({ record });
+		}
+		return out;
 	}
 
 	private async enqueue(fn: () => Promise<void>): Promise<void> {
@@ -147,5 +168,17 @@ export class FirestoreAccountStore implements AccountStore {
 	async findByCustomer(customerId: string): Promise<string | null> {
 		const snap = await this.firestore().collection("accounts").where("stripeCustomerId", "==", customerId).limit(1).get();
 		return snap.docs[0]?.id ?? null;
+	}
+
+	async list(): Promise<ListedAccount[]> {
+		const snap = await this.firestore().collection("accounts").get();
+		const out: ListedAccount[] = [];
+		for (const doc of snap.docs) {
+			const record = parseStoredAccount(doc.id, doc.data());
+			if (!record) continue;
+			const created = doc.createTime?.toDate();
+			out.push({ record, createTime: created ? created.toISOString() : undefined });
+		}
+		return out;
 	}
 }

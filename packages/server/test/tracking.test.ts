@@ -162,6 +162,7 @@ describe("ads tracking", () => {
 		expect(practice).toContain("18 and older");
 		expect(String(readSite("/terms")?.body)).toContain("You must be 18 or older to use Groundwork");
 		expect(String(readSite("/privacy")?.body)).toContain("anyone under 18, including children under 13");
+		expect(String(readSite("/privacy")?.body)).toContain("Groundwork records aggregate usage counts and costs per account to run and price the service, never note or chat content.");
 		expect(String(readSite("/privacy")?.body)).toContain("methoddev1505@gmail.com");
 		expect(sitemapXml()).toContain("https://groundworklearn.com/practice-tests");
 		const home = readFileSync(path.join(root, "packages/server/public/index.html"), "utf8");

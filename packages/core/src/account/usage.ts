@@ -24,6 +24,10 @@ export interface AccountRecord {
 	attribution?: StoredAttribution;
 	/** Set the first time Obsidian links this account. Absent until then. */
 	obsidianConnectedAt?: string;
+	/** When the account document was first written. Absent on accounts created before this field. */
+	createdAt?: string;
+	/** Stripe promotion code, when a subscription event included one. */
+	couponCode?: string;
 }
 
 /** Campaign fields captured on the site and kept on the account. Not shown to the client. */
