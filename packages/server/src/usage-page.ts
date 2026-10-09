@@ -49,7 +49,7 @@ export function usagePage(report: UsageReport): string {
 
 					<section class="usage-section" aria-labelledby="week-title">
 						<h2 id="week-title">Weekly active free users</h2>
-						${barChart(report.weeks.map((week) => ({ label: week.week.slice(6), value: week.activeFree })), "Weekly active free users")}
+						${barChart(report.weeks.map((week) => ({ label: week.week.slice(5), value: week.activeFree })), "Weekly active free users")}
 						${table(
 							"Weekly activity",
 							["Week", "Active free users", "New free signups", "Checkout clicks"],
@@ -286,7 +286,9 @@ function barChart(rows: Array<{ label: string; value: number }>, label: string):
 			const h = Math.max(0, Math.round((row.value / max) * (height - 36)));
 			const x = gap + index * (bar + gap);
 			const y = height - 22 - h;
-			return `<rect x="${x.toFixed(1)}" y="${y}" width="${Math.max(bar, 1).toFixed(1)}" height="${h}" rx="3" fill="#2e9be6"><title>${esc(row.label)}: ${row.value}</title></rect>`;
+			const w = Math.max(bar, 1);
+			const labelX = (x + w / 2).toFixed(1);
+			return `<g><rect x="${x.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${h}" rx="3" fill="#2e9be6"><title>${esc(row.label)}: ${row.value}</title></rect><text x="${labelX}" y="${height - 6}" text-anchor="middle" fill="#4a4f57" font-size="11" font-family="Jost, sans-serif">${esc(row.label)}</text></g>`;
 		})
 		.join("");
 	return `<svg class="usage-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(label)}">${shapes}</svg>`;
