@@ -1,12 +1,67 @@
-import { describe, expect, it } from "vitest";
+/** @vitest-environment jsdom */
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { goalMermaid, type GraphNode } from "../src/graph";
 import { buildFromGroundwork, buildSyntheticGraph } from "../src/force-graph/build";
-import { CONCEPT_MAP_WHEEL_EASE, CONCEPT_MAP_WHEEL_PIXELS, conceptMapWheelZoom } from "../src/force-graph/canvas";
+import {
+	CONCEPT_MAP_WHEEL_EASE,
+	CONCEPT_MAP_WHEEL_PIXELS,
+	conceptMapWheelZoom,
+	mountForceGraph,
+} from "../src/force-graph/canvas";
 import { TONE_FALLBACK_COLORS } from "../src/force-graph/colors";
 import { MASTERY_LABEL, MASTERY_TONES } from "../src/mastery-tone";
 import { forceGraphFromGoalMermaid, parseGoalMermaid } from "../src/force-graph/parse-mermaid";
 import { clusterCentroids, runSimulation } from "../src/force-graph/simulation";
 import { layoutGroundworkGraph } from "../src/groundwork-graph";
+
+const g = globalThis as typeof globalThis & {
+	createEl?: (tag: string) => HTMLElement;
+	createDiv?: () => HTMLElement;
+	ResizeObserver?: typeof ResizeObserver;
+};
+
+g.createEl = (tag: string) => document.createElement(tag);
+g.createDiv = () => document.createElement("div");
+g.ResizeObserver = class {
+	observe() {}
+	unobserve() {}
+	disconnect() {}
+};
+
+HTMLCanvasElement.prototype.getContext = () =>
+	({
+		setTransform() {},
+		clearRect() {},
+		beginPath() {},
+		moveTo() {},
+		lineTo() {},
+		stroke() {},
+		fill() {},
+		arc() {},
+		fillText() {},
+		strokeText() {},
+		save() {},
+		restore() {},
+		translate() {},
+		scale() {},
+		measureText: () => ({ width: 40 }),
+	}) as unknown as CanvasRenderingContext2D;
+
+if (typeof PointerEvent === "undefined") {
+	(globalThis as unknown as { PointerEvent: typeof Event }).PointerEvent = class PointerEvent extends Event {
+		button: number;
+		clientX: number;
+		clientY: number;
+		pointerId: number;
+		constructor(type: string, init: PointerEventInit = {}) {
+			super(type, init);
+			this.button = init.button ?? 0;
+			this.clientX = init.clientX ?? 0;
+			this.clientY = init.clientY ?? 0;
+			this.pointerId = init.pointerId ?? 1;
+		}
+	} as unknown as typeof PointerEvent;
+}
 
 describe("force graph", () => {
 	it("parses a set_goal mermaid map", () => {
@@ -102,4 +157,51 @@ describe("force graph", () => {
 		expect(buildFromGroundwork(concepts, graph).nodes[0]!.actionHint).toBe("find it in the list below");
 		expect(buildFromGroundwork(concepts, graph, { studyHints: true }).nodes[0]!.actionHint).toBe("click to keep learning");
 	});
+
+	it("chat maps ignore wheel until clicked, then release it on outside click", () => {
+		const pane = document.createElement("div");
+		pane.className = "gw-graph";
+		const host = document.createElement("div");
+		pane.appendChild(host);
+		document.body.appendChild(pane);
+		Object.defineProperty(host, "clientWidth", { value: 400, configurable: true });
+		Object.defineProperty(host, "clientHeight", { value: 320, configurable: true });
+		host.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 320, width: 400, height: 320, toJSON() {} });
+
+		const handle = mountForceGraph(
+			host,
+			{ nodes: [{ id: "a", title: "Prior", x: 0, y: 0, vx: 0, vy: 0, radius: 8, color: "#000", cluster: "x", status: "solid", tone: "solid" }], links: [], legend: [] },
+			{ captureWheel: "when-active", fit: false },
+		);
+		const canvas = host.querySelector("canvas")!;
+		canvas.getBoundingClientRect = host.getBoundingClientRect;
+
+		const wheel = (target: EventTarget) => {
+			const e = new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true });
+			const prevented = !target.dispatchEvent(e) || e.defaultPrevented;
+			return prevented;
+		};
+
+		expect(wheel(canvas)).toBe(false);
+		expect(pane.classList.contains("is-active")).toBe(false);
+
+		canvas.setPointerCapture = () => undefined;
+		canvas.releasePointerCapture = () => undefined;
+		canvas.hasPointerCapture = () => false;
+
+		canvas.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 10, clientY: 10, bubbles: true }));
+		expect(pane.classList.contains("is-active")).toBe(true);
+		expect(wheel(canvas)).toBe(true);
+
+		document.body.dispatchEvent(new PointerEvent("pointerdown", { button: 0, clientX: 1, clientY: 1, bubbles: true }));
+		expect(pane.classList.contains("is-active")).toBe(false);
+		expect(wheel(canvas)).toBe(false);
+
+		handle.dispose();
+		pane.remove();
+	});
+});
+
+afterEach(() => {
+	vi.restoreAllMocks();
 });

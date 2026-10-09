@@ -1164,12 +1164,20 @@ body .gw-root button.gw-lib-tab.is-active {
 
 /* Mermaid maps stay inside a pane so a wide DAG cannot stretch the chat. */
 .gw-graph {
+	position: relative;
 	margin: 10px 0;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--gw-radius);
 	background: var(--background-primary-alt);
 	overflow: hidden;
 	max-width: 100%;
+}
+.gw-graph.is-active {
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent, #45a9f0) 55%, transparent);
+}
+.gw-graph.is-active .gw-graph-pct::after {
+	content: " · scroll to zoom";
+	color: var(--text-faint);
 }
 .gw-graph-bar {
 	display: flex;
@@ -1255,6 +1263,19 @@ body .gw-root button.gw-lib-tab.is-active {
 	width: 100%;
 	height: 100%;
 }
+/* Chat map view must stay in flow inside `.gw-graph`. Absolute `gw-force-host`
+   on the same node used to cover the whole turn (math, ask cards, scroll). */
+.gw-graph > .gw-graph-view,
+.gw-graph-view.gw-force-host {
+	position: relative;
+	inset: auto;
+	width: 100%;
+	height: 320px;
+}
+.gw-graph.is-tall > .gw-graph-view,
+.gw-graph.is-tall .gw-graph-view.gw-force-host {
+	height: min(70vh, 640px);
+}
 .gw-force-slot {
 	position: absolute;
 	inset: 0;
@@ -1267,10 +1288,12 @@ body .gw-root button.gw-lib-tab.is-active {
 	touch-action: none;
 }
 .gw-force-host.is-panning .gw-force-canvas,
+.gw-force-slot.is-panning .gw-force-canvas,
 .gw-graph-view.is-panning .gw-force-canvas {
 	cursor: grabbing;
 }
-.gw-force-host.is-dragging-node .gw-force-canvas {
+.gw-force-host.is-dragging-node .gw-force-canvas,
+.gw-force-slot.is-dragging-node .gw-force-canvas {
 	cursor: grabbing;
 }
 .gw-force-tip {
@@ -2522,6 +2545,9 @@ body .gw-root .gw-continue button:disabled {
 	grid-column: 3;
 	grid-row: 1;
 	justify-self: end;
+	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
 	flex: none;
 	justify-content: flex-end;
 	gap: 6px;
@@ -3018,6 +3044,11 @@ body .gw-root button.gw-text-btn:hover {
 	overflow-x: auto;
 }
 
+/* Icon labels next to New session / Library / Settings crush the tab pill
+   before the 640px two-row header kicks in. Hide them while the row is tight. */
+@container (max-width: 960px) {
+	.gw-actions-tools .gw-icon-label { display: none; }
+}
 /* Four tabs do not fit between the brand and the tools in a narrow pane, so they take their own row. */
 @container (max-width: 640px) {
 	.gw-root.gw-theme-dark .gw-header,
