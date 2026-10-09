@@ -14,7 +14,7 @@ import { BestEffortStore, FirestoreTutorMemoryStore } from "./memory-firestore";
 import { SecretDirectory } from "./secrets";
 import { FileSecretStore, FirestoreSecretStore } from "./secret-store";
 import { platformFetch } from "./platform-fetch";
-import { readSite } from "./static";
+import { isDynamicPath, readSite } from "./static";
 import { UsageDirectory } from "./usage";
 import { FileUsageStore, FirestoreUsageStore } from "./usage-store";
 
@@ -68,13 +68,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		return;
 	}
 	const url = new URL(req.url ?? "/", "http://127.0.0.1");
-	if (verb === "GET" && !isUsagePath(url.pathname)) {
+	if (verb === "GET") {
 		const site = readSite(url.pathname);
 		if (site) {
 			endBody(res, 200, site.type, site.body, head);
 			return;
 		}
-		if (!url.pathname.startsWith("/v1/") && url.pathname !== "/health") {
+		if (!isDynamicPath(url.pathname)) {
 			const notFound = readSite("/404.html");
 			if (notFound) {
 				endBody(res, 404, notFound.type, notFound.body, head);
@@ -148,10 +148,6 @@ function endBody(res: ServerResponse, status: number, type: string, body: string
 	writeHead(res, status, type, payload.length, extra);
 	if (head) res.end();
 	else res.end(payload);
-}
-
-function isUsagePath(pathname: string): boolean {
-	return pathname === "/admin/usage" || pathname === "/admin/usage.csv";
 }
 
 function sessionBearer(req: IncomingMessage): string | undefined {

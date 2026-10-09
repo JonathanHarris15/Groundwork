@@ -10,6 +10,8 @@ export interface Identity {
 	uid: string;
 	email?: string;
 	name?: string;
+	/** Firebase `email_verified`. Absent on the shared local user. */
+	emailVerified?: boolean;
 }
 
 export interface Auth {
@@ -22,6 +24,19 @@ export interface Auth {
 
 const LOCAL_UID = "local";
 
+/**
+ * Playwright signs in as a chosen email with `Authorization: Bearer e2e:name@host`.
+ * Production Cloud Run sets `K_SERVICE`, so this bearer is never an identity there.
+ */
+export function e2eIdentity(authorization: string | undefined, env: NodeJS.ProcessEnv = process.env): Identity | null {
+	if (env.GROUNDWORK_E2E !== "1" || env.K_SERVICE?.trim()) return null;
+	const match = authorization?.match(/^Bearer e2e:(\S+)$/i);
+	if (!match) return null;
+	const email = match[1].trim().toLowerCase();
+	if (!/^[^\s@]+@[^\s@]+$/.test(email)) return null;
+	return { uid: `e2e:${email}`, email, emailVerified: true, name: email };
+}
+
 export function firebaseConfigured(): boolean {
 	return !!(process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() || serviceAccountFile());
 }
@@ -30,8 +45,8 @@ export function loadAuth(): Auth {
 	if (!firebaseConfigured()) {
 		return {
 			firebase: false,
-			async uid() {
-				return { uid: LOCAL_UID };
+			async uid(authorization) {
+				return e2eIdentity(authorization) ?? { uid: LOCAL_UID };
 			},
 			async revokeRefreshTokens() {
 				/* local dev has no Firebase sessions to revoke */
@@ -48,7 +63,7 @@ export function createFirebaseAuth(auth: ReturnType<typeof getAuth>, denylist: I
 		async uid(authorization) {
 			const decoded = await verifyBearer(auth, denylist, authorization);
 			const name = typeof decoded.name === "string" ? decoded.name : undefined;
-			return { uid: decoded.uid, email: decoded.email, name };
+			return { uid: decoded.uid, email: decoded.email, name, emailVerified: decoded.email_verified === true };
 		},
 		async revokeRefreshTokens(uid, authorization) {
 			const claims = authorization ? await verifyBearer(auth, denylist, authorization).catch(() => null) : null;

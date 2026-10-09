@@ -75,7 +75,9 @@ function nav(current: string): string {
 		const currentAttr = href === current ? ` aria-current="page"` : "";
 		return `<a href="${href}"${currentAttr}>${label}</a>`;
 	};
-	return `<nav class="bar-nav" aria-label="Site">${wide("/pricing", "Pricing")}${wide("/get-started", "Get started")}<details class="nav-more"><summary>Menu</summary><div class="nav-menu">${item("/pricing", "Pricing")}${item("/get-started", "Get started")}</div></details>${link("/#signin", "Sign in", true)}</nav>`;
+	const adminWide = `<a class="nav-wide" href="/admin/usage" data-admin-link hidden>Admin</a>`;
+	const adminItem = `<a href="/admin/usage" data-admin-link hidden>Admin</a>`;
+	return `<nav class="bar-nav" aria-label="Site">${wide("/pricing", "Pricing")}${wide("/get-started", "Get started")}${adminWide}<details class="nav-more"><summary>Menu</summary><div class="nav-menu">${item("/pricing", "Pricing")}${item("/get-started", "Get started")}${adminItem}</div></details>${link("/#signin", "Sign in", true)}</nav>`;
 }
 
 function footer(): string {
@@ -97,7 +99,7 @@ function footer(): string {
 	</footer>`;
 }
 
-function page(spec: { path: string; title: string; description: string; main: string; map?: boolean }): string {
+function page(spec: { path: string; title: string; description: string; main: string; map?: boolean; noindex?: boolean; wide?: boolean }): string {
 	const url = `${ORIGIN}${spec.path}`;
 	const mapScript = spec.map
 		? `<script type="module" src="/force-graph.js?v=4"></script>
@@ -129,7 +131,8 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=14" />
+		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
+		<link rel="stylesheet" href="/styles.css?v=15" />
 		<script src="/tracking.js?v=6"></script>
 	</head>
 	<body>
@@ -139,11 +142,12 @@ function page(spec: { path: string; title: string; description: string; main: st
 				<a class="logo" href="/" aria-label="Groundwork home">${LOGO}</a>
 				${nav(spec.path)}
 			</header>
-			<main id="content" class="mkt-main">
+			<main id="content" class="mkt-main${spec.wide ? " usage-main" : ""}">
 				${spec.main}
 			</main>
 			${footer()}
 		</div>
+		<script src="/site-session.js?v=1"></script>
 		${mapScript}
 	</body>
 </html>
@@ -480,10 +484,22 @@ export function sitemapXml(): string {
 }
 
 export function robotsTxt(): string {
-	return `User-agent: *\nAllow: /\nDisallow: /v1/\nDisallow: /graph-harness.html\nDisallow: /graph-account-preview.html\n\nSitemap: ${ORIGIN}/sitemap.xml\n`;
+	return `User-agent: *\nAllow: /\nDisallow: /v1/\nDisallow: /api/\nDisallow: /admin/\nDisallow: /graph-harness.html\nDisallow: /graph-account-preview.html\n\nSitemap: ${ORIGIN}/sitemap.xml\n`;
+}
+
+function adminUsageShell(): string {
+	return page({
+		path: "/admin/usage",
+		title: "Usage · Groundwork",
+		description: "Free plan usage for Groundwork.",
+		noindex: true,
+		wide: true,
+		main: `<div id="usage-root"><p class="loading">Loading…</p></div>`,
+	});
 }
 
 export function renderSite(urlPath: string): { body: string; type: string } | null {
+	if (urlPath === "/admin/usage") return { body: adminUsageShell(), type: "text/html; charset=utf-8" };
 	const hit = PAGES.find((item) => item.path === urlPath);
 	if (hit) return { body: hit.html(), type: "text/html; charset=utf-8" };
 	if (urlPath === "/sitemap.xml") return { body: sitemapXml(), type: "application/xml; charset=utf-8" };
@@ -494,6 +510,7 @@ export function renderSite(urlPath: string): { body: string; type: string } | nu
 export function siteFiles(): SiteFile[] {
 	return [
 		...PAGES.map((item) => ({ path: item.path, file: item.file, body: item.html(), type: "text/html; charset=utf-8" })),
+		{ path: "/admin/usage", file: "admin/usage/index.html", body: adminUsageShell(), type: "text/html; charset=utf-8" },
 		{ path: "/sitemap.xml", file: "sitemap.xml", body: sitemapXml(), type: "application/xml; charset=utf-8" },
 		{ path: "/robots.txt", file: "robots.txt", body: robotsTxt(), type: "text/plain; charset=utf-8" },
 	];

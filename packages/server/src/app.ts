@@ -11,9 +11,8 @@ import { allowCheckoutAmount } from "./public-limit";
 import { platformFetch, type FetchLike } from "./platform-fetch";
 import { webConfig } from "./web-config";
 import { isUsageAdmin } from "./admin-access";
-import { readSite } from "./static";
+import { usageDash, usageCsv } from "./usage-page";
 import type { UsageDirectory } from "./usage";
-import { usageCsv, usagePage } from "./usage-page";
 
 export interface ServerDeps {
 	auth: Auth;
@@ -52,7 +51,7 @@ export interface RouteMeta {
 
 export async function route(method: string, path: string, body: unknown, deps: ServerDeps, authorization?: string, meta: RouteMeta = {}): Promise<RouteResult> {
 	try {
-		if (method === "GET" && (path === "/admin/usage" || path === "/admin/usage.csv" || path === "/v1/admin/usage")) {
+		if (method === "GET" && (path === "/api/admin/usage" || path === "/api/admin/usage.csv")) {
 			return adminUsage(path, deps, authorization);
 		}
 		const opened = obsidianOpen(method, path);
@@ -98,7 +97,8 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 
 		if (method === "GET" && path === "/v1/account") {
-			return { status: 200, json: { ...presentAccount(view), created: openedAccount.created } };
+			const isAdmin = isUsageAdmin(identity, { localDev: !deps.auth.firebase });
+			return { status: 200, json: { ...presentAccount(view), created: openedAccount.created, isAdmin } };
 		}
 		if (method === "POST" && path === "/v1/account/obsidian-connected") {
 			return { status: 200, json: await deps.accounts.connectObsidian(uid) };
@@ -251,15 +251,15 @@ export async function route(method: string, path: string, body: unknown, deps: S
 }
 
 async function adminUsage(path: string, deps: ServerDeps, authorization: string | undefined): Promise<RouteResult> {
-	let email: string | undefined;
+	let identity: { email?: string; emailVerified?: boolean };
 	try {
-		email = (await deps.auth.uid(authorization)).email;
+		identity = await deps.auth.uid(authorization);
 	} catch {
-		return notFound();
+		return notFoundJson();
 	}
-	if (!isUsageAdmin({ email }, { localDev: !deps.auth.firebase })) return notFound();
+	if (!isUsageAdmin(identity, { localDev: !deps.auth.firebase })) return notFoundJson();
 	const usage = deps.usage;
-	if (!usage) return { status: 200, json: { error: "Usage logging is not attached." }, text: path.endsWith(".csv") ? "" : "<p>Usage logging is not attached.</p>", type: path.endsWith(".csv") ? "text/csv; charset=utf-8" : "text/html; charset=utf-8" };
+	if (!usage) return notFoundJson();
 	try {
 		await usage.backfill(deps.accounts, () => deps.billing.couponHolders?.() ?? Promise.resolve([]));
 	} catch (err) {
@@ -267,17 +267,14 @@ async function adminUsage(path: string, deps: ServerDeps, authorization: string 
 	}
 	const report = await usage.report(deps.accounts);
 	const headers = { "cache-control": "private, no-store" };
-	if (path === "/admin/usage.csv") {
+	if (path === "/api/admin/usage.csv") {
 		return { status: 200, json: { ok: true }, text: usageCsv(report), type: "text/csv; charset=utf-8", headers: { ...headers, "content-disposition": "attachment; filename=\"groundwork-usage.csv\"" } };
 	}
-	if (path === "/v1/admin/usage") return { status: 200, json: report, headers };
-	return { status: 200, json: { ok: true }, text: usagePage(report), type: "text/html; charset=utf-8", headers };
+	return { status: 200, json: { ...report, html: usageDash(report) }, headers };
 }
 
-function notFound(): RouteResult {
-	const page = readSite("/404.html");
-	if (!page || typeof page.body !== "string") return { status: 404, json: { error: "Not found." } };
-	return { status: 404, json: { error: "Not found." }, text: page.body, type: page.type, headers: { "cache-control": "private, no-store" } };
+function notFoundJson(): RouteResult {
+	return { status: 404, json: { error: "Not found." }, headers: { "cache-control": "private, no-store" } };
 }
 
 function isPermissionDenied(err: unknown): boolean {

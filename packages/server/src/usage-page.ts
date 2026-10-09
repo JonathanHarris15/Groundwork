@@ -1,35 +1,11 @@
 import { USAGE_FEATURE_LABEL, type UsageReport } from "@groundwork/core";
 
-const LOGO = `GROUND<svg viewBox="-4 0 128 110" aria-hidden="true"><polyline points="10,14 36,98 60,38 84,98 110,14" fill="none" stroke="#16181D" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"></polyline><circle cx="10" cy="14" r="11" fill="#E5484D"></circle><circle cx="60" cy="38" r="11" fill="#F59E2B"></circle><circle cx="110" cy="14" r="11" fill="#2E9BE6"></circle><circle cx="36" cy="98" r="11" fill="#2DB560"></circle><circle cx="84" cy="98" r="11" fill="#2DB560"></circle></svg>ORK`;
-
-export function usagePage(report: UsageReport): string {
+/** Dashboard markup for an allowlisted admin. The page shell stays empty until this is returned. */
+export function usageDash(report: UsageReport): string {
 	const proposed = proposedLabel(report);
 	const conversion = report.upgrades.clickers ? report.upgrades.convertedClickers / report.upgrades.clickers : null;
-	return `<!doctype html>
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<meta name="robots" content="noindex" />
-		<title>Usage · Groundwork</title>
-		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-		<link rel="preconnect" href="https://fonts.googleapis.com" />
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
-		<link rel="stylesheet" href="/styles.css?v=14" />
-	</head>
-	<body>
-		<div class="site">
-			<a class="skip" href="#content">Skip to content</a>
-			<header class="top">
-				<div class="wrap">
-					<a class="logo" href="/" aria-label="Groundwork home">${LOGO}</a>
-					<a href="/admin/usage.csv">Download CSV</a>
-				</div>
-			</header>
-			<main id="content">
-				<div class="wrap usage-dash">
-					<h1>Free plan usage</h1>
+	return `<h1>Free plan usage</h1>
+					<p class="usage-actions"><button class="btn btn-line" type="button" id="download-csv">Download CSV</button></p>
 					<p class="lede">${esc(report.meter)}</p>
 					<p class="lede">${esc(report.consistentUser)}</p>
 					<p class="fine">Generated ${esc(report.generatedAt)}. Counts and costs only. This page does not show note or chat text.</p>
@@ -115,12 +91,7 @@ export function usagePage(report: UsageReport): string {
 						<p class="fine">Excluded accounts are flagged and left out of the totals above. Test accounts use a test email. GROUNDWORKTESTER is the coupon. Admin is the allowlisted sign-in.</p>
 						<p class="fine">Excluded: ${report.excluded.admin} admin, ${report.excluded.coupon} coupon, ${report.excluded.test} test.</p>
 						${peopleTable(report)}
-					</section>
-				</div>
-			</main>
-		</div>
-	</body>
-</html>`;
+					</section>`;
 }
 
 export function usageCsv(report: UsageReport): string {
