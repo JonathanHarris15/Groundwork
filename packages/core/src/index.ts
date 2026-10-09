@@ -35,6 +35,8 @@ export * from "./agent/demo";
 export * from "./agent/groundwork";
 export * from "./account/plans";
 export * from "./account/usage";
+export * from "./account/usage-feature";
+export * from "./account/usage-report";
 export * from "./account/tutor";
 export * from "./jev/grade";
 export * from "./jev/context";

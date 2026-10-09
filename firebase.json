@@ -24,6 +24,8 @@
       { "source": "/goals", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/get-started", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/privacy", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/admin/usage", "run": { "serviceId": "groundwork", "region": "us-central1" } },
+      { "source": "/admin/usage.csv", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/terms", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/robots.txt", "run": { "serviceId": "groundwork", "region": "us-central1" } },
       { "source": "/sitemap.xml", "run": { "serviceId": "groundwork", "region": "us-central1" } }
