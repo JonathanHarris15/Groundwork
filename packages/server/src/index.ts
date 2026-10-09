@@ -5,7 +5,7 @@ import { FileAccountStore, FirestoreAccountStore } from "./account-store";
 import { route } from "./app";
 import { loadAuth } from "./auth";
 import { loadBilling } from "./billing";
-import { gradeWithJev, jevConfigured } from "./jev";
+import { gradeWithJev, jevConfigured, selectContextWithJev } from "./jev";
 import { clientAddress } from "./client-address";
 import { httpsRedirectTarget, isLocalHost, listenTarget } from "./listen";
 import { MemoryDirectory } from "./memory";
@@ -31,6 +31,7 @@ const deps = {
 	jev: jevConfigured(),
 	memory: new MemoryDirectory(memoryStore),
 	grade: gradeWithJev,
+	selectContext: selectContextWithJev,
 	openRouterKey: process.env.OPENROUTER_API_KEY?.trim() || undefined,
 	fetchImpl: platformFetch,
 };

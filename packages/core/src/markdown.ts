@@ -56,6 +56,61 @@ export function unwikilink(value: string): string {
 	return (m ? m[1] : value).trim();
 }
 
+export interface MarkdownSection {
+	id: string;
+	title: string;
+	text: string;
+}
+
+/**
+ * Split on `#` and `##` headings. Fenced code and display math stay inside
+ * the section they were opened in, so a heading-looking line in a sample
+ * does not start a new piece.
+ */
+export function splitMarkdown(markdown: string): MarkdownSection[] {
+	const lines = markdown.split("\n");
+	const heads: number[] = [];
+	let fence: string | null = null;
+	for (let i = 0; i < lines.length; i++) {
+		const trimmed = lines[i].trim();
+		if (fence) {
+			if (trimmed.startsWith(fence)) fence = null;
+			continue;
+		}
+		const marker = /^(```+|~~~+|\$\$)/.exec(trimmed);
+		if (marker) {
+			if (!(marker[1] === "$$" && trimmed.length > 2 && trimmed.endsWith("$$"))) fence = marker[1];
+			continue;
+		}
+		if (/^#{1,2}\s+\S/.test(lines[i])) heads.push(i);
+	}
+	const pieces: MarkdownSection[] = [];
+	const seen = new Map<string, number>();
+	const push = (title: string, text: string) => {
+		const body = text.trim();
+		if (!body) return;
+		let id = title
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "")
+			.slice(0, 60) || "section";
+		const n = seen.get(id) ?? 0;
+		seen.set(id, n + 1);
+		if (n) id = `${id}-${n + 1}`;
+		pieces.push({ id, title, text: body });
+	};
+	if (!heads.length) {
+		push("Opening", markdown);
+		return pieces;
+	}
+	if (heads[0] > 0) push("Opening", lines.slice(0, heads[0]).join("\n"));
+	heads.forEach((start, index) => {
+		const title = lines[start].replace(/^#{1,2}\s+/, "").trim();
+		push(title, lines.slice(start, heads[index + 1] ?? lines.length).join("\n"));
+	});
+	return pieces;
+}
+
 /** Indices of lines that are `## ` headings, ignoring anything inside fenced code or $$ math blocks. */
 function h2Lines(lines: string[]): Set<number> {
 	const out = new Set<number>();

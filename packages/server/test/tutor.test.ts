@@ -34,6 +34,9 @@ function deps(over: Partial<ServerDeps> = {}): ServerDeps {
 		async grade() {
 			return [];
 		},
+		async selectContext() {
+			return [];
+		},
 		...over,
 	};
 }

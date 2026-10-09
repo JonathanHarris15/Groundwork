@@ -1,4 +1,4 @@
-import { freeResponseRequest, judgmentFromAnswers, type FreeResponseJudgment, type FreeResponseToGrade } from "@groundwork/core";
+import { contextRequest, freeResponseRequest, includedPieceIds, judgmentFromAnswers, type ContextPiece, type FreeResponseJudgment, type FreeResponseToGrade } from "@groundwork/core";
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 
 let client: TypeSafeClient | null = null;
@@ -12,6 +12,13 @@ function jevClient(): TypeSafeClient {
 	if (!jevConfigured()) throw new Error("TYPESAFE_API_KEY is not set on the Groundwork server.");
 	client ??= new TypeSafeClient();
 	return client;
+}
+
+export async function selectContextWithJev(message: string, pieces: ContextPiece[], signal?: AbortSignal): Promise<string[]> {
+	const request = contextRequest(message, pieces);
+	if (!Object.keys(request.questions).length) return [];
+	const result = await jevClient().systemOne(request as never, { signal });
+	return includedPieceIds(pieces, result.answers);
 }
 
 export async function gradeWithJev(items: FreeResponseToGrade[], signal?: AbortSignal): Promise<Array<FreeResponseJudgment | null>> {

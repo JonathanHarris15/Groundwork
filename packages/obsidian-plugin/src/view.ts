@@ -18,6 +18,7 @@ import {
 	DemoProvider,
 	marginNotes,
 	buildSystemPrompt,
+	prepareTutorTurn,
 	buildConceptMap,
 	buildFromGroundwork,
 	layoutGroundworkGraph,
@@ -665,7 +666,22 @@ export class ChatView extends ItemView implements ToolUI {
 			toSend = [workingGoalNote(await this.plugin.store.workingGoal()), toSend].filter(Boolean).join("\n\n");
 			const notes = this.marginNotes();
 			if (notes) toSend = [toSend, notes].filter(Boolean).join("\n\n");
-			await agent.send(toSend, (e) => this.onEvent(e), this.abort.signal, files);
+			const today = new Date().toISOString().slice(0, 10);
+			const access = folderAccessFrom(this.plugin.settings);
+			const prepared = await prepareTutorTurn({
+				selector: this.plugin.runtime().runtime === "demo" ? undefined : this.plugin.contextSelector(),
+				message: toSend,
+				extra: `# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`,
+				access,
+				profile: await this.plugin.store.profile(),
+				tutorContext: await this.plugin.store.tutorContext(),
+				attached: files,
+				io: this.plugin.store.context,
+				signal: this.abort.signal,
+			});
+			agent.setTurnContext?.(prepared.selected ? { system: prepared.system, profile: prepared.profile, tutorContext: prepared.tutorContext } : null);
+			if (prepared.note) toSend = [toSend, prepared.note].join("\n\n");
+			await agent.send(toSend, (e) => this.onEvent(e), this.abort.signal, prepared.files);
 		} finally {
 			this.abort = null;
 			if (!this.record || this.record.id !== chatId) {

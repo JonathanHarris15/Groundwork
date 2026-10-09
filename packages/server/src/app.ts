@@ -1,4 +1,4 @@
-import { asText, isPlanId, isTutorWeight, isUserKeyProvider, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
+import { asText, isPlanId, isTutorWeight, isUserKeyProvider, parseContextRequest, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type ContextPiece, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
@@ -19,6 +19,7 @@ export interface ServerDeps {
 	jev: boolean;
 	memory: MemoryDirectory;
 	grade(items: FreeResponseToGrade[], signal?: AbortSignal): Promise<Array<FreeResponseJudgment | null>>;
+	selectContext(message: string, pieces: ContextPiece[], signal?: AbortSignal): Promise<string[]>;
 	/** Shared key for Free and Groundwork. Absent until the server is configured. */
 	openRouterKey?: string;
 	fetchImpl?: FetchLike;
@@ -69,7 +70,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 
 		const identity = await deps.auth.uid(authorization);
 		const uid = identity.uid;
-		if (path !== "/v1/groundwork" && path !== "/v1/memory" && path !== "/v1/grade") {
+		if (path !== "/v1/groundwork" && path !== "/v1/memory" && path !== "/v1/grade" && path !== "/v1/context") {
 			try {
 				await deps.billing.sync?.(uid, identity.email);
 			} catch (err) {
@@ -182,6 +183,13 @@ export async function route(method: string, path: string, body: unknown, deps: S
 				}
 				return { status: 400, json: { error: err instanceof Error ? err.message : "Could not store tutor memory." } };
 			}
+		}
+		if (method === "POST" && path === "/v1/context") {
+			if (!deps.jev) return { status: 503, json: { error: "Context selection is not set up on this server yet." } };
+			const parsed = parseContextRequest(body);
+			if (!parsed) return { status: 400, json: { error: "Send the message and the pieces to judge." } };
+			const included = await deps.selectContext(parsed.message, parsed.pieces);
+			return { status: 200, json: { included } };
 		}
 		if (method === "POST" && path === "/v1/grade") {
 			if (!deps.jev) return { status: 503, json: { error: "Written-answer grading is not set up on this server yet." } };

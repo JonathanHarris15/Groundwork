@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, requestUrl, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, replaceTutorMemoryFiles, setHttpClient, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type HttpInit, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, replaceTutorMemoryFiles, setHttpClient, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal, parseGroundworkConcept, parseGroundworkRefresh } from "./open-link";
@@ -320,6 +320,11 @@ export default class GroundworkPlugin extends Plugin {
 	/** Jev grading goes through the website. This device never holds the Jev key. */
 	answerGrader(): AnswerGrader {
 		return remoteAnswerGrader(accountOrigin(), obsidianHttp, () => this.accountAccessToken());
+	}
+
+	/** Jev context selection goes through the website. This device never holds the Jev key. */
+	contextSelector(): ContextSelector {
+		return remoteContextSelector(accountOrigin(), obsidianHttp, () => this.accountAccessToken());
 	}
 
 	claudeCodeConfig(): ClaudeCodeConfig | null {

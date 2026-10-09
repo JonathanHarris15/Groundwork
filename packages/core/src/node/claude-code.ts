@@ -9,7 +9,7 @@ import { accessFromContext, tutorMayReadPath, type FolderAccess } from "../acces
 import { basename, fileBlocks, mcpContent, userContent, type McpContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolResult, ToolUI } from "../tools";
-import type { AgentEvent, TutorSession } from "../agent/types";
+import type { AgentEvent, TutorSession, TutorTurnContext } from "../agent/types";
 import { errorMessage } from "../agent/loop";
 import { studyToolBlock, type DialogueTurn } from "../intent";
 import { guiPathDirs, withGuiPath } from "./env";
@@ -145,6 +145,9 @@ export class ClaudeCodeSession implements TutorSession {
 	private history: string | undefined;
 	/** Learner and tutor text, so a goal or quiz is refused until they opt in. */
 	private dialogue: DialogueTurn[] = [];
+	private turnContext: TutorTurnContext | null = null;
+	/** System text the live Claude Code process was started with. */
+	private startedSystem = "";
 
 	constructor(private readonly opts: ClaudeCodeSessionOptions) {
 		this.sessionId = opts.resume;
@@ -154,6 +157,10 @@ export class ClaudeCodeSession implements TutorSession {
 
 	get busy(): boolean {
 		return this.running;
+	}
+
+	setTurnContext(ctx: TutorTurnContext | null): void {
+		this.turnContext = ctx;
 	}
 
 	async send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, files?: VaultFile[]): Promise<void> {
@@ -198,6 +205,8 @@ export class ClaudeCodeSession implements TutorSession {
 
 	private async turn(text: string, files: VaultFile[] | undefined, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
 		if (signal?.aborted) return;
+		const system = this.turnContext?.system ?? this.opts.system;
+		if (this.q && system !== this.startedSystem) this.teardown();
 		let prompt = text;
 		if (!this.q) {
 			if (!this.sessionId && this.history) {
@@ -293,12 +302,15 @@ export class ClaudeCodeSession implements TutorSession {
 	private start(): void {
 		const toolNames = this.opts.tools.map((t) => `${MCP_PREFIX}${t.name}`);
 		const web = this.opts.webSearch ? WEB_TOOLS : [];
+		const system = this.turnContext?.system ?? this.opts.system;
+		this.startedSystem = system;
+		const dynamic = system !== this.opts.system;
 		this.input = new Inbox<SDKUserMessage>();
 		this.q = query({
 			prompt: this.input,
 			options: {
 				...baseOptions(this.opts),
-				systemPrompt: this.opts.system,
+				systemPrompt: dynamic ? { type: "custom", prompt: system, snapshot: false } : system,
 				model: this.opts.model || undefined,
 				tools: [READ_TOOL, ...web],
 				// Read(./**) lets the hook run. The hook is what keeps Read inside the learner's folders.
@@ -332,7 +344,7 @@ export class ClaudeCodeSession implements TutorSession {
 			try {
 				if (!tool) throw new Error(`Unknown tool ${name}`);
 				const blocked = studyToolBlock(name, this.dialogue);
-				result = blocked ?? (await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader }));
+				result = blocked ?? (await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader, profile: this.turnContext?.profile, tutorContext: this.turnContext?.tutorContext }));
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}

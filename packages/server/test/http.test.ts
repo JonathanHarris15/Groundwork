@@ -44,6 +44,9 @@ function deps(over: Partial<ServerDeps> = {}): ServerDeps {
 		async grade(items) {
 			return items.map(() => ({ outcome: "correct" as const, feedback: "Matched.", slip: false }));
 		},
+		async selectContext() {
+			return [];
+		},
 		...over,
 	};
 }
@@ -566,5 +569,33 @@ describe("account server", () => {
 		expect(health.json).toMatchObject({ ok: true, jev: false, firebase: false });
 		const graded = await route("POST", "/v1/grade", { items: [{ question: "q", reference: "a", answer: "b" }] }, server);
 		expect(graded.status).toBe(503);
+		const context = await route("POST", "/v1/context", { message: "hi", pieces: [] }, server);
+		expect(context.status).toBe(503);
+	});
+
+	it("selects context pieces and refuses a client API key", async () => {
+		let seen = "";
+		const server = deps({
+			async selectContext(message, pieces) {
+				seen = message;
+				expect(JSON.stringify(pieces)).not.toMatch(/apiKey|TYPESAFE/);
+				return pieces.filter((piece) => piece.kind === "file").map((piece) => piece.id);
+			},
+		});
+		const rejected = await route("POST", "/v1/context", { apiKey: "ts-secret", message: "hi", pieces: [] }, server);
+		expect(rejected.status).toBe(400);
+		expect(JSON.stringify(rejected.json)).not.toContain("ts-secret");
+		const chosen = await route(
+			"POST",
+			"/v1/context",
+			{
+				message: "Read lecture 3",
+				pieces: [{ id: "file:resources/lecture-3.md", kind: "file", title: "lecture-3.md", text: "The chain rule.", attached: true }],
+			},
+			server,
+		);
+		expect(chosen.status).toBe(200);
+		expect(seen).toBe("Read lecture 3");
+		expect(chosen.json).toEqual({ included: ["file:resources/lecture-3.md"] });
 	});
 });

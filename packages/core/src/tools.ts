@@ -83,6 +83,10 @@ export interface ToolContext {
 	access?: FolderAccess;
 	/** Server-side Jev grader. When set, written answers are graded without another tutor turn. */
 	grader?: AnswerGrader;
+	/** This turn's learner profile, after context selection. Omit to send the saved file. */
+	profile?: string;
+	/** This turn's tutor notes. Omit to send the saved note. */
+	tutorContext?: string;
 }
 
 export interface ToolResult {
@@ -209,9 +213,11 @@ export const TOOLS: ToolDef[] = [
 		description:
 			"After they opt in to study, not for a direct answer, a summary, or a study guide. Returns the profile, tutorContext (read it; do not copy it into the profile), goals, workingGoal (the dropdown pin, or null for \"you choose\"), due reviews, recent concepts, and open misconceptions. Teach what they brought. A pin is not a reason to switch topics.",
 		inputSchema: { type: "object", properties: {} },
-		async run(_i, { store }) {
+		async run(_i, { store, profile, tutorContext }) {
 			const o = await store.overview();
 			const { nextUp: _nextUp, ...forTutor } = o;
+			if (profile !== undefined) forTutor.profile = profile;
+			if (tutorContext !== undefined) forTutor.tutorContext = tutorContext;
 			return {
 				text: json(forTutor),
 				summary: `Loaded memory: ${o.conceptCount} concepts, ${o.activeGoals.length} active goals, ${o.dueReviews.length} due reviews`,
