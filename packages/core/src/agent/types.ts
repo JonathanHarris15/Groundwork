@@ -37,11 +37,20 @@ export interface Provider {
 	complete(req: ProviderRequest): Promise<ProviderResponse>;
 }
 
+/** What Jev kept for one tutor turn. Omit a field to send the usual value. */
+export interface TutorTurnContext {
+	system?: string;
+	profile?: string;
+	tutorContext?: string;
+}
+
 /** A running tutor conversation, whichever backend drives it. */
 export interface TutorSession {
 	readonly busy: boolean;
 	/** `files` are what the learner attached to this message. */
 	send(text: string, onEvent: (e: AgentEvent) => void, signal?: AbortSignal, files?: VaultFile[]): Promise<void>;
+	/** Per-turn prompt and profile. `null` sends the full system prompt and the saved profile. */
+	setTurnContext?(ctx: TutorTurnContext | null): void;
 	close?(): void;
 }
 

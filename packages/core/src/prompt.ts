@@ -10,6 +10,7 @@ import { accessFromContext, type FolderAccess } from "./access";
 import { HINT_GUIDANCE, MARGIN_GUIDANCE } from "./aside";
 import { FIGURE_GUIDANCE } from "./figure";
 import { STUDY_FOLLOW_UP } from "./intent";
+import { splitMarkdown } from "./markdown";
 
 export const ANSWER_FIRST = `# Answer first
 
@@ -248,6 +249,41 @@ export function workingGoalNote(goal: { title: string; left: number } | null): s
 	].join("\n");
 }
 
-export function buildSystemPrompt(extra?: string, access?: FolderAccess): string {
-	return [ANSWER_FIRST, OBSIDIAN_FORMAT, TEACHING_METHOD, fileAccessGuidance(access), FIGURE_GUIDANCE, MARGIN_GUIDANCE, HINT_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
+export interface PromptPart {
+	id: string;
+	title: string;
+	text: string;
+	/** Always sent. Jev does not get a vote. */
+	required: boolean;
+}
+
+/**
+ * The tutor instructions as pieces. Answer-first, formatting, file access, and
+ * the date line stay on every turn. The teaching method and the side-thread
+ * notes are optional.
+ */
+export function promptParts(extra?: string, access?: FolderAccess): PromptPart[] {
+	const parts: PromptPart[] = [
+		{ id: "answer-first", title: "Answer first", text: ANSWER_FIRST, required: true },
+		{ id: "formatting", title: "Formatting", text: OBSIDIAN_FORMAT, required: true },
+	];
+	for (const piece of splitMarkdown(TEACHING_METHOD)) {
+		parts.push({ id: `method:${piece.id}`, title: piece.title, text: piece.text, required: false });
+	}
+	parts.push({ id: "file-access", title: "The learner's files", text: fileAccessGuidance(access), required: true });
+	parts.push({ id: "figures", title: "Figures", text: FIGURE_GUIDANCE, required: false });
+	parts.push({ id: "margin", title: "Margin questions", text: MARGIN_GUIDANCE, required: false });
+	parts.push({ id: "hints", title: "Hint chats", text: HINT_GUIDANCE, required: false });
+	if (extra?.trim()) parts.push({ id: "today", title: "Context", text: extra.trim(), required: true });
+	return parts;
+}
+
+export function buildSystemPrompt(extra?: string, access?: FolderAccess, include?: ReadonlySet<string>): string {
+	if (!include) {
+		return [ANSWER_FIRST, OBSIDIAN_FORMAT, TEACHING_METHOD, fileAccessGuidance(access), FIGURE_GUIDANCE, MARGIN_GUIDANCE, HINT_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
+	}
+	return promptParts(extra, access)
+		.filter((part) => part.required || include.has(part.id))
+		.map((part) => part.text)
+		.join("\n\n");
 }

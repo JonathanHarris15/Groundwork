@@ -55,6 +55,9 @@ function authedDeps(over: Partial<ServerDeps> = {}): ServerDeps {
 		async grade(items) {
 			return items.map(() => ({ outcome: "correct" as const, feedback: "ok", slip: false }));
 		},
+		async selectContext() {
+			return [];
+		},
 		...over,
 	};
 }

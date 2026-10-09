@@ -4,7 +4,7 @@ import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
 import { ResearchTurn, WEB_RESEARCH_TOOLS, forcingAnswer, researchClosedNote, stepsClosedNote, unfinishedTurn } from "./research";
-import type { AgentEvent, ChatMessage, ContentBlock, Provider, ProviderTool, TutorSession } from "./types";
+import type { AgentEvent, ChatMessage, ContentBlock, Provider, ProviderTool, TutorSession, TutorTurnContext } from "./types";
 
 export interface AgentOptions {
 	provider: Provider;
@@ -23,9 +23,14 @@ export interface AgentOptions {
 export class AgentSession implements TutorSession {
 	readonly messages: ChatMessage[];
 	private running = false;
+	private turnContext: TutorTurnContext | null = null;
 
 	constructor(private readonly opts: AgentOptions) {
 		this.messages = opts.messages ? [...opts.messages] : [];
+	}
+
+	setTurnContext(ctx: TutorTurnContext | null): void {
+		this.turnContext = ctx;
 	}
 
 	get session(): SessionInfo {
@@ -65,8 +70,9 @@ export class AgentSession implements TutorSession {
 			const force = forcingAnswer(step, maxSteps);
 			const tools = toolsForStep(catalog, research, force);
 			const note = force ? stepsClosedNote() : research.exhausted ? researchClosedNote() : "";
+			const system = this.turnContext?.system ?? this.opts.system;
 			const res = await this.opts.provider.complete({
-				system: note ? `${this.opts.system}\n\n${note}` : this.opts.system,
+				system: note ? `${system}\n\n${note}` : system,
 				messages: this.messages,
 				tools,
 				signal,
@@ -113,6 +119,8 @@ export class AgentSession implements TutorSession {
 							signal,
 							access: this.opts.access,
 							grader: this.opts.grader,
+							profile: this.turnContext?.profile,
+							tutorContext: this.turnContext?.tutorContext,
 						});
 						text = r.text;
 						isError = !!r.isError;

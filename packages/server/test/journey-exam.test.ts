@@ -43,6 +43,9 @@ function deps(over: Partial<ServerDeps> = {}): ServerDeps {
 		async grade(items) {
 			return items.map(() => ({ outcome: "correct" as const, feedback: "Matched.", slip: false }));
 		},
+		async selectContext() {
+			return [];
+		},
 		...over,
 	};
 }
