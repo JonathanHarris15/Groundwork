@@ -21,6 +21,12 @@ export interface ForceGraphMountOptions {
 	onNodeClick?: (nodeId: string) => void;
 	onNodeHover?: (nodeId: string | null) => void;
 	className?: string;
+	/**
+	 * When `"when-active"`, wheel zooms only after the learner clicks the map
+	 * (host or nearest `.gw-graph` has `is-active`). Chat embeds use this so
+	 * scrolling the lesson is not stolen. The full Map tab keeps `"always"`.
+	 */
+	captureWheel?: "always" | "when-active";
 }
 
 export interface ForceGraphHandle {
@@ -516,7 +522,14 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 	});
 	ro.observe(host);
 
+	const wheelMode = options.captureWheel ?? "always";
+	const wheelActive = () =>
+		wheelMode === "always" ||
+		host.classList.contains("is-active") ||
+		!!host.closest(".gw-graph.is-active");
+
 	const onWheel = (e: WheelEvent) => {
+		if (!wheelActive()) return;
 		e.preventDefault();
 		e.stopPropagation();
 		const rect = canvas.getBoundingClientRect();
@@ -558,8 +571,15 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		} else tip.hidden = true;
 	};
 
+	const activateWheel = () => {
+		if (wheelMode !== "when-active") return;
+		host.classList.add("is-active");
+		host.closest(".gw-graph")?.classList.add("is-active");
+	};
+
 	const onPointerDown = (e: PointerEvent) => {
 		if (e.button !== 0) return;
+		activateWheel();
 		panVx = 0;
 		panVy = 0;
 		wheelLog = 0;
@@ -627,12 +647,27 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
 	};
 
+	const deactivateWheel = (e: PointerEvent | KeyboardEvent) => {
+		if (wheelMode !== "when-active") return;
+		if (e instanceof KeyboardEvent) {
+			if (e.key !== "Escape") return;
+		} else if (host.contains(e.target as Node) || host.closest(".gw-graph")?.contains(e.target as Node)) {
+			return;
+		}
+		host.classList.remove("is-active");
+		host.closest(".gw-graph")?.classList.remove("is-active");
+	};
+
 	canvas.addEventListener("wheel", onWheel, { passive: false });
 	canvas.addEventListener("pointerdown", onPointerDown);
 	canvas.addEventListener("pointermove", onPointerMove);
 	canvas.addEventListener("pointerup", endPointer);
 	canvas.addEventListener("pointercancel", endPointer);
 	canvas.addEventListener("pointerleave", () => setHover(null));
+	if (wheelMode === "when-active") {
+		document.addEventListener("pointerdown", deactivateWheel, true);
+		document.addEventListener("keydown", deactivateWheel, true);
+	}
 
 	return {
 		fit,
@@ -651,6 +686,12 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			canvas.removeEventListener("pointermove", onPointerMove);
 			canvas.removeEventListener("pointerup", endPointer);
 			canvas.removeEventListener("pointercancel", endPointer);
+			if (wheelMode === "when-active") {
+				document.removeEventListener("pointerdown", deactivateWheel, true);
+				document.removeEventListener("keydown", deactivateWheel, true);
+			}
+			host.classList.remove("is-active");
+			host.closest(".gw-graph")?.classList.remove("is-active");
 			host.replaceChildren();
 		},
 	};

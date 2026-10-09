@@ -55,6 +55,7 @@ function wrapGoalGraph(block: HTMLElement, options: GraphEnhanceOptions): void {
 	block.classList.add("gw-graph-done", "gw-graph-source-hidden");
 	const titleById = new Map(data.nodes.map((n) => [n.id, n.title]));
 	mountInteractiveGraph(view, data, {
+		captureWheel: "when-active",
 		onNodeClick: (id) => {
 			const title = titleById.get(id);
 			if (title) options.onConcept?.(title);

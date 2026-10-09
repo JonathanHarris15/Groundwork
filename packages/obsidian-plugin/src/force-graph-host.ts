@@ -17,6 +17,8 @@ export interface ForceGraphHostOptions {
 	title?: string;
 	tall?: boolean;
 	onNodeClick?: (nodeId: string, title: string) => void;
+	/** Chat embeds: `"when-active"`. Full Map tab: omit / `"always"`. */
+	captureWheel?: "always" | "when-active";
 }
 
 const handles = new WeakMap<HTMLElement, ForceGraphHandle>();
@@ -29,6 +31,7 @@ export function mountInteractiveGraph(host: HTMLElement, data: ForceGraphData, o
 	const handle = mountForceGraph(host, data, {
 		className: "gw-force-canvas",
 		fit: true,
+		captureWheel: options.captureWheel,
 		onNodeClick: (id) => options.onNodeClick?.(id, titleById.get(id) ?? id),
 	});
 	handles.set(host, handle);
@@ -85,7 +88,10 @@ export function createGraphPane(parent: HTMLElement, title = "Map"): { pane: HTM
 	bar.createSpan({ cls: "gw-graph-caption", text: "Arrows: prerequisite → concept · size: connections" });
 	const pctEl = bar.createSpan({ cls: "gw-graph-pct", text: "Fit" });
 	const tools = bar.createDiv({ cls: "gw-graph-tools" });
-	const view = pane.createDiv({ cls: "gw-graph-view gw-force-host" });
+	// Keep `gw-graph-view` in normal flow (relative + fixed height). Do not put
+	// `gw-force-host` on it — that class is `position: absolute; inset: 0` and
+	// would escape the bordered pane, cover the turn, and steal scroll.
+	const view = pane.createDiv({ cls: "gw-graph-view" });
 	const slotEl = view.createDiv({ cls: "gw-force-slot" });
 
 	const btn = (icon: string, label: string, fn: () => void) => {
@@ -120,9 +126,11 @@ export function createGraphPane(parent: HTMLElement, title = "Map"): { pane: HTM
 		window.requestAnimationFrame(() => handle()?.fit());
 	});
 
+	// Only trap wheel inside the pane after the learner has activated it.
 	view.addEventListener(
 		"wheel",
 		(e) => {
+			if (!pane.hasClass("is-active")) return;
 			if ((e.target as HTMLElement).closest(".gw-force-canvas")) return;
 			e.preventDefault();
 		},
