@@ -502,7 +502,8 @@ button.cta:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .top .logo { flex-shrink: 0; min-width: 0; }
 
 @container (max-width: 520px) {
-	.top .wrap { min-height: 58px; }
+	.top .wrap { min-height: 58px; flex-wrap: wrap; row-gap: 0; }
+	.chip { margin-left: auto; }
 }
 
 .site .logo { color: #16181d; text-decoration: none; white-space: nowrap; font-size: 24px; letter-spacing: 0.06em; line-height: 1; }
@@ -512,7 +513,8 @@ button.cta:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 	.site .logo { font-size: 20px; }
 }
 
-.chip { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: nowrap; flex-shrink: 0; }
+.chip { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: nowrap; flex-shrink: 1; }
+.chip .link-btn { flex: none; }
 
 .avatar {
 	width: 36px;
