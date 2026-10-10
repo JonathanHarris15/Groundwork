@@ -61,23 +61,28 @@ function section(title: string, paragraphs: string[], extra = ""): string {
 	return `<section class="mkt-section"><h2>${title}</h2>${body}${extra}</section>`;
 }
 
+const NAV_LINKS: Array<[string, string]> = [
+	["/pricing", "Pricing"],
+	["/get-started", "Get started"],
+	["/practice-tests", "Practice tests"],
+	["/exam-prep", "Exam prep"],
+	["/concept-map", "Concept map"],
+	["/quizzes-flashcards", "Quizzes &amp; flashcards"],
+	["/goals", "Goals"],
+];
+
+/** Wide links stay in the bar on a desktop. The menu is the same list, plus Admin and the session action. */
+export function siteNav(current: string, signHref = "/#signin"): string {
+	const currentAttr = (href: string) => (href === current ? ` aria-current="page"` : "");
+	const wide = NAV_LINKS.slice(0, 2)
+		.map(([href, label]) => `<a class="nav-wide" href="${href}"${currentAttr(href)}>${label}</a>`)
+		.join("");
+	const menu = NAV_LINKS.map(([href, label]) => `<a href="${href}"${currentAttr(href)}>${label}</a>`).join("");
+	return `<div class="bar-end"><span class="bar-avatar" hidden></span><nav class="bar-nav" aria-label="Site">${wide}<a class="nav-wide" href="/admin/usage" data-admin-link hidden>Admin</a><details class="nav-more"><summary>Menu</summary><div class="nav-menu">${menu}<a href="/admin/usage" data-admin-link hidden>Admin</a><a class="nav-session" data-sign-in href="${signHref}">Sign in</a><button class="nav-session" data-sign-out type="button" hidden>Sign out</button></div></details><a class="sign-link" href="${signHref}">Sign in</a></nav></div>`;
+}
+
 function nav(current: string): string {
-	const link = (href: string, label: string, sign = false) => {
-		const currentAttr = href === current ? ` aria-current="page"` : "";
-		const cls = sign ? ` class="sign-link"` : "";
-		return `<a href="${href}"${cls}${currentAttr}>${label}</a>`;
-	};
-	const wide = (href: string, label: string) => {
-		const currentAttr = href === current ? ` aria-current="page"` : "";
-		return `<a class="nav-wide" href="${href}"${currentAttr}>${label}</a>`;
-	};
-	const item = (href: string, label: string) => {
-		const currentAttr = href === current ? ` aria-current="page"` : "";
-		return `<a href="${href}"${currentAttr}>${label}</a>`;
-	};
-	const adminWide = `<a class="nav-wide" href="/admin/usage" data-admin-link hidden>Admin</a>`;
-	const adminItem = `<a href="/admin/usage" data-admin-link hidden>Admin</a>`;
-	return `<nav class="bar-nav" aria-label="Site">${wide("/pricing", "Pricing")}${wide("/get-started", "Get started")}${adminWide}<details class="nav-more"><summary>Menu</summary><div class="nav-menu">${item("/pricing", "Pricing")}${item("/get-started", "Get started")}${adminItem}</div></details>${link("/#signin", "Sign in", true)}</nav>`;
+	return siteNav(current);
 }
 
 function footer(): string {
@@ -132,7 +137,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
 		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
-		<link rel="stylesheet" href="/styles.css?v=15" />
+		<link rel="stylesheet" href="/styles.css?v=16" />
 		<script src="/tracking.js?v=6"></script>
 	</head>
 	<body>
@@ -147,7 +152,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 			</main>
 			${footer()}
 		</div>
-		<script src="/site-session.js?v=1"></script>
+		<script src="/site-session.js?v=2"></script>
 		${mapScript}
 	</body>
 </html>
