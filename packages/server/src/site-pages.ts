@@ -137,7 +137,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
 		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
-		<link rel="stylesheet" href="/styles.css?v=16" />
+		<link rel="stylesheet" href="/styles.css?v=17" />
 		<script src="/tracking.js?v=6"></script>
 	</head>
 	<body>

@@ -1,4 +1,4 @@
-import type { PlanId } from "@groundwork/core";
+import type { PlanId, StoredMembership } from "@groundwork/core";
 import Stripe from "stripe";
 import type { AccountDirectory } from "./accounts";
 import { loadGa4PurchaseReporter } from "./ga4-purchase-runtime";
@@ -31,6 +31,8 @@ export interface Billing {
 	checkoutAmount?(sessionId: string): Promise<number | null>;
 	/** Accounts carrying the GROUNDWORKTESTER promotion, when Stripe can say so. */
 	couponHolders?(): Promise<Array<{ uid: string; code: string }>>;
+	/** Write active and trialing memberships onto the accounts Stripe already knows. */
+	syncMemberships?(): Promise<void>;
 }
 
 export interface BillingHooks {
@@ -60,7 +62,9 @@ export function resetStripeEventDedupe(): void {
 
 export interface SubscriptionLike {
 	status?: string | null;
-	items?: { data?: Array<{ price?: string | { id?: string | null } | null }> } | null;
+	items?: { data?: Array<{ quantity?: number | null; price?: string | { id?: string | null; unit_amount?: number | null; currency?: string | null } | null }> } | null;
+	discount?: unknown;
+	discounts?: unknown;
 }
 
 /** A subscription the learner is still paying for, including one that is past due. */
@@ -98,6 +102,141 @@ export function planFromSubscription(subscription: SubscriptionLike, prices: Mem
 	return "unknown";
 }
 
+/**
+ * Active or trialing BYOM or Groundwork subscription, with the price after discounts.
+ * A 100% off coupon is $0. An unexpanded discount id does not fall back to the list price.
+ */
+export function membershipFromSubscription(subscription: SubscriptionLike, prices: MembershipPrices): StoredMembership | null {
+	if (subscription.status !== "active" && subscription.status !== "trialing") return null;
+	const plan = planFromSubscription(subscription, prices);
+	if (plan !== "byom" && plan !== "included") return null;
+	const couponCode = promotionCodesFrom(subscription).find((code) => code.toUpperCase() === TESTER_COUPON);
+	return { status: subscription.status, plan, amountUsd: recurringAmountUsd(subscription), couponCode };
+}
+
+/** Recurring USD after coupons. Null when a discount was not expanded, so a list price is not treated as revenue. */
+export function recurringAmountUsd(subscription: SubscriptionLike): number | null {
+	if (unresolvedDiscount(subscription)) return null;
+	const { percentOff, amountOffCents } = discountAdjustment(subscription);
+	if (percentOff >= 100) return 0;
+	let cents = 0;
+	let sawAmount = false;
+	for (const item of subscription.items?.data ?? []) {
+		const price = item?.price;
+		if (!price || typeof price === "string") continue;
+		if (price.currency && price.currency.toLowerCase() !== "usd") continue;
+		if (typeof price.unit_amount !== "number" || !Number.isFinite(price.unit_amount)) continue;
+		sawAmount = true;
+		const quantity = item?.quantity ?? 1;
+		cents += price.unit_amount * (quantity > 0 ? quantity : 1);
+	}
+	if (!sawAmount) return null;
+	cents = Math.round(cents * (1 - Math.max(0, percentOff) / 100));
+	cents = Math.max(0, cents - Math.max(0, amountOffCents));
+	return Math.round(cents) / 100;
+}
+
+export interface MembershipSubscription extends SubscriptionLike {
+	id?: string;
+	customer?: string | { id?: string | null } | null;
+	metadata?: { uid?: string | null } | null;
+}
+
+export interface PaidMembershipClient {
+	subscriptions: {
+		list(args: { status: "active" | "trialing"; limit: number; starting_after?: string; expand?: string[] }): Promise<{ data: MembershipSubscription[]; has_more: boolean }>;
+	};
+}
+
+const MEMBERSHIP_EXPANDS: string[][] = [
+	["data.discounts", "data.discounts.coupon", "data.discounts.promotion_code"],
+	["data.discount", "data.discount.coupon", "data.discount.promotion_code"],
+	[],
+];
+
+/** Copy active and trialing subscriptions onto accounts. Accounts Stripe does not list lose a stale membership. */
+export async function refreshPaidMemberships(stripe: PaidMembershipClient, prices: MembershipPrices, accounts: AccountDirectory): Promise<void> {
+	const seen = new Set<string>();
+	let expandAt = 0;
+	for (const status of ["active", "trialing"] as const) {
+		let startingAfter: string | undefined;
+		for (let page = 0; page < 20; page++) {
+			let listed: { data: MembershipSubscription[]; has_more: boolean } | null = null;
+			let lastError: unknown;
+			for (let attempt = expandAt; attempt < MEMBERSHIP_EXPANDS.length; attempt++) {
+				try {
+					const expand = MEMBERSHIP_EXPANDS[attempt];
+					listed = await stripe.subscriptions.list({
+						status,
+						limit: 100,
+						starting_after: startingAfter,
+						...(expand && expand.length ? { expand } : {}),
+					});
+					expandAt = attempt;
+					break;
+				} catch (err) {
+					lastError = err;
+				}
+			}
+			if (!listed) throw lastError instanceof Error ? lastError : new Error("Could not list Stripe subscriptions.");
+			for (const subscription of listed.data) {
+				const uid = await membershipUid(accounts, subscription);
+				if (!uid) continue;
+				const snapshot = membershipFromSubscription({ ...subscription, status: subscription.status ?? status }, prices);
+				if (!snapshot) continue;
+				await accounts.rememberMembership(uid, snapshot);
+				if (snapshot.couponCode) await accounts.markCoupon(uid, snapshot.couponCode);
+				seen.add(uid);
+			}
+			if (!listed.has_more || !listed.data.length) break;
+			startingAfter = listed.data[listed.data.length - 1]?.id;
+			if (!startingAfter) break;
+		}
+	}
+	for (const row of await accounts.list()) {
+		if (!row.record.membership || seen.has(row.record.uid)) continue;
+		await accounts.rememberMembership(row.record.uid, null);
+	}
+}
+
+async function membershipUid(accounts: AccountDirectory, subscription: MembershipSubscription): Promise<string | undefined> {
+	const fromMetadata = subscription.metadata?.uid?.trim();
+	if (fromMetadata) return fromMetadata;
+	const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
+	if (!customer) return undefined;
+	return (await accounts.findByCustomer(customer))?.uid;
+}
+
+function unresolvedDiscount(subscription: SubscriptionLike): boolean {
+	return discountEntries(subscription).some((entry) => typeof entry === "string");
+}
+
+function discountEntries(subscription: SubscriptionLike): unknown[] {
+	if (Array.isArray(subscription.discounts)) return subscription.discounts;
+	if (subscription.discount) return [subscription.discount];
+	return [];
+}
+
+function discountAdjustment(subscription: SubscriptionLike): { percentOff: number; amountOffCents: number } {
+	let percentOff = 0;
+	let amountOffCents = 0;
+	for (const entry of discountEntries(subscription)) {
+		const coupon = couponRecord(entry);
+		if (!coupon) continue;
+		if (typeof coupon.percent_off === "number" && coupon.percent_off > percentOff) percentOff = coupon.percent_off;
+		if (typeof coupon.amount_off === "number" && coupon.amount_off > 0) amountOffCents += coupon.amount_off;
+	}
+	return { percentOff, amountOffCents };
+}
+
+function couponRecord(entry: unknown): Record<string, unknown> | null {
+	if (!entry || typeof entry !== "object") return null;
+	const record = entry as Record<string, unknown>;
+	if (record.coupon && typeof record.coupon === "object") return record.coupon as Record<string, unknown>;
+	if ("percent_off" in record || "amount_off" in record) return record;
+	return null;
+}
+
 export function loadBilling(accounts: AccountDirectory, hooks?: BillingHooks): Billing {
 	const key = process.env.STRIPE_SECRET_KEY?.trim();
 	const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
@@ -133,6 +272,7 @@ export function createBilling(
 	hooks?: BillingHooks,
 ): Billing {
 	const freshUntil = new Map<string, number>();
+	let membershipsFreshUntil = 0;
 	return {
 		configured: true,
 		async checkout(uid, email, plan, origin, ga) {
@@ -178,6 +318,17 @@ export function createBilling(
 		async couponHolders() {
 			return listTesterCoupons(stripe, accounts);
 		},
+		async syncMemberships() {
+			const now = Date.now();
+			if (membershipsFreshUntil > now) return;
+			membershipsFreshUntil = now + SYNC_TTL_MS;
+			try {
+				await refreshPaidMemberships(stripe, prices, accounts);
+			} catch (err) {
+				membershipsFreshUntil = 0;
+				console.error("Could not read Stripe subscriptions.", err);
+			}
+		},
 		async sync(uid) {
 			const now = Date.now();
 			if ((freshUntil.get(uid) ?? 0) > now) return;
@@ -219,10 +370,11 @@ export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe
 		const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
 		const uid = subscription.metadata?.uid || (await accounts.findByCustomer(customer))?.uid;
 		if (!uid) return;
-		await rememberTesterCoupon(accounts, uid, subscription);
 		const entitled = event.type === "customer.subscription.updated" && subscriptionIsEntitled(subscription.status);
 		if (!entitled) {
 			await accounts.setPlan(uid, "free");
+			await accounts.rememberMembership(uid, null);
+			await rememberTesterCoupon(accounts, uid, subscription);
 			return;
 		}
 		const planned = prices ? planFromSubscription(subscription, prices) : subscription.metadata?.plan;
@@ -230,6 +382,12 @@ export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe
 			const before = await accounts.get(uid);
 			await accounts.setPlan(uid, planned);
 			if (before.plan !== planned) await hooks?.onUpgrade?.(uid, planned);
+		}
+		await rememberTesterCoupon(accounts, uid, subscription);
+		if (prices) {
+			const snapshot = membershipFromSubscription(subscription, prices);
+			if (snapshot) await accounts.rememberMembership(uid, snapshot);
+			else if (subscription.status !== "active" && subscription.status !== "trialing") await accounts.rememberMembership(uid, null);
 		}
 	}
 }

@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type Firestore } from "firebase-admin/firestore";
-import { isPlanId, isTutorWeight, isUserKeyProvider, type AccountRecord } from "@groundwork/core";
+import { isPlanId, isTutorWeight, isUserKeyProvider, type AccountRecord, type StoredMembership } from "@groundwork/core";
 import { attributionFromUnknown } from "./tracking";
 import { openFirestore } from "./firestore";
 
@@ -35,6 +35,7 @@ export function serializeAccount(record: AccountRecord): Record<string, unknown>
 	if (record.obsidianConnectedAt) out.obsidianConnectedAt = record.obsidianConnectedAt;
 	if (record.createdAt) out.createdAt = record.createdAt;
 	if (record.couponCode) out.couponCode = record.couponCode;
+	if (record.membership) out.membership = record.membership;
 	if (record.attribution) out.attribution = record.attribution;
 	return out;
 }
@@ -60,9 +61,25 @@ export function parseStoredAccount(uid: string, data: unknown): AccountRecord | 
 	if (typeof raw.obsidianConnectedAt === "string" && raw.obsidianConnectedAt.trim()) record.obsidianConnectedAt = raw.obsidianConnectedAt.trim();
 	if (typeof raw.createdAt === "string" && /^\d{4}-\d{2}-\d{2}T/.test(raw.createdAt)) record.createdAt = raw.createdAt;
 	if (typeof raw.couponCode === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(raw.couponCode)) record.couponCode = raw.couponCode;
+	const membership = parseMembership(raw.membership);
+	if (membership) record.membership = membership;
 	const attribution = attributionFromUnknown(raw.attribution);
 	if (attribution) record.attribution = attribution;
 	return record;
+}
+
+function parseMembership(value: unknown): StoredMembership | null {
+	if (!value || typeof value !== "object") return null;
+	const raw = value as Record<string, unknown>;
+	if (raw.status !== "active" && raw.status !== "trialing") return null;
+	if (raw.plan !== "byom" && raw.plan !== "included") return null;
+	let amountUsd: number | null = null;
+	if (raw.amountUsd === null) amountUsd = null;
+	else if (typeof raw.amountUsd === "number" && Number.isFinite(raw.amountUsd) && raw.amountUsd >= 0) amountUsd = raw.amountUsd;
+	else return null;
+	const membership: StoredMembership = { status: raw.status, plan: raw.plan, amountUsd };
+	if (typeof raw.couponCode === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(raw.couponCode)) membership.couponCode = raw.couponCode;
+	return membership;
 }
 
 interface FileDb {

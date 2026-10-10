@@ -265,6 +265,11 @@ async function adminUsage(path: string, deps: ServerDeps, authorization: string 
 	} catch (err) {
 		console.error("Could not backfill usage.", err);
 	}
+	try {
+		await deps.billing.syncMemberships?.();
+	} catch (err) {
+		console.error("Could not read Stripe subscriptions.", err);
+	}
 	const report = await usage.report(deps.accounts);
 	const headers = { "cache-control": "private, no-store" };
 	if (path === "/api/admin/usage.csv") {

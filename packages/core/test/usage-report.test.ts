@@ -137,6 +137,59 @@ describe("retention and limit outcomes", () => {
 		expect(fresh?.day1).toEqual({ eligible: 1, returned: 0, rate: 0 });
 	});
 
+	it("counts users, recent signups, and separates paying subscriptions from the tester coupon", () => {
+		const built = report({
+			accounts: [
+				account({ uid: "old", createdAt: "2026-09-01T00:00:00.000Z" }),
+				account({ uid: "new", createdAt: "2026-10-04T00:00:00.000Z" }),
+				account({ uid: "none", plan: null, createdAt: "2026-10-08T00:00:00.000Z" }),
+				account({ uid: "edge", createdAt: "2026-10-02T15:00:00.000Z" }),
+				account({ uid: "stale", createdAt: "2026-10-02T14:59:59.000Z" }),
+				account({
+					uid: "pay",
+					plan: "byom",
+					membership: { status: "active", plan: "byom", amountUsd: 6 },
+				}),
+				account({
+					uid: "comp-a",
+					plan: "included",
+					couponCode: "GROUNDWORKTESTER",
+					membership: { status: "active", plan: "included", amountUsd: 0, couponCode: "GROUNDWORKTESTER" },
+				}),
+				account({
+					uid: "comp-b",
+					plan: "included",
+					membership: { status: "trialing", plan: "included", amountUsd: 0, couponCode: "groundworktester" },
+				}),
+				account({
+					uid: "partial",
+					plan: "byom",
+					membership: { status: "active", plan: "byom", amountUsd: 3, couponCode: "GROUNDWORKTESTER" },
+				}),
+				account({
+					uid: "late",
+					plan: "included",
+					membership: { status: "past_due" as "active", plan: "included", amountUsd: 20 },
+				}),
+				account({
+					uid: "canceled",
+					plan: "free",
+					membership: { status: "canceled" as "active", plan: "included", amountUsd: 20 },
+				}),
+			],
+		});
+		expect(built.census).toEqual({
+			users: 11,
+			free: 5,
+			joinedLast7Days: 3,
+			paid: 4,
+			byom: 2,
+			included: 2,
+			paying: 2,
+			comped: 2,
+		});
+	});
+
 	it("counts weekly active free users and active days in the month", () => {
 		const built = report({
 			accounts: [account({ uid: "ada", createdAt: "2026-10-05T00:00:00.000Z" }), account({ uid: "bea" })],

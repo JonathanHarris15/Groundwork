@@ -4,7 +4,8 @@ import { USAGE_FEATURE_LABEL, type UsageReport } from "@groundwork/core";
 export function usageDash(report: UsageReport): string {
 	const proposed = proposedLabel(report);
 	const conversion = report.upgrades.clickers ? report.upgrades.convertedClickers / report.upgrades.clickers : null;
-	return `<h1>Free plan usage</h1>
+	return `${accountHead(report)}
+					<h1>Free plan usage</h1>
 					<p class="usage-actions"><button class="btn btn-line" type="button" id="download-csv">Download CSV</button></p>
 					<p class="lede">${esc(report.meter)}</p>
 					<p class="lede">${esc(report.consistentUser)}</p>
@@ -99,6 +100,14 @@ export function usageCsv(report: UsageReport): string {
 	const push = (cells: Array<string | number | null>) => lines.push(cells.map(csvCell).join(","));
 	push(["section", "usage"]);
 	push(["generated_at", report.generatedAt]);
+	push(["users", report.census.users]);
+	push(["free", report.census.free]);
+	push(["joined_last_7_days", report.census.joinedLast7Days]);
+	push(["paid_users", report.census.paid]);
+	push(["paid_byom", report.census.byom]);
+	push(["paid_groundwork", report.census.included]);
+	push(["paying", report.census.paying]);
+	push(["comped_groundworktester", report.census.comped]);
 	push(["limit_usd", report.limitUsd]);
 	push(["consistent_user", report.consistentUser]);
 	push(["meter", report.meter]);
@@ -231,6 +240,33 @@ function rateCell(rate: { eligible: number; returned: number; rate: number | nul
 function share(count: number, ratio: number | null): string {
 	if (ratio == null) return "—";
 	return `${count} (${pct(ratio * 100)})`;
+}
+
+function accountHead(report: UsageReport): string {
+	const census = report.census;
+	const paidRows: Array<[string, number]> = [
+		["Bring your own model", census.byom],
+		["Groundwork", census.included],
+		["Paying", census.paying],
+		["Comped on GROUNDWORKTESTER", census.comped],
+	];
+	const other = census.paid - census.paying - census.comped;
+	if (other > 0) paidRows.push(["Not paying, other", other]);
+	return `<section class="usage-head" aria-label="Account counts">
+						<div class="usage-head-cards">
+							${statCard("users-count", "Users", census.users, [
+								["Free", census.free],
+								["Joined in the last 7 days", census.joinedLast7Days],
+							])}
+							${statCard("paid-count", "Paid users", census.paid, paidRows, "Paying means more than $0 after discounts. Comped is the 100% off GROUNDWORKTESTER coupon.")}
+						</div>
+					</section>`;
+}
+
+function statCard(id: string, label: string, value: number, rows: Array<[string, number]>, note?: string): string {
+	const lines = rows.map(([name, count]) => `<div><dt>${esc(name)}</dt><dd>${count}</dd></div>`).join("");
+	const extra = note ? `<p class="usage-stat-note">${esc(note)}</p>` : "";
+	return `<article class="usage-card usage-stat" aria-labelledby="${id}"><p class="k" id="${id}">${esc(label)}</p><p class="v">${value}</p><dl class="usage-split">${lines}</dl>${extra}</article>`;
 }
 
 function card(label: string, value: string): string {
