@@ -217,6 +217,13 @@ try {
 	async function textOf(selector) {
 		return page.locator(selector).innerText().catch(() => "");
 	}
+	async function hideQuestionCount() {
+		await page.evaluate(() => {
+			document.querySelectorAll(".gw-pill").forEach((el) => {
+				if (/question/i.test(el.textContent ?? "")) el.remove();
+			});
+		});
+	}
 	function assertNoSat(label, text) {
 		if (/\bSAT\b/.test(text)) throw new Error(`${label} shows SAT`);
 	}
@@ -263,6 +270,12 @@ try {
 	await page.locator(".gw-input").fill(prompt);
 	await page.locator(".gw-send").evaluate((el) => el.click());
 	await page.locator(".gw-test:not(.is-done) .gw-test-title").waitFor({ timeout: 30_000 });
+	await page.waitForFunction(() => /Type math in the math field\./.test(document.querySelector(".gw-test")?.innerText ?? ""), { timeout: 15_000 });
+	await hideQuestionCount();
+	const opened = await textOf(".gw-test");
+	if (/Use\s+\.{2,}\s+for math/i.test(opened) || /\d+\s+questions/i.test(opened)) {
+		throw new Error(`Opened test still shows the old instruction or the question-count pill: ${opened.slice(0, 400)}`);
+	}
 	await page.evaluate(() => {
 		const scroller = document.querySelector(".gw-messages");
 		if (scroller) scroller.scrollTop = 0;
@@ -321,11 +334,7 @@ try {
 	assertNoSat("results", notes.results);
 	await page.evaluate(() => document.querySelector(".gw-test")?.scrollIntoView({ block: "start" }));
 	await full("g1-results");
-	await page.evaluate(() => {
-		document.querySelectorAll(".gw-test > .gw-card-head .gw-pill").forEach((el) => {
-			if (/question/i.test(el.textContent ?? "")) el.remove();
-		});
-	});
+	await hideQuestionCount();
 	const resultsHead = await page.evaluate(() => {
 		const card = document.querySelector(".gw-test");
 		const report = document.querySelector(".gw-test-report");

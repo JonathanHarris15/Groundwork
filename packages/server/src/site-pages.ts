@@ -228,19 +228,19 @@ function practicePage(): string {
 			${section("Take a practice test", ["Multiple choice and written answers. Math is typed live in LaTeX. You can turn on a countdown. It does not cut the test off, and there is no feedback until you submit."], shotFigure({
 				base: "/shots/practice-mid",
 				width: 1656,
-				height: 1026,
+				height: 1028,
 				alt: "A practice test card in progress, with a countdown and no feedback yet.",
 			}))}
 			${section("See what broke", ["You get a score, the points you earned, and how the answers split between correct, partial, and wrong. Concepts are listed weakest first, with the beliefs to fix. Each question includes an explanation. A written answer also shows a model answer. A multiple-choice question marks the correct choice. The results are saved as a note in your vault."], shotFigure({
 				base: "/shots/practice-results",
 				width: 1656,
-				height: 1186,
+				height: 1136,
 				alt: "Practice test results for Calc 1 final, Practice 1, with the score, concepts weakest first, and beliefs to fix.",
 			}))}
 			${section("Practice questions that explain themselves", ["An explanation follows each question. A wrong pick can show the likely mistake behind it. On a written answer, partial credit counts, equivalent forms are accepted, and a careless slip is not counted as a gap. There is a hint button when you are stuck."], shotFigure({
 				base: "/shots/practice-quiz",
 				width: 1656,
-				height: 932,
+				height: 934,
 				alt: "A chain rule quiz answered wrong, with the likely belief and an explanation.",
 			}))}
 			${section("Every answer updates your map", ["Answers are recorded on your concept map, so you can see which concepts are solid and which are shaky before the exam. Set the exam date as the goal’s due date."], `${shotFigure({
