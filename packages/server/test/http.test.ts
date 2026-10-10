@@ -136,8 +136,8 @@ describe("account server", () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/force-graph.js?v=4"');
-		expect(site?.body).toContain('src="/app.js?v=23"');
-		expect(site?.body).toContain('href="/styles.css?v=15"');
+		expect(site?.body).toContain('src="/app.js?v=24"');
+		expect(site?.body).toContain('href="/styles.css?v=16"');
 		expect(site?.body).toContain("/hero/concept-map-768.webp");
 		expect(site?.body).toContain("image/avif");
 		expect(site?.body).not.toContain('id="hero-graph"');

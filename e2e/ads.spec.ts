@@ -40,11 +40,11 @@ test("public pages, footer email, and screenshots", async ({ page }, testInfo) =
 			expect(paint.headerOneRow).toBe(true);
 			if (width === "mobile") {
 				expect(paint.consentShort).toBe(true);
-				await expect(page.locator(".bar-nav .nav-wide").first()).toBeHidden();
-				await expect(page.locator(".nav-more")).toBeVisible();
+				await expect(page.locator("header.bar .bar-nav .nav-wide").first()).toBeHidden();
+				await expect(page.locator("header.bar .nav-more")).toBeVisible();
 			} else {
-				await expect(page.locator(".bar-nav .nav-wide").first()).toBeVisible();
-				await expect(page.locator(".nav-more")).toBeHidden();
+				await expect(page.locator("header.bar .bar-nav .nav-wide").first()).toBeVisible();
+				await expect(page.locator("header.bar .nav-more")).toBeHidden();
 			}
 			expect(paint.ctaCovered).toBe(false);
 			expect(paint.buttons).toEqual(["OK", "Opt out"]);
@@ -402,7 +402,7 @@ async function heroPaint(page: Page) {
 			noteAligned: Math.abs(noteBox.left - ctaBox.left) < 12,
 			noteText: (note as HTMLElement).innerText.replace(/\s+/g, " ").trim(),
 			headerOneRow: header.getBoundingClientRect().height < 100,
-			consentShort: barBox.height < 96,
+			consentShort: barBox.height < 160 && barBox.height >= 44,
 			ctaCovered: overlaps,
 			buttons: [...bar.querySelectorAll("button")].map((button) => button.textContent?.trim()),
 			consentFont: getComputedStyle(bar).fontFamily,

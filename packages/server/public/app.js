@@ -296,7 +296,7 @@ function showAccount() {
 				<div class="row">
 					<div class="field grow">
 						<label for="displayName">Display name</label>
-						<input class="input" type="text" id="displayName" name="displayName" maxlength="80" value="${escapeAttr(account.displayName || user.displayName || "")}" />
+						<input class="input" type="text" id="displayName" name="displayName" autocomplete="name" maxlength="80" value="${escapeAttr(account.displayName || user.displayName || "")}" />
 					</div>
 					<button class="btn btn-ink" type="submit">Save</button>
 				</div>
@@ -360,47 +360,57 @@ async function pullGroundwork() {
 	}
 }
 
+let signOutBound = false;
+
 function renderChip() {
 	chip.hidden = false;
 	const name = account.displayName || user.displayName || user.email || "Signed in";
 	const email = user.email || account.email || "";
 	const letter = escapeHtml(String(name).slice(0, 1).toUpperCase() || "?");
 	const photo = user.photoURL ? `<img alt="" src="${escapeAttr(user.photoURL)}" />` : letter;
-	const admin = account.isAdmin ? `<a class="link-btn" href="/admin/usage">Admin</a>` : "";
-	chip.innerHTML = `<span class="avatar">${photo}</span><span class="who"><span class="who-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span>${admin}<button class="link-btn chip-signout" id="sign-out" type="button" aria-label="Sign out">Sign out</button>`;
-	chip.querySelector("#sign-out").addEventListener("click", () => {
-		void (async () => {
-			actionError = "";
-			if (user?._local) {
-				user = null;
-				account = null;
-				providers = null;
-				tutor = null;
-				groundwork = emptyGroundwork();
-				try {
-					localStorage.removeItem("groundwork-obsidian-linked");
-					localStorage.removeItem("gw-e2e-user");
-				} catch {
-					/* ignore */
-				}
-				location.hash = "";
-				paint();
-				return;
-			}
-			try {
-				const token = await authToken();
-				if (token) await send("/v1/auth/sign-out", {}, token);
-			} catch {
-				// Still sign out in the browser even if revocation fails.
-			}
-			try {
-				localStorage.removeItem("groundwork-obsidian-linked");
-			} catch {
-				/* ignore */
-			}
-			firebaseAuth.signOut(auth);
-		})();
-	});
+	chip.innerHTML = `<span class="avatar" aria-hidden="true">${photo}</span><span class="who"><span class="who-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span><span class="who-email">${escapeHtml(email)}</span></span>`;
+	const admin = Boolean(account?.isAdmin);
+	for (const link of document.querySelectorAll("#site [data-admin-link]")) link.hidden = !admin;
+	if (!signOutBound) {
+		signOutBound = true;
+		for (const button of document.querySelectorAll("#site [data-sign-out]")) {
+			button.addEventListener("click", () => {
+				void signOut();
+			});
+		}
+	}
+}
+
+async function signOut() {
+	actionError = "";
+	if (user?._local) {
+		user = null;
+		account = null;
+		providers = null;
+		tutor = null;
+		groundwork = emptyGroundwork();
+		try {
+			localStorage.removeItem("groundwork-obsidian-linked");
+			localStorage.removeItem("gw-e2e-user");
+		} catch {
+			/* ignore */
+		}
+		location.hash = "";
+		paint();
+		return;
+	}
+	try {
+		const token = await authToken();
+		if (token) await send("/v1/auth/sign-out", {}, token);
+	} catch {
+		// Still sign out in the browser even if revocation fails.
+	}
+	try {
+		localStorage.removeItem("groundwork-obsidian-linked");
+	} catch {
+		/* ignore */
+	}
+	firebaseAuth.signOut(auth);
 }
 
 function notice(signedIn) {
@@ -473,11 +483,11 @@ function board() {
 			<div class="eyebrow" id="board-title"><span class="live"></span>Your groundwork</div>
 			<div class="stats">
 				<div class="tile">
-					${statBig(goals.length, "Goals reached")}
+					${statBig(goals.length)}
 					<span class="tile-label">Goals reached</span>
 				</div>
 				<div class="tile" style="animation-delay: .12s">
-					${statBig(concepts.length, "Concepts")}
+					${statBig(concepts.length)}
 					<span class="tile-label">Concepts</span>
 					<p class="tile-note">${escapeHtml(conceptNote(concepts))}</p>
 				</div>
@@ -498,8 +508,8 @@ function board() {
 		</section>`;
 }
 
-function statBig(value, label) {
-	if (!value) return `<span class="big is-empty" aria-label="None yet for ${escapeAttr(label)}">—</span>`;
+function statBig(value) {
+	if (!value) return `<span class="big is-empty">None yet</span>`;
 	return `<span class="big">${value}</span>`;
 }
 

@@ -110,6 +110,11 @@ test("plan picker and sign-out", async ({ page, request }) => {
 	await expect(page.locator(".plans")).toContainText("$6");
 	await expect(page.locator(".plans")).toContainText("$20");
 	await expect(page.locator(".plans")).toContainText("Free");
-	await page.getByRole("button", { name: "Sign out", exact: true }).click();
+	const signOutBar = page.locator("#sign-out-bar");
+	if (await signOutBar.isVisible()) await signOutBar.click();
+	else {
+		await page.locator("#site summary", { hasText: "Menu" }).click();
+		await page.locator("#sign-out").click();
+	}
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
 });

@@ -1,6 +1,10 @@
 const E2E_USER = "gw-e2e-user";
 const E2E_EMAIL = "gw-e2e-email";
 
+let sessionToken;
+let firebaseAuthApi = null;
+let firebaseAuthInstance = null;
+
 boot().catch(() => {
 	const root = document.querySelector("#usage-root");
 	if (root) root.textContent = "Usage could not be loaded.";
@@ -26,6 +30,8 @@ async function bootFirebase(config, sign, root) {
 	const firebaseAuth = await import("https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js");
 	initializeApp(config.firebase);
 	const auth = firebaseAuth.getAuth();
+	firebaseAuthApi = firebaseAuth;
+	firebaseAuthInstance = auth;
 	firebaseAuth.onAuthStateChanged(auth, async (user) => {
 		if (!user) {
 			resetSign(sign);
@@ -55,6 +61,7 @@ async function bootLocal(config, sign, root) {
 }
 
 async function paintSession(sign, root, token) {
+	sessionToken = token;
 	const accountRes = await fetch("/v1/account", { headers: authHeaders(token) });
 	if (accountRes.ok) applyAccount(sign, await accountRes.json());
 	else resetSign(sign);
@@ -83,21 +90,74 @@ function authHeaders(token) {
 }
 
 function applyAccount(sign, account) {
-	if (!sign || !account) return;
+	if (!account) return;
 	const label = account.displayName || account.email || "Account";
-	sign.textContent = label;
-	sign.setAttribute("href", "/");
-	sign.setAttribute("aria-label", `Signed in as ${label}`);
+	const initial = String(label).trim().slice(0, 1).toUpperCase() || "?";
+	if (sign) {
+		sign.textContent = label;
+		sign.setAttribute("href", "/");
+		sign.setAttribute("aria-label", `Account, ${label}`);
+	}
+	for (const avatar of document.querySelectorAll(".bar-avatar")) {
+		avatar.hidden = false;
+		avatar.textContent = initial;
+		avatar.setAttribute("role", "img");
+		avatar.setAttribute("aria-label", label);
+	}
 	for (const link of document.querySelectorAll("[data-admin-link]")) link.hidden = !account.isAdmin;
+	for (const link of document.querySelectorAll("[data-sign-in]")) link.hidden = true;
+	for (const button of document.querySelectorAll("[data-sign-out]")) {
+		button.hidden = false;
+		if (button.dataset.bound === "1") continue;
+		button.dataset.bound = "1";
+		button.addEventListener("click", () => {
+			void signOutSession();
+		});
+	}
 }
 
 function resetSign(sign) {
-	if (!sign) return;
-	sign.textContent = "Sign in";
-	const onHome = location.pathname === "/";
-	sign.setAttribute("href", onHome ? "#signin" : "/#signin");
-	sign.removeAttribute("aria-label");
+	sessionToken = undefined;
+	if (sign) {
+		sign.textContent = "Sign in";
+		const onHome = location.pathname === "/";
+		sign.setAttribute("href", onHome ? "#signin" : "/#signin");
+		sign.removeAttribute("aria-label");
+	}
+	for (const avatar of document.querySelectorAll(".bar-avatar")) {
+		avatar.hidden = true;
+		avatar.textContent = "";
+		avatar.removeAttribute("role");
+		avatar.removeAttribute("aria-label");
+	}
 	for (const link of document.querySelectorAll("[data-admin-link]")) link.hidden = true;
+	for (const link of document.querySelectorAll("[data-sign-in]")) link.hidden = false;
+	for (const button of document.querySelectorAll("[data-sign-out]")) button.hidden = true;
+}
+
+async function signOutSession() {
+	try {
+		if (sessionToken) {
+			await fetch("/v1/auth/sign-out", {
+				method: "POST",
+				headers: { ...authHeaders(sessionToken), "content-type": "application/json" },
+				body: "{}",
+			});
+		}
+	} catch {
+		/* The browser session still ends. */
+	}
+	try {
+		localStorage.removeItem(E2E_USER);
+	} catch {
+		/* ignore */
+	}
+	try {
+		if (firebaseAuthApi && firebaseAuthInstance) await firebaseAuthApi.signOut(firebaseAuthInstance);
+	} catch {
+		/* ignore */
+	}
+	location.assign("/");
 }
 
 function showSignIn(root, config, onLocal) {

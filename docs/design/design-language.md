@@ -56,6 +56,10 @@ The plugin often lives in a side pane, so its layout reacts to the width of `.gw
 - Under 860px, side rails stack under the main column, and the map key sits below the graph instead of over it.
 - A table reflows each row onto two lines when the table itself is under 600px wide, so the row's action stays on screen. Actions never sit behind a horizontal scroll.
 
+## Website header on a phone
+
+The site header is one row from 360px through 840px: the Groundwork logo, a compact initials avatar when someone is signed in, and a Menu. The Menu holds Pricing, Get started, the feature links, Admin only when `/v1/account` says `isAdmin`, and Sign in or Sign out. At 841px and wider the bar keeps Pricing, Get started, and Sign in (or the name and Sign out) inline, and the Menu is not shown.
+
 ## Copy
 
 - Action labels are titles only, with no time estimates ("Practice exam", not "Practice exam · 30m").
