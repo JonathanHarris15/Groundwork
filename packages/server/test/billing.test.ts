@@ -687,6 +687,11 @@ describe("paid membership snapshots", () => {
 			items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
 			discounts: [{ coupon: { percent_off: 100 }, promotion_code: { code: "GROUNDWORKTESTER" } }],
 		}, prices)).toEqual({ status: "active", plan: "included", amountUsd: 0, couponCode: "GROUNDWORKTESTER" });
+		expect(membershipFromSubscription({
+			status: "active",
+			items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
+			discounts: [{ promotion_code: { code: "GROUNDWORKTESTER" }, source: { coupon: "coupon_id", type: "coupon" } }],
+		}, prices)).toEqual({ status: "active", plan: "included", amountUsd: 0, couponCode: "GROUNDWORKTESTER" });
 		expect(membershipFromSubscription({ ...included, status: "past_due" }, prices)).toBeNull();
 		expect(membershipFromSubscription({ ...included, status: "trialing", items: { data: [{ price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] } }, prices)).toMatchObject({ status: "trialing", plan: "byom", amountUsd: 6 });
 	});
@@ -728,6 +733,7 @@ describe("paid membership snapshots", () => {
 		expect(listed.find((row) => row.record.uid === "ada")?.record.couponCode).toBe("GROUNDWORKTESTER");
 		expect(listed.find((row) => row.record.uid === "bea")?.record.membership).toEqual({ status: "trialing", plan: "byom", amountUsd: 6 });
 		expect(listed.find((row) => row.record.uid === "cio")?.record.membership).toBeUndefined();
-		expect(expands[0]).toContain("data.discounts.coupon");
+		expect(expands[0]).toContain("data.discounts.promotion_code");
+		expect(expands[0]).toContain("data.discounts.source.coupon");
 	});
 });
