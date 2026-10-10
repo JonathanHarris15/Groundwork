@@ -1,5 +1,6 @@
 import type { PlanId } from "./plans";
 import { PLANS } from "./plans";
+import type { StoredMembership } from "./usage";
 import type { UsageFeature } from "./usage-feature";
 import { USAGE_FEATURES } from "./usage-feature";
 
@@ -56,6 +57,21 @@ export interface UsageAccountRow {
 	spentUsd?: number;
 	couponCode?: string;
 	tutorWeight?: "light" | "heavy";
+	membership?: StoredMembership;
+}
+
+/** Account totals for the top of the admin usage page. Counts only. */
+export interface AccountCensus {
+	users: number;
+	free: number;
+	joinedLast7Days: number;
+	paid: number;
+	byom: number;
+	included: number;
+	/** Active or trialing memberships whose price after discounts is more than $0. */
+	paying: number;
+	/** Active or trialing memberships on the 100% off GROUNDWORKTESTER coupon. */
+	comped: number;
 }
 
 export interface LimitMoments {
@@ -124,6 +140,7 @@ export interface UsageReport {
 	excluded: { admin: number; coupon: number; test: number };
 	users: UserLimitRow[];
 	distribution: Array<{ label: string; count: number }>;
+	census: AccountCensus;
 }
 
 interface Rate {
@@ -144,6 +161,36 @@ export interface UsageReportInput {
 
 const SMALL_SAMPLE = 20;
 const PROPOSAL_FACTOR = 0.9;
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const TESTER_COUPON = "GROUNDWORKTESTER";
+
+/** Totals for every account. Paid means an active or trialing BYOM or Groundwork subscription. */
+export function accountCensus(accounts: UsageAccountRow[], now: Date): AccountCensus {
+	const cutoff = now.getTime() - WEEK_MS;
+	const census: AccountCensus = { users: 0, free: 0, joinedLast7Days: 0, paid: 0, byom: 0, included: 0, paying: 0, comped: 0 };
+	for (const account of accounts) {
+		census.users += 1;
+		if (account.plan === "free") census.free += 1;
+		const created = account.createdAt ? Date.parse(account.createdAt) : Number.NaN;
+		if (Number.isFinite(created) && created >= cutoff && created <= now.getTime()) census.joinedLast7Days += 1;
+		const membership = countableMembership(account.membership);
+		if (!membership) continue;
+		census.paid += 1;
+		if (membership.plan === "byom") census.byom += 1;
+		else census.included += 1;
+		const comped = (membership.couponCode ?? "").trim().toUpperCase() === TESTER_COUPON && !(typeof membership.amountUsd === "number" && membership.amountUsd > 0);
+		if (typeof membership.amountUsd === "number" && membership.amountUsd > 0) census.paying += 1;
+		else if (comped) census.comped += 1;
+	}
+	return census;
+}
+
+function countableMembership(membership: StoredMembership | undefined): StoredMembership | null {
+	if (!membership) return null;
+	if (membership.status !== "active" && membership.status !== "trialing") return null;
+	if (membership.plan !== "byom" && membership.plan !== "included") return null;
+	return membership;
+}
 
 export function utcDay(now: Date = new Date()): string {
 	return now.toISOString().slice(0, 10);
@@ -449,6 +496,7 @@ export function buildUsageReport(input: UsageReportInput): UsageReport {
 		excluded: { admin, coupon, test },
 		users: userRows,
 		distribution,
+		census: accountCensus(input.accounts, now),
 	};
 }
 

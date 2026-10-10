@@ -16,6 +16,7 @@ import {
 	type AccountView,
 	type PlanId,
 	type StoredAttribution,
+	type StoredMembership,
 	type TutorChoice,
 	type TutorWeight,
 } from "@groundwork/core";
@@ -138,6 +139,14 @@ export class AccountDirectory {
 		await this.commit(uid, now, (record) => (record.couponCode === cleaned ? record : { ...record, couponCode: cleaned }));
 	}
 
+	/** Store or clear the Stripe membership. Does not create an account that does not exist yet. */
+	async rememberMembership(uid: string, membership: StoredMembership | null, now: Date = new Date()): Promise<void> {
+		const existing = await this.readRecord(uid);
+		if (!existing) return;
+		if (membershipKey(existing.membership) === membershipKey(membership)) return;
+		await this.commit(uid, now, (record) => applyMembership(record ?? existing, membership));
+	}
+
 	async findByCustomer(customerId: string): Promise<AccountRecord | undefined> {
 		if (this.store) {
 			const uid = await this.store.findByCustomer(customerId);
@@ -219,8 +228,21 @@ function sameAccount(a: AccountRecord, b: AccountRecord): boolean {
 		a.obsidianConnectedAt === b.obsidianConnectedAt &&
 		a.createdAt === b.createdAt &&
 		a.couponCode === b.couponCode &&
+		membershipKey(a.membership) === membershipKey(b.membership) &&
 		attributionKey(a.attribution) === attributionKey(b.attribution)
 	);
+}
+
+function applyMembership(record: AccountRecord, membership: StoredMembership | null): AccountRecord {
+	const next = { ...record };
+	if (membership) next.membership = membership;
+	else delete next.membership;
+	return next;
+}
+
+function membershipKey(membership: StoredMembership | null | undefined): string {
+	if (!membership) return "";
+	return `${membership.status}\0${membership.plan}\0${membership.amountUsd ?? ""}\0${membership.couponCode ?? ""}`;
 }
 
 function hasAttribution(value: StoredAttribution | undefined): boolean {

@@ -200,6 +200,57 @@ describe("admin usage gate", () => {
 		expect(String(shell?.body)).not.toContain("Proposed Free limit");
 	});
 
+	it("puts user and paid counts above the usage report and in the CSV", async () => {
+		const accounts = new AccountDirectory();
+		const now = new Date();
+		const recent = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+		const old = new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000);
+		await accounts.seen("free-old", { email: "old@example.com" }, null, old);
+		await accounts.setPlan("free-old", "free", now);
+		await accounts.seen("free-new", { email: "new@example.com" }, null, recent);
+		await accounts.setPlan("free-new", "free", now);
+		await accounts.seen("payer", { email: "payer@example.com" }, null, old);
+		await accounts.setPlan("payer", "byom", now);
+		await accounts.rememberMembership("payer", { status: "active", plan: "byom", amountUsd: 6 });
+		await accounts.seen("comp", { email: "comp@example.com" }, null, old);
+		await accounts.setPlan("comp", "included", now);
+		await accounts.rememberMembership("comp", { status: "trialing", plan: "included", amountUsd: 0, couponCode: "GROUNDWORKTESTER" });
+		await accounts.seen("late", { email: "late@example.com" }, null, old);
+		await accounts.setPlan("late", "included", now);
+		const usage = new UsageDirectory(new MemoryUsageStore());
+		const server = deps({
+			auth,
+			accounts,
+			usage,
+			billing: billing({
+				async syncMemberships() {
+					await accounts.rememberMembership("late", { status: "active", plan: "included", amountUsd: 0, couponCode: "GROUNDWORKTESTER" });
+				},
+			}),
+		});
+		const page = await route("GET", "/api/admin/usage", null, server, "Bearer admin");
+		expect(page.status).toBe(200);
+		const body = page.json as { html?: string; census?: { paid: number; paying: number; comped: number; users: number; free: number; joinedLast7Days: number } };
+		expect(body.census).toMatchObject({ users: 5, free: 2, joinedLast7Days: 1, paid: 3, byom: 1, included: 2, paying: 1, comped: 2 });
+		const html = body.html ?? "";
+		expect(html.indexOf("usage-head")).toBeGreaterThan(-1);
+		expect(html.indexOf("usage-head")).toBeLessThan(html.indexOf("Free plan usage"));
+		expect(html).toContain("Paid users");
+		expect(html).toContain("Joined in the last 7 days");
+		expect(html).toContain("Comped on GROUNDWORKTESTER");
+		expect(html).toContain("Paying means more than $0 after discounts.");
+		const head = html.slice(0, html.indexOf("Free plan usage"));
+		expect(head).not.toMatch(/\$[1-9]/);
+		expect(JSON.stringify(body.census)).not.toMatch(/hostedCredit|sk_live|whsec_/);
+		const csv = await route("GET", "/api/admin/usage.csv", null, server, "Bearer admin");
+		expect(csv.text).toContain("paid_users,3");
+		expect(csv.text).toContain("paying,1");
+		expect(csv.text).toContain("comped_groundworktester,2");
+		expect(csv.text).toContain("joined_last_7_days,1");
+		expect(csv.text).toContain("free,2");
+		expect(csv.text).toContain("users,5");
+	});
+
 	it("reads GROUNDWORKTESTER off a Stripe discount", () => {
 		expect(promotionCodesFrom({ discounts: [{ promotion_code: { code: "GROUNDWORKTESTER" } }] })).toContain("GROUNDWORKTESTER");
 		expect(promotionCodesFrom({ discounts: [{ coupon: { percent_off: 100 } }] })).toEqual([]);

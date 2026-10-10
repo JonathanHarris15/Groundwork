@@ -18,6 +18,8 @@ test.describe("admin usage on a desktop", () => {
 		await page.goto("/admin/usage");
 		await page.getByRole("button", { name: "Continue on this device" }).click();
 		await expect(page.getByRole("heading", { name: "Free plan usage" })).toBeVisible();
+		await expect(page.getByRole("region", { name: "Account counts" })).toBeVisible();
+		await expect(page.locator(".usage-head-cards")).toBeVisible();
 		await expect(page.locator(".nav-wide[data-admin-link]")).toBeVisible();
 		await expect(page.locator(".nav-wide[data-admin-link]")).toHaveAttribute("href", "/admin/usage");
 	});
@@ -62,6 +64,15 @@ test.describe("admin usage on a phone", () => {
 		await page.goto("/admin/usage");
 		await page.getByRole("button", { name: "Continue on this device" }).click();
 		await expect(page.getByRole("heading", { name: "Free plan usage" })).toBeVisible();
+		await expect(page.getByRole("region", { name: "Account counts" })).toBeVisible();
+		await expect(page.locator(".usage-head")).toContainText("Users");
+		await expect(page.locator(".usage-head")).toContainText("Paid users");
+		await expect(page.locator(".usage-head")).toContainText("Joined in the last 7 days");
+		await expect(page.locator(".usage-head")).toContainText("Comped on GROUNDWORKTESTER");
+		await expect(page.locator(".usage-stat-note")).toContainText("more than $0 after discounts");
+		const headBox = await page.locator(".usage-head").boundingBox();
+		const titleBox = await page.getByRole("heading", { name: "Free plan usage" }).boundingBox();
+		expect(headBox && titleBox && headBox.y < titleBox.y).toBe(true);
 		await expect(page.locator("body")).toContainText("A consistent user is active on at least one day in 3 of the last 4 ISO weeks");
 		await expect(page.locator("body")).toContainText("$1.25");
 		await expect(page.locator(".sign-link")).toContainText("usage-admin@groundwork.test");
@@ -70,7 +81,10 @@ test.describe("admin usage on a phone", () => {
 		const admin = page.locator(".nav-menu").getByRole("link", { name: "Admin" });
 		await expect(admin).toBeVisible();
 		await page.screenshot({ path: path.join(shots, "admin-header-link-mobile.png") });
-		await page.locator("summary", { hasText: "Menu" }).click();
+		await page.locator("details.nav-more").evaluate((el: HTMLDetailsElement) => {
+			el.open = false;
+		});
+		await expect(admin).toBeHidden();
 		const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Download CSV" }).click()]);
 		expect(download.suggestedFilename()).toBe("groundwork-usage.csv");
 		const file = await download.path();

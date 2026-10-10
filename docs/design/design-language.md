@@ -60,6 +60,10 @@ The plugin often lives in a side pane, so its layout reacts to the width of `.gw
 
 The site header is one row from 360px through 840px: the Groundwork logo, a compact initials avatar when someone is signed in, and a Menu. The Menu holds Pricing, Get started, the feature links, Admin only when `/v1/account` says `isAdmin`, and Sign in or Sign out. At 841px and wider the bar keeps Pricing, Get started, and Sign in (or the name and Sign out) inline, and the Menu is not shown.
 
+## Admin account counts
+
+The top of `/admin/usage` is two count cards, Users and Paid users, above the free-plan usage report. Paid users are accounts with an active or trialing subscription on Bring your own model or Groundwork. The card lists how many of those cost more than $0 after discounts, and how many are on the 100% off GROUNDWORKTESTER coupon. It does not multiply a plan price by the subscription count.
+
 ## Copy
 
 - Action labels are titles only, with no time estimates ("Practice exam", not "Practice exam · 30m").

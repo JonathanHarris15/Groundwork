@@ -110,6 +110,7 @@ export class UsageDirectory {
 				spentUsd: row.record.spentUsd,
 				couponCode: row.record.couponCode,
 				tutorWeight: row.record.tutorWeight,
+				membership: row.record.membership,
 			})),
 			days,
 			ledgers,

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { AccountDirectory } from "../src/accounts";
-import { applyStripeEvent, checkoutSuccessUrl, createBilling, escapeStripeSearch, isMissingStripeCustomer, paidAmountUsd, planFromSubscription, resetStripeEventDedupe, syncStripeMembership, type StripeMembershipClient } from "../src/billing";
+import { applyStripeEvent, checkoutSuccessUrl, createBilling, escapeStripeSearch, isMissingStripeCustomer, membershipFromSubscription, paidAmountUsd, planFromSubscription, recurringAmountUsd, refreshPaidMemberships, resetStripeEventDedupe, syncStripeMembership, type PaidMembershipClient, type StripeMembershipClient } from "../src/billing";
 
 const prices = { byom: "price_byom", included: "price_included" };
 
@@ -197,6 +197,7 @@ describe("checkout promotion codes", () => {
 		const accounts = new AccountDirectory();
 		await applyStripeEvent(accounts, event("customer.subscription.updated", subscription, "evt_free_forever"), prices);
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
+		expect((await accounts.list()).find((row) => row.record.uid === "ada")?.record.membership).toMatchObject({ status: "active", plan: "included", amountUsd: 0 });
 
 		const checkedOut = new AccountDirectory();
 		await applyStripeEvent(
@@ -671,5 +672,62 @@ describe("test-mode customer ids after a live key", () => {
 		} finally {
 			console.error = original;
 		}
+	});
+});
+
+describe("paid membership snapshots", () => {
+	it("prices a subscription after a percent or amount discount and refuses an unexpanded discount id", () => {
+		const included = { status: "active", items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" }, quantity: 1 }] } };
+		expect(recurringAmountUsd(included)).toBe(20);
+		expect(recurringAmountUsd({ ...included, discounts: [{ coupon: { percent_off: 100, name: "GROUNDWORKTESTER" }, promotion_code: { code: "GROUNDWORKTESTER" } }] })).toBe(0);
+		expect(recurringAmountUsd({ ...included, items: { data: [{ price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] }, discount: { coupon: { amount_off: 100 } } })).toBe(5);
+		expect(recurringAmountUsd({ ...included, discounts: ["di_unexpanded"] })).toBeNull();
+		expect(membershipFromSubscription({
+			status: "active",
+			items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
+			discounts: [{ coupon: { percent_off: 100 }, promotion_code: { code: "GROUNDWORKTESTER" } }],
+		}, prices)).toEqual({ status: "active", plan: "included", amountUsd: 0, couponCode: "GROUNDWORKTESTER" });
+		expect(membershipFromSubscription({ ...included, status: "past_due" }, prices)).toBeNull();
+		expect(membershipFromSubscription({ ...included, status: "trialing", items: { data: [{ price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] } }, prices)).toMatchObject({ status: "trialing", plan: "byom", amountUsd: 6 });
+	});
+
+	it("stores active and trialing memberships and clears one Stripe no longer lists", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		await accounts.seen("bea", { email: "bea@example.com" });
+		await accounts.seen("cio", { email: "cio@example.com" });
+		await accounts.attachCustomer("bea", "cus_bea");
+		await accounts.rememberMembership("cio", { status: "active", plan: "included", amountUsd: 20 });
+		const expands: string[][] = [];
+		const stripe: PaidMembershipClient = {
+			subscriptions: {
+				async list(args) {
+					expands.push(args.expand ?? []);
+					const data = args.status === "active"
+						? [{
+							id: "sub_ada",
+							status: "active",
+							metadata: { uid: "ada" },
+							items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
+							discounts: [{ coupon: { percent_off: 100, name: "GROUNDWORKTESTER" }, promotion_code: { code: "GROUNDWORKTESTER" } }],
+						}]
+						: [{
+							id: "sub_bea",
+							status: "trialing",
+							customer: "cus_bea",
+							metadata: {},
+							items: { data: [{ quantity: 1, price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] },
+						}];
+					return { data, has_more: false };
+				},
+			},
+		};
+		await refreshPaidMemberships(stripe, prices, accounts);
+		const listed = await accounts.list();
+		expect(listed.find((row) => row.record.uid === "ada")?.record.membership).toEqual({ status: "active", plan: "included", amountUsd: 0, couponCode: "GROUNDWORKTESTER" });
+		expect(listed.find((row) => row.record.uid === "ada")?.record.couponCode).toBe("GROUNDWORKTESTER");
+		expect(listed.find((row) => row.record.uid === "bea")?.record.membership).toEqual({ status: "trialing", plan: "byom", amountUsd: 6 });
+		expect(listed.find((row) => row.record.uid === "cio")?.record.membership).toBeUndefined();
+		expect(expands[0]).toContain("data.discounts.coupon");
 	});
 });

@@ -1769,6 +1769,16 @@ body.has-consent textarea {
 .usage-card { border: 1px solid #e3e5e8; border-radius: 14px; padding: 14px 16px; background: #fff; }
 .usage-card .k { margin: 0; color: #4a4f57; font-size: 14px; }
 .usage-card .v { margin: 6px 0 0; font-size: 26px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.usage-head { margin: 0 0 8px; min-width: 0; }
+.usage-head-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; align-items: start; }
+.usage-stat { padding: 18px 18px 16px; }
+.usage-stat .k { font-size: 16px; color: #3c4149; }
+.usage-stat .v { margin-top: 2px; font-size: clamp(2.5rem, 1.2rem + 4vw, 3.5rem); letter-spacing: -0.03em; color: #16181d; }
+.usage-split { margin: 14px 0 0; display: grid; gap: 8px; }
+.usage-split div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; min-width: 0; }
+.usage-split dt { margin: 0; color: #3c4149; font-size: 16px; font-weight: 400; line-height: 1.35; overflow-wrap: anywhere; }
+.usage-split dd { margin: 0; flex: 0 0 auto; font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; color: #16181d; }
+.usage-stat-note { margin: 12px 0 0; color: #3c4149; font-size: 16px; line-height: 1.4; text-wrap: pretty; }
 .usage-warn { margin: 16px 0 0; padding: 12px 14px; border: 1px solid #f59e2b; border-radius: 12px; background: #fff6e8; color: #16181d; }
 .usage-scroll { display: block; width: 100%; overflow-x: auto; max-width: 100%; min-width: 0; margin-top: 12px; }
 .usage-table { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
@@ -1777,8 +1787,12 @@ body.has-consent textarea {
 .usage-table th { font-weight: 500; color: #4a4f57; }
 .usage-chart { display: block; width: 100%; max-width: 100%; height: auto; margin-top: 12px; }
 
+@container (max-width: 720px) {
+	.usage-head-cards { grid-template-columns: 1fr; }
+}
 @container (max-width: 520px) {
 	.usage-card .v { font-size: 22px; }
+	.usage-stat .v { font-size: clamp(2.5rem, 14vw, 3.25rem); }
 	.usage-dash { padding: 8px 0 16px; }
 	.page.mkt .usage-dash { padding: 20px 14px 24px; }
 }

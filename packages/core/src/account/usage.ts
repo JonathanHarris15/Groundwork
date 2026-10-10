@@ -28,6 +28,20 @@ export interface AccountRecord {
 	createdAt?: string;
 	/** Stripe promotion code, when a subscription event included one. */
 	couponCode?: string;
+	/**
+	 * Active or trialing membership read from Stripe.
+	 * Absent when the account has no such subscription. Not sent to the browser account view.
+	 */
+	membership?: StoredMembership;
+}
+
+/** Recurring membership used by the admin account counts. Dollar amount is the price after discounts. */
+export interface StoredMembership {
+	status: "active" | "trialing";
+	plan: "byom" | "included";
+	/** USD per billing period after discounts. Null when Stripe did not include a price. */
+	amountUsd: number | null;
+	couponCode?: string;
 }
 
 /** Campaign fields captured on the site and kept on the account. Not shown to the client. */
