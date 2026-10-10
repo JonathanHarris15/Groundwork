@@ -270,7 +270,8 @@ async function adminUsage(path: string, deps: ServerDeps, authorization: string 
 	} catch (err) {
 		console.error("Could not read Stripe subscriptions.", err);
 	}
-	const report = await usage.report(deps.accounts);
+	const authUsers = deps.auth.listUsers ? await deps.auth.listUsers() : undefined;
+	const report = await usage.report(deps.accounts, new Date(), authUsers);
 	const headers = { "cache-control": "private, no-store" };
 	if (path === "/api/admin/usage.csv") {
 		return { status: 200, json: { ok: true }, text: usageCsv(report), type: "text/csv; charset=utf-8", headers: { ...headers, "content-disposition": "attachment; filename=\"groundwork-usage.csv\"" } };

@@ -68,6 +68,8 @@ test.describe("admin usage on a phone", () => {
 		await expect(page.locator(".usage-head")).toContainText("Users");
 		await expect(page.locator(".usage-head")).toContainText("Paid users");
 		await expect(page.locator(".usage-head")).toContainText("Joined in the last 7 days");
+		await expect(page.locator(".usage-head")).toContainText("No plan");
+		await expect(page.locator(".usage-orphans")).toContainText("Orphaned records");
 		await expect(page.locator(".usage-head")).toContainText("Comped on GROUNDWORKTESTER");
 		await expect(page.locator(".usage-stat-note")).toContainText("more than $0 after discounts");
 		const headBox = await page.locator(".usage-head").boundingBox();

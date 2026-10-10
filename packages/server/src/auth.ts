@@ -1,4 +1,4 @@
-import { asUnknown } from "@groundwork/core";
+import { asUnknown, type AuthUserRef } from "@groundwork/core";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,11 @@ export interface Auth {
 	/** Invalidates refresh tokens and rejects still-valid ID tokens from that session. */
 	revokeRefreshTokens(uid: string, authorization?: string): Promise<void>;
 	readonly firebase: boolean;
+	/**
+	 * Every Firebase Auth user. Absent when Firebase is not configured, so a local
+	 * report counts account documents instead.
+	 */
+	listUsers?(): Promise<AuthUserRef[]>;
 }
 
 const LOCAL_UID = "local";
@@ -70,7 +75,29 @@ export function createFirebaseAuth(auth: ReturnType<typeof getAuth>, denylist: I
 			await auth.revokeRefreshTokens(uid);
 			await denylist.revoke(claimsFromToken(claims ?? { uid, iat: Math.floor(Date.now() / 1000) }));
 		},
+		listUsers: () => listFirebaseUsers(auth),
 	};
+}
+
+async function listFirebaseUsers(auth: ReturnType<typeof getAuth>): Promise<AuthUserRef[]> {
+	const users: AuthUserRef[] = [];
+	let pageToken: string | undefined;
+	do {
+		const page = await auth.listUsers(1000, pageToken);
+		for (const user of page.users) {
+			const createdAt = authCreatedAt(user.metadata.creationTime);
+			users.push(createdAt ? { uid: user.uid, createdAt } : { uid: user.uid });
+		}
+		pageToken = page.pageToken;
+	} while (pageToken);
+	return users;
+}
+
+function authCreatedAt(creationTime: string | undefined): string | undefined {
+	if (!creationTime) return undefined;
+	const parsed = new Date(creationTime);
+	if (Number.isNaN(parsed.getTime())) return undefined;
+	return parsed.toISOString();
 }
 
 async function verifyBearer(auth: ReturnType<typeof getAuth>, denylist: ReturnType<typeof loadIdTokenDenylist>, authorization?: string): Promise<DecodedIdToken> {

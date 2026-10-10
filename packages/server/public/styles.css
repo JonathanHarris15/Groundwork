@@ -1779,6 +1779,8 @@ body.has-consent textarea {
 .usage-split dt { margin: 0; color: #3c4149; font-size: 16px; font-weight: 400; line-height: 1.35; overflow-wrap: anywhere; }
 .usage-split dd { margin: 0; flex: 0 0 auto; font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; color: #16181d; }
 .usage-stat-note { margin: 12px 0 0; color: #3c4149; font-size: 16px; line-height: 1.4; text-wrap: pretty; }
+.usage-orphans { margin: 10px 2px 0; color: #3c4149; font-size: 14px; line-height: 1.4; }
+.usage-orphans span { font-weight: 500; font-variant-numeric: tabular-nums; color: #16181d; }
 .usage-warn { margin: 16px 0 0; padding: 12px 14px; border: 1px solid #f59e2b; border-radius: 12px; background: #fff6e8; color: #16181d; }
 .usage-scroll { display: block; width: 100%; overflow-x: auto; max-width: 100%; min-width: 0; margin-top: 12px; }
 .usage-table { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }

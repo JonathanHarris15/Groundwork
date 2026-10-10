@@ -230,8 +230,11 @@ describe("admin usage gate", () => {
 		});
 		const page = await route("GET", "/api/admin/usage", null, server, "Bearer admin");
 		expect(page.status).toBe(200);
-		const body = page.json as { html?: string; census?: { paid: number; paying: number; comped: number; users: number; free: number; joinedLast7Days: number } };
-		expect(body.census).toMatchObject({ users: 5, free: 2, joinedLast7Days: 1, paid: 3, byom: 1, included: 2, paying: 1, comped: 2 });
+		const body = page.json as { html?: string; census?: { paid: number; paying: number; comped: number; users: number; free: number; noPlan: number; other: number; joinedLast7Days: number; orphans: number } };
+		expect(body.census).toMatchObject({ users: 5, free: 2, noPlan: 0, other: 0, joinedLast7Days: 1, paid: 3, byom: 1, included: 2, paying: 1, comped: 2, orphans: 0 });
+		const census = body.census;
+		if (!census) throw new Error("missing census");
+		expect(census.free + census.paid + census.noPlan + census.other).toBe(census.users);
 		const html = body.html ?? "";
 		expect(html.indexOf("usage-head")).toBeGreaterThan(-1);
 		expect(html.indexOf("usage-head")).toBeLessThan(html.indexOf("Free plan usage"));
@@ -249,6 +252,51 @@ describe("admin usage gate", () => {
 		expect(csv.text).toContain("joined_last_7_days,1");
 		expect(csv.text).toContain("free,2");
 		expect(csv.text).toContain("users,5");
+		expect(csv.text).toContain("no_plan,0");
+		expect(csv.text).toContain("orphaned_records,0");
+		expect(html).toContain("No plan");
+		expect(html).toContain("Orphaned records");
+	});
+
+	it("leaves an account document with no Auth user out of every total", async () => {
+		const accounts = new AccountDirectory();
+		const now = new Date();
+		await accounts.setPlan("real-free", "free", now);
+		await accounts.seen("real-unset", {}, null, now);
+		await accounts.setPlan("promo-zero-check", "free", now);
+		const usage = new UsageDirectory(new MemoryUsageStore());
+		await usage.record("promo-zero-check", { plan: "free", model: "light", feature: "tutor_chat", calls: 3, costUsd: 0.2, chargedUsd: 0.2, inputTokens: 10, outputTokens: 4 });
+		await usage.record("real-free", { plan: "free", model: "light", feature: "tutor_chat", calls: 1, costUsd: 0.1, chargedUsd: 0.1, inputTokens: 8, outputTokens: 2 });
+		const auth: Auth = {
+			firebase: false,
+			async uid() {
+				return { uid: "local" };
+			},
+			async revokeRefreshTokens() {},
+			async listUsers() {
+				return [
+					{ uid: "real-free", createdAt: now.toISOString() },
+					{ uid: "real-unset", createdAt: now.toISOString() },
+					{ uid: "auth-only", createdAt: now.toISOString() },
+				];
+			},
+		};
+		const server = deps({ auth, accounts, usage });
+		const page = await route("GET", "/api/admin/usage", null, server, "Bearer admin");
+		expect(page.status).toBe(200);
+		const body = page.json as { html?: string; census?: { users: number; free: number; noPlan: number; other: number; paid: number; orphans: number; joinedLast7Days: number }; features?: Array<{ calls: number }> };
+		expect(body.census).toMatchObject({ users: 3, free: 1, noPlan: 2, other: 0, paid: 0, orphans: 1, joinedLast7Days: 3 });
+		const census = body.census;
+		if (!census) throw new Error("missing census");
+		expect(census.free + census.paid + census.noPlan + census.other).toBe(census.users);
+		expect(body.html).toContain("Orphaned records <span>1</span>");
+		expect(body.html).not.toContain("promo-zero-check");
+		expect((body.features ?? []).reduce((sum, row) => sum + row.calls, 0)).toBe(1);
+		const csv = await route("GET", "/api/admin/usage.csv", null, server, "Bearer admin");
+		expect(csv.text).toContain("users,3");
+		expect(csv.text).toContain("orphaned_records,1");
+		expect(csv.text).toContain("no_plan,2");
+		expect(csv.text).not.toContain("promo-zero-check");
 	});
 
 	it("reads GROUNDWORKTESTER off a Stripe discount", () => {
