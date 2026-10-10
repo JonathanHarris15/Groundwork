@@ -181,13 +181,62 @@ describe("retention and limit outcomes", () => {
 		expect(built.census).toEqual({
 			users: 11,
 			free: 5,
+			noPlan: 1,
+			other: 1,
 			joinedLast7Days: 3,
 			paid: 4,
 			byom: 2,
 			included: 2,
 			paying: 2,
 			comped: 2,
+			orphans: 0,
 		});
+		expect(built.census.free + built.census.paid + built.census.noPlan + built.census.other).toBe(built.census.users);
+	});
+
+	it("counts Firebase Auth users, and plan categories sum to that count", () => {
+		const built = report({
+			authUsers: [
+				{ uid: "free", createdAt: "2026-10-08T00:00:00.000Z" },
+				{ uid: "paid" },
+				{ uid: "unset", createdAt: "2026-10-08T00:00:00.000Z" },
+				{ uid: "lapsed" },
+				{ uid: "free" },
+			],
+			accounts: [
+				account({ uid: "free", createdAt: "2026-10-08T00:00:00.000Z" }),
+				account({
+					uid: "paid",
+					plan: "included",
+					membership: { status: "active", plan: "included", amountUsd: 0, couponCode: "GROUNDWORKTESTER" },
+				}),
+				account({ uid: "lapsed", plan: "byom" }),
+				account({ uid: "promo-zero-check", createdAt: "2026-10-06T17:02:03.815Z", spentUsd: 0.4 }),
+			],
+			days: [
+				day({ uid: "free", day: "2026-10-08" }),
+				day({ uid: "promo-zero-check", day: "2026-10-08", calls: 4, costUsd: 0.4, chargedUsd: 0.4 }),
+			],
+		});
+		expect(built.census).toEqual({
+			users: 4,
+			free: 1,
+			noPlan: 1,
+			other: 1,
+			joinedLast7Days: 2,
+			paid: 1,
+			byom: 0,
+			included: 1,
+			paying: 0,
+			comped: 1,
+			orphans: 1,
+		});
+		expect(built.census.free + built.census.paid + built.census.noPlan + built.census.other).toBe(built.census.users);
+		const week = built.weeks.find((row) => row.week === isoWeekKey("2026-10-08"));
+		expect(week?.activeFree).toBe(1);
+		expect(week?.signups).toBe(1);
+		expect(built.users.map((row) => row.uid)).not.toContain("promo-zero-check");
+		expect(built.features.reduce((sum, row) => sum + row.calls, 0)).toBe(1);
 	});
 
 	it("counts weekly active free users and active days in the month", () => {

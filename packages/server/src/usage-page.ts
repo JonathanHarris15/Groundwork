@@ -102,7 +102,10 @@ export function usageCsv(report: UsageReport): string {
 	push(["generated_at", report.generatedAt]);
 	push(["users", report.census.users]);
 	push(["free", report.census.free]);
+	push(["no_plan", report.census.noPlan]);
+	push(["paid_plan_not_active", report.census.other]);
 	push(["joined_last_7_days", report.census.joinedLast7Days]);
+	push(["orphaned_records", report.census.orphans]);
 	push(["paid_users", report.census.paid]);
 	push(["paid_byom", report.census.byom]);
 	push(["paid_groundwork", report.census.included]);
@@ -252,14 +255,18 @@ function accountHead(report: UsageReport): string {
 	];
 	const other = census.paid - census.paying - census.comped;
 	if (other > 0) paidRows.push(["Not paying, other", other]);
+	const userRows: Array<[string, number]> = [
+		["Free", census.free],
+		["No plan", census.noPlan],
+	];
+	if (census.other > 0) userRows.push(["Paid plan, not active", census.other]);
+	userRows.push(["Joined in the last 7 days", census.joinedLast7Days]);
 	return `<section class="usage-head" aria-label="Account counts">
 						<div class="usage-head-cards">
-							${statCard("users-count", "Users", census.users, [
-								["Free", census.free],
-								["Joined in the last 7 days", census.joinedLast7Days],
-							])}
+							${statCard("users-count", "Users", census.users, userRows)}
 							${statCard("paid-count", "Paid users", census.paid, paidRows, "Paying means more than $0 after discounts. Comped is the 100% off GROUNDWORKTESTER coupon.")}
 						</div>
+						<p class="usage-orphans">Orphaned records <span>${census.orphans}</span></p>
 					</section>`;
 }
 

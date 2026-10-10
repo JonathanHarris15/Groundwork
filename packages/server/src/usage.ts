@@ -3,6 +3,7 @@ import {
 	PLANS,
 	utcDay,
 	type AccountRecord,
+	type AuthUserRef,
 	type PlanId,
 	type UsageDayRow,
 	type UsageEventRow,
@@ -97,7 +98,7 @@ export class UsageDirectory {
 		this.backfilledAt = Date.now();
 	}
 
-	async report(accounts: AccountDirectory, now = new Date()): Promise<UsageReport> {
+	async report(accounts: AccountDirectory, now = new Date(), authUsers?: readonly AuthUserRef[]): Promise<UsageReport> {
 		const [listed, days, ledgers, events] = await Promise.all([accounts.list(), this.store.listDays(), this.store.listLedgers(), this.store.listEvents()]);
 		return buildUsageReport({
 			now,
@@ -117,6 +118,7 @@ export class UsageDirectory {
 			events,
 			adminEmails: USAGE_ADMIN_EMAILS,
 			limitUsd: PLANS.free.hostedCreditUsd,
+			authUsers,
 		});
 	}
 }

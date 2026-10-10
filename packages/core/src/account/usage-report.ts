@@ -60,10 +60,25 @@ export interface UsageAccountRow {
 	membership?: StoredMembership;
 }
 
-/** Account totals for the top of the admin usage page. Counts only. */
+/** A Firebase Auth user. Account documents are joined onto this list. */
+export interface AuthUserRef {
+	uid: string;
+	/** Firebase Auth `metadata.creationTime`, as an ISO string. */
+	createdAt?: string;
+}
+
+/**
+ * Account totals for the top of the admin usage page. Counts only.
+ * `users` is the Auth population. `free + paid + noPlan + other` equals `users`.
+ * `orphans` are Firestore account documents outside that population.
+ */
 export interface AccountCensus {
 	users: number;
 	free: number;
+	/** Auth users with no plan on the account document, including Auth users with no document. */
+	noPlan: number;
+	/** Auth users on Bring your own model or Groundwork without an active or trialing subscription. */
+	other: number;
 	joinedLast7Days: number;
 	paid: number;
 	byom: number;
@@ -72,6 +87,8 @@ export interface AccountCensus {
 	paying: number;
 	/** Active or trialing memberships on the 100% off GROUNDWORKTESTER coupon. */
 	comped: number;
+	/** Firestore account documents whose uid is not a Firebase Auth user. */
+	orphans: number;
 }
 
 export interface LimitMoments {
@@ -157,6 +174,12 @@ export interface UsageReportInput {
 	events: UsageEventRow[];
 	adminEmails: readonly string[];
 	limitUsd?: number;
+	/**
+	 * Firebase Auth users. When set, every metric uses this list joined to account
+	 * documents. Documents whose uid is absent are orphans. Omit it only when Auth
+	 * is not configured, such as local development.
+	 */
+	authUsers?: readonly AuthUserRef[];
 }
 
 const SMALL_SAMPLE = 20;
@@ -164,25 +187,75 @@ const PROPOSAL_FACTOR = 0.9;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const TESTER_COUPON = "GROUNDWORKTESTER";
 
-/** Totals for every account. Paid means an active or trialing BYOM or Groundwork subscription. */
-export function accountCensus(accounts: UsageAccountRow[], now: Date): AccountCensus {
+/**
+ * Totals for the Auth population.
+ * Paid means an active or trialing BYOM or Groundwork subscription.
+ * A user is in exactly one of free, paid, noPlan, or other.
+ */
+export function accountCensus(accounts: UsageAccountRow[], now: Date, orphans = 0): AccountCensus {
 	const cutoff = now.getTime() - WEEK_MS;
-	const census: AccountCensus = { users: 0, free: 0, joinedLast7Days: 0, paid: 0, byom: 0, included: 0, paying: 0, comped: 0 };
+	const census: AccountCensus = {
+		users: 0,
+		free: 0,
+		noPlan: 0,
+		other: 0,
+		joinedLast7Days: 0,
+		paid: 0,
+		byom: 0,
+		included: 0,
+		paying: 0,
+		comped: 0,
+		orphans,
+	};
 	for (const account of accounts) {
 		census.users += 1;
-		if (account.plan === "free") census.free += 1;
 		const created = account.createdAt ? Date.parse(account.createdAt) : Number.NaN;
 		if (Number.isFinite(created) && created >= cutoff && created <= now.getTime()) census.joinedLast7Days += 1;
 		const membership = countableMembership(account.membership);
-		if (!membership) continue;
-		census.paid += 1;
-		if (membership.plan === "byom") census.byom += 1;
-		else census.included += 1;
-		const comped = (membership.couponCode ?? "").trim().toUpperCase() === TESTER_COUPON && !(typeof membership.amountUsd === "number" && membership.amountUsd > 0);
-		if (typeof membership.amountUsd === "number" && membership.amountUsd > 0) census.paying += 1;
-		else if (comped) census.comped += 1;
+		if (membership) {
+			census.paid += 1;
+			if (membership.plan === "byom") census.byom += 1;
+			else census.included += 1;
+			const comped = (membership.couponCode ?? "").trim().toUpperCase() === TESTER_COUPON && !(typeof membership.amountUsd === "number" && membership.amountUsd > 0);
+			if (typeof membership.amountUsd === "number" && membership.amountUsd > 0) census.paying += 1;
+			else if (comped) census.comped += 1;
+			continue;
+		}
+		if (account.plan === "free") census.free += 1;
+		else if (account.plan == null) census.noPlan += 1;
+		else census.other += 1;
 	}
 	return census;
+}
+
+/** Keep Auth users, and count account documents that are not among them. */
+export function scopeToAuthUsers(input: UsageReportInput): UsageReportInput & { orphans: number } {
+	if (!input.authUsers) return { ...input, orphans: 0 };
+	const docs = new Map<string, UsageAccountRow>();
+	for (const account of input.accounts) if (!docs.has(account.uid)) docs.set(account.uid, account);
+	const accounts: UsageAccountRow[] = [];
+	const allowed = new Set<string>();
+	for (const user of input.authUsers) {
+		if (allowed.has(user.uid)) continue;
+		allowed.add(user.uid);
+		const doc = docs.get(user.uid);
+		if (!doc) {
+			accounts.push({ uid: user.uid, plan: null, createdAt: user.createdAt });
+			continue;
+		}
+		accounts.push(doc.createdAt ? doc : { ...doc, createdAt: user.createdAt });
+	}
+	let orphans = 0;
+	for (const account of input.accounts) if (!allowed.has(account.uid)) orphans += 1;
+	const keep = (uid: string) => allowed.has(uid);
+	return {
+		...input,
+		accounts,
+		days: input.days.filter((row) => keep(row.uid)),
+		ledgers: input.ledgers.filter((row) => keep(row.uid)),
+		events: input.events.filter((row) => keep(row.uid)),
+		orphans,
+	};
 }
 
 function countableMembership(membership: StoredMembership | undefined): StoredMembership | null {
@@ -282,7 +355,9 @@ export function isConsistentUser(activeWeeks: ReadonlySet<string>, now: Date): b
 	return hits >= 3;
 }
 
-export function buildUsageReport(input: UsageReportInput): UsageReport {
+export function buildUsageReport(source: UsageReportInput): UsageReport {
+	const scoped = scopeToAuthUsers(source);
+	const input = scoped;
 	const now = input.now;
 	const today = utcDay(now);
 	const currentPeriod = now.toISOString().slice(0, 7);
@@ -496,7 +571,7 @@ export function buildUsageReport(input: UsageReportInput): UsageReport {
 		excluded: { admin, coupon, test },
 		users: userRows,
 		distribution,
-		census: accountCensus(input.accounts, now),
+		census: accountCensus(input.accounts, now, scoped.orphans),
 	};
 }
 

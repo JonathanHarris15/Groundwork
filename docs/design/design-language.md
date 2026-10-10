@@ -62,7 +62,7 @@ The site header is one row from 360px through 840px: the Groundwork logo, a comp
 
 ## Admin account counts
 
-The top of `/admin/usage` is two count cards, Users and Paid users, above the free-plan usage report. Paid users are accounts with an active or trialing subscription on Bring your own model or Groundwork. The card lists how many of those cost more than $0 after discounts, and how many are on the 100% off GROUNDWORKTESTER coupon. It does not multiply a plan price by the subscription count.
+The top of `/admin/usage` is two count cards, Users and Paid users, above the free-plan usage report. Users is the Firebase Auth count. Free, No plan, Paid users, and Paid plan not active partition that count, so those categories add up to Users. Joined in the last 7 days is a window inside that count. Paid users are Auth users with an active or trialing subscription on Bring your own model or Groundwork. The card lists how many of those cost more than $0 after discounts, and how many are on the 100% off GROUNDWORKTESTER coupon. It does not multiply a plan price by the subscription count. A Firestore account document with no Auth user is an orphaned record, shown on its own line under the cards, and left out of the usage and retention numbers.
 
 ## Copy
 
