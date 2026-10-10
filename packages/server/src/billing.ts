@@ -114,11 +114,16 @@ export function membershipFromSubscription(subscription: SubscriptionLike, price
 	return { status: subscription.status, plan, amountUsd: recurringAmountUsd(subscription), couponCode };
 }
 
-/** Recurring USD after coupons. Null when a discount was not expanded, so a list price is not treated as revenue. */
+/**
+ * Recurring USD after coupons. Null when a discount was not expanded, so a list price is not treated as revenue.
+ * GROUNDWORKTESTER is 100% off. Stripe often sends that code without `percent_off`, and the list price is not revenue.
+ */
 export function recurringAmountUsd(subscription: SubscriptionLike): number | null {
-	if (unresolvedDiscount(subscription)) return null;
+	const tester = hasTesterCoupon(subscription);
+	if (unresolvedDiscount(subscription)) return tester ? 0 : null;
 	const { percentOff, amountOffCents } = discountAdjustment(subscription);
 	if (percentOff >= 100) return 0;
+	if (tester && percentOff <= 0 && amountOffCents <= 0) return 0;
 	let cents = 0;
 	let sawAmount = false;
 	for (const item of subscription.items?.data ?? []) {
@@ -149,6 +154,7 @@ export interface PaidMembershipClient {
 }
 
 const MEMBERSHIP_EXPANDS: string[][] = [
+	["data.discounts", "data.discounts.promotion_code", "data.discounts.source.coupon"],
 	["data.discounts", "data.discounts.coupon", "data.discounts.promotion_code"],
 	["data.discount", "data.discount.coupon", "data.discount.promotion_code"],
 	[],
@@ -229,10 +235,19 @@ function discountAdjustment(subscription: SubscriptionLike): { percentOff: numbe
 	return { percentOff, amountOffCents };
 }
 
+function hasTesterCoupon(subscription: SubscriptionLike): boolean {
+	return promotionCodesFrom(subscription).some((code) => code.toUpperCase() === TESTER_COUPON);
+}
+
 function couponRecord(entry: unknown): Record<string, unknown> | null {
 	if (!entry || typeof entry !== "object") return null;
 	const record = entry as Record<string, unknown>;
 	if (record.coupon && typeof record.coupon === "object") return record.coupon as Record<string, unknown>;
+	const source = record.source;
+	if (source && typeof source === "object") {
+		const coupon = (source as Record<string, unknown>).coupon;
+		if (coupon && typeof coupon === "object") return coupon as Record<string, unknown>;
+	}
 	if ("percent_off" in record || "amount_off" in record) return record;
 	return null;
 }
