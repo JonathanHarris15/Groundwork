@@ -228,7 +228,7 @@ function showSignIn() {
 		<div class="hero">
 			<div>
 				<h1>Sign in or start free.</h1>
-				<p class="lede">Create your free account or sign in with Google. Then choose <strong>Open Obsidian</strong> on the account page to link the plugin on this computer. Requires Obsidian desktop.</p>
+				<p class="lede">Create your free account or sign in with Google. Groundwork runs in Obsidian on a computer. Requires Obsidian desktop.</p>
 				${notice(false)}
 				<div class="signin">
 					${config.firebase ? `<button class="btn btn-ink" id="google" type="button">Sign in with Google</button>` : ""}
@@ -283,9 +283,9 @@ function showAccount() {
 			<div class="page-head-row">
 				<div class="page-head-copy">
 					<h1>${greeting}</h1>
-					<p class="welcome-sub">${emptyRecord ? "Choose <strong>Open Obsidian</strong> below to link the plugin on this computer. Goals and concepts appear here after you study." : "Goals and concepts from Obsidian sync here as you study."}</p>
+					<p class="welcome-sub">${emptyRecord ? "Free is on. Three steps on this computer." : "Goals and concepts from Obsidian sync here as you study."}</p>
 				</div>
-				${emptyRecord ? "" : `<div class="page-head-actions"><button class="btn btn-ink" type="button" id="open-obsidian">Open Obsidian</button></div>`}
+				${emptyRecord ? "" : `<div class="page-head-actions"><button class="btn btn-ink" type="button" id="open-obsidian">Open Obsidian</button><p class="guide-status" data-connect-status role="status" aria-live="polite"></p></div>`}
 			</div>
 		</header>
 		${emptyRecord ? firstRunChecklist() : board()}
@@ -453,18 +453,8 @@ function studyRecordIsEmpty() {
 }
 
 function firstRunChecklist() {
-	return `
-		<section class="start-checklist" aria-labelledby="start-title">
-			<h2 id="start-title" class="start-title">First session</h2>
-			<ol class="start-steps">
-				<li><span class="start-step-num" aria-hidden="true">1</span><div><strong>Open Obsidian</strong><p>Press the button below. Obsidian opens and links this sign-in to the plugin.</p></div></li>
-				<li><span class="start-step-num" aria-hidden="true">2</span><div><strong>Install Groundwork if prompted</strong><p>Obsidian may open the community plugin page. Enable the plugin once.</p></div></li>
-				<li><span class="start-step-num" aria-hidden="true">3</span><div><strong>Start studying</strong><p>In the Groundwork panel, name your exam or topic, or attach a syllabus. Quizzes sync concepts back here.</p></div></li>
-			</ol>
-			<div class="start-actions">
-				<button class="btn btn-ink btn-wide" type="button" id="open-obsidian">Open Obsidian</button>
-			</div>
-		</section>`;
+	const connected = account.obsidianConnected ? "1" : "0";
+	return `<div data-setup data-signed-in="1" data-connected="${connected}"></div>`;
 }
 
 function conceptGraph() {
@@ -602,10 +592,6 @@ function obsidianStudyReady() {
 function obsidianStudyUrl(title) {
 	const q = encodeURIComponent(String(title ?? "").trim());
 	if (!q) return null;
-	const refresh = user?.refreshToken;
-	if (refresh) {
-		return `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}&concept=${q}`;
-	}
 	return `obsidian://groundwork?concept=${q}`;
 }
 
@@ -750,8 +736,9 @@ function attachConceptListUI() {
 }
 
 function attachOpenObsidian() {
+	window.GroundworkSetup?.mountAll?.({ getToken: authToken });
 	for (const button of document.querySelectorAll("#open-obsidian")) {
-		button.addEventListener("click", () => openObsidian());
+		button.addEventListener("click", () => window.GroundworkSetup?.connect?.(authToken, button));
 	}
 }
 
@@ -1006,101 +993,6 @@ async function saveKey(event) {
 	} finally {
 		if (submit) submit.disabled = false;
 	}
-}
-
-const OBSIDIAN_DOWNLOAD = "https://obsidian.md/download";
-const OBSIDIAN_INSTALL = "obsidian://show-plugin?id=groundwork";
-const OBSIDIAN_COMMUNITY = "https://community.obsidian.md/plugins/groundwork";
-
-// The groundwork link is the fast path: an installed plugin connects, syncs, and reloads.
-// If the page never leaves, Obsidian is not installed. If Obsidian opens and the plugin never answers, open the community installer.
-function openObsidian() {
-	const refresh = user && user.refreshToken;
-	if (!refresh) {
-		actionError = user?._local
-			? "Open Obsidian uses Google sign-in on the live site. Continue with Google here, or test layout with local sign-in only."
-			: "Your sign-in expired. Sign in again, then choose Open Obsidian.";
-		paint();
-		return;
-	}
-	const button = document.querySelector("#open-obsidian");
-	if (button) {
-		button.disabled = true;
-		button.textContent = "Opening Obsidian…";
-	}
-	const nonce = crypto.randomUUID();
-	const signal = `${location.origin}/v1/obsidian-opened/${nonce}/signal`;
-	const handoff = `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}&opened=${encodeURIComponent(signal)}`;
-	let sawApp = false;
-	let askedInstall = false;
-	let settled = false;
-	const mark = () => {
-		sawApp = true;
-	};
-	const onVis = () => {
-		if (document.hidden) mark();
-	};
-	window.addEventListener("blur", mark);
-	document.addEventListener("visibilitychange", onVis);
-	const started = performance.now();
-	const stop = () => {
-		if (settled) return;
-		settled = true;
-		window.clearInterval(timer);
-		window.removeEventListener("blur", mark);
-		document.removeEventListener("visibilitychange", onVis);
-	};
-	openProtocol(handoff);
-	const timer = window.setInterval(async () => {
-		if (settled) return;
-		const elapsed = performance.now() - started;
-		if (document.hidden || document.visibilityState === "hidden") mark();
-		let opened = false;
-		try {
-			const res = await fetch(`/v1/obsidian-opened/${nonce}`, { cache: "no-store", signal: AbortSignal.timeout(800) });
-			if (res.ok) opened = Boolean((await res.json()).opened);
-		} catch {
-			opened = false;
-		}
-		if (settled) return;
-		if (opened) {
-			stop();
-			try {
-				const token = await authToken();
-				const linked = await send("/v1/account/obsidian-connected", {}, token);
-				window.GroundworkTracking?.noteObsidian(linked);
-			} catch {
-				/* the page still marks the handoff below */
-			}
-			try {
-				localStorage.setItem("groundwork-obsidian-linked", "1");
-			} catch {
-				/* ignore */
-			}
-			if (button && button.isConnected) {
-				button.disabled = false;
-				button.textContent = "Open Obsidian";
-			}
-			return;
-		}
-		if (sawApp && !document.hasFocus() && elapsed > 1600 && !askedInstall) {
-			askedInstall = true;
-			openProtocol(OBSIDIAN_INSTALL);
-		}
-		if ((document.hasFocus() && elapsed > 1500) || elapsed > 8000) {
-			stop();
-			window.location.assign(sawApp ? OBSIDIAN_COMMUNITY : OBSIDIAN_DOWNLOAD);
-		}
-	}, 400);
-}
-
-function openProtocol(href) {
-	const link = document.createElement("a");
-	link.href = href;
-	link.hidden = true;
-	document.body.appendChild(link);
-	link.click();
-	link.remove();
 }
 
 async function openPortal() {

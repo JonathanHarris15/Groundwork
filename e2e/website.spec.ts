@@ -79,9 +79,9 @@ test("first visit is calm with a checklist", async ({ page, request }) => {
 	await page.goto("/#signin");
 	await page.getByRole("button", { name: "Continue on this device" }).click();
 	await expect(page.getByRole("heading", { name: /^Welcome,/ })).toBeVisible();
-	await expect(page.getByRole("heading", { name: /First session/i })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Get Obsidian" })).toBeVisible();
 	await expect(page.locator(".board")).toHaveCount(0);
-	await expect(page.locator(".start-checklist #open-obsidian")).toBeVisible();
+	await expect(page.getByRole("button", { name: "Connect Groundwork" })).toBeVisible();
 	await expect(page.locator(".panel-cta")).toHaveCount(0);
 	await page.screenshot({ path: path.join(artifactRoot, "account-first-visit.png"), fullPage: true });
 });

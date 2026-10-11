@@ -80,6 +80,16 @@ export function saveAccountToken(app: App, token: string): void {
 	app.saveLocalStorage(ACCOUNT_TOKEN_STORAGE, token || null);
 }
 
+const ACCOUNT_LABEL_STORAGE = "groundwork-account-label";
+
+export function loadAccountLabel(app: App): string {
+	return (app.loadLocalStorage(ACCOUNT_LABEL_STORAGE) as string | null) ?? "";
+}
+
+export function saveAccountLabel(app: App, label: string): void {
+	app.saveLocalStorage(ACCOUNT_LABEL_STORAGE, label.trim() || null);
+}
+
 export class GroundworkSettingTab extends PluginSettingTab {
 	constructor(
 		app: App,

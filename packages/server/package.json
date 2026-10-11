@@ -15,6 +15,7 @@
     "@groundwork/core": "*",
     "@typesafe-ai/sdk": "^0.6.0",
     "firebase-admin": "^13.6.0",
+    "qrcode": "^1.5.4",
     "stripe": "^18.5.0"
   }
 }

@@ -30,7 +30,10 @@ html body [hidden][hidden] { display: none; }
 .foot-links a:focus-visible,
 .foot-button:focus-visible,
 .consent button:focus-visible,
-.skip:focus-visible {
+.skip:focus-visible,
+.guide-go:focus-visible,
+.guide-quiet:focus-visible,
+.guide-links a:focus-visible {
 	outline: 2px solid #2e9be6;
 	outline-offset: 3px;
 }
@@ -1797,4 +1800,67 @@ body.has-consent textarea {
 	.usage-stat .v { font-size: clamp(2.5rem, 14vw, 3.25rem); }
 	.usage-dash { padding: 8px 0 16px; }
 	.page.mkt .usage-dash { padding: 20px 14px 24px; }
+}
+
+.guide { margin-top: 28px; max-width: 40rem; }
+.guide-phone {
+	margin: 0 0 20px;
+	padding: 16px;
+	border: 1px solid currentColor;
+	border-radius: 16px;
+}
+.guide-phone h2 { margin: 0 0 8px; font-size: 1.25rem; font-weight: 500; }
+.guide-phone p { margin: 0; }
+.guide-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+.guide-step {
+	display: grid;
+	grid-template-columns: 72px minmax(0, 1fr);
+	gap: 14px;
+	align-items: start;
+}
+.guide-figure {
+	width: 72px;
+	height: 72px;
+	color: currentColor;
+}
+.guide-figure svg { display: block; width: 72px; height: 72px; }
+.guide-step h2 { margin: 0; font-size: 1.25rem; font-weight: 500; }
+.guide-step p { margin: 8px 0 0; }
+.guide-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.guide-done { display: none; font-size: 0.95rem; font-weight: 600; }
+.guide-step.is-done .guide-done { display: inline; }
+.guide-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.guide-go {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 44px;
+	min-width: 44px;
+	padding: 0 18px;
+	border: 0;
+	border-radius: 999px;
+	background: #16181d;
+	color: #fff;
+	font: 500 16px/1 "Jost", sans-serif;
+	text-decoration: none;
+	cursor: pointer;
+}
+.guide-go:hover { color: #fff; }
+.guide-go:disabled { opacity: 0.6; cursor: default; }
+.guide-go-line { background: transparent; color: inherit; border: 1px solid currentColor; }
+.mkt .guide-go { background: #f7f7f5; color: #16181d; }
+.mkt a.guide-go,
+.mkt a.guide-go:hover,
+.mkt button.guide-go { color: #16181d; }
+.mkt .guide-go-line { background: transparent; color: #f7f7f5; border-color: rgba(247, 247, 245, 0.4); }
+.mkt a.guide-go-line,
+.mkt a.guide-go-line:hover,
+.mkt button.guide-go-line { color: #f7f7f5; }
+.guide-links { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; }
+.guide-quiet { font-size: 0.95rem; text-underline-offset: 3px; }
+.guide-fallback { margin-top: 10px; }
+.guide-status { margin-top: 10px; overflow-wrap: anywhere; }
+.guide-qr { display: block; margin-top: 14px; width: 168px; height: 168px; background: #fff; border-radius: 8px; }
+@container (max-width: 420px) {
+	.guide-step { grid-template-columns: minmax(0, 1fr); }
 }

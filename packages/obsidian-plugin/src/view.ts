@@ -111,7 +111,7 @@ import {
 import { masteryPill, statusPill } from "./mastery-ui";
 import { COMPOSER_INPUT_MIN_HEIGHT_PX } from "./ui-invariants";
 import { MISSING_READ_FOLDER_DETAIL, MISSING_READ_FOLDER_TITLE, MissingReadFolderError, missingReadFolderNotice } from "./attach-warning";
-import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountToken, VaultFolderModal } from "./settings";
+import { accountOrigin, accountSignInUrl, folderAccessFrom, loadAccountLabel, loadAccountToken, VaultFolderModal } from "./settings";
 import { filesUnderFolderRoots } from "./vault-scope";
 
 export const VIEW_TYPE = "groundwork-chat";
@@ -651,7 +651,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const agent = await this.ensureAgent();
 		if (!agent) {
 			const runtime = this.plugin.runtime();
-			new Notice(runtime.detail ?? this.plugin.providerLabel().setup?.detail ?? "Sign in on the Groundwork website, then choose Open Obsidian.");
+			new Notice(runtime.detail ?? this.plugin.providerLabel().setup?.detail ?? "Sign in on the Groundwork website, then choose Connect Groundwork.");
 			if (runtime.website) window.open(this.plugin.signedIn() ? accountOrigin() : accountSignInUrl());
 			else this.plugin.openSettings();
 			return;
@@ -1366,6 +1366,7 @@ export class ChatView extends ItemView implements ToolUI {
 				if (provider.setup?.website) window.open(this.plugin.signedIn() ? accountOrigin() : accountSignInUrl());
 				else void this.openSettings();
 			});
+			if (!this.plugin.signedIn()) this.renderConnectForm(start);
 			if (this.plugin.signedIn()) {
 				const demo = actions.createEl("button", {
 					cls: "gw-text-btn gw-start-demo",
@@ -1379,13 +1380,6 @@ export class ChatView extends ItemView implements ToolUI {
 					})();
 				});
 			}
-		} else {
-			const hero = el.createDiv({ cls: "gw-hero" });
-			setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
-			hero.createEl("h2", { text: "What do you want to understand?" });
-			hero.createEl("p", {
-				text: "Say what you want to learn, or drop in a lecture, homework, or notes. The tutor checks what you already hold and teaches that.",
-			});
 		}
 
 		const store = this.plugin.store;
@@ -1396,6 +1390,18 @@ export class ChatView extends ItemView implements ToolUI {
 			overview = null;
 		}
 		if (gen !== this.emptyPaintGen || !this.record || this.record.items.length) return;
+		const fresh = !needsSetup && this.plugin.signedIn() && !!overview && overview.activeGoals.length === 0 && !overview.conceptCount;
+		if (!needsSetup) {
+			if (fresh) this.renderWelcome(el);
+			else {
+				const hero = el.createDiv({ cls: "gw-hero" });
+				setIcon(hero.createDiv({ cls: "gw-hero-icon" }), "graduation-cap");
+				hero.createEl("h2", { text: "What do you want to understand?" });
+				hero.createEl("p", {
+					text: "Say what you want to learn, or drop in a lecture, homework, or notes. The tutor checks what you already hold and teaches that.",
+				});
+			}
+		}
 		const suggestions = el.createDiv({ cls: `gw-suggestions${needsSetup ? " is-deferred" : ""}` });
 		if (needsSetup) {
 			suggestions.createEl("h3", { cls: "gw-suggestions-kicker", text: "After you are connected" });
@@ -1408,29 +1414,34 @@ export class ChatView extends ItemView implements ToolUI {
 			t.createDiv({ cls: "gw-suggestion-detail", text: detail });
 			b.addEventListener("click", run);
 		};
-		if (provider.demo && !needsSetup) {
+		if (fresh) {
+			suggest("clipboard-check", "Write a practice test for my Calc 1 final", "A mock exam you can take in the chat.", () => void this.submit("Write a practice test for my Calc 1 final"));
+			suggest("help-circle", "Explain the chain rule from scratch", "Start from the idea, then a few problems.", () => void this.submit("Explain the chain rule from scratch"));
+		} else if (provider.demo && !needsSetup) {
 			suggest("play", "Run the demo lesson", "A scripted lesson on the derivative: recall, plan, quizzes, memory updates.", () => void this.submit("Teach me what a derivative really is."));
 		}
-		for (const g of overview?.activeGoals.slice(0, 3) ?? []) {
+		if (!fresh) for (const g of overview?.activeGoals.slice(0, 3) ?? []) {
 			const waiting = g.targets.slice(0, 2).join(", ");
 			suggest("target", `Continue: ${g.title}`, `${g.progress}${waiting ? ` · ${waiting}` : ""}`, () =>
 				void this.submit(`Let's continue with my goal "${g.title}".`),
 			);
 		}
-		if (overview?.dueReviews.length) {
+		if (!fresh && overview?.dueReviews.length) {
 			suggest("rotate-ccw", `Review ${overview.dueReviews.length} fading concept${overview.dueReviews.length === 1 ? "" : "s"}`, overview.dueReviews.slice(0, 3).map((d) => d.title).join(", "), () =>
 				void this.submit("Let's do my due reviews."),
 			);
 		}
-		suggest("clipboard-check", "Take a practice test", "A mock exam with no feedback until you submit, then an evaluation to learn from.", () =>
-			void this.submit(practiceTestRequest(overview?.activeGoals[0]?.title)),
-		);
-		suggest("sparkles", "Start a new goal", "Tell the tutor what you want to be able to do.", () => {
-			this.uiInputEl.value = "I want to understand ";
-			this.uiInputEl.focus();
-			this.autoGrow();
-		});
-		if (overview?.nextUp) {
+		if (!fresh) {
+			suggest("clipboard-check", "Take a practice test", "A mock exam with no feedback until you submit, then an evaluation to learn from.", () =>
+				void this.submit(practiceTestRequest(overview?.activeGoals[0]?.title)),
+			);
+			suggest("sparkles", "Start a new goal", "Tell the tutor what you want to be able to do.", () => {
+				this.uiInputEl.value = "I want to understand ";
+				this.uiInputEl.focus();
+				this.autoGrow();
+			});
+		}
+		if (!fresh && overview?.nextUp) {
 			suggest("help-circle", "What should I study?", overview.nextUp.why, () => void this.submit("What should I study?"));
 		}
 
@@ -1442,6 +1453,45 @@ export class ChatView extends ItemView implements ToolUI {
 				if (c[k]) masteryPill(stats, k, `${c[k]} ${k}`);
 			}
 		}
+	}
+
+	private renderWelcome(el: HTMLElement): void {
+		const welcome = el.createDiv({ cls: "gw-welcome" });
+		const label = loadAccountLabel(this.app);
+		welcome.createEl("h2", { text: label ? `You're connected as ${label}.` : "You're connected." });
+		welcome.createEl("p", { text: "Here’s what to try. These send a message. They don’t start a goal." });
+	}
+
+	private renderConnectForm(parent: HTMLElement): void {
+		const form = parent.createEl("form", { cls: "gw-connect-form" });
+		const field = form.createDiv();
+		field.createEl("label", { text: "Setup code", attr: { for: "gw-connect-code" } });
+		const input = field.createEl("input", {
+			cls: "gw-lib-filter",
+			attr: {
+				id: "gw-connect-code",
+				name: "code",
+				type: "text",
+				autocomplete: "one-time-code",
+				spellcheck: "false",
+				placeholder: "Paste the code from the website",
+				inputmode: "text",
+			},
+		});
+		form.createEl("button", { text: "Connect", cls: "mod-cta", attr: { type: "submit" } });
+		const status = form.createEl("p", { cls: "gw-connect-status", attr: { role: "status", "aria-live": "polite" } });
+		form.addEventListener("submit", (event) => {
+			event.preventDefault();
+			const code = input.value.trim();
+			if (!code) {
+				status.setText("Paste the code from the website.");
+				return;
+			}
+			status.setText("");
+			void this.plugin.redeemSetupCode(code).catch((err: unknown) => {
+				status.setText(err instanceof Error ? err.message : "That code doesn't work. Create a new one on the website.");
+			});
+		});
 	}
 
 	private autoGrow(): void {
@@ -2064,7 +2114,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const connected = !!loadAccountToken(this.app);
 		section.createDiv({
 			cls: "gw-lib-help",
-			text: connected ? "This device is linked. Choose Open Obsidian on the website again if you switch accounts." : "Sign in on the Groundwork website, then choose Open Obsidian.",
+			text: connected ? "This device is linked. Choose Connect Groundwork on the website again if you switch accounts." : "Sign in on the Groundwork website, then choose Connect Groundwork.",
 		});
 		const row = section.createDiv({ cls: "gw-lib-save-row" });
 		const open = row.createEl("button", { cls: "gw-lib-btn mod-cta", text: connected ? "Open website" : "Sign in", attr: { type: "button" } });
@@ -2129,7 +2179,7 @@ export class ChatView extends ItemView implements ToolUI {
 		if (!loadAccountToken(this.app)) {
 			section.createDiv({
 				cls: "gw-lib-help",
-				text: "Sign in on the Groundwork website, then choose Open Obsidian. The tutor waits until this device is linked.",
+				text: "Sign in on the Groundwork website, then choose Connect Groundwork. The tutor waits until this device is linked.",
 			});
 			const signIn = section.createEl("button", { cls: "gw-lib-btn", text: "Sign in", attr: { type: "button" } });
 			signIn.addEventListener("click", () => window.open(accountSignInUrl()));
@@ -2155,7 +2205,7 @@ export class ChatView extends ItemView implements ToolUI {
 		} else {
 			section.createDiv({
 				cls: "gw-lib-help",
-				text: "Your account is signed in here, but Obsidian is not linked yet. On the website, choose Open Obsidian.",
+				text: "Your account is signed in here, but Obsidian is not linked yet. On the website, choose Connect Groundwork.",
 			});
 			const open = section.createEl("button", { cls: "gw-lib-btn", text: "Open website", attr: { type: "button" } });
 			open.addEventListener("click", () => window.open(accountOrigin()));
@@ -3021,7 +3071,7 @@ export class ChatView extends ItemView implements ToolUI {
 		agent ??= (await this.makeAsideAgent(hint ? "hint" : "margin", thread.id)) ?? undefined;
 		if (!agent) {
 			const runtime = this.plugin.runtime();
-			const detail = runtime.detail ?? this.plugin.providerLabel().setup?.detail ?? "Sign in on the Groundwork website, then choose Open Obsidian.";
+			const detail = runtime.detail ?? this.plugin.providerLabel().setup?.detail ?? "Sign in on the Groundwork website, then choose Connect Groundwork.";
 			reply.finish(detail);
 			if (!this.plugin.signedIn()) {
 				new Notice(detail);
@@ -3303,7 +3353,7 @@ export class ChatView extends ItemView implements ToolUI {
 		if (!this.uiMessagesEl.hasClass("has-figures")) card.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
 
 		if (!this.plugin.signedIn()) {
-			const detail = this.plugin.runtime().detail ?? "Sign in on the Groundwork website, then choose Open Obsidian.";
+			const detail = this.plugin.runtime().detail ?? "Sign in on the Groundwork website, then choose Connect Groundwork.";
 			stateHolder.update({ id: pendingId, title: "Couldn't draw that", quote, error: detail });
 			window.open(accountSignInUrl());
 			return;

@@ -33,7 +33,7 @@ export class GroundworkProvider implements Provider {
 
 	async complete(req: ProviderRequest): Promise<ProviderResponse> {
 		const token = await this.opts.token();
-		if (!token) throw new Error("Sign in on the Groundwork website, then choose Open Obsidian.");
+		if (!token) throw new Error("Sign in on the Groundwork website, then choose Connect Groundwork.");
 		const fetchImpl = this.opts.fetchImpl ?? httpClient();
 		const res = await fetchImpl(`${this.opts.origin.replace(/\/+$/, "")}/v1/tutor/complete`, {
 			method: "POST",

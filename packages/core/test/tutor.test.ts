@@ -204,7 +204,7 @@ function status(action: "hosted" | "key" | "blocked") {
 			? { action: "hosted", model: HOSTED_MODEL.id, provider: "openrouter", key: "groundwork", weight: "light" as const }
 			: action === "key"
 				? { action: "key", provider: "openai", model: "gpt-4.1-mini", key: "user" }
-				: { action: "blocked", status: 402, error: "Choose a plan on the Groundwork website (Plans), then choose Open Obsidian.", setup: "plan" },
+				: { action: "blocked", status: 402, error: "Choose a plan on the Groundwork website (Plans), then choose Connect Groundwork.", setup: "plan" },
 		viewAccount(choosePlan(emptyAccount("u", now), action === "key" ? "byom" : "free", now), now),
 		{ via: "claude", provider: null },
 	);

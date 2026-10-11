@@ -11,7 +11,7 @@
  * pass through Groundwork.
  *
  * The tutor does not run until the device is signed in. A signed-out attempt is a prompt
- * to sign in on the website and choose Open Obsidian.
+ * to sign in on the website and choose Connect Groundwork.
  *
  * Clients receive `tutorStatus`. It has no dollar amounts.
  */
@@ -76,7 +76,7 @@ export const CLAUDE_SETUP = [
 export const CLAUDE_SETUP_DETAIL =
 	"Install Claude Code, run `claude` in a terminal and type /login with your Claude subscription, then choose Check connection in Groundwork settings.";
 
-export const SIGN_IN_DETAIL = "Sign in on the Groundwork website, then choose Open Obsidian to connect this computer.";
+export const SIGN_IN_DETAIL = "Sign in on the Groundwork website, then choose Connect Groundwork on your account page.";
 
 export type UpstreamKind = "anthropic" | "openai" | "google";
 
@@ -133,7 +133,7 @@ export function hostedCostUsd(usage: { input: number; output: number }, weight: 
 
 export function tutorDecision(view: AccountView, choice: TutorChoice, saved: Partial<Record<UserKeyProvider, boolean>>): TutorDecision {
 	if (view.needsPlan || !view.plan) {
-		return { action: "blocked", status: 402, error: "Choose a plan on the Groundwork website (Plans), then choose Open Obsidian.", setup: "plan" };
+		return { action: "blocked", status: 402, error: "Choose a plan on the Groundwork website (Plans), then choose Connect Groundwork.", setup: "plan" };
 	}
 	if (!view.ownModel) {
 		if (view.remainingUsd <= 0) {
@@ -196,7 +196,7 @@ export function tutorRuntime(input: {
 	if (!account) {
 		return {
 			runtime: "setup",
-			detail: "Could not load tutor settings from your account. Check your connection, or open the Groundwork website and choose Open Obsidian again.",
+			detail: "Could not load tutor settings from your account. Check your connection, or choose Connect Groundwork on the website again.",
 			website: true,
 		};
 	}

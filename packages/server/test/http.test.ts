@@ -63,7 +63,7 @@ describe("account server", () => {
 		expect(listed).not.toContain('"priceUsdPerMonth":15');
 		expect(listed).not.toMatch(/hostedCreditUsd|creditUsd|remainingUsd|\$1\.25|\$3|\$8/);
 		const account = await route("GET", "/v1/account", null, server);
-		expect(account.json).toMatchObject({ needsPlan: true, budgetUsed: 0 });
+		expect(account.json).toMatchObject({ plan: "free", needsPlan: false, budgetUsed: 0, obsidianConnected: false });
 		expect(account.json).not.toHaveProperty("creditUsd");
 		expect(account.json).not.toHaveProperty("remainingUsd");
 		expect(account.json).toMatchObject({ created: true });
@@ -136,8 +136,9 @@ describe("account server", () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
 		expect(site?.body).toContain('src="/force-graph.js?v=4"');
-		expect(site?.body).toContain('src="/app.js?v=24"');
-		expect(site?.body).toContain('href="/styles.css?v=18"');
+		expect(site?.body).toContain('src="/app.js?v=25"');
+		expect(site?.body).toContain('src="/setup.js?v=1"');
+		expect(site?.body).toContain('href="/styles.css?v=19"');
 		expect(site?.body).toContain("/hero/concept-map-768.webp");
 		expect(site?.body).toContain("image/avif");
 		expect(site?.body).not.toContain('id="hero-graph"');
@@ -158,11 +159,16 @@ describe("account server", () => {
 		const script = readSite("/app.js")?.body ?? "";
 		expect(script).toContain("Sign in with Google");
 		expect(script).toContain("signInWithPopup");
-		expect(script).toContain("obsidian://groundwork?refresh=");
-		expect(script).toContain("https://obsidian.md/download");
-		expect(script).toContain("obsidian://show-plugin?id=groundwork");
-		expect(script).toContain("https://community.obsidian.md/plugins/groundwork");
+		expect(script).not.toContain("obsidian://groundwork?refresh=");
+		expect(script).toContain("data-setup");
 		expect(script).toContain("Open Obsidian");
+		const setupJs = String(readSite("/setup.js")?.body ?? "");
+		expect(setupJs).toContain("Connect Groundwork");
+		expect(setupJs).toContain("obsidian://groundwork?code=");
+		expect(setupJs).not.toContain("refresh=");
+		expect(setupJs).toContain("obsidian://show-plugin?id=groundwork");
+		expect(setupJs).toContain("https://community.obsidian.md/plugins/groundwork");
+		expect(String(readSite("/get-started")?.body)).toContain("Get Groundwork running");
 		expect(script).toContain("/v1/groundwork");
 		expect(script).toContain("/v1/auth/sign-out");
 		const board = script.slice(script.indexOf("function board"), script.indexOf("function graphLegend"));
@@ -501,7 +507,7 @@ describe("account server", () => {
 		});
 		const view = await route("GET", "/v1/account", null, server);
 		expect(view.status).toBe(200);
-		expect(view.json).toMatchObject({ needsPlan: true });
+		expect(view.json).toMatchObject({ plan: "free", needsPlan: false });
 	});
 
 	it("keeps a provider key after the server process is gone, and still does not return it", async () => {

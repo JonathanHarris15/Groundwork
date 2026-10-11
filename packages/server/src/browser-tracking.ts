@@ -1,4 +1,4 @@
-import { configureMeasurementTags, emitObsidianConnected, emitSignUp, type Ga4EventClient } from "./ga4-events";
+import { configureMeasurementTags, emitObsidianConnected, emitSetupLinkSent, emitSignUp, type Ga4EventClient } from "./ga4-events";
 import {
 	attributionFromSearch,
 	cleanGaClientId,
@@ -26,6 +26,7 @@ declare global {
 			event: (name: string, params?: Record<string, unknown>) => void;
 			noteSignUp: (created: boolean, method: string) => void;
 			noteObsidian: (body: { first?: boolean } | null) => void;
+			noteSetupLink: (method: string) => void;
 			checkoutContext: () => Promise<{ gaClientId: string | null; gaSessionId: string | null; gclid: string | null; consent: ConsentChoice | null }>;
 			attributionHeader: () => string;
 			openConsent: () => void;
@@ -275,6 +276,10 @@ function noteObsidian(body: { first?: boolean } | null): void {
 	emitObsidianConnected(ga4Client, body?.first === true);
 }
 
+function noteSetupLink(method: string): void {
+	emitSetupLinkSent(ga4Client, method);
+}
+
 bootConsent();
 capture();
 
@@ -311,6 +316,7 @@ window.GroundworkTracking = {
 	event,
 	noteSignUp,
 	noteObsidian,
+	noteSetupLink,
 	checkoutContext,
 	attributionHeader() {
 		const stored = readAttribution();

@@ -8,11 +8,11 @@ Install it from [Obsidian's community plugins](https://community.obsidian.md/plu
 
 You need [Obsidian](https://obsidian.md/download) on a desktop computer.
 
-1. In Obsidian, open **Settings → Community plugins**. Turn community plugins on if they are off. Choose **Browse**, search for **Groundwork**, then **Install** and **Enable**. You can also install from the [community plugin page](https://community.obsidian.md/plugins/groundwork).
-2. Sign in with Google at [groundworklearn.com](https://groundworklearn.com). That creates the account that holds your plan and your progress.
-3. On your account page, choose **Open Obsidian**. That links the plugin on this computer. If Groundwork isn't installed yet, the site opens the community plugin page.
+1. Download Obsidian for your computer from [Get started](https://groundworklearn.com/get-started), install it, and create a vault.
+2. In Obsidian, open **Settings → Community plugins**. Turn community plugins on if they are off, and trust the vault once. Choose **Browse**, search for **Groundwork**, then **Install** and **Enable**. You can also install from the [community plugin page](https://community.obsidian.md/plugins/groundwork).
+3. Sign in with Google at [groundworklearn.com](https://groundworklearn.com). Free is ready. On your account page, choose **Connect Groundwork**. That opens Obsidian with a one-time code. If the link doesn’t open, paste the code into Groundwork.
 
-Groundwork does not run on a phone. You can sign up on your phone and install on your computer later.
+Groundwork does not run on a phone. You can sign up on your phone, then copy the setup link or scan the QR code and finish on a computer.
 
 ## Plans
 
@@ -43,13 +43,13 @@ An account is required before the tutor will run. Sign in with Google on that we
 
 The plugin uses the network for these services:
 
-- **Groundwork** (`https://groundwork-6f9ca.web.app` in production builds) stores the account, tutor memory, plan routing, and grades written answers. Sign-in happens in the browser on the [Groundwork website](https://groundworklearn.com). **Open Obsidian** connects this device through Obsidian; if the plugin is not installed yet, the site opens the [community plugin page](https://community.obsidian.md/plugins/groundwork).
-- **Google** (`https://securetoken.googleapis.com`) refreshes the website sign-in into an ID token the plugin sends to Groundwork.
+- **Groundwork** (`https://groundwork-6f9ca.web.app` in production builds) stores the account, tutor memory, plan routing, and grades written answers. Sign-in happens in the browser on the [Groundwork website](https://groundworklearn.com). **Connect Groundwork** opens Obsidian with a one-time code. The plugin exchanges that code for a session. Privacy: [groundworklearn.com/privacy](https://groundworklearn.com/privacy).
+- **Google** (`https://securetoken.googleapis.com`) refreshes the website sign-in into an ID token the plugin sends to Groundwork. A one-time code is exchanged at `https://identitytoolkit.googleapis.com` for that same kind of session.
 - **Google Fonts** (`https://fonts.googleapis.com`) loads Jost for the Groundwork panel stylesheet.
 - **Stripe** — billing for the $6 and $20 plans happens on the website, not inside the plugin.
 - **Anthropic**, through Claude Code on this computer, runs the tutor when you use your own Claude subscription. Claude Code may reach Anthropic's API and related sign-in endpoints. On hosted Groundwork plans, model calls go through your account API instead. Bring-your-own-model keys saved on the account are used only on the Groundwork server (OpenRouter, Anthropic, Google, xAI, or OpenAI), not sent from the plugin.
 
-The plugin does not send telemetry. On the desktop it uses the filesystem (`node:fs`) to see whether the Claude Code executable is installed, and it starts that program with `child_process` (through the bundled Agent SDK) so the tutor can run under your Claude subscription. Claude Code's working directory is the vault. The plugin reads `PATH` (and, on Windows, `APPDATA`) only to find that executable when Obsidian was not launched from a shell. It does not read the hostname, username, or network interfaces. Device labels default to **Obsidian** until you set one in the panel.
+The first time the plugin runs, it sends a random install id to Groundwork so the site can count installs. That request does not include notes, chats, or anything from the vault. The privacy page describes it. On the desktop the plugin uses the filesystem (`node:fs`) to see whether the Claude Code executable is installed, and it starts that program with `child_process` (through the bundled Agent SDK) so the tutor can run under your Claude subscription. Claude Code's working directory is the vault. The plugin reads `PATH` (and, on Windows, `APPDATA`) only to find that executable when Obsidian was not launched from a shell. It does not read the hostname, username, or network interfaces. Device labels default to **Obsidian** until you set one in the panel.
 
 The separate `groundwork` CLI (not the plugin) reads and writes `~/.config/groundwork/config.json` and can run `git` to sync the vault. It does not read other files outside the vault. The only notes the tutor opens as extra context are in vault folders you pick in settings. Python figures that need a local runtime stay in the Obsidian window; the plugin does not download a Python package with a dynamic `import()`.
 
@@ -70,7 +70,7 @@ The plugin is laid out so it can be submitted:
 
 `node scripts/check-community-plugin.mjs` checks that list. The plugin id is `groundwork`, which is also the community install folder.
 
-From the website, **Open Obsidian** opens Obsidian and connects this device. Manual install: [community plugin page](https://community.obsidian.md/plugins/groundwork).
+From the website, **Connect Groundwork** opens Obsidian and connects this device with a one-time code. Manual install: [community plugin page](https://community.obsidian.md/plugins/groundwork).
 
 The plugin is desktop-only because it bundles Node-based tooling (Claude Code / Agent SDK) and does not run on mobile Obsidian. Publishing the map is off until you sign in and turn it on. That request goes to the Groundwork account API (`https://groundwork-6f9ca.web.app` in production builds).
 

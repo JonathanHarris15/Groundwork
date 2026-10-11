@@ -146,7 +146,7 @@ describe("ads tracking", () => {
 		expect(practice).toContain("Name a topic, or add your slides, notes, or a practice exam.");
 		expect(practice).toContain('href="/#signin"');
 		expect(practice).toContain("Requires Obsidian desktop. Sign up here, install on your computer.");
-		expect(practice).toContain('src="/tracking.js?v=6"');
+		expect(practice).toContain('src="/tracking.js?v=7"');
 		expect(practice).toContain('href="/practice-tests">Practice tests</a>');
 		expect(practice).not.toMatch(/\b\d+\s+questions?\b/i);
 		expect(practice.toLowerCase()).not.toContain("personalized feedback on every answer");
@@ -163,6 +163,8 @@ describe("ads tracking", () => {
 		expect(String(readSite("/terms")?.body)).toContain("You must be 18 or older to use Groundwork");
 		expect(String(readSite("/privacy")?.body)).toContain("anyone under 18, including children under 13");
 		expect(String(readSite("/privacy")?.body)).toContain("Groundwork records aggregate usage counts and costs per account to run and price the service, never note or chat content.");
+		expect(String(readSite("/privacy")?.body)).toContain("one-time code");
+		expect(String(readSite("/privacy")?.body)).toContain("random install id");
 		expect(String(readSite("/privacy")?.body)).toContain("methoddev1505@gmail.com");
 		expect(sitemapXml()).toContain("https://groundworklearn.com/practice-tests");
 		const home = readFileSync(path.join(root, "packages/server/public/index.html"), "utf8");

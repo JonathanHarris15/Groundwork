@@ -68,7 +68,7 @@ function prepareVault(data) {
 		writeFileSync(path.join(pluginVault, "e2e-account-token"), `${data.accountToken}\n`);
 	}
 	const memDb = path.join(root, "packages/server/data/tutor-memory.json");
-	if (existsSync(memDb) && scenario !== "signed-out") {
+	if (existsSync(memDb) && scenario !== "signed-out" && scenario !== "connect-code") {
 		const db = JSON.parse(readFileSync(memDb, "utf8"));
 		const files = db?.users?.local?.memory?.files;
 		if (files) writeFileSync(path.join(pluginVault, "e2e-memory.json"), JSON.stringify({ files }, null, 2));
@@ -122,12 +122,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 run(`GROUNDWORK_API_URL=http://127.0.0.1:${port} npm run build -w packages/obsidian-plugin`);
 
-if (scenario === "new-account") run("npx tsx scripts/seed-e2e-tutor-memory.mjs --empty");
+if (scenario === "new-account" || scenario === "connect-code") run("npx tsx scripts/seed-e2e-tutor-memory.mjs --empty");
 else run("npx tsx scripts/seed-e2e-tutor-memory.mjs");
 
-const token = scenario === "signed-out" ? undefined : "e2e-local-token";
+const token = scenario === "signed-out" || scenario === "connect-code" ? undefined : "e2e-local-token";
 prepareVault(token ? pluginData({ accountToken: token }) : pluginData());
-if (scenario !== "signed-out") {
+if (scenario !== "signed-out" && scenario !== "connect-code") {
 	run(`npx -y tsx ${JSON.stringify(path.join(root, "scripts/seed-obsidian-graph-vault.mjs"))} ${JSON.stringify(vault)}`);
 }
 
@@ -607,6 +607,32 @@ if (scenario === "new-account") {
 	await sleep(1000);
 	await shot("04-new-account-library");
 	await tab("learn").click();
+}
+
+if (scenario === "connect-code") {
+	await page.waitForSelector(`${rootSel} .gw-connect-form`, { timeout: 20_000 });
+	await shotGroundwork("04-paste-code");
+	const issued = await fetch(`http://127.0.0.1:${port}/v1/connect/code`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: "{}",
+	});
+	if (!issued.ok) throw new Error(`Could not issue a setup code (${issued.status})`);
+	const issuedBody = await issued.json();
+	if (typeof issuedBody.code !== "string" || !issuedBody.code) throw new Error("Setup code response had no code");
+	await page.evaluate(async (setupCode) => {
+		const plugin = globalThis.app?.plugins?.plugins?.groundwork;
+		if (!plugin?.handleOpenLink) throw new Error("Groundwork protocol handler is not available");
+		await plugin.handleOpenLink({ action: "groundwork", code: setupCode });
+	}, issuedBody.code);
+	await page.waitForSelector(`${rootSel} .gw-welcome`, { timeout: 30_000 });
+	await page.waitForFunction(
+		() => /You're connected/.test(document.querySelector(".gw-welcome")?.textContent ?? ""),
+		{ timeout: 15_000 },
+	);
+	await sleep(600);
+	await shot("04-welcome-connected");
+	await shotGroundwork("05-welcome-column");
 }
 
 await browser.close();

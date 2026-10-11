@@ -17,6 +17,10 @@ import { platformFetch } from "./platform-fetch";
 import { isDynamicPath, readSite } from "./static";
 import { UsageDirectory } from "./usage";
 import { FileUsageStore, FirestoreUsageStore } from "./usage-store";
+import { ConnectCodeDirectory } from "./connect-codes";
+import { FileConnectCodeStore, FirestoreConnectCodeStore } from "./connect-code-store";
+import { FileSetupFunnel, FirestoreSetupFunnel } from "./setup-funnel";
+import { emptyDownloadCache } from "./obsidian-downloads";
 
 const { port, host } = listenTarget();
 const auth = loadAuth();
@@ -45,6 +49,11 @@ const deps = {
 	openRouterKey: process.env.OPENROUTER_API_KEY?.trim() || undefined,
 	fetchImpl: platformFetch,
 	usage,
+	connectCodes: new ConnectCodeDirectory(
+		auth.firebase ? new FirestoreConnectCodeStore() : new FileConnectCodeStore(process.env.GROUNDWORK_CONNECT_FILE ?? path.resolve(process.cwd(), "data/connect-codes.json")),
+	),
+	setupFunnel: auth.firebase ? new FirestoreSetupFunnel() : new FileSetupFunnel(process.env.GROUNDWORK_FUNNEL_FILE ?? path.resolve(process.cwd(), "data/setup-funnel.json")),
+	downloadCache: emptyDownloadCache(),
 };
 
 const server = createServer((req, res) => {
@@ -88,6 +97,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		attribution: header(req, "x-groundwork-attribution"),
 		sessionId: url.searchParams.get("session_id") ?? undefined,
 		ip: clientIp(req),
+		search: url.search,
+		host: header(req, "x-forwarded-host") || header(req, "host"),
+		forwardedProto: forwarded,
 	};
 	if (head) {
 		const bearer = sessionBearer(req);

@@ -1,8 +1,9 @@
 import { FileSystemAdapter, Notice, Plugin, requestUrl, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, FLASHCARDS_REQUIRE_UPGRADE, GroundworkProvider, HEAVY_REQUIRES_UPGRADE, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, PATHS, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, replaceTutorMemoryFiles, setHttpClient, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type UsageEventKind, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, FLASHCARDS_REQUIRE_UPGRADE, GroundworkProvider, HEAVY_REQUIRES_UPGRADE, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, PATHS, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, replaceTutorMemoryFiles, setHttpClient, signInWithCustomToken, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type UsageEventKind, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import { BUILD, readBuildStamp } from "./build";
-import { groundworkOpenedSignal, parseGroundworkConcept, parseGroundworkRefresh } from "./open-link";
+import { sessionFromRedeem, type RedeemPayload } from "./connect";
+import { groundworkOpenedSignal, parseGroundworkCode, parseGroundworkConcept, parseGroundworkRefresh } from "./open-link";
 import { ObsidianVaultIO } from "./obsidian-io";
 import { appearanceFrom } from "./appearance";
 import {
@@ -12,7 +13,9 @@ import {
 	DEFAULT_SETTINGS,
 	GROUNDWORK_WEB_API_KEY,
 	GroundworkSettingTab,
+	loadAccountLabel,
 	loadAccountToken,
+	saveAccountLabel,
 	saveAccountToken,
 	type GroundworkSettings,
 } from "./settings";
@@ -140,16 +143,26 @@ export default class GroundworkPlugin extends Plugin {
 		);
 	}
 
-	/** Website "Open Obsidian": connect this account, sync tutor memory, reveal the tutor, and reload a newer build already on disk. */
+	/** Website connect link: redeem a one-time code, sync tutor memory, and reveal the tutor. */
 	private async handleOpenLink(params: ObsidianProtocolData): Promise<void> {
 		await this.layoutReady;
-		const refresh = parseGroundworkRefresh(params.refresh) ?? "";
-		if (refresh) {
-			saveAccountToken(this.app, refresh);
-			new Notice("Groundwork: this device is linked to your account.");
+		const code = parseGroundworkCode(params.code);
+		const ack = typeof params.ack === "string" ? params.ack : typeof params.opened === "string" ? params.opened : undefined;
+		if (code) {
+			try {
+				await this.redeemSetupCode(code);
+			} catch (err) {
+				new Notice(err instanceof Error ? err.message : "That code doesn't work. Create a new one on the website.");
+			}
+		} else {
+			const refresh = parseGroundworkRefresh(params.refresh) ?? "";
+			if (refresh) {
+				saveAccountToken(this.app, refresh);
+				new Notice("Groundwork: this device is linked to your account.");
+			}
+			await this.finishAccountLink();
 		}
-		await this.signalOpened(typeof params.opened === "string" ? params.opened : undefined);
-		await this.finishAccountLink();
+		await this.signalOpened(ack);
 		const onDisk = await this.installedBuild();
 		if (onDisk && onDisk !== BUILD) {
 			this.requestOpenAfterReload();
@@ -468,11 +481,46 @@ export default class GroundworkPlugin extends Plugin {
 			.filter((v): v is ChatView => v instanceof ChatView);
 	}
 
-	/** After the website handoff saves a refresh token, sync memory and repaint signed-in UI. */
+	/** Exchange a setup code for this device's session. Safe to call from the welcome form and from tests. */
+	async redeemSetupCode(code: string): Promise<void> {
+		const response = await requestUrl({
+			url: `${accountOrigin()}/v1/connect/redeem`,
+			method: "POST",
+			contentType: "application/json",
+			body: JSON.stringify({ code }),
+			throw: false,
+		});
+		const payload = (response.json ?? {}) as RedeemPayload;
+		if (response.status >= 400) {
+			const message = typeof payload.error === "string" ? payload.error : "That code doesn't work. Create a new one on the website.";
+			throw new Error(message);
+		}
+		const session = await sessionFromRedeem(payload, (customToken) => signInWithCustomToken(customToken, GROUNDWORK_WEB_API_KEY));
+		saveAccountToken(this.app, session.refreshToken);
+		if (session.label) saveAccountLabel(this.app, session.label);
+		new Notice(session.label ? `Connected as ${session.label}.` : "Connected.");
+		await this.finishAccountLink();
+	}
+
+	/** After the website handoff saves a session, sync memory and repaint signed-in UI. */
 	async finishAccountLink(): Promise<void> {
 		await this.connectMemory();
+		await this.rememberAccountLabel();
 		await this.refreshTutorRoute();
 		this.refreshAccountUi();
+	}
+
+	private async rememberAccountLabel(): Promise<void> {
+		if (loadAccountLabel(this.app)) return;
+		const client = await this.memoryClient();
+		if (!client) return;
+		try {
+			const account = await client.getAccount();
+			const label = account.displayName || account.email || "";
+			if (label) saveAccountLabel(this.app, label);
+		} catch {
+			/* The welcome still works without a name. */
+		}
 	}
 
 	refreshAccountUi(): void {
@@ -518,13 +566,14 @@ export default class GroundworkPlugin extends Plugin {
 	private disconnectAccount(): void {
 		saveAccountToken(this.app, "");
 		this.tutorRoute = null;
-		this.setSync("offline", "choose Open Obsidian on the Groundwork website");
+		saveAccountLabel(this.app, "");
+		this.setSync("offline", "choose Connect Groundwork on the Groundwork website");
 	}
 
 	private async memoryClient(): Promise<AccountClient | null> {
 		const token = await this.accountAccessToken();
 		if (!token) {
-			if (!loadAccountToken(this.app)) this.setSync("offline", "choose Open Obsidian on the Groundwork website");
+			if (!loadAccountToken(this.app)) this.setSync("offline", "choose Connect Groundwork on the Groundwork website");
 			return null;
 		}
 		return new AccountClient(accountOrigin(), token);
@@ -536,7 +585,27 @@ export default class GroundworkPlugin extends Plugin {
 		return this.bootstrapPromise;
 	}
 
+	private async pingInstall(): Promise<void> {
+		try {
+			let id = (this.app.loadLocalStorage("groundwork-install-id") as string | null) ?? "";
+			if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+				id = crypto.randomUUID();
+				this.app.saveLocalStorage("groundwork-install-id", id);
+			}
+			await requestUrl({
+				url: `${accountOrigin()}/v1/plugin/heartbeat`,
+				method: "POST",
+				contentType: "application/json",
+				body: JSON.stringify({ installId: id }),
+				throw: false,
+			});
+		} catch {
+			/* A missed ping does not block the tutor. */
+		}
+	}
+
 	private async doBootstrap(): Promise<void> {
+		await this.pingInstall();
 		await this.bootstrapAccountToken();
 		await this.importE2eMemoryFixture();
 		await this.connectMemory();
@@ -615,7 +684,7 @@ export default class GroundworkPlugin extends Plugin {
 
 	private scheduleMemorySave(): void {
 		if (!loadAccountToken(this.app)) {
-			this.setSync("offline", "choose Open Obsidian on the Groundwork website");
+			this.setSync("offline", "choose Connect Groundwork on the Groundwork website");
 			return;
 		}
 		if (this.accountTimer !== null) window.clearTimeout(this.accountTimer);
@@ -777,7 +846,7 @@ export default class GroundworkPlugin extends Plugin {
 		this.statusTextEl.setText(`Groundwork · ${short[state]}${when}`);
 		const hint =
 			state === "offline"
-				? `${text} Open the Groundwork website, sign in, and choose Open Obsidian. Click to open sign-in.`
+				? `${text} Open the Groundwork website, sign in, and choose Connect Groundwork. Click to open sign-in.`
 				: state === "error"
 					? `${text} Click to try syncing tutor memory again.`
 					: state === "syncing"
