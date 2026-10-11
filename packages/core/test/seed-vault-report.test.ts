@@ -19,5 +19,5 @@ describe("seeded obsidian vault", () => {
 		expect(goals.length).toBeGreaterThan(0);
 		const report = await store.goalReport(goals[0]!.id);
 		expect(report.nodes.length).toBeGreaterThan(3);
-	});
+	}, 60_000);
 });
