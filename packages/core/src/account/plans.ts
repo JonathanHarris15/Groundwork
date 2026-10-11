@@ -35,7 +35,7 @@ export const PLANS: Record<PlanId, Plan> = {
 		priceUsdPerMonth: 0,
 		hostedCreditUsd: 1.25,
 		ownModel: false,
-		summary: "Groundwork's smaller model. Enough to actually study.",
+		summary: "Light model, monthly limit.",
 	},
 	byom: {
 		id: "byom",
@@ -43,7 +43,7 @@ export const PLANS: Record<PlanId, Plan> = {
 		priceUsdPerMonth: 6,
 		hostedCreditUsd: 0,
 		ownModel: true,
-		summary: "Use the Claude subscription on this computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI.",
+		summary: "Heavy uses the Claude subscription on this computer, or a key you paste.",
 	},
 	included: {
 		id: "included",
@@ -51,7 +51,7 @@ export const PLANS: Record<PlanId, Plan> = {
 		priceUsdPerMonth: 20,
 		hostedCreditUsd: 12,
 		ownModel: false,
-		summary: "We run the models. Light by default.",
+		summary: "Light or Heavy. We run the models.",
 	},
 };
 

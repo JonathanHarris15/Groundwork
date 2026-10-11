@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { USER_KEY_PROVIDERS } from "@groundwork/core";
+import { emptyFlashcardLibrary, makeCard, PATHS, serializeFlashcardLibrary, USER_KEY_PROVIDERS } from "@groundwork/core";
 import { AccountDirectory } from "../src/accounts";
 import { route, type ServerDeps } from "../src/app";
 import type { Auth } from "../src/auth";
@@ -195,6 +195,108 @@ describe("tutor API", () => {
 			expect(JSON.stringify(result.json)).not.toContain(`${provider}-secret`);
 		}
 		expect(USER_KEY_PROVIDERS).toContain("openrouter");
+	});
+
+	it("refuses Heavy for Free, keeps the stored weight, and still lets Groundwork use it", async () => {
+		const { fetchImpl, calls } = capture({
+			content: [{ type: "text", text: "A limit is the value being approached." }],
+			stop_reason: "end_turn",
+			usage: { input_tokens: 100, output_tokens: 20 },
+		});
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "free");
+		const refused = await route("POST", "/v1/tutor/weight", { weight: "heavy" }, server);
+		expect(refused.status).toBe(402);
+		expect(refused.json).toMatchObject({ code: "heavy_requires_upgrade" });
+		expect(JSON.stringify(refused.json)).toContain("$20");
+		expect(JSON.stringify(refused.json)).toContain("$6");
+		expect(JSON.stringify(refused.json)).not.toMatch(/\$12/);
+		const stored = await server.accounts.get("local");
+		expect(stored?.tutorWeight ?? "light").toBe("light");
+
+		await server.accounts.setTutorWeight("local", "heavy");
+		const stale = await route("POST", "/v1/tutor/complete", turn, server);
+		expect(stale.status).toBe(402);
+		expect(stale.json).toMatchObject({ code: "heavy_requires_upgrade" });
+		expect(calls).toHaveLength(0);
+		const described = await route("GET", "/v1/tutor", null, server);
+		expect(described.json).toMatchObject({ action: "hosted", plan: "free", weight: "heavy", model: "google/gemini-3.5-flash" });
+
+		const light = await route("POST", "/v1/tutor/complete", turn, server);
+		expect(light.status).toBe(402);
+		await server.accounts.setTutorWeight("local", "light");
+		const sent = await route("POST", "/v1/tutor/complete", turn, server);
+		expect(sent.status).toBe(200);
+		expect(calls[0].body.model).toBe("google/gemini-3.8-flash");
+	});
+
+	it("keeps Bring your own model on the learner's key when Heavy was stored", async () => {
+		const { fetchImpl, calls } = capture({
+			choices: [{ finish_reason: "stop", message: { content: "A derivative measures change." } }],
+			usage: { prompt_tokens: 20, completion_tokens: 8 },
+		});
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "byom");
+		await server.accounts.setTutorWeight("local", "heavy");
+		await server.secrets.save("local", "openai", "sk-openai-user");
+		await route("POST", "/v1/tutor/setup", { via: "key", provider: "openai" }, server);
+		const weight = await route("POST", "/v1/tutor/weight", { weight: "heavy" }, server);
+		expect(weight.status).toBe(400);
+		expect(JSON.stringify(weight.json)).toMatch(/own model/);
+		const result = await route("POST", "/v1/tutor/complete", { ...turn, messages: [{ role: "user", content: "Make flashcards for the power rule." }] }, server);
+		expect(result.status).toBe(200);
+		expect(calls[0].url).toBe("https://api.openai.com/v1/chat/completions");
+		expect(calls[0].body.model).not.toBe("google/gemini-3.5-flash");
+	});
+
+	it("refuses hosted flashcard generation on Free and allows it on Groundwork", async () => {
+		const cards = { ...turn, messages: [{ role: "user", content: "Please make flashcards for limits." }] };
+		const { fetchImpl, calls } = capture({
+			content: [{ type: "text", text: "Here is a card." }],
+			stop_reason: "end_turn",
+			usage: { input_tokens: 100, output_tokens: 20 },
+		});
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "free");
+		const refused = await route("POST", "/v1/tutor/complete", cards, server);
+		expect(refused.status).toBe(402);
+		expect(refused.json).toMatchObject({ code: "flashcards_require_upgrade" });
+		expect(JSON.stringify(refused.json)).toContain("$20");
+		expect(JSON.stringify(refused.json)).toContain("$6");
+		expect(JSON.stringify(refused.json)).not.toMatch(/\$12/);
+		expect(calls).toHaveLength(0);
+		const review = await route("POST", "/v1/tutor/complete", { ...turn, messages: [{ role: "user", content: "I reviewed my flashcards. Teach me limits." }] }, server);
+		expect(review.status).toBe(200);
+		expect(calls).toHaveLength(1);
+
+		await server.accounts.setPlan("local", "included");
+		const allowed = await route("POST", "/v1/tutor/complete", cards, server);
+		expect(allowed.status).toBe(200);
+		expect(calls).toHaveLength(2);
+	});
+
+	it("refuses a new flashcard file on Free and still accepts a rating", async () => {
+		const knowledge = { concepts: [], goals: [], updatedAt: "2026-10-02T00:00:00.000Z" };
+		const lib = emptyFlashcardLibrary(new Date("2026-10-02T00:00:00.000Z"));
+		lib.decks.push({ id: "limits", title: "Limits" });
+		lib.cards.push(makeCard({ id: "c1", deckId: "limits", concept: "Limit", front: "What is a limit?", back: "A value", now: new Date("2026-10-02T00:00:00.000Z") }));
+		const file = serializeFlashcardLibrary(lib);
+		const server = deps();
+		await server.accounts.setPlan("local", "included");
+		const saved = await route("PUT", "/v1/memory", { files: { [PATHS.flashcards]: file }, knowledge }, server);
+		expect(saved.status).toBe(200);
+		await server.accounts.setPlan("local", "free");
+		const rated = JSON.parse(file) as { cards: Array<{ reps: number }> };
+		rated.cards[0].reps = 2;
+		const review = await route("PUT", "/v1/memory", { files: { [PATHS.flashcards]: JSON.stringify(rated) }, knowledge }, server);
+		expect(review.status).toBe(200);
+		const edited = JSON.parse(file) as { cards: Array<{ front: string }> };
+		edited.cards[0].front = "Define a limit.";
+		const blocked = await route("PUT", "/v1/memory", { files: { [PATHS.flashcards]: JSON.stringify(edited) }, knowledge }, server);
+		expect(blocked.status).toBe(402);
+		expect(blocked.json).toMatchObject({ code: "flashcards_require_upgrade" });
+		const kept = await route("GET", "/v1/memory", null, server);
+		expect(JSON.stringify(kept.json)).not.toContain("Define a limit.");
 	});
 
 });

@@ -87,6 +87,8 @@ export interface ToolContext {
 	profile?: string;
 	/** This turn's tutor notes. Omit to send the saved note. */
 	tutorContext?: string;
+	/** Free accounts can review cards. They cannot save new ones. Omit to allow. */
+	flashcardsWritable?: boolean;
 }
 
 export interface ToolResult {
@@ -888,6 +890,13 @@ export const TOOLS: ToolDef[] = [
 			required: ["concept", "front", "back"],
 		},
 		async run({ concept, front, back, deck }: { concept: string; front: string; back: string; deck?: string }, ctx) {
+			if (ctx.flashcardsWritable === false) {
+				return {
+					text: "Flashcards are on the paid plans. Say that in one or two sentences, and stop. Do not try to save a card.",
+					isError: true,
+					summary: "Flashcards need a paid plan",
+				};
+			}
 			try {
 				const saved = await saveFlashcard(ctx.store, { concept, front, back, deck });
 				return {

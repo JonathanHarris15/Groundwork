@@ -163,28 +163,28 @@ function pricingPage(): string {
 	return page({
 		path: "/pricing",
 		title: "Groundwork pricing: Free, $6/mo, or $20/mo",
-		description: "Start free on Groundwork’s smaller model. Bring your own model for $6/mo, or let Groundwork run the models for $20/mo. Billed through Stripe.",
+		description: "Start free on the Light model. Heavy and new flashcards are on Bring your own model ($6/mo) or Groundwork ($20/mo). Billed through Stripe.",
 		main: `
 			<h1>Plans</h1>
-			<p class="mkt-sub">All three plans run in Obsidian desktop. They differ in which model runs the tutor. The study tools are the same on each plan. Free uses Groundwork’s smaller model and has a monthly limit on tutor use.</p>
+			<p class="mkt-sub">All three plans run in Obsidian desktop. Free is the Light model, with a monthly limit. Heavy and new flashcards are on Bring your own model ($6/month) and Groundwork ($20/month).</p>
 			${cta("/#signin", "Start free")}
 			<ul class="plan-cards">
 				<li class="plan-card">
 					<h2>Free</h2>
 					<p class="price">$0</p>
-					<p>Uses Groundwork’s smaller model. A good way to set up a goal, see your concept map, and try a few quiz cards before deciding. Tutor use has a monthly limit. Your account shows the share of that month you’ve used.</p>
+					<p>Light model, with a monthly limit. Quiz cards, your concept map, and decks you already have. New flashcards and Heavy are on the paid plans. Your account shows the share of that month you’ve used.</p>
 					<a class="cta" href="/#signin">Start free${ARROW}</a>
 				</li>
 				<li class="plan-card">
 					<h2>Bring your own model</h2>
 					<p class="price">$6<span>/month</span></p>
-					<p>Use a model you already pay for. Connect the Claude subscription on your computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 covers Groundwork.</p>
+					<p>Use a model you already pay for. Connect the Claude subscription on your computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. Heavy uses that model and key. Flashcards are included. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 covers Groundwork.</p>
 					<a class="cta" href="/?plan=byom#signin">Choose $6${ARROW}</a>
 				</li>
 				<li class="plan-card">
 					<h2>Groundwork</h2>
 					<p class="price">$20<span>/month</span></p>
-					<p>We run the models for you. No keys to manage. Light by default.</p>
+					<p>Light or Heavy. We run the models. Flashcards are included. No keys to manage.</p>
 					<a class="cta" href="/?plan=included#signin">Choose $20${ARROW}</a>
 				</li>
 			</ul>
@@ -200,8 +200,12 @@ function pricingPage(): string {
 				<p>Through Stripe, monthly.</p>
 				<h3>Can I change plans later?</h3>
 				<p>Yes. Pick another plan on your account page. To change or cancel a paid plan, open Manage billing. That goes to Stripe.</p>
+				<h3>What is Heavy?</h3>
+				<p>Free stays on Light, with a monthly limit. Heavy is on the paid plans. Groundwork is $20 a month and includes Heavy. Bring your own model is $6 a month and uses your own model and key.</p>
+				<h3>Are flashcards free?</h3>
+				<p>Reviewing decks you already have is free. Making new flashcards is on the paid plans, Groundwork at $20 a month or bring your own model at $6.</p>
 				<h3>Does my progress carry over between plans?</h3>
-				<p>Yes. Your goals, concept map, and quiz history stay on your account when you change plans. Progress syncs across your computers either way.</p>
+				<p>Yes. Your goals, concept map, quiz history, and decks stay on your account when you change plans. Progress syncs across your computers either way.</p>
 			</section>
 			${cta("/#signin", "Start free")}
 		`,
@@ -266,7 +270,7 @@ function practicePage(): string {
 				<h3>Does it run on a Chromebook, phone, or tablet?</h3>
 				<p>No. It’s a plugin for Obsidian on a Windows, Mac, or Linux computer.</p>
 				<h3>Is it free?</h3>
-				<p>Yes. Free uses Groundwork’s smaller model and has a monthly limit. Bring your own model is $6 a month. Groundwork running the models is $20 a month.</p>
+				<p>Yes. Free is the Light model, with a monthly limit. Heavy and new flashcards are paid. Bring your own model is $6 a month. Groundwork is $20 a month.</p>
 			`)}
 			${cta("/#signin", "Start free")}
 		`,
@@ -298,7 +302,7 @@ function examPage(): string {
 				alt: "Concept map for a calculus exam. Derivative of cosine, derivative of sine, quotient rule, and chain rule are goals, drawn as dark circles with a red flag. The concepts below are marked solid, shaky, learning, rusty, or not started. The next concept to study is ringed.",
 			}))}
 			${section("Quiz until the gaps show up", ["Diagnostic quiz cards test each topic at levels 1 to 5. A careless slip isn’t counted as a gap, and misconceptions are tracked, so you find the real weak spots before the exam does."])}
-			${section("Math and diagrams included", ["The tutor renders LaTeX math and can explain with callouts and diagrams. Attach a slide or an image of a problem when you get stuck."])}
+			${section("Math and diagrams included", ["The tutor renders LaTeX math and can explain with callouts and diagrams. Attach a slide or an image of a problem when you get stuck.", "Free stays on the Light model, with a monthly limit. Heavy is on the paid plans."])}
 			${cta("/#signin", "Start free")}
 		`,
 	});
@@ -322,7 +326,7 @@ function conceptPage(): string {
 				alt: "Concept map for Derivatives for Calc I. Goals are dark circles with a red flag. The concepts below are marked solid, shaky, learning, rusty, or not started. The next concept to study is ringed.",
 			})}
 			${section("A pyramid, not a hairball", ["Foundations sit at the bottom and your goal sits at the top in red. The path between them is highlighted, and concepts that aren’t on the path fade back, so the map stays readable."])}
-			${section("Five states for every concept", ["Each concept is marked <strong>solid</strong>, <strong>shaky</strong>, <strong>learning</strong>, <strong>rusty</strong>, or <strong>not started</strong>. The marks come from how you do on quiz cards, not from a checklist you tick yourself. Flashcard reviews count only a little; quiz cards set the marks."])}
+			${section("Five states for every concept", ["Each concept is marked <strong>solid</strong>, <strong>shaky</strong>, <strong>learning</strong>, <strong>rusty</strong>, or <strong>not started</strong>. The marks come from how you do on quiz cards, not from a checklist you tick yourself. Flashcard reviews count only a little; quiz cards set the marks. Making new flashcards is on the paid plans."])}
 			${section("Rusty is a real state", ["Mastery fades over time. When a concept you once knew goes rusty, it comes back for review instead of staying green forever."])}
 			${section("Planned from first principles", ["When you set a goal, Groundwork plans it from the foundations up to the goal. New lessons build on the map instead of starting over each session."])}
 			${section("The same map on each computer", ["Progress syncs across your computers. Sign in on the site and the map is there."])}
@@ -351,7 +355,7 @@ function quizzesPage(): string {
 			${section("Diagnostic, levels 1 to 5", ["Each quiz card targets a concept at a level from 1 to 5. The point is to find where your understanding stops, which is the edge worth working on."])}
 			${section("A slip isn’t a gap", ["Everyone mistypes or rushes sometimes. A careless slip isn’t counted as a gap in what you know, so one bad answer doesn’t knock a solid concept back to shaky."])}
 			${section("Misconceptions get tracked", ["When an answer shows a wrong idea rather than a missing one, Groundwork tracks it as a misconception, separately from a simple gap."])}
-			${section("Flashcard decks", ["Use flashcard decks for terms, formulas, and anything you want at your fingertips. Flashcard reviews count a little toward a concept; quiz cards set the marks. You can export a deck to your vault as plain Markdown."], shotFigure({
+			${section("Flashcard decks", ["New flashcards are on the paid plans. Decks you already have stay available to review. Use them for terms, formulas, and anything you want at your fingertips. Flashcard reviews count a little toward a concept; quiz cards set the marks. You can export a deck to your vault as plain Markdown."], shotFigure({
 				base: "/shots/flashcards",
 				width: 2343,
 				height: 1756,
@@ -415,7 +419,7 @@ function startPage(): string {
 				</li>
 				<li>
 					<h2>Pick how the tutor runs</h2>
-					<p>Stay on Free with Groundwork’s smaller model, bring your own model for $6/month (your Claude subscription or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI), or let Groundwork run the models for $20/month. See <a href="/pricing">Plans</a>.</p>
+					<p>Stay on Free for the Light model, with a monthly limit. Heavy and new flashcards are on the paid plans. Bring your own model is $6/month (your Claude subscription or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI), or let Groundwork run the models for $20/month. See <a href="/pricing">Plans</a>.</p>
 				</li>
 				<li>
 					<h2>Start a goal</h2>
@@ -458,7 +462,7 @@ function termsPage(): string {
 			<p class="mkt-sub">These terms cover the Groundwork website and the Groundwork plugin for Obsidian desktop.</p>
 			${section("The product", ["Groundwork is a tutor that runs inside Obsidian on a desktop computer. It does not run on a phone. You need an account. You sign in with Google at groundworklearn.com."])}
 			${section("Age", ["You must be 18 or older to use Groundwork. You must be at least 18 to create an account or use Groundwork. Groundwork isn’t directed to anyone under 18, and we close accounts we learn belong to someone under 18."])}
-			${section("Plans", ["Free is $0. It uses Groundwork’s smaller model and has a monthly limit on tutor use. Your account shows the share of that month you’ve used.", "Bring your own model is $6 per month. You use the Claude subscription on your computer, or a key you paste. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 is for Groundwork.", "Groundwork is $20 per month. We run the models. Light by default.", "The study tools are the same on each plan. What changes is which model answers, and who pays for that use. Prices are listed on <a href=\"/pricing\">Plans</a>."])}
+			${section("Plans", ["Free is $0. It stays on the Light model and has a monthly limit on tutor use. Your account shows the share of that month you’ve used. Decks you already have stay available to review.", "Bring your own model is $6 per month. You use the Claude subscription on your computer, or a key you paste. Heavy uses that model and key. Flashcards are included. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 is for Groundwork.", "Groundwork is $20 per month. We run the models, Light or Heavy. Flashcards are included.", "Heavy and new flashcards are on the paid plans. Prices are listed on <a href=\"/pricing\">Plans</a>."])}
 			${section("Billing and cancellation", ["Paid plans are billed monthly by Stripe. You can switch plans on your account page. To change or cancel a paid plan, open Manage billing, which takes you to Stripe. Canceling stops the next charge. It does not delete your study record.", "Stripe may add tax where it has to."])}
 			${section("Your notes", ["Your vault is yours. Groundwork reads and writes only the folders you allow. You’re responsible for the files you attach and for having the right to use them."])}
 			${section("The service", ["We can suspend an account that abuses the service or tries to break it. If these terms change, the new page is the one that applies."])}

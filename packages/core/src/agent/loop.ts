@@ -18,6 +18,8 @@ export interface AgentOptions {
 	/** Read and write folders for vault file tools. Omitted uses the defaults. */
 	access?: FolderAccess;
 	grader?: ToolContext["grader"];
+	/** Free accounts cannot save new cards. Omit to allow. */
+	flashcardsWritable?: boolean;
 }
 
 export class AgentSession implements TutorSession {
@@ -52,7 +54,7 @@ export class AgentSession implements TutorSession {
 				this.repairAfterAbort();
 			} else {
 				this.repairAfterAbort();
-				onEvent({ type: "error", message: errorMessage(err) });
+				onEvent({ type: "error", message: errorMessage(err), code: errorCode(err) });
 			}
 		} finally {
 			this.running = false;
@@ -121,6 +123,7 @@ export class AgentSession implements TutorSession {
 							grader: this.opts.grader,
 							profile: this.turnContext?.profile,
 							tutorContext: this.turnContext?.tutorContext,
+							flashcardsWritable: this.opts.flashcardsWritable,
 						});
 						text = r.text;
 						isError = !!r.isError;
@@ -194,6 +197,12 @@ export class AgentSession implements TutorSession {
 export function errorMessage(err: unknown): string {
 	if (err instanceof Error) return err.message;
 	return String(err);
+}
+
+export function errorCode(err: unknown): string | undefined {
+	if (!err || typeof err !== "object" || !("code" in err)) return undefined;
+	const code = (err as { code?: unknown }).code;
+	return typeof code === "string" && code ? code : undefined;
 }
 
 function toolsForStep(catalog: ProviderTool[], research: ResearchTurn, force: boolean): ProviderTool[] {

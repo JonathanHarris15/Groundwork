@@ -220,7 +220,10 @@ export function setTutorChoice(record: AccountRecord, choice: { via: "claude" | 
 
 export function choosePlan(record: AccountRecord, plan: PlanId, now: Date = new Date()): AccountRecord {
 	const current = currentAccount(record, now);
-	return { ...current, plan };
+	const next: AccountRecord = { ...current, plan };
+	// A paid plan that ends goes back to Light. A Free account that already chose Heavy stays there until a request is refused.
+	if (plan === "free" && current.plan && current.plan !== "free") next.tutorWeight = "light";
+	return next;
 }
 
 /**

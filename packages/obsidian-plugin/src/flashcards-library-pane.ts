@@ -26,6 +26,9 @@ export interface FlashcardsLibraryHost {
 	renderMarkdown?: RenderMarkdown;
 	/** The Library tab badge. Called after the account deck changes. */
 	onCardsChanged?: (count: number) => void;
+	/** Free accounts can study and export. Omit to allow creating and editing. */
+	canWrite?: boolean;
+	onWriteBlocked?: () => void;
 }
 
 interface DeckEntry {
@@ -43,9 +46,17 @@ export function libraryDecks(lib: FlashcardLibrary): DeckEntry[] {
 export async function renderFlashcardsLibrary(parent: HTMLElement, host: FlashcardsLibraryHost): Promise<void> {
 	parent.empty();
 	const section = parent.createDiv({ cls: "gw-lib-section gw-lib-flashcards" });
+	const canWrite = host.canWrite !== false;
+	const blockWrite = (): boolean => {
+		if (canWrite) return false;
+		host.onWriteBlocked?.();
+		return true;
+	};
 	section.createDiv({
 		cls: "gw-lib-help",
-		text: "Make a deck and add cards, or ask the tutor to make them. A deck is not tied to a goal.",
+		text: canWrite
+			? "Make a deck and add cards, or ask the tutor to make them. A deck is not tied to a goal."
+			: "You can study and export decks you already have. New cards are on the paid plans.",
 	});
 
 	let lib: FlashcardLibrary;
@@ -75,6 +86,7 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 	publishCount();
 
 	newDeckBtn.addEventListener("click", () => {
+		if (blockWrite()) return;
 		section.querySelector(".gw-fc-lib-form.is-deck")?.remove();
 		const form = deckNameForm(section, async (title) => {
 			const deck = await createDeck(host.store, title);
@@ -111,7 +123,10 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 				drawDecks();
 				drawCards();
 				const menu = new Menu();
-				menu.addItem((item) => item.setTitle("Rename").onClick(() => startRename(deck.id)));
+				menu.addItem((item) => item.setTitle("Rename").onClick(() => {
+					if (blockWrite()) return;
+					startRename(deck.id);
+				}));
 				if (deck.id !== DEFAULT_DECK_ID) menu.addItem((item) => item.setTitle("Delete").onClick(() => askDeleteDeck(deck.id)));
 				menu.showAtMouseEvent(event);
 			});
@@ -122,7 +137,7 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 		main.empty();
 		const deck = decks.find((d) => d.id === selectedDeckId);
 		if (!deck) {
-			main.createDiv({ cls: "gw-lib-empty", text: "Make a deck, then add cards to it." });
+			main.createDiv({ cls: "gw-lib-empty", text: canWrite ? "Make a deck, then add cards to it." : "No decks yet. New decks are on the paid plans." });
 			return;
 		}
 		const head = main.createDiv({ cls: "gw-fc-lib-head" });
@@ -140,7 +155,10 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 			text: "Rename",
 			attr: { type: "button", "aria-label": `Rename ${deck.title}` },
 		});
-		rename.addEventListener("click", () => startRename(deck.id));
+		rename.addEventListener("click", () => {
+			if (blockWrite()) return;
+			startRename(deck.id);
+		});
 		if (deck.id !== DEFAULT_DECK_ID) {
 			const remove = headTools.createEl("button", {
 				cls: "gw-lib-btn is-danger",
@@ -151,6 +169,7 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 		}
 		const list = main.createDiv({ cls: "gw-fc-lib-cards" });
 		addBtn.addEventListener("click", () => {
+			if (blockWrite()) return;
 			const form = cardForm(
 				main,
 				null,
@@ -165,7 +184,10 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 
 		const cards = [...cardsInDeck(lib, deck.id)].sort((a, b) => a.concept.localeCompare(b.concept) || a.front.localeCompare(b.front));
 		if (!cards.length) {
-			list.createDiv({ cls: "gw-lib-empty", text: "No cards in this deck yet. Add one, or ask the tutor to make some." });
+			list.createDiv({
+				cls: "gw-lib-empty",
+				text: canWrite ? "No cards in this deck yet. Add one, or ask the tutor to make some." : "No cards in this deck yet.",
+			});
 			return;
 		}
 		for (const card of cards) drawCard(list, card);
@@ -181,6 +203,7 @@ export async function renderFlashcardsLibrary(parent: HTMLElement, host: Flashca
 		const rowTools = row.createDiv({ cls: "gw-fc-card-row-tools" });
 		const edit = rowTools.createEl("button", { cls: "gw-lib-btn", text: "Edit", attr: { type: "button", "aria-label": `Edit card: ${card.front.slice(0, 60)}` } });
 		edit.addEventListener("click", () => {
+			if (blockWrite()) return;
 			const form = cardForm(
 				main,
 				card,

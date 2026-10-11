@@ -200,6 +200,45 @@ describe("admin usage gate", () => {
 		expect(String(shell?.body)).not.toContain("Proposed Free limit");
 	});
 
+	it("counts Heavy and flashcard prompts beside checkout, and drops a bad event shape", async () => {
+		const store = new MemoryUsageStore();
+		const usage = new UsageDirectory(store);
+		const learner: Auth = {
+			firebase: true,
+			async uid(authorization) {
+				if (authorization === "Bearer admin") return { uid: "jono", email: "jono591737@gmail.com", name: "Jonathan", emailVerified: true };
+				if (authorization === "Bearer learner") return { uid: "learner", email: "learner@school.edu", name: "Lee", emailVerified: true };
+				throw Object.assign(new Error("Sign in required."), { status: 401 });
+			},
+			async revokeRefreshTokens() {},
+		};
+		const server = deps({ auth: learner, usage });
+		const shown = await route("POST", "/v1/usage/prompt", { kind: "heavy_upgrade_prompt_shown", plan: "included" }, server, "Bearer learner");
+		expect(shown.status).toBe(200);
+		expect((await route("POST", "/v1/usage/prompt", { kind: "heavy_upgrade_click", plan: "byom" }, server, "Bearer learner")).status).toBe(200);
+		expect((await route("POST", "/v1/usage/prompt", { kind: "flashcards_upgrade_prompt_shown" }, server, "Bearer learner")).status).toBe(200);
+		expect((await route("POST", "/v1/usage/prompt", { kind: "flashcards_upgrade_click", plan: "included" }, server, "Bearer learner")).status).toBe(200);
+		expect((await route("POST", "/v1/usage/prompt", { kind: "checkout", plan: "byom" }, server, "Bearer learner")).status).toBe(400);
+		const report = await usage.report(server.accounts, new Date());
+		expect(report.prompts.heavy).toEqual({ shown: 1, clicks: 1, byom: 1, included: 0 });
+		expect(report.prompts.flashcards).toEqual({ shown: 1, clicks: 1, byom: 0, included: 1 });
+		const page = await route("GET", "/api/admin/usage", null, server, "Bearer admin");
+		const html = (page.json as { html?: string }).html ?? "";
+		expect(html).toContain("Heavy prompts");
+		expect(html).toContain("Flashcard clicks");
+		expect(html).toContain("Checkout clicks");
+		const csv = await route("GET", "/api/admin/usage.csv", null, server, "Bearer admin");
+		expect(csv.text).toContain("heavy_prompts_shown,1");
+		expect(csv.text).toContain("flashcard_prompt_clicks_groundwork,1");
+
+		const file = path.join(mkdtempSync(path.join(os.tmpdir(), "gw-usage-")), "usage.json");
+		const files = new FileUsageStore(file);
+		await files.addEvent({ uid: "ada", at: "2026-10-09T00:00:00.000Z", kind: "heavy_upgrade_prompt_shown", plan: "free" });
+		await files.addEvent({ uid: "ada", at: "2026-10-09T00:00:00.000Z", kind: "heavy_upgrade_prompt_shown", plan: "byom" });
+		await files.addEvent({ uid: "ada", at: "2026-10-09T00:00:00.000Z", kind: "checkout", plan: "free" });
+		expect(await files.listEvents()).toEqual([expect.objectContaining({ kind: "heavy_upgrade_prompt_shown", plan: "free" })]);
+	});
+
 	it("puts user and paid counts above the usage report and in the CSV", async () => {
 		const accounts = new AccountDirectory();
 		const now = new Date();

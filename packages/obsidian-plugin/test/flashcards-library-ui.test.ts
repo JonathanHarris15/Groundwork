@@ -371,4 +371,41 @@ describe("study sitting", () => {
 		expect(root.textContent).not.toMatch(/Nothing due|tomorrow|Next card/);
 		root.remove();
 	});
+
+	it("lets a Free account study and export, and blocks new cards and edits", async () => {
+		const memory = store();
+		const parent = document.createElement("div");
+		document.body.append(parent);
+		await renderFlashcardsLibrary(parent, host(memory));
+		click(parent, "New deck");
+		parent.querySelector<HTMLInputElement>("input[aria-label='Deck name']")!.value = "Nightly drills";
+		click(parent, "Create");
+		await vi.waitFor(() => expect(parent.textContent).toContain("Nightly drills"));
+		click(parent, "Add card");
+		parent.querySelector<HTMLInputElement>("input[aria-label='Concept']")!.value = "Base rates";
+		parent.querySelector<HTMLTextAreaElement>("textarea[aria-label='Question']")!.value = "Why 9%?";
+		parent.querySelector<HTMLTextAreaElement>("textarea[aria-label='Answer']")!.value = "False alarms.";
+		click(parent, "Save");
+		await vi.waitFor(() => expect(parent.textContent).toContain("Why 9%?"));
+
+		parent.replaceChildren();
+		const studied: string[] = [];
+		const blocked: string[] = [];
+		await renderFlashcardsLibrary(parent, {
+			...host(memory, studied),
+			canWrite: false,
+			onWriteBlocked: () => blocked.push("write"),
+		});
+		expect(parent.textContent).toContain("New cards are on the paid plans.");
+		click(parent, "New deck");
+		click(parent, "Add card");
+		click(parent, "Edit");
+		click(parent, "Rename");
+		expect(parent.querySelector("input, textarea")).toBeNull();
+		expect(blocked).toHaveLength(4);
+		click(parent, "Study this deck");
+		expect(studied).toEqual(["nightly-drills"]);
+		expect(parent.textContent).toContain("Export to vault");
+		parent.remove();
+	});
 });

@@ -97,10 +97,22 @@ function isLedger(value: unknown): value is UsageLedgerRow {
 	return typeof row.uid === "string" && typeof row.period === "string" && isPlan(row.plan) && typeof row.costUsd === "number" && typeof row.chargedUsd === "number";
 }
 
+const USAGE_EVENT_KINDS = [
+	"checkout",
+	"upgraded",
+	"heavy_upgrade_prompt_shown",
+	"heavy_upgrade_click",
+	"flashcards_upgrade_prompt_shown",
+	"flashcards_upgrade_click",
+] as const;
+
 function isEvent(value: unknown): value is UsageEventRow {
 	if (!value || typeof value !== "object") return false;
 	const row = value as UsageEventRow;
-	return typeof row.uid === "string" && typeof row.at === "string" && (row.kind === "checkout" || row.kind === "upgraded") && (row.plan === "byom" || row.plan === "included");
+	if (typeof row.uid !== "string" || typeof row.at !== "string") return false;
+	if (!(USAGE_EVENT_KINDS as readonly string[]).includes(row.kind)) return false;
+	if (row.kind === "heavy_upgrade_prompt_shown" || row.kind === "flashcards_upgrade_prompt_shown") return row.plan === "free";
+	return row.plan === "byom" || row.plan === "included";
 }
 
 function raise(prev: UsageLedgerRow | undefined, row: UsageLedgerRow): UsageLedgerRow {

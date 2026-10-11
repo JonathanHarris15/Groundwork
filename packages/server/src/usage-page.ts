@@ -20,8 +20,12 @@ export function usageDash(report: UsageReport): string {
 							${card("Sample", String(report.proposal.sample))}
 							${card("Checkout clicks", String(report.upgrades.clicks))}
 							${card("Click conversion", conversion == null ? "—" : pct(conversion * 100))}
+							${card("Heavy prompts", String(report.prompts.heavy.shown))}
+							${card("Heavy clicks", String(report.prompts.heavy.clicks))}
+							${card("Flashcard prompts", String(report.prompts.flashcards.shown))}
+							${card("Flashcard clicks", String(report.prompts.flashcards.clicks))}
 						</div>
-						<p class="fine">${esc(proposalNote(report))} Upgrade clicks are checkout starts. Conversion is the share of those accounts that Stripe then put on a paid plan. ${report.upgrades.upgrades} paid ${report.upgrades.upgrades === 1 ? "upgrade" : "upgrades"} in total, ${report.upgrades.convertedClickers} of them after a click.</p>
+						<p class="fine">${esc(proposalNote(report))} Upgrade clicks are checkout starts. Conversion is the share of those accounts that Stripe then put on a paid plan. ${report.upgrades.upgrades} paid ${report.upgrades.upgrades === 1 ? "upgrade" : "upgrades"} in total, ${report.upgrades.convertedClickers} of them after a click. Heavy prompt clicks: ${report.prompts.heavy.byom} Bring your own model, ${report.prompts.heavy.included} Groundwork. Flashcard prompt clicks: ${report.prompts.flashcards.byom} Bring your own model, ${report.prompts.flashcards.included} Groundwork.</p>
 					</section>
 
 					<section class="usage-section" aria-labelledby="week-title">
@@ -128,6 +132,14 @@ export function usageCsv(report: UsageReport): string {
 	push(["checkout_accounts", report.upgrades.clickers]);
 	push(["upgrades", report.upgrades.upgrades]);
 	push(["converted_clickers", report.upgrades.convertedClickers]);
+	push(["heavy_prompts_shown", report.prompts.heavy.shown]);
+	push(["heavy_prompt_clicks", report.prompts.heavy.clicks]);
+	push(["heavy_prompt_clicks_byom", report.prompts.heavy.byom]);
+	push(["heavy_prompt_clicks_groundwork", report.prompts.heavy.included]);
+	push(["flashcard_prompts_shown", report.prompts.flashcards.shown]);
+	push(["flashcard_prompt_clicks", report.prompts.flashcards.clicks]);
+	push(["flashcard_prompt_clicks_byom", report.prompts.flashcards.byom]);
+	push(["flashcard_prompt_clicks_groundwork", report.prompts.flashcards.included]);
 	push([]);
 	push(["section", "weeks"]);
 	push(["week", "active_free", "signups", "checkout_clicks"]);
