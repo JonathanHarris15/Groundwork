@@ -137,7 +137,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
 		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
-		<link rel="stylesheet" href="/styles.css?v=19" />
+		<link rel="stylesheet" href="/styles.css?v=20" />
 		<script src="/tracking.js?v=7"></script>
 	</head>
 	<body>
@@ -398,7 +398,7 @@ function startPage(): string {
 		path: "/get-started",
 		title: "Get Groundwork running in Obsidian",
 		description: "Download Obsidian, add the Groundwork plugin, and connect your free account. Desktop only. Sign up on a phone, finish on a computer.",
-		scripts: `<script src="/setup.js?v=1"></script>`,
+		scripts: `<script src="/setup.js?v=2"></script>`,
 		main: `
 			<h1>Get Groundwork running</h1>
 			<p class="mkt-sub">Three steps on your computer. Free is ready when you connect.</p>
@@ -418,7 +418,7 @@ function privacyPage(): string {
 			<p class="mkt-sub">What Groundwork stores, and who else sees it. This covers groundworklearn.com and the Groundwork plugin.</p>
 			${section("Google sign-in", ["You sign in with Google. We receive the name and email on that Google account, and a sign-in token that proves it’s you. We use them to open your Groundwork account. We don’t get your Google password."])}
 			${section("Your study record", ["The account holds tutor memory: concept notes, goals, quiz answers, flashcards, chats, and a short profile of how you learn. That record is what lets the same progress show up on each computer where you sign in.", "The account page on this site draws your concept map: titles, how concepts connect, and whether each one is solid, shaky, learning, rusty, or not started. It does not show the text of your notes or your quiz answers.", "Groundwork records aggregate usage counts and costs per account to run and price the service, never note or chat content.", "When the tutor answers, your message and any files you attach are sent to the model that runs it: Groundwork’s model provider on Free and the $20 plan, or the provider you connect on Bring your own model."])}
-			${section("Obsidian", ["Groundwork is a plugin for Obsidian desktop. Your vault stays on your computer. The tutor reads only the vault folders you allow in settings, and it writes a file only in folders you mark for that. You can attach a slide, a PDF, or an image from those folders.", "Connecting Obsidian uses a one-time code from this site. The code expires in about 10 minutes, works once, and is stored only as a hash. The link does not contain your sign-in.", "The plugin sends a random install id the first time it runs, so we can count installs. That ping does not include your notes, chats, or vault."])}
+			${section("Obsidian", ["Groundwork is a plugin for Obsidian desktop. Your vault stays on your computer. The tutor reads only the vault folders you allow in settings, and it writes a file only in folders you mark for that. You can attach a slide, a PDF, or an image from those folders.", "Connecting Obsidian uses a one-time code from this site. Connect Groundwork opens that code. The code expires in about 10 minutes, works once, and is stored only as a hash. That link does not contain your sign-in. Plugins from before 0.2.3 can use the older link on the checklist. The older link carries the same sign-in handoff this site used before, and only after you choose it.", "The plugin sends a random install id the first time it runs, so we can count installs. That ping does not include your notes, chats, or vault."])}
 			${section("Finishing setup on a computer", ["Groundwork does not run on a phone. If you sign up on one, this site can copy or share a link to the setup page, and it can show a QR code of that same address. We don’t email the link."])}
 			${section("Keys you paste", ["On the Bring your own model plan you can save a key for OpenRouter, Anthropic, Google, xAI, or OpenAI. The key is stored on your account and used only on Groundwork’s server to call that provider. The plugin does not send the key.", "Claude on your computer is separate. If you use a Claude subscription, Claude Code runs on your machine. That login stays there. Groundwork does not receive it."])}
 			${section("Billing", ["Paid plans are billed by Stripe. Stripe gets what it needs to charge the card and send receipts. Groundwork stores the Stripe customer id and which plan you’re on."])}

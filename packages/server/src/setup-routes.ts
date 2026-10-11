@@ -1,5 +1,6 @@
 import type { Auth } from "./auth";
 import type { ConnectCodeDirectory } from "./connect-codes";
+import { emptyLegacyCache, legacyConnectStatus, type LegacyConnectCache } from "./legacy-connect";
 import { emptyDownloadCache, isObsidianOs, OBSIDIAN_DOWNLOAD_FALLBACK, resolveObsidianDownload, type DownloadCache } from "./obsidian-downloads";
 import { platformFetch, type FetchLike } from "./platform-fetch";
 import { setupPageUrl, setupQrSvg } from "./setup-qr";
@@ -11,6 +12,9 @@ export interface SetupRouteDeps {
 	setupFunnel?: SetupFunnel;
 	fetchImpl?: FetchLike;
 	downloadCache?: DownloadCache;
+	/** When set, overrides process.env for the legacy-connect flag. */
+	env?: NodeJS.ProcessEnv;
+	legacyCache?: LegacyConnectCache;
 }
 
 export interface SetupRouteMeta {
@@ -28,6 +32,7 @@ export interface SetupRouteResult {
 }
 
 const sharedCache = emptyDownloadCache();
+const sharedLegacyCache = emptyLegacyCache();
 
 function searchParams(meta: SetupRouteMeta): URLSearchParams {
 	return new URLSearchParams(meta.search ?? "");
@@ -44,6 +49,15 @@ export async function publicSetupRoute(method: string, path: string, body: unkno
 		if (!isObsidianOs(os)) return { status: 400, json: { error: "Choose Windows, macOS, or Linux." } };
 		const url = await downloadUrl(os, deps);
 		return { status: 302, json: { url }, headers: { location: url, "cache-control": "no-store" } };
+	}
+	if (method === "GET" && path === "/v1/setup/legacy-connect") {
+		const status = await legacyConnectStatus({
+			env: deps.env ?? process.env,
+			fetchImpl: deps.fetchImpl ?? platformFetch,
+			now: Date.now(),
+			cache: deps.legacyCache ?? sharedLegacyCache,
+		});
+		return { status: 200, json: status, headers: { "cache-control": "no-store" } };
 	}
 	if (method === "GET" && path === "/v1/setup/qr.svg") {
 		const svg = await setupQrSvg(setupPageUrl(meta.host, meta.forwardedProto));

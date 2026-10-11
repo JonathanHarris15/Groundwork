@@ -23,6 +23,7 @@ test("get-started checklist offers an Obsidian download and a plugin link", asyn
 	const primary = page.locator(".guide-go[data-os]").first();
 	await expect(primary).toBeVisible();
 	await expect(primary).toHaveAttribute("href", /\/v1\/setup\/obsidian-download\?os=(windows|mac|linux)/);
+	await expect(page.getByRole("button", { name: "Not connecting? Use the older link" })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "Add Groundwork" })).toHaveAttribute("href", "obsidian://show-plugin?id=groundwork");
 	await page.getByRole("link", { name: "Add Groundwork" }).click();
 	await expect(page.locator("[data-plugin-fallback]")).toBeVisible();
@@ -59,6 +60,68 @@ test("a phone sign-in can copy the setup link", async ({ page }, testInfo) => {
 			});
 		}),
 	).toBe(true);
+});
+
+test("the older link is a fallback and the code link stays the default", async ({ page, request }, testInfo) => {
+	test.skip(testInfo.project.name !== "chromium", "Desktop checklist");
+	await request.put("/v1/memory", { data: { files: {}, knowledge: { concepts: [], goals: [] } } });
+	await page.addInitScript(() => {
+		document.addEventListener(
+			"click",
+			(event) => {
+				const target = event.target;
+				const link = target instanceof Element ? target.closest("a") : null;
+				if (!(link instanceof HTMLAnchorElement) || !link.href.startsWith("obsidian:")) return;
+				const bag = window as unknown as { __obsidian?: string[] };
+				bag.__obsidian = [...(bag.__obsidian ?? []), link.href];
+				event.preventDefault();
+			},
+			true,
+		);
+	});
+	await page.goto("/?e2e=link#signin");
+	await page.getByRole("button", { name: "Continue on this device" }).click();
+	await expect(page.getByRole("heading", { name: /^Welcome,/ })).toBeVisible();
+	const connect = page.getByRole("button", { name: "Connect Groundwork" });
+	const older = page.getByRole("button", { name: "Not connecting? Use the older link" });
+	await expect(connect).toBeVisible();
+	await expect(older).toBeVisible();
+	await connect.click();
+	await expect.poll(async () => page.evaluate(() => (window as unknown as { __obsidian?: string[] }).__obsidian ?? [])).toHaveLength(1);
+	const codeLink = (await page.evaluate(() => (window as unknown as { __obsidian?: string[] }).__obsidian?.[0])) ?? "";
+	expect(codeLink).toContain("code=");
+	expect(codeLink).toContain("ack=");
+	expect(codeLink).not.toContain("refresh=");
+	await older.click();
+	await expect.poll(async () => page.evaluate(() => (window as unknown as { __obsidian?: string[] }).__obsidian?.length ?? 0)).toBe(2);
+	const refreshLink = (await page.evaluate(() => (window as unknown as { __obsidian?: string[] }).__obsidian?.[1])) ?? "";
+	expect(refreshLink).toContain("refresh=local-dev-refresh");
+	expect(refreshLink).toContain("opened=");
+	expect(refreshLink).not.toContain("code=");
+	expect(await page.locator("[data-connect-status]").innerText()).not.toContain("local-dev-refresh");
+});
+
+test("the older link stays closed without a refresh token", async ({ page, request }, testInfo) => {
+	test.skip(testInfo.project.name !== "chromium", "Desktop checklist");
+	await request.put("/v1/memory", { data: { files: {}, knowledge: { concepts: [], goals: [] } } });
+	await page.addInitScript(() => {
+		document.addEventListener(
+			"click",
+			(event) => {
+				const target = event.target;
+				const link = target instanceof Element ? target.closest("a") : null;
+				if (!(link instanceof HTMLAnchorElement) || !link.href.startsWith("obsidian:")) return;
+				(window as unknown as { __obsidian?: boolean }).__obsidian = true;
+				event.preventDefault();
+			},
+			true,
+		);
+	});
+	await page.goto("/#signin");
+	await page.getByRole("button", { name: "Continue on this device" }).click();
+	await page.getByRole("button", { name: "Not connecting? Use the older link" }).click();
+	await expect(page.getByText("The older link needs Google sign-in on this browser.")).toBeVisible();
+	expect(await page.evaluate(() => (window as unknown as { __obsidian?: boolean }).__obsidian === true)).toBe(false);
 });
 
 test("a setup code works once", async ({ request }) => {
