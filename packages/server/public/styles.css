@@ -1858,6 +1858,23 @@ body.has-consent textarea {
 .mkt button.guide-go-line { color: #f7f7f5; }
 .guide-links { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; }
 .guide-quiet { font-size: 0.95rem; text-underline-offset: 3px; }
+button.guide-quiet {
+	display: inline-flex;
+	align-items: center;
+	min-height: 44px;
+	min-width: 44px;
+	padding: 0 2px;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: 0.95rem;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+	cursor: pointer;
+}
+button.guide-quiet:disabled { opacity: 0.6; cursor: default; }
+.guide-legacy { margin: 4px 0 0; }
 .guide-fallback { margin-top: 10px; }
 .guide-status { margin-top: 10px; overflow-wrap: anywhere; }
 .guide-qr { display: block; margin-top: 14px; width: 168px; height: 168px; background: #fff; border-radius: 8px; }

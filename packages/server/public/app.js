@@ -735,8 +735,12 @@ function attachConceptListUI() {
 	});
 }
 
+function accountRefresh() {
+	return user?.refreshToken || "";
+}
+
 function attachOpenObsidian() {
-	window.GroundworkSetup?.mountAll?.({ getToken: authToken });
+	window.GroundworkSetup?.mountAll?.({ getToken: authToken, getRefresh: accountRefresh });
 	for (const button of document.querySelectorAll("#open-obsidian")) {
 		button.addEventListener("click", () => window.GroundworkSetup?.connect?.(authToken, button));
 	}

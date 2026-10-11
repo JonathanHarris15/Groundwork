@@ -104,6 +104,7 @@
 		}
 		return `<p>This opens Obsidian and links it to your account.</p>
 			<div class="guide-actions"><button class="guide-go" type="button" data-connect>Connect Groundwork</button></div>
+			<p class="guide-legacy" data-legacy-wrap hidden><button class="guide-quiet" type="button" data-legacy-connect>Not connecting? Use the older link</button></p>
 			<p class="guide-status" data-connect-status role="status" aria-live="polite"></p>`;
 	}
 
@@ -238,6 +239,110 @@
 		link.remove();
 	}
 
+	function connectStatus(button) {
+		const root = button?.closest?.("[data-setup]");
+		return root?.querySelector("[data-connect-status]") || document.querySelector("[data-connect-status]");
+	}
+
+	function watchOpened(nonce, getToken, root, status, button, label) {
+		const started = performance.now();
+		const timer = window.setInterval(async () => {
+			let opened = false;
+			try {
+				const res = await fetch(`/v1/obsidian-opened/${nonce}`, { cache: "no-store" });
+				if (res.ok) opened = Boolean((await res.json()).opened);
+			} catch {
+				opened = false;
+			}
+			if (!opened && performance.now() - started < 8000) return;
+			window.clearInterval(timer);
+			if (button) {
+				button.disabled = false;
+				if (label) button.textContent = label;
+			}
+			if (!opened) return;
+			try {
+				const linked = await fetch("/v1/account/obsidian-connected", {
+					method: "POST",
+					headers: { "content-type": "application/json", ...bearer(await getToken?.()) },
+					body: "{}",
+				});
+				const body = await readBody(linked);
+				window.GroundworkTracking?.noteObsidian?.(body);
+			} catch {
+				/* The plugin can still finish the link. */
+			}
+			if (root) {
+				root.dataset.connected = "1";
+				paintDone(root);
+			}
+			setStatus(status, "Connected.");
+		}, 400);
+	}
+
+	let legacyPromise = null;
+	let legacyOptions = null;
+
+	function legacyEnabled() {
+		if (!legacyPromise) {
+			legacyPromise = fetch("/v1/setup/legacy-connect", { cache: "no-store" })
+				.then(async (res) => {
+					const data = await readBody(res);
+					if (!res.ok || typeof data.legacy !== "boolean") return true;
+					return data.legacy;
+				})
+				.catch(() => true);
+		}
+		return legacyPromise;
+	}
+
+	function ensureLegacyControl(anchor) {
+		if (!anchor?.parentElement || anchor.parentElement.querySelector("[data-legacy-connect]")) return;
+		const wrap = document.createElement("p");
+		wrap.className = "guide-legacy";
+		wrap.dataset.legacyWrap = "";
+		wrap.hidden = true;
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "guide-quiet";
+		button.dataset.legacyConnect = "";
+		button.textContent = "Not connecting? Use the older link";
+		wrap.append(button);
+		anchor.insertAdjacentElement("afterend", wrap);
+	}
+
+	async function refreshLegacy() {
+		for (const anchor of document.querySelectorAll("#open-obsidian")) ensureLegacyControl(anchor);
+		const show = await legacyEnabled();
+		if (!show) return;
+		for (const wrap of document.querySelectorAll("[data-legacy-wrap]")) wrap.hidden = false;
+		for (const button of document.querySelectorAll("[data-legacy-connect]")) {
+			if (button.dataset.legacyBound === "1") continue;
+			button.dataset.legacyBound = "1";
+			button.addEventListener("click", () => {
+				void legacyConnect(button);
+			});
+		}
+	}
+
+	async function legacyConnect(button) {
+		const options = legacyOptions;
+		const root = button?.closest?.("[data-setup]") || document.querySelector("[data-setup]");
+		const status = connectStatus(button);
+		const refresh = String((await options?.getRefresh?.()) ?? "").trim();
+		if (!refresh) {
+			setStatus(status, "The older link needs Google sign-in on this browser.");
+			return;
+		}
+		if (button) button.disabled = true;
+		const nonce = crypto.randomUUID();
+		const signal = `${location.origin}/v1/obsidian-opened/${nonce}/signal`;
+		const href = `obsidian://groundwork?refresh=${encodeURIComponent(refresh)}&opened=${encodeURIComponent(signal)}`;
+		setStatus(status, "Opening Obsidian…");
+		openProtocol(href);
+		watchOpened(nonce, options?.getToken, root, status, button, "");
+	}
+
 	async function connect(getToken, button) {
 		const root = button?.closest?.("[data-setup]") || document.querySelector("[data-setup]");
 		const status = root?.querySelector("[data-connect-status]") || document.querySelector("[data-connect-status]");
@@ -266,45 +371,7 @@
 			const href = `obsidian://groundwork?code=${encodeURIComponent(data.code)}&ack=${encodeURIComponent(signal)}`;
 			setStatus(status, `If Obsidian doesn’t connect, paste this code in Groundwork: ${data.code}`);
 			openProtocol(href);
-			const started = performance.now();
-			const timer = window.setInterval(async () => {
-				let opened = false;
-				try {
-					const res = await fetch(`/v1/obsidian-opened/${nonce}`, { cache: "no-store" });
-					if (res.ok) opened = Boolean((await res.json()).opened);
-				} catch {
-					opened = false;
-				}
-				if (!opened && performance.now() - started < 8000) return;
-				window.clearInterval(timer);
-				if (!opened) {
-					if (button) {
-						button.disabled = false;
-						button.textContent = "Connect Groundwork";
-					}
-					return;
-				}
-				try {
-					const linked = await fetch("/v1/account/obsidian-connected", {
-						method: "POST",
-						headers: { "content-type": "application/json", ...bearer(await getToken?.()) },
-						body: "{}",
-					});
-					const body = await readBody(linked);
-					window.GroundworkTracking?.noteObsidian?.(body);
-				} catch {
-					/* The plugin can still finish the link. */
-				}
-				if (root) {
-					root.dataset.connected = "1";
-					paintDone(root);
-				}
-				setStatus(status, "Connected.");
-				if (button) {
-					button.disabled = false;
-					button.textContent = "Connect Groundwork";
-				}
-			}, 400);
+			watchOpened(nonce, getToken, root, status, button, "Connect Groundwork");
 		} catch {
 			setStatus(status, "Couldn’t create a code. Try again in a minute.");
 			if (button) {
@@ -346,7 +413,9 @@
 	}
 
 	function mountAll(options) {
+		if (options) legacyOptions = options;
 		for (const root of document.querySelectorAll("[data-setup]")) mount(root, options);
+		void refreshLegacy();
 	}
 
 	window.GroundworkSetup = { mount, mountAll, connect, detectOs, isPhone };
