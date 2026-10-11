@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setHttpClient, type HttpClient } from "../src/http";
-import { AccountClient, knowledgeSnapshot, mergeTutorMemoryFiles, parseKnowledgeSnapshot, presentGroundwork, refreshFirebaseSession, tutorMemoryFiles } from "../src/account";
+import { AccountClient, knowledgeSnapshot, mergeTutorMemoryFiles, parseKnowledgeSnapshot, presentGroundwork, refreshFirebaseSession, signInWithCustomToken, tutorMemoryFiles } from "../src/account";
 import { MemoryVaultIO } from "../src/io";
 import { KnowledgeStore } from "../src/store";
 import { layoutGroundworkGraph } from "../src/groundwork-graph";
@@ -124,6 +124,11 @@ describe("website sign-in", () => {
 	it("reports an expired website session", async () => {
 		const fetchImpl: HttpClient = async () => new Response(JSON.stringify({ error: { message: "TOKEN_EXPIRED" } }), { status: 400 });
 		await expect(refreshFirebaseSession("old", "web-key", fetchImpl)).rejects.toThrow(/TOKEN_EXPIRED/);
+	});
+
+	it("exchanges a custom token for a refresh token", async () => {
+		const fetchImpl: HttpClient = async () => new Response(JSON.stringify({ idToken: "id-token", refreshToken: "refresh" }), { status: 200 });
+		await expect(signInWithCustomToken("custom", "web-key", fetchImpl)).resolves.toEqual({ idToken: "id-token", refreshToken: "refresh" });
 	});
 
 	it("rejects a non-JSON sign-in response", async () => {

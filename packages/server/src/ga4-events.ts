@@ -16,6 +16,11 @@ export function emitSignUp(client: Ga4EventClient, created: boolean, method: str
 	return true;
 }
 
+export function emitSetupLinkSent(client: Ga4EventClient, method: string): void {
+	const channel = method === "share" ? "share" : "copy";
+	client.gtag("event", "setup_link_sent", { ...client.attribution(), method: channel });
+}
+
 export function emitObsidianConnected(client: Ga4EventClient, first: boolean): boolean {
 	if (!shouldFireObsidianConnected(first)) return false;
 	client.gtag("event", "obsidian_connected", { ...client.attribution() });

@@ -113,7 +113,7 @@ npm run server           # http://127.0.0.1:8787
 
 `npm run build -w packages/server` writes `force-graph.js`, `tracking.js`, and the marketing HTML (`/pricing`, `/privacy`, and the other public paths) into `packages/server/public`. Those generated files are gitignored. Firebase Hosting deploys that folder after the build.
 
-Sign in with Google on that site. **Open Obsidian** connects Obsidian to this account (refresh token plus an opened signal). If the plugin is missing, the site sends you to install it. If this vault already has concept notes, the first connection copies them onto the account once.
+Sign in with Google on that site. **Connect Groundwork** opens Obsidian with a one-time code. The plugin exchanges the code for a session. Older builds still accept a refresh token in the link. If this vault already has concept notes, the first connection copies them onto the account once.
 
 `GROUNDWORK_PORT` chooses the listen port (default `8787`). `GROUNDWORK_MEMORY_FILE` chooses the local tutor-memory file when Firebase is not configured (default `data/tutor-memory.json`, gitignored).
 

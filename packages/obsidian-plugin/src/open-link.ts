@@ -1,6 +1,14 @@
+import { normalizeConnectCode } from "@groundwork/core";
+
 const SIGNAL_PATH = /^\/v1\/obsidian-opened\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/signal$/i;
 
-/** Refresh token from obsidian://groundwork?refresh=… after website sign-in + Open Obsidian. */
+/** One-time setup code from obsidian://groundwork?code=…. */
+export function parseGroundworkCode(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	return normalizeConnectCode(value);
+}
+
+/** Refresh token from an older obsidian://groundwork?refresh=… link. New links send a code instead. */
 export function parseGroundworkRefresh(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const refresh = value.trim();

@@ -25,6 +25,8 @@ export interface Auth {
 	 * report counts account documents instead.
 	 */
 	listUsers?(): Promise<AuthUserRef[]>;
+	/** Short-lived Firebase custom token for a one-time Obsidian connect code. Signs locally. */
+	mintCustomToken?(uid: string): Promise<string>;
 }
 
 const LOCAL_UID = "local";
@@ -76,6 +78,7 @@ export function createFirebaseAuth(auth: ReturnType<typeof getAuth>, denylist: I
 			await denylist.revoke(claimsFromToken(claims ?? { uid, iat: Math.floor(Date.now() / 1000) }));
 		},
 		listUsers: () => listFirebaseUsers(auth),
+		mintCustomToken: (uid) => auth.createCustomToken(uid),
 	};
 }
 

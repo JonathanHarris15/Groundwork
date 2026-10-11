@@ -1,10 +1,36 @@
 import { USAGE_FEATURE_LABEL, type UsageReport } from "@groundwork/core";
+import { type SetupFunnelCounts } from "./setup-funnel";
+
+const FUNNEL_LABEL: Record<keyof SetupFunnelCounts, string> = {
+	signup: "Signed up",
+	obsidian_download_click: "Obsidian download",
+	plugin_installed: "Plugin installed",
+	account_connected: "Account connected",
+	first_tutor_turn: "First tutor turn",
+};
+
+/** Counts and the share of the previous step. A later step can exceed an earlier one. */
+export function setupFunnelSection(counts: SetupFunnelCounts): string {
+	const steps = Object.keys(FUNNEL_LABEL) as Array<keyof SetupFunnelCounts>;
+	const rows = steps.map((step, index) => {
+		const count = counts[step] ?? 0;
+		const prev = index === 0 ? null : (counts[steps[index - 1]] ?? 0);
+		const fromPrev = prev == null || prev <= 0 ? "—" : pct((count / prev) * 100);
+		return [FUNNEL_LABEL[step], String(count), fromPrev];
+	});
+	return `<section class="usage-section" aria-labelledby="setup-funnel-title">
+						<h2 id="setup-funnel-title">Setup</h2>
+						<p class="fine">People moving from a new account to a first tutor turn. Each step counts the first time it happens. A later step can be higher than the one before it when someone installed the plugin without using the download button on this site.</p>
+						${table("Setup funnel", ["Step", "People", "From the previous step"], rows)}
+					</section>`;
+}
 
 /** Dashboard markup for an allowlisted admin. The page shell stays empty until this is returned. */
-export function usageDash(report: UsageReport): string {
+export function usageDash(report: UsageReport, funnel?: SetupFunnelCounts | null): string {
 	const proposed = proposedLabel(report);
 	const conversion = report.upgrades.clickers ? report.upgrades.convertedClickers / report.upgrades.clickers : null;
 	return `${accountHead(report)}
+					${funnel ? setupFunnelSection(funnel) : ""}
 					<h1>Free plan usage</h1>
 					<p class="usage-actions"><button class="btn btn-line" type="button" id="download-csv">Download CSV</button></p>
 					<p class="lede">${esc(report.meter)}</p>

@@ -13,6 +13,7 @@ const FILES: Record<string, { file: string; type: string }> = {
 	"/site-session.js": { file: "site-session.js", type: "text/javascript; charset=utf-8" },
 	"/force-graph.js": { file: "force-graph.js", type: "text/javascript; charset=utf-8" },
 	"/tracking.js": { file: "tracking.js", type: "text/javascript; charset=utf-8" },
+	"/setup.js": { file: "setup.js", type: "text/javascript; charset=utf-8" },
 	"/graph-harness.html": { file: "graph-harness.html", type: "text/html; charset=utf-8" },
 	"/graph-account-preview.html": { file: "graph-account-preview.html", type: "text/html; charset=utf-8" },
 	"/styles.css": { file: "styles.css", type: "text/css; charset=utf-8" },

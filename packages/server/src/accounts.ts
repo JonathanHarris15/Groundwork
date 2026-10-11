@@ -62,6 +62,11 @@ export class AccountDirectory {
 		return { view, created };
 	}
 
+	async obsidianLinked(uid: string): Promise<boolean> {
+		const existing = await this.readRecord(uid);
+		return Boolean(existing?.obsidianConnectedAt);
+	}
+
 	/** First call for an account returns `{ first: true }`. Later calls do not. */
 	async connectObsidian(uid: string, now: Date = new Date()): Promise<{ first: boolean }> {
 		const existing = await this.readRecord(uid);

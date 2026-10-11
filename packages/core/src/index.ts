@@ -39,5 +39,6 @@ export * from "./account/usage";
 export * from "./account/usage-feature";
 export * from "./account/usage-report";
 export * from "./account/tutor";
+export * from "./connect-code";
 export * from "./jev/grade";
 export * from "./jev/context";

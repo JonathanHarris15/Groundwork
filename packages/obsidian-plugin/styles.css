@@ -2128,6 +2128,30 @@ body .gw-root .gw-continue button:disabled {
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 }
+.gw-welcome h2 {
+	margin: 0 0 6px;
+	font-size: 1.25em;
+}
+.gw-welcome p {
+	margin: 0 0 12px;
+	color: var(--text-muted);
+}
+.gw-connect-form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: end;
+	margin-top: 12px;
+}
+.gw-connect-form label {
+	display: block;
+	margin-bottom: 4px;
+}
+.gw-connect-status {
+	flex-basis: 100%;
+	margin: 0;
+	color: var(--text-muted);
+}
 .gw-setup {
 	border: 1px solid color-mix(in srgb, var(--gw-shaky) 55%, transparent);
 	background: color-mix(in srgb, var(--gw-shaky) 10%, transparent);

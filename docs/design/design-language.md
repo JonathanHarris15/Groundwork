@@ -64,6 +64,10 @@ The site header is one row from 360px through 840px: the Groundwork logo, a comp
 
 The top of `/admin/usage` is two count cards, Users and Paid users, above the free-plan usage report. Users is the Firebase Auth count. Free, No plan, Paid users, and Paid plan not active partition that count, so those categories add up to Users. Joined in the last 7 days is a window inside that count. Paid users are Auth users with an active or trialing subscription on Bring your own model or Groundwork. The card lists how many of those cost more than $0 after discounts, and how many are on the 100% off GROUNDWORKTESTER coupon. It does not multiply a plan price by the subscription count. A Firestore account document with no Auth user is an orphaned record, shown on its own line under the cards, and left out of the usage and retention numbers.
 
+## Setup checklist
+
+`/get-started` and the empty account page share one checklist, mounted by `setup.js` into `[data-setup]`. Three steps, in order: Get Obsidian, Add Groundwork, Connect your account. The detected desktop OS gets the download button. The other two systems are text links. A phone (by user agent, not by viewport width) sees “Groundwork runs on your computer” with copy, share, and a QR code, and the three steps stay underneath. Done is the word “Done”, not a color alone. The connect link is `obsidian://groundwork?code=…`. It does not carry a refresh token.
+
 ## Copy
 
 - Action labels are titles only, with no time estimates ("Practice exam", not "Practice exam · 30m").

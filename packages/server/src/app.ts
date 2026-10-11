@@ -13,6 +13,10 @@ import { webConfig } from "./web-config";
 import { isUsageAdmin } from "./admin-access";
 import { usageDash, usageCsv } from "./usage-page";
 import type { UsageDirectory } from "./usage";
+import type { ConnectCodeDirectory } from "./connect-codes";
+import type { SetupFunnel } from "./setup-funnel";
+import type { DownloadCache } from "./obsidian-downloads";
+import { publicSetupRoute, signedInSetupRoute } from "./setup-routes";
 
 export interface ServerDeps {
 	auth: Auth;
@@ -27,6 +31,9 @@ export interface ServerDeps {
 	openRouterKey?: string;
 	fetchImpl?: FetchLike;
 	usage?: UsageDirectory;
+	connectCodes?: ConnectCodeDirectory;
+	setupFunnel?: SetupFunnel;
+	downloadCache?: DownloadCache;
 }
 
 export interface RouteResult {
@@ -47,6 +54,9 @@ export interface RouteMeta {
 	sessionId?: string;
 	/** Client address for the public checkout-amount limit. */
 	ip?: string;
+	search?: string;
+	host?: string;
+	forwardedProto?: string;
 }
 
 export async function route(method: string, path: string, body: unknown, deps: ServerDeps, authorization?: string, meta: RouteMeta = {}): Promise<RouteResult> {
@@ -75,6 +85,8 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			if (amountUsd == null) return { status: 404, json: { error: "Unknown checkout." } };
 			return { status: 200, json: { amountUsd, currency: "USD" } };
 		}
+		const setup = await publicSetupRoute(method, path, body, deps, meta);
+		if (setup) return setup;
 		if (hasClientKey(body)) {
 			return { status: 400, json: { error: "Do not send API keys on this request. Paste keys under Your model on the account page." } };
 		}
@@ -89,7 +101,17 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			}
 		}
 		const openedAccount = await deps.accounts.seen(uid, { email: identity.email, name: identity.name }, attributionFromHeader(meta.attribution));
-		const view = openedAccount.view;
+		let view = openedAccount.view;
+		if (!view.plan) view = await deps.accounts.setPlan(uid, "free");
+		if (openedAccount.created) {
+			try {
+				await deps.setupFunnel?.mark("signup", uid);
+			} catch (err) {
+				console.error("Could not record a signup.", err);
+			}
+		}
+		const signedSetup = await signedInSetupRoute(method, path, body, deps, uid, { email: view.email, displayName: view.displayName });
+		if (signedSetup) return signedSetup;
 
 		if (method === "POST" && path === "/v1/auth/sign-out") {
 			await deps.auth.revokeRefreshTokens(uid, authorization);
@@ -98,10 +120,19 @@ export async function route(method: string, path: string, body: unknown, deps: S
 
 		if (method === "GET" && path === "/v1/account") {
 			const isAdmin = isUsageAdmin(identity, { localDev: !deps.auth.firebase });
-			return { status: 200, json: { ...presentAccount(view), created: openedAccount.created, isAdmin } };
+			const obsidianConnected = await deps.accounts.obsidianLinked(uid);
+			return { status: 200, json: { ...presentAccount(view), created: openedAccount.created, isAdmin, obsidianConnected } };
 		}
 		if (method === "POST" && path === "/v1/account/obsidian-connected") {
-			return { status: 200, json: await deps.accounts.connectObsidian(uid) };
+			const linked = await deps.accounts.connectObsidian(uid);
+			if (linked.first) {
+				try {
+					await deps.setupFunnel?.mark("account_connected", uid);
+				} catch (err) {
+					console.error("Could not record an Obsidian connection.", err);
+				}
+			}
+			return { status: 200, json: linked };
 		}
 		if (method === "POST" && path === "/v1/account/profile") {
 			const displayName = (body as { displayName?: unknown } | null)?.displayName;
@@ -179,7 +210,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { ok: true } };
 		}
 		if (method === "POST" && path === "/v1/tutor/complete") {
-			return completeTutor(
+			const done = await completeTutor(
 				{
 					view,
 					choice: await deps.accounts.choice(uid),
@@ -196,6 +227,14 @@ export async function route(method: string, path: string, body: unknown, deps: S
 				},
 				body,
 			);
+			if (done.status === 200) {
+				try {
+					await deps.setupFunnel?.mark("first_tutor_turn", uid);
+				} catch (err) {
+					console.error("Could not record a first tutor turn.", err);
+				}
+			}
+			return done;
 		}
 		if (method === "GET" && path === "/v1/secrets") {
 			return { status: 200, json: { providers: await deps.secrets.saved(uid) } };
@@ -289,11 +328,12 @@ async function adminUsage(path: string, deps: ServerDeps, authorization: string 
 	}
 	const authUsers = deps.auth.listUsers ? await deps.auth.listUsers() : undefined;
 	const report = await usage.report(deps.accounts, new Date(), authUsers);
+	const funnel = deps.setupFunnel ? await deps.setupFunnel.counts() : null;
 	const headers = { "cache-control": "private, no-store" };
 	if (path === "/api/admin/usage.csv") {
 		return { status: 200, json: { ok: true }, text: usageCsv(report), type: "text/csv; charset=utf-8", headers: { ...headers, "content-disposition": "attachment; filename=\"groundwork-usage.csv\"" } };
 	}
-	return { status: 200, json: { ...report, html: usageDash(report) }, headers };
+	return { status: 200, json: { ...report, html: usageDash(report, funnel) }, headers };
 }
 
 function notFoundJson(): RouteResult {

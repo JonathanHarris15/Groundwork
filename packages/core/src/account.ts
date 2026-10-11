@@ -359,6 +359,14 @@ export class AccountClient {
 		return this.request("PUT", "/v1/memory", input);
 	}
 
+	async getAccount(): Promise<{ displayName?: string | null; email?: string | null }> {
+		return this.request("GET", "/v1/account");
+	}
+
+	async markObsidianConnected(): Promise<{ first: boolean }> {
+		return this.request("POST", "/v1/account/obsidian-connected", {});
+	}
+
 	private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
 		const headers: Record<string, string> = { Accept: "application/json" };
 		if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -418,10 +426,40 @@ export async function refreshFirebaseSession(refreshToken: string, apiKey: strin
 	}
 	const idToken = typeof parsed.id_token === "string" ? parsed.id_token : "";
 	if (!response.ok || !idToken) {
-		const message = typeof parsed.error?.message === "string" ? parsed.error.message : "The website session expired. Open Obsidian from the Groundwork website again.";
+		const message = typeof parsed.error?.message === "string" ? parsed.error.message : "The website session expired. Choose Connect Groundwork on the website again.";
 		throw new AccountError(message, response.status);
 	}
 	return { idToken, refreshToken: typeof parsed.refresh_token === "string" && parsed.refresh_token ? parsed.refresh_token : refreshToken };
+}
+
+/** Turn a one-time custom token from the website into a refresh token the plugin can store. */
+export async function signInWithCustomToken(customToken: string, apiKey: string, fetchImpl: HttpClient = httpClient()): Promise<FirebaseSession> {
+	let response: Awaited<ReturnType<HttpClient>>;
+	try {
+		response = await fetchImpl(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${encodeURIComponent(apiKey)}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: customToken, returnSecureToken: true }),
+		});
+	} catch (e) {
+		throw new AccountError(`Could not reach the website sign-in. ${e instanceof Error ? e.message : "The request failed."}`, 0);
+	}
+	const text = await response.text();
+	let parsed: { idToken?: unknown; refreshToken?: unknown; error?: { message?: unknown } } = {};
+	if (text) {
+		try {
+			parsed = JSON.parse(text) as typeof parsed;
+		} catch {
+			throw new AccountError("The website sign-in returned an unreadable response. Try again in a moment.", response.status || 0);
+		}
+	}
+	const idToken = typeof parsed.idToken === "string" ? parsed.idToken : "";
+	const refreshToken = typeof parsed.refreshToken === "string" ? parsed.refreshToken : "";
+	if (!response.ok || !idToken || !refreshToken) {
+		const message = typeof parsed.error?.message === "string" ? parsed.error.message : "That setup code could not be used. Create a new one on the website.";
+		throw new AccountError(message, response.status);
+	}
+	return { idToken, refreshToken };
 }
 
 function clamp01(n: number): number {

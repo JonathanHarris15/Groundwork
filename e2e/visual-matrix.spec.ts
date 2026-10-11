@@ -44,7 +44,7 @@ async function signInLocal(page: Page, record: "empty" | "returning") {
 	const heading = record === "empty" ? /^Welcome,/ : /^Welcome back,/;
 	await expect(page.getByRole("heading", { name: heading })).toBeVisible();
 	if (record === "empty") {
-		await expect(page.getByRole("heading", { name: /First session/i })).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Get Obsidian" })).toBeVisible();
 		await expect(page.locator(".board")).toHaveCount(0);
 	} else {
 		await expect(page.locator(".board")).toHaveCount(1);

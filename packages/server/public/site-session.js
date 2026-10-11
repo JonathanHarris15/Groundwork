@@ -165,7 +165,7 @@ function showSignIn(root, config, onLocal) {
 	const google = config.firebase ? `<button class="cta" id="usage-google" type="button">Sign in with Google</button>` : "";
 	const local = config.localDev ? `<button class="cta" id="usage-local" type="button">Continue on this device</button>` : "";
 	root.innerHTML = `<h1>Sign in or start free.</h1>
-		<p class="mkt-sub">Create your free account or sign in with Google. Then choose <strong>Open Obsidian</strong> on the account page to link the plugin on this computer. Requires Obsidian desktop.</p>
+		<p class="mkt-sub">Create your free account or sign in with Google. Groundwork runs in Obsidian on a computer. Requires Obsidian desktop.</p>
 		<div class="cta-row">${google}${local}</div>
 		<p class="fine">By continuing you confirm you're 18 or older and agree to the <a href="/terms">Terms</a>.</p>
 		${config.localDev ? `<p class="fine">Local-only sign-in. Use Google on the live site.</p>` : ""}`;

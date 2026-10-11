@@ -328,6 +328,7 @@ test("utm and gclid survive navigation and ride on the account request", async (
 
 test("obsidian_connected fires on the first link only", async ({ page, request }) => {
 	await request.post("/v1/account/plan", { data: { plan: "free" } });
+	await request.put("/v1/memory", { data: { files: {}, knowledge: { concepts: [], goals: [] } } });
 	await page.addInitScript(() => {
 		document.addEventListener(
 			"click",
@@ -355,10 +356,10 @@ test("obsidian_connected fires on the first link only", async ({ page, request }
 	});
 	await page.goto("/?e2e=link#signin");
 	await page.getByRole("button", { name: "Continue on this device" }).click();
-	await page.getByRole("button", { name: "Open Obsidian" }).click();
+	await page.getByRole("button", { name: "Connect Groundwork" }).click();
 	await expect.poll(() => links).toBe(1);
 	expect(await countEvents(page, "obsidian_connected")).toBe(1);
-	await page.getByRole("button", { name: "Open Obsidian" }).click();
+	await page.getByRole("button", { name: "Connect Groundwork" }).click();
 	await expect.poll(() => links).toBe(2);
 	expect(await countEvents(page, "obsidian_connected")).toBe(1);
 });

@@ -123,7 +123,7 @@ function fill(cfg) {
   const map = root.querySelector(".gw-map");
   const body = cfg.body;
   if (body === "start") {
-    messages.innerHTML = `<div class="gw-empty"><div class="gw-start"><h2 class="gw-start-title">Sign in to start.</h2><div class="gw-start-detail"><p>Open the Groundwork website, sign in, and choose Open Obsidian.</p></div><div class="gw-start-actions"><button type="button" class="mod-cta gw-start-primary">Sign in</button></div></div><div class="gw-suggestions is-deferred"><h3 class="gw-suggestions-kicker">After you are connected</h3></div></div>`;
+    messages.innerHTML = `<div class="gw-empty"><div class="gw-start"><h2 class="gw-start-title">Sign in to start.</h2><div class="gw-start-detail"><p>Open the Groundwork website, sign in, and choose Connect Groundwork.</p></div><div class="gw-start-actions"><button type="button" class="mod-cta gw-start-primary">Sign in</button></div></div><div class="gw-suggestions is-deferred"><h3 class="gw-suggestions-kicker">After you are connected</h3></div></div>`;
   }
   if (body === "chat") {
     messages.innerHTML = `
@@ -140,7 +140,7 @@ function fill(cfg) {
     library.innerHTML = `<div class="gw-library-top"><div class="gw-library-head"><div class="gw-library-titles"><h2 class="gw-library-title">Library</h2><div class="gw-library-sub">Goals, concepts, flashcards, and past chats.</div></div></div><div class="gw-lib-tabs" role="tablist"><button type="button" class="gw-lib-tab" role="tab">Goals <span class="gw-lib-count">1</span></button><button type="button" class="gw-lib-tab is-active" role="tab">Concepts <span class="gw-lib-count">3</span></button><button type="button" class="gw-lib-tab" role="tab">Chats <span class="gw-lib-count">2</span></button><button type="button" class="gw-lib-tab" role="tab">Flashcards <span class="gw-lib-count">12</span></button></div></div><div class="gw-library-scroll"><div class="gw-lib-section"><div class="gw-lib-list gw-lib-list-concepts">${["solid", "learning", "rusty"].map((t, i) => `<div class="gw-lib-row"><div class="gw-lib-main"><div class="gw-lib-name">${["Limits", "Eigenvalues", "Row reduction"][i]}</div><div class="gw-lib-meta">${pill(t, TONES.find((x) => x[0] === t)[1])}</div></div><div class="gw-lib-actions"><button type="button" class="gw-lib-btn">Quiz</button><button type="button" class="gw-lib-btn">Delete</button></div></div>`).join("")}</div></div></div>`;
   }
   if (body === "settings-out") {
-    settings.innerHTML = `<div class="gw-library-top"><div class="gw-library-head"><div class="gw-library-titles"><h2 class="gw-library-title">Settings</h2><div class="gw-library-sub">Vault folders, the tutor, and your account.</div></div></div></div><div class="gw-library-scroll"><div class="gw-lib-section"><h3>Account</h3><p class="gw-lib-help">Open the website, sign in, and choose Open Obsidian.</p></div></div>`;
+    settings.innerHTML = `<div class="gw-library-top"><div class="gw-library-head"><div class="gw-library-titles"><h2 class="gw-library-title">Settings</h2><div class="gw-library-sub">Vault folders, the tutor, and your account.</div></div></div></div><div class="gw-library-scroll"><div class="gw-lib-section"><h3>Account</h3><p class="gw-lib-help">Open the website, sign in, and choose Connect Groundwork.</p></div></div>`;
   }
   if (body === "flash") {
     flash.innerHTML = `<div class="gw-fc-body"><div class="gw-fc-main"><div class="gw-fcard"><div class="gw-fcard-front">What is the determinant?</div></div></div></div>`;
