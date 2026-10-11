@@ -17,7 +17,7 @@
  */
 
 import type { ContentBlock, ProviderTool, ChatMessage } from "../agent/types";
-import { USER_KEY_PROVIDERS, type UserKeyProvider } from "./plans";
+import { USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "./plans";
 import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
 
 /**
@@ -99,6 +99,7 @@ export interface TutorStatus {
 	ownModel: boolean;
 	/** Set for a hosted tutor. Null when the account brings its own model. */
 	weight: TutorWeight | null;
+	plan: PlanId | null;
 	claude: typeof CLAUDE_SETUP;
 }
 
@@ -160,7 +161,7 @@ export function tutorDecision(view: AccountView, choice: TutorChoice, saved: Par
 
 export function tutorStatus(decision: TutorDecision, view: AccountView, choice: TutorChoice): TutorStatus {
 	const budgetUsed = view.ownModel || view.creditUsd <= 0 ? 0 : Math.min(1, view.spentUsd / view.creditUsd);
-	const shared = { budgetUsed, ownModel: view.ownModel, claude: CLAUDE_SETUP };
+	const shared = { budgetUsed, ownModel: view.ownModel, plan: view.plan, claude: CLAUDE_SETUP };
 	if (decision.action === "hosted") {
 		return { ...shared, action: "hosted", via: "hosted", model: decision.model, provider: "openrouter", label: HOSTED_MODELS[decision.weight].label, weight: decision.weight, error: null, setup: null };
 	}

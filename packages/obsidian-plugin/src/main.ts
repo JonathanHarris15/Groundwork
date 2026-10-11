@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, requestUrl, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, GroundworkProvider, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, replaceTutorMemoryFiles, setHttpClient, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, FLASHCARDS_REQUIRE_UPGRADE, GroundworkProvider, HEAVY_REQUIRES_UPGRADE, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, PATHS, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, replaceTutorMemoryFiles, setHttpClient, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type UsageEventKind, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import { BUILD, readBuildStamp } from "./build";
 import { groundworkOpenedSignal, parseGroundworkConcept, parseGroundworkRefresh } from "./open-link";
@@ -256,48 +256,80 @@ export default class GroundworkPlugin extends Plugin {
 			setup: null,
 			budgetUsed: 0,
 			ownModel: false,
+			plan: null,
 			weight: null,
 			claude: CLAUDE_SETUP,
 		};
 	}
 
-	private weightSave: Promise<void> | null = null;
+	private weightSave: Promise<"saved" | "heavy_prompt" | "failed"> | null = null;
 
-	async setTutorWeight(weight: "light" | "heavy"): Promise<void> {
+	async setTutorWeight(weight: "light" | "heavy"): Promise<"saved" | "heavy_prompt" | "failed"> {
 		if (this.weightSave) return this.weightSave;
 		const token = await this.accountAccessToken();
-		if (!token) return;
+		if (!token) return "failed";
 		const current = this.tutorRoute?.weight === "heavy" ? "heavy" : "light";
-		if (this.tutorRoute?.action === "hosted" && current === weight) return;
+		if (this.tutorRoute?.action === "hosted" && current === weight) return "saved";
 		this.weightSave = this.saveTutorWeight(token, weight).finally(() => {
 			this.weightSave = null;
 		});
 		return this.weightSave;
 	}
 
-	private async saveTutorWeight(token: string, weight: "light" | "heavy"): Promise<void> {
+	private async saveTutorWeight(token: string, weight: "light" | "heavy"): Promise<"saved" | "heavy_prompt" | "failed"> {
 		try {
 			const res = await obsidianHttp(`${accountOrigin()}/v1/tutor/weight`, {
 				method: "POST",
 				headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
 				body: JSON.stringify({ weight }),
 			});
-			const body = (await res.json()) as TutorStatus & { error?: unknown };
+			const body = (await res.json()) as TutorStatus & { error?: unknown; code?: unknown };
 			if (!res.ok) {
+				if (body.code === HEAVY_REQUIRES_UPGRADE) return "heavy_prompt";
 				new Notice(typeof body.error === "string" ? body.error : "Could not save the tutor model.");
-				return;
+				return "failed";
 			}
 			this.tutorRoute = body;
 			this.refreshAccountUi();
+			return "saved";
 		} catch (err) {
 			new Notice(err instanceof Error ? err.message : String(err));
+			return "failed";
+		}
+	}
+
+	/** Record that the upgrade prompt was shown. The server stores these as Free. */
+	recordUpgradeShown(topic: "heavy" | "flashcards"): void {
+		const kind: UsageEventKind = topic === "heavy" ? "heavy_upgrade_prompt_shown" : "flashcards_upgrade_prompt_shown";
+		void this.recordUpgrade(kind);
+	}
+
+	/** Open the website checkout for a paid plan, and count the click. */
+	openPaidPlan(topic: "heavy" | "flashcards", plan: "byom" | "included"): void {
+		const kind: UsageEventKind = topic === "heavy" ? "heavy_upgrade_click" : "flashcards_upgrade_click";
+		void this.recordUpgrade(kind, plan).finally(() => {
+			window.open(`${accountOrigin()}/?plan=${plan}#signin`);
+		});
+	}
+
+	private async recordUpgrade(kind: UsageEventKind, plan?: "byom" | "included"): Promise<void> {
+		const token = await this.accountAccessToken();
+		if (!token) return;
+		try {
+			await obsidianHttp(`${accountOrigin()}/v1/usage/prompt`, {
+				method: "POST",
+				headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+				body: JSON.stringify(plan ? { kind, plan } : { kind }),
+			});
+		} catch {
+			// A missed count should not block the prompt.
 		}
 	}
 
 	tutorRouteKey(): string {
 		const route = this.tutorRoute;
 		if (!route) return `local:${this.settings.provider}`;
-		return `${route.action}:${route.provider ?? ""}:${route.model ?? ""}:${route.weight ?? ""}:${route.setup ?? ""}`;
+		return `${route.plan ?? ""}:${route.action}:${route.provider ?? ""}:${route.model ?? ""}:${route.weight ?? ""}:${route.setup ?? ""}`;
 	}
 
 	signedIn(): boolean {
@@ -451,7 +483,9 @@ export default class GroundworkPlugin extends Plugin {
 		if (!loadAccountToken(this.app)) return;
 		if (this.syncStatus.state === "offline" || !this.tutorRoute) {
 			await this.finishAccountLink();
+			return;
 		}
+		await this.refreshTutorRoute();
 	}
 
 	// ── sync ───────────────────────────────────────────────────────────
@@ -600,8 +634,17 @@ export default class GroundworkPlugin extends Plugin {
 		}
 	}
 
+	/** A Free account cannot add cards. Put the last saved deck back so the rest of memory can sync. */
+	private restoreFlashcardsFromBaseline(): void {
+		const path = PATHS.flashcards;
+		const previous = this.memoryBaseline?.files[path];
+		if (previous == null) this.memoryIO.files.delete(path);
+		else this.memoryIO.files.set(path, previous);
+		this.store.invalidate();
+	}
+
 	/** Save concepts, notes, evidence, chats, and the learner profile to the website account. */
-	async saveMemory(manual: boolean): Promise<void> {
+	async saveMemory(manual: boolean, retried = false): Promise<void> {
 		const client = await this.memoryClient();
 		if (!client) {
 			if (manual) new Notice("Groundwork: sign in on the website and choose open Obsidian. Tutor memory stays on your account.");
@@ -632,6 +675,13 @@ export default class GroundworkPlugin extends Plugin {
 					});
 					break;
 				} catch (e) {
+					if (!retried && flashcardsUpgrade(e)) {
+						this.restoreFlashcardsFromBaseline();
+						for (const view of this.views()) view.showUpgrade("flashcards");
+						this.accountPublishing = false;
+						await this.saveMemory(manual, true);
+						return;
+					}
 					if (!(e instanceof AccountError) || e.status !== 409 || attempt === 2) throw e;
 					new Notice("Groundwork: your account changed on another device. Merged the changes and saving again.");
 					const remote = memoryFromConflict(e.body) ?? (await client.getHostedMemory());
@@ -808,6 +858,12 @@ function obsidianHttp(url: string, init: HttpInit = {}): Promise<HttpResponse> {
 			},
 		);
 	});
+}
+
+function flashcardsUpgrade(err: unknown): boolean {
+	if (!(err instanceof AccountError) || err.status !== 402) return false;
+	const body = err.body;
+	return !!body && typeof body === "object" && (body as { code?: unknown }).code === FLASHCARDS_REQUIRE_UPGRADE;
 }
 
 function memoryFromConflict(body: unknown): TutorMemory | null {

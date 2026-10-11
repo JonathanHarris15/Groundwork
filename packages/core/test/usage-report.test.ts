@@ -329,6 +329,23 @@ describe("retention and limit outcomes", () => {
 		expect(exclusionReasons(account({ uid: "t", email: "test+qa@example.com" }), ADMIN)).toContain("test");
 		expect(exclusionReasons(account({ uid: "a", email: "ada@school.edu" }), ADMIN)).toEqual([]);
 	});
+
+	it("counts Heavy and flashcard upgrade prompts, and leaves an excluded account out", () => {
+		const built = report({
+			accounts: [account({ uid: "ada" }), account({ uid: "jono", email: "jono591737@gmail.com" })],
+			events: [
+				{ uid: "ada", at: "2026-10-09T00:00:00.000Z", kind: "heavy_upgrade_prompt_shown", plan: "free" },
+				{ uid: "ada", at: "2026-10-09T00:01:00.000Z", kind: "heavy_upgrade_click", plan: "included" },
+				{ uid: "ada", at: "2026-10-09T00:02:00.000Z", kind: "flashcards_upgrade_prompt_shown", plan: "free" },
+				{ uid: "ada", at: "2026-10-09T00:03:00.000Z", kind: "flashcards_upgrade_click", plan: "byom" },
+				{ uid: "jono", at: "2026-10-09T00:04:00.000Z", kind: "heavy_upgrade_prompt_shown", plan: "free" },
+				{ uid: "jono", at: "2026-10-09T00:05:00.000Z", kind: "checkout", plan: "byom" },
+			],
+		});
+		expect(built.prompts.heavy).toEqual({ shown: 1, clicks: 1, byom: 0, included: 1 });
+		expect(built.prompts.flashcards).toEqual({ shown: 1, clicks: 1, byom: 1, included: 0 });
+		expect(built.upgrades.clicks).toBe(0);
+	});
 });
 
 function mondayOf(week: string): string {

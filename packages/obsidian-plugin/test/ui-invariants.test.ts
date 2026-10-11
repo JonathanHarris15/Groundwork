@@ -12,6 +12,7 @@ const hostedRoute = (): TutorStatus => ({
 	setup: null,
 	budgetUsed: 0,
 	ownModel: false,
+	plan: "included",
 	weight: "light",
 	claude: CLAUDE_SETUP,
 });

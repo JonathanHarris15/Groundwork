@@ -41,11 +41,27 @@ export interface UsageLedgerRow {
 	chargedUsd: number;
 }
 
+export type UsageEventKind =
+	| "checkout"
+	| "upgraded"
+	| "heavy_upgrade_prompt_shown"
+	| "heavy_upgrade_click"
+	| "flashcards_upgrade_prompt_shown"
+	| "flashcards_upgrade_click";
+
 export interface UsageEventRow {
 	uid: string;
 	at: string;
-	kind: "checkout" | "upgraded";
-	plan: "byom" | "included";
+	kind: UsageEventKind;
+	/** Checkout, a paid upgrade, and a prompt click name that plan. A prompt show is `free`. */
+	plan: "byom" | "included" | "free";
+}
+
+export interface UpgradePromptCounts {
+	shown: number;
+	clicks: number;
+	byom: number;
+	included: number;
 }
 
 export interface UsageAccountRow {
@@ -154,6 +170,7 @@ export interface UsageReport {
 		highUsd: number | null;
 	};
 	upgrades: { clicks: number; clickers: number; upgrades: number; convertedClickers: number };
+	prompts: { heavy: UpgradePromptCounts; flashcards: UpgradePromptCounts };
 	excluded: { admin: number; coupon: number; test: number };
 	users: UserLimitRow[];
 	distribution: Array<{ label: string; count: number }>;
@@ -568,10 +585,27 @@ export function buildUsageReport(source: UsageReportInput): UsageReport {
 			upgrades: upgraded.size,
 			convertedClickers,
 		},
+		prompts: {
+			heavy: promptCounts(input.events, excluded, "heavy"),
+			flashcards: promptCounts(input.events, excluded, "flashcards"),
+		},
 		excluded: { admin, coupon, test },
 		users: userRows,
 		distribution,
 		census: accountCensus(input.accounts, now, scoped.orphans),
+	};
+}
+
+function promptCounts(events: UsageEventRow[], excluded: Map<string, unknown>, topic: "heavy" | "flashcards"): UpgradePromptCounts {
+	const shownKind = topic === "heavy" ? "heavy_upgrade_prompt_shown" : "flashcards_upgrade_prompt_shown";
+	const clickKind = topic === "heavy" ? "heavy_upgrade_click" : "flashcards_upgrade_click";
+	const mine = events.filter((event) => !excluded.has(event.uid));
+	const clicks = mine.filter((event) => event.kind === clickKind);
+	return {
+		shown: mine.filter((event) => event.kind === shownKind).length,
+		clicks: clicks.length,
+		byom: clicks.filter((event) => event.plan === "byom").length,
+		included: clicks.filter((event) => event.plan === "included").length,
 	};
 }
 

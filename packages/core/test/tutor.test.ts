@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choosePlan, emptyAccount, presentAccount, settleHosted, setTutorChoice, spendHosted, viewAccount } from "../src/account/usage";
+import { choosePlan, emptyAccount, presentAccount, settleHosted, setTutorChoice, setTutorWeight, spendHosted, viewAccount } from "../src/account/usage";
 import {
 	CLAUDE_SETUP,
 	HOSTED_MODEL,
@@ -33,6 +33,18 @@ describe("tutor route", () => {
 		const decision = tutorDecision(viewAccount(emptyAccount("u", now), now), { via: "claude", provider: null }, saved);
 		expect(decision).toMatchObject({ action: "blocked", setup: "plan" });
 		expect(decision.action === "blocked" && decision.error).not.toMatch(/\$\d/);
+	});
+
+	it("keeps Free Heavy hosted so a Light send still has a route, and a paid plan that ends returns to Light", () => {
+		const legacy = setTutorWeight(choosePlan(emptyAccount("u", now), "free", now), "heavy", now);
+		expect(choosePlan(legacy, "free", now).tutorWeight).toBe("heavy");
+		const view = viewAccount(legacy, now);
+		const decision = tutorDecision(view, { via: "claude", provider: null }, saved);
+		expect(decision).toMatchObject({ action: "hosted", model: HOSTED_MODELS.heavy.id, weight: "heavy" });
+		expect(tutorStatus(decision, view, { via: "claude", provider: null })).toMatchObject({ action: "hosted", plan: "free", weight: "heavy" });
+		const ended = choosePlan(setTutorWeight(choosePlan(emptyAccount("u", now), "included", now), "heavy", now), "free", now);
+		expect(ended.tutorWeight).toBe("light");
+		expect(ended.plan).toBe("free");
 	});
 
 	it("sends free and Groundwork through Light unless the account chooses Heavy", () => {

@@ -50,8 +50,9 @@ The **first time** you open the vault on a machine, Obsidian asks you to *Trust 
 
 The plan on the account decides.
 
-- **Free** and **Groundwork** ($20/month): Obsidian calls Groundwork. The tutor is Light (`google/gemini-3.8-flash`) unless the learner switches to Heavy (`google/gemini-3.5-flash`) in the plugin. One shared key. The month's budget is the limit. You do not paste a key.
-- **Bring your own model** ($6/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. Groundwork does not meter that usage. A Claude login stays on the computer. Checkout uses `STRIPE_PRICE_BYOM` and `STRIPE_PRICE_INCLUDED`. Older price ids in `STRIPE_PRICE_BYOM_PREVIOUS` and `STRIPE_PRICE_INCLUDED_PREVIOUS` still count as the same plan. They are not offered at checkout.
+- **Free**: Obsidian calls Groundwork. The tutor stays on Light (`google/gemini-3.8-flash`). A request for Heavy is refused. New flashcards are refused. Decks already on the account stay readable. One shared key. The month's budget is the limit. You do not paste a key.
+- **Groundwork** ($20/month): Obsidian calls Groundwork. The tutor is Light (`google/gemini-3.8-flash`) unless the learner switches to Heavy (`google/gemini-3.5-flash`) in the plugin. Flashcards are included. One shared key. The month's budget is the limit. You do not paste a key.
+- **Bring your own model** ($6/month): the Claude subscription on this computer, or a key you paste for OpenRouter, Anthropic, Google, xAI, or OpenAI. The Light/Heavy switch is not shown. Heavy is not a hosted model on this plan; the tutor uses the subscription or key above. Flashcards are included. Groundwork does not meter that usage. A Claude login stays on the computer. Checkout uses `STRIPE_PRICE_BYOM` and `STRIPE_PRICE_INCLUDED`. Older price ids in `STRIPE_PRICE_BYOM_PREVIOUS` and `STRIPE_PRICE_INCLUDED_PREVIOUS` still count as the same plan. They are not offered at checkout.
 
 ### Connect a Claude subscription
 

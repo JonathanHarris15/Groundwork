@@ -64,9 +64,9 @@ test("HEAD matches GET", async ({ request }) => {
 test("landing and 404", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
-	await expect(page.locator("body")).toContainText("Bring your own model for $6/month");
-	await expect(page.locator("body")).toContainText("for $20/month");
-	await expect(page.locator("body")).toContainText("Start free on Groundwork");
+	await expect(page.locator("body")).toContainText("Bring your own model is $6/month");
+	await expect(page.locator("body")).toContainText("Groundwork is $20/month");
+	await expect(page.locator("body")).toContainText("Start free on the Light model");
 	await expect(page).toHaveTitle(/Groundwork/);
 	const res = await page.goto("/this-route-does-not-exist");
 	expect(res?.status()).toBe(404);

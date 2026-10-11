@@ -3909,6 +3909,65 @@ body .gw-root button.gw-rb-good { --gw-rb-tick: var(--gw-good); }
 body .gw-root button.gw-rb-good b { color: var(--gw-good-ink); }
 body .gw-root button.gw-rb-easy { --gw-rb-tick: var(--gw-easy); }
 body .gw-root button.gw-rb-easy b { color: var(--gw-easy-ink); }
+
+.gw-upgrade {
+	position: absolute;
+	left: 16px;
+	right: 16px;
+	bottom: 16px;
+	z-index: 30;
+	max-width: 420px;
+	margin-inline: auto;
+	padding: 14px 14px 12px;
+	background: var(--gw-raised);
+	color: var(--gw-ink);
+	border: 1px solid var(--gw-line-strong);
+	border-radius: var(--gw-radius);
+	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+.gw-upgrade-title {
+	margin: 0 0 4px;
+	font-size: 16px;
+	font-weight: 500;
+	line-height: 1.3;
+	color: var(--gw-ink-strong);
+}
+.gw-upgrade-detail {
+	margin: 0;
+	font-size: 14px;
+	line-height: 1.4;
+}
+.gw-upgrade-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 12px;
+}
+body .gw-root .gw-upgrade button {
+	width: 100%;
+	height: auto;
+	min-height: 44px;
+	padding: 8px 12px;
+	white-space: normal;
+	line-height: 1.3;
+	text-align: center;
+}
+.gw-upgrade-hint {
+	display: block;
+	margin-top: 2px;
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.3;
+}
+body .gw-root .gw-upgrade button:focus-visible {
+	outline: 2px solid var(--interactive-accent, currentColor);
+	outline-offset: 2px;
+}
+body .gw-root .gw-upgrade button.mod-cta {
+	background: var(--gw-cta-bg);
+	color: var(--gw-cta-ink);
+	border-color: transparent;
+}
 @container gwflash (max-width: 860px) {
 	.gw-fc-main { padding: 16px 16px 12px; }
 	.gw-fcard-front { font-size: 18px; padding-left: 18px; padding-right: 18px; }

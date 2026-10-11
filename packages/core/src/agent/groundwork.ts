@@ -7,6 +7,18 @@ import type { Provider, ProviderRequest, ProviderResponse } from "./types";
  * Tutor turns for a hosted plan, or a bring-your-own key saved on the account.
  * The key stays on the Groundwork server. This device only sends the conversation.
  */
+export class TutorHttpError extends Error {
+	readonly status: number;
+	readonly code?: string;
+
+	constructor(message: string, status: number, code?: string) {
+		super(message);
+		this.name = "TutorHttpError";
+		this.status = status;
+		this.code = code;
+	}
+}
+
 export class GroundworkProvider implements Provider {
 	readonly name = "groundwork";
 
@@ -36,11 +48,12 @@ export class GroundworkProvider implements Provider {
 			signal: req.signal,
 		});
 		const text = await res.text();
-		let body: { error?: string; content?: ProviderResponse["content"]; stopReason?: string; usage?: ProviderResponse["usage"] } = {};
+		let body: { error?: string; code?: string; content?: ProviderResponse["content"]; stopReason?: string; usage?: ProviderResponse["usage"] } = {};
 		try {
 			const parsed = text ? asRecord(JSON.parse(text)) : {};
 			body = {
 				error: typeof parsed?.error === "string" ? parsed.error : undefined,
+				code: typeof parsed?.code === "string" ? parsed.code : undefined,
 				content: Array.isArray(parsed?.content) ? contentBlocks(parsed.content) : undefined,
 				stopReason: typeof parsed?.stopReason === "string" ? parsed.stopReason : undefined,
 				usage: usageFrom(parsed?.usage),
@@ -48,7 +61,7 @@ export class GroundworkProvider implements Provider {
 		} catch {
 			throw new Error("The Groundwork server did not answer.");
 		}
-		if (!res.ok) throw new Error(body.error || "The tutor could not reach the model.");
+		if (!res.ok) throw new TutorHttpError(body.error || "The tutor could not reach the model.", res.status, body.code);
 		const content = Array.isArray(body.content) ? body.content : [];
 		for (const block of content) {
 			if (block.type === "text" && typeof block.text === "string" && block.text) req.onText(block.text);

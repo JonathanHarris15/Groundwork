@@ -27,6 +27,8 @@ export interface FlashcardsHost {
 	writeFolders: () => string[];
 	renderMarkdown: RenderMarkdown;
 	onManageCards: () => void;
+	/** Free accounts can still review. Omit to allow the usual empty-state copy. */
+	canWrite?: boolean;
 }
 
 const RATINGS: Array<{ rating: CardRating; label: string; key: string }> = [
@@ -216,7 +218,9 @@ export class FlashcardsPane {
 		const empty = main.createDiv({ cls: "gw-fc-empty gw-fc-unpinned-empty" });
 		empty.createEl("h2", { cls: "gw-goals-unpinned-title", text: "No decks yet" });
 		const hint = empty.createEl("p", { cls: "gw-goals-unpinned-hint" });
-		hint.textContent = "Make a deck in library. Add cards yourself, or ask the tutor to make them.";
+		hint.textContent = this.host.canWrite === false
+			? "Decks you already have stay here to review. New cards are on the paid plans."
+			: "Make a deck in library. Add cards yourself, or ask the tutor to make them.";
 		const manage = empty.createEl("button", { cls: "gw-next-btn", text: "Manage cards", attr: { type: "button", title: "Edit decks and cards in library" } });
 		manage.addEventListener("click", () => this.host.onManageCards());
 	}

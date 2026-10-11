@@ -18,11 +18,11 @@ Groundwork does not run on a phone. You can sign up on your phone and install on
 
 A free plan is included. Paid plans ($6 and $20 per month) unlock a model you already pay for, or models Groundwork runs.
 
-- **Free** starts on Light, Groundwork's smaller model. You can switch to Heavy in the plugin. Tutor use has a monthly limit. Your account shows the share of that month you've used.
-- **Bring your own model** is $6 per month. It uses the Claude subscription on your computer, or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. Model use on that subscription or key is billed by that provider. The $6 covers Groundwork.
-- **Groundwork** is $20 per month. Groundwork runs the models, Light by default. Switch to Heavy in the plugin when you want the stronger tutor.
+- **Free** stays on Light, with a monthly limit. Your account shows the share of that month you've used. Decks you already have stay available to review. Heavy and new flashcards are on the paid plans.
+- **Bring your own model** is $6 per month. It uses the Claude subscription on your computer, or a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. That is also what Heavy means on this plan. Model use on that subscription or key is billed by that provider. The $6 covers Groundwork. Flashcards are included.
+- **Groundwork** is $20 per month. Groundwork runs the models. Light or Heavy, switched in the plugin. Flashcards are included.
 
-The study tools are the same on each plan. Paid plans are billed on the [Groundwork website](https://groundworklearn.com) through Stripe. You can change or cancel a paid plan from Manage billing on your account page.
+Paid plans are billed on the [Groundwork website](https://groundworklearn.com) through Stripe. You can change or cancel a paid plan from Manage billing on your account page.
 
 ## What you can do
 

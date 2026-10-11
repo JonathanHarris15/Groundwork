@@ -1,7 +1,12 @@
 import {
 	asRecord,
 	buildUpstream,
+	FLASHCARDS_REQUIRE_UPGRADE,
+	FLASHCARDS_UPGRADE_ERROR,
+	HEAVY_REQUIRES_UPGRADE,
+	HEAVY_UPGRADE_ERROR,
 	hostedCostUsd,
+	isHostedFlashcardGeneration,
 	parseTutorCall,
 	presentAccount,
 	readUpstream,
@@ -10,6 +15,7 @@ import {
 	upstreamErrorMessage,
 	usageFeatureFromClient,
 	type AccountView,
+	type TutorCall,
 	type TutorChoice,
 	type TutorStatus,
 	type UsageFeature,
@@ -44,6 +50,8 @@ export async function completeTutor(ctx: TutorCallContext, body: unknown): Promi
 	}
 	const call = parseTutorCall(body);
 	if (!call) return { status: 400, json: { error: "Send the tutor turn: a system prompt, messages, and tools." } };
+	const upgrade = freeHostedUpgrade(ctx.view, decision, call);
+	if (upgrade) return upgrade;
 
 	if (process.env.GROUNDWORK_TUTOR_STUB === "1") {
 		const status = describeTutor(ctx);
@@ -138,6 +146,21 @@ export async function completeTutor(ctx: TutorCallContext, body: unknown): Promi
 			route: { action: decision.action, model: upstreamModel(decision, call.model), provider: decision.provider, label: tutorStatus(decision, view, ctx.choice).label },
 		},
 	};
+}
+
+function freeHostedUpgrade(
+	view: AccountView,
+	decision: ReturnType<typeof tutorDecision>,
+	call: TutorCall,
+): { status: number; json: { error: string; code: string } } | null {
+	if (view.plan !== "free" || decision.action !== "hosted") return null;
+	if (isHostedFlashcardGeneration(call.messages)) {
+		return { status: 402, json: { error: FLASHCARDS_UPGRADE_ERROR, code: FLASHCARDS_REQUIRE_UPGRADE } };
+	}
+	if (decision.weight === "heavy") {
+		return { status: 402, json: { error: HEAVY_UPGRADE_ERROR, code: HEAVY_REQUIRES_UPGRADE } };
+	}
+	return null;
 }
 
 function featureOf(body: unknown): unknown {

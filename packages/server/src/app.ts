@@ -1,4 +1,4 @@
-import { asText, isPlanId, isTutorWeight, isUserKeyProvider, parseContextRequest, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type ContextPiece, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId } from "@groundwork/core";
+import { asText, FLASHCARDS_REQUIRE_UPGRADE, FLASHCARDS_UPGRADE_ERROR, flashcardFileWrites, flashcardsPath, HEAVY_REQUIRES_UPGRADE, HEAVY_UPGRADE_ERROR, isPlanId, isTutorWeight, isUserKeyProvider, parseContextRequest, parseTutorMemoryFiles, PLANS, presentAccount, presentGroundwork, PROVIDER_LABEL, publicPlan, type ContextPiece, type FreeResponseJudgment, type FreeResponseToGrade, type PlanId, type UsageEventKind } from "@groundwork/core";
 import type { AccountDirectory } from "./accounts";
 import type { Auth } from "./auth";
 import type { Billing } from "./billing";
@@ -162,8 +162,21 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			if (view.ownModel) return { status: 400, json: { error: "This plan uses your own model." } };
 			const weight = (body as { weight?: unknown } | null)?.weight;
 			if (!isTutorWeight(weight)) return { status: 400, json: { error: "Choose Light or Heavy." } };
+			if (weight === "heavy" && view.plan !== "included") {
+				return { status: 402, json: { error: HEAVY_UPGRADE_ERROR, code: HEAVY_REQUIRES_UPGRADE } };
+			}
 			const next = await deps.accounts.setTutorWeight(uid, weight);
 			return { status: 200, json: describeTutor({ view: next, choice: await deps.accounts.choice(uid), saved: await deps.secrets.saved(uid) }) };
+		}
+		if (method === "POST" && path === "/v1/usage/prompt") {
+			const recorded = promptEvent(body);
+			if (!recorded) return { status: 400, json: { error: "Unknown prompt event." } };
+			try {
+				await deps.usage?.recordEvent({ uid, at: new Date().toISOString(), kind: recorded.kind, plan: recorded.plan });
+			} catch (err) {
+				console.error("Could not record an upgrade prompt.", err);
+			}
+			return { status: 200, json: { ok: true } };
 		}
 		if (method === "POST" && path === "/v1/tutor/complete") {
 			return completeTutor(
@@ -197,6 +210,10 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 		if (path === "/v1/memory" && (method === "GET" || method === "PUT")) {
 			if (method === "GET") return { status: 200, json: await deps.memory.get(uid) };
+			if (view.plan !== "byom" && view.plan !== "included") {
+				const blocked = await flashcardWriteBlocked(deps.memory, uid, body);
+				if (blocked) return { status: 402, json: { error: FLASHCARDS_UPGRADE_ERROR, code: FLASHCARDS_REQUIRE_UPGRADE } };
+			}
 			try {
 				return { status: 200, json: await deps.memory.put(uid, body) };
 			} catch (err) {
@@ -288,6 +305,29 @@ function isPermissionDenied(err: unknown): boolean {
 	if (code === 7 || code === "7" || code === "PERMISSION_DENIED") return true;
 	const message = err instanceof Error ? err.message : "";
 	return message.includes("PERMISSION_DENIED");
+}
+
+function promptEvent(body: unknown): { kind: UsageEventKind; plan: "byom" | "included" | "free" } | null {
+	const input = body && typeof body === "object" ? (body as { kind?: unknown; plan?: unknown }) : {};
+	if (input.kind === "heavy_upgrade_prompt_shown" || input.kind === "flashcards_upgrade_prompt_shown") {
+		return { kind: input.kind, plan: "free" };
+	}
+	if ((input.kind === "heavy_upgrade_click" || input.kind === "flashcards_upgrade_click") && (input.plan === "byom" || input.plan === "included")) {
+		return { kind: input.kind, plan: input.plan };
+	}
+	return null;
+}
+
+async function flashcardWriteBlocked(memory: MemoryDirectory, uid: string, body: unknown): Promise<boolean> {
+	const record = body && typeof body === "object" ? (body as { files?: unknown }) : {};
+	let files: Record<string, string>;
+	try {
+		files = parseTutorMemoryFiles(record.files);
+	} catch {
+		return false;
+	}
+	const previous = await memory.get(uid);
+	return flashcardFileWrites(previous.files[flashcardsPath()], files[flashcardsPath()]);
 }
 
 function paidPlanRefused(deps: ServerDeps): RouteResult {

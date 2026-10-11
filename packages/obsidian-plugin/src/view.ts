@@ -37,6 +37,11 @@ import {
 	normalizeTutorMarkdown,
 	normalizeVaultPath,
 	parseNote,
+	asksToWriteFlashcards,
+	FLASHCARDS_REQUIRE_UPGRADE,
+	FREE_FLASHCARD_NOTE,
+	FREE_FLASHCARD_REPLY,
+	HEAVY_REQUIRES_UPGRADE,
 	practiceTestRequest,
 	shouldStartExamPrep,
 	pathInsideAny,
@@ -87,6 +92,7 @@ import { pendingQuiz } from "./open-quiz";
 import { ReaderFollow } from "./reader-follow";
 import { FlashcardsPane, type FlashcardsHost } from "./flashcards-pane";
 import { renderFlashcardsLibrary } from "./flashcards-library-pane";
+import { flashcardRefusalHistory, renderUpgradePrompt, scrubRefusedTurn, tutorWeightClick, type UpgradeTopic } from "./upgrade-prompt";
 import { enhanceGraphs } from "./graph-pane";
 import { appendSvgFragment } from "./svg-fragment";
 import type GroundworkPlugin from "./main";
@@ -244,6 +250,8 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiFlashEl!: HTMLElement;
 	private flashPane!: FlashcardsPane;
 	private libraryTab: "goals" | "concepts" | "chats" | "flashcards" = "goals";
+	private upgradeCode: string | null = null;
+	private upgradeTopic: UpgradeTopic | null = null;
 	private conceptQuery = "";
 	private uiSettingsEl!: HTMLElement;
 	private uiSettingsBtn!: HTMLElement;
@@ -551,9 +559,10 @@ export class ChatView extends ItemView implements ToolUI {
 		this.dropAsides();
 		this.agentKey = key;
 
-		const today = new Date().toISOString().slice(0, 10);
 		const access = folderAccessFrom(this.plugin.settings);
-		const system = buildSystemPrompt(`# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`, access);
+		const system = buildSystemPrompt(this.tutorExtra(), access);
+		const free = this.plugin.tutorRoute?.plan === "free";
+		const tools = free ? TOOLS.filter((tool) => tool.name !== "save_flashcard") : TOOLS;
 		const record = this.record;
 		const history = record.items.length ? transcript(record.items, record.asides) : undefined;
 		const runtime = this.plugin.runtime();
@@ -568,7 +577,7 @@ export class ChatView extends ItemView implements ToolUI {
 			this.agent = new ClaudeCodeSession({
 				...cfg,
 				store: this.plugin.store,
-				tools: TOOLS,
+				tools,
 				system,
 				ui: this,
 				session: this.session,
@@ -590,7 +599,18 @@ export class ChatView extends ItemView implements ToolUI {
 						{ role: "assistant", content: "Got it. I'll continue from there." },
 					]
 				: [];
-		this.agent = new AgentSession({ provider, store: this.plugin.store, tools: TOOLS, system, ui: this, session: this.session, messages, access, grader: this.plugin.answerGrader() });
+		this.agent = new AgentSession({
+			provider,
+			store: this.plugin.store,
+			tools,
+			system,
+			ui: this,
+			session: this.session,
+			messages,
+			access,
+			grader: this.plugin.answerGrader(),
+			flashcardsWritable: free ? false : undefined,
+		});
 		return this.agent;
 	}
 
@@ -608,6 +628,24 @@ export class ChatView extends ItemView implements ToolUI {
 			} else {
 				new Notice("Groundwork: the tutor is still replying. Press stop to interrupt.");
 			}
+			return;
+		}
+		if (!quiet && this.plugin.tutorRoute?.plan === "free" && asksToWriteFlashcards(text)) {
+			if (prefill === undefined) {
+				this.uiInputEl.value = "";
+				this.autoGrow();
+			}
+			if (!this.record.items.length) {
+				this.uiMessagesEl.empty();
+				this.record.title = text.replace(/\s+/g, " ").slice(0, 60);
+				this.session.title = this.record.title;
+				this.session.notePath = await this.plugin.store.sessionNotePath(this.record.title.split(" ").slice(0, 8).join(" "));
+				this.record.notePath = this.session.notePath;
+			}
+			this.pushItem({ kind: "user", text });
+			this.pushItem({ kind: "assistant", text: FREE_FLASHCARD_REPLY });
+			this.showUpgrade("flashcards");
+			await this.persist();
 			return;
 		}
 		const agent = await this.ensureAgent();
@@ -666,12 +704,11 @@ export class ChatView extends ItemView implements ToolUI {
 			toSend = [workingGoalNote(await this.plugin.store.workingGoal()), toSend].filter(Boolean).join("\n\n");
 			const notes = this.marginNotes();
 			if (notes) toSend = [toSend, notes].filter(Boolean).join("\n\n");
-			const today = new Date().toISOString().slice(0, 10);
 			const access = folderAccessFrom(this.plugin.settings);
 			const prepared = await prepareTutorTurn({
 				selector: this.plugin.runtime().runtime === "demo" ? undefined : this.plugin.contextSelector(),
 				message: toSend,
-				extra: `# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`,
+				extra: this.tutorExtra(),
 				access,
 				profile: await this.plugin.store.profile(),
 				tutorContext: await this.plugin.store.tutorContext(),
@@ -690,11 +727,30 @@ export class ChatView extends ItemView implements ToolUI {
 				this.finishSegment();
 				// A close resolves the open quiz as dismissed. Do not store that half-turn, or the question is gone on return.
 				if (!this.closing) {
+					const code = this.upgradeCode;
+					this.upgradeCode = null;
 					if (agent instanceof AgentSession) {
-						this.record.messages = agent.messages;
+						if (code === HEAVY_REQUIRES_UPGRADE) {
+							const kept = scrubRefusedTurn(agent.messages);
+							agent.messages.splice(0, agent.messages.length, ...kept);
+							this.record.messages = agent.messages;
+							this.takeBackUnsent(text);
+							await this.plugin.setTutorWeight("light");
+						} else if (code === FLASHCARDS_REQUIRE_UPGRADE) {
+							const kept = flashcardRefusalHistory(agent.messages);
+							agent.messages.splice(0, agent.messages.length, ...kept);
+							this.record.messages = agent.messages;
+							if (this.record.items.at(-1)?.kind !== "assistant") this.record.items.push({ kind: "assistant", text: FREE_FLASHCARD_REPLY });
+						} else {
+							this.record.messages = agent.messages;
+						}
 						this.record.messagesAt = this.record.items.length;
 					} else if (agent instanceof ClaudeCodeSession && agent.sessionId) {
 						this.record.claude = { device: this.plugin.deviceName(), sessionId: agent.sessionId, at: this.record.items.length };
+					}
+					if (code === HEAVY_REQUIRES_UPGRADE || code === FLASHCARDS_REQUIRE_UPGRADE) {
+						this.renderAll();
+						this.showUpgrade(code === HEAVY_REQUIRES_UPGRADE ? "heavy" : "flashcards");
 					}
 				}
 				this.setBusy(false);
@@ -795,6 +851,10 @@ export class ChatView extends ItemView implements ToolUI {
 			}
 			case "error":
 				this.finishSegment();
+				if (e.code === HEAVY_REQUIRES_UPGRADE || e.code === FLASHCARDS_REQUIRE_UPGRADE) {
+					this.upgradeCode = e.code;
+					break;
+				}
 				this.pushItem({ kind: "error", text: e.message });
 				break;
 			case "continue_offer":
@@ -1076,10 +1136,44 @@ export class ChatView extends ItemView implements ToolUI {
 		if (only?.tagName === "P") only.addClass("gw-tight");
 	}
 
+	private hostedWeightVisible(): boolean {
+		const route = this.plugin.tutorRoute;
+		return !!route && !route.ownModel && (route.action === "hosted" || route.plan === "free");
+	}
+
+	private tutorExtra(): string {
+		const today = new Date().toISOString().slice(0, 10);
+		let extra = `# Context\nToday is ${today}. Device: ${this.plugin.deviceName()}.`;
+		if (this.plugin.tutorRoute?.plan === "free") extra += `\n\n${FREE_FLASHCARD_NOTE}`;
+		return extra;
+	}
+
+	/** Free stays on Light. The switch does not move to Heavy. */
+	private takeBackUnsent(text: string): void {
+		const last = this.record?.items.at(-1);
+		if (last?.kind === "user" && last.text === text) this.record.items.pop();
+		if (this.uiInputEl && text) {
+			this.uiInputEl.value = text;
+			this.autoGrow();
+		}
+	}
+
+	showUpgrade(topic: UpgradeTopic): void {
+		if (this.upgradeTopic === topic && this.contentEl.querySelector(".gw-upgrade")) return;
+		this.upgradeTopic = topic;
+		this.plugin.recordUpgradeShown(topic);
+		renderUpgradePrompt(this.contentEl, topic, {
+			onPlan: (plan) => this.plugin.openPaidPlan(topic, plan),
+			onDismiss: () => {
+				this.upgradeTopic = null;
+			},
+		});
+	}
+
 	private paintTutorWeight(): void {
 		const el = this.uiWeightEl;
 		if (!el) return;
-		const show = this.plugin.tutorRoute?.action === "hosted";
+		const show = this.hostedWeightVisible();
 		el.toggleAttribute("hidden", !show);
 		if (!show) {
 			el.empty();
@@ -1102,8 +1196,17 @@ export class ChatView extends ItemView implements ToolUI {
 			});
 			if (on) button.addClass("is-on");
 			button.addEventListener("click", () => {
-				if (this.plugin.tutorRoute?.weight === id || (!this.plugin.tutorRoute?.weight && id === "light")) return;
-				void this.plugin.setTutorWeight(id);
+				const current = this.plugin.tutorRoute?.weight === "heavy" ? "heavy" : "light";
+				const action = tutorWeightClick(this.plugin.tutorRoute?.plan, current, id);
+				if (action === "ignore") return;
+				if (action === "heavy_prompt") {
+					this.showUpgrade("heavy");
+					if (current === "heavy") void this.plugin.setTutorWeight("light");
+					return;
+				}
+				void this.plugin.setTutorWeight(id).then((result) => {
+					if (result === "heavy_prompt") this.showUpgrade("heavy");
+				});
 			});
 		}
 	}
@@ -1646,6 +1749,7 @@ export class ChatView extends ItemView implements ToolUI {
 			writeFolders: () => this.plugin.settings.writeFolders,
 			renderMarkdown: (el, md) => this.renderMd(el, md),
 			onManageCards: () => void this.openLibraryFlashcards(),
+			canWrite: this.plugin.tutorRoute?.plan !== "free",
 		};
 	}
 
@@ -1789,6 +1893,8 @@ export class ChatView extends ItemView implements ToolUI {
 				store,
 				writeFolders: () => this.plugin.settings.writeFolders,
 				onStudy: (deckId) => void this.studyDeck(deckId),
+				canWrite: this.plugin.tutorRoute?.plan !== "free",
+				onWriteBlocked: () => this.showUpgrade("flashcards"),
 				renderMarkdown: (el, md) => this.renderMd(el, md),
 				onCardsChanged: (count) => {
 					const badge = this.uiLibraryEl?.querySelector<HTMLElement>('.gw-lib-tab[title="Flashcards"] .gw-lib-count');
@@ -2027,11 +2133,14 @@ export class ChatView extends ItemView implements ToolUI {
 			});
 			const signIn = section.createEl("button", { cls: "gw-lib-btn", text: "Sign in", attr: { type: "button" } });
 			signIn.addEventListener("click", () => window.open(accountSignInUrl()));
-		} else if (this.plugin.tutorRoute?.action === "hosted") {
-			const used = Math.round((this.plugin.tutorRoute.budgetUsed || 0) * 100);
+		} else if (this.hostedWeightVisible()) {
+			const route = this.plugin.tutorRoute;
+			const used = Math.round((route?.budgetUsed || 0) * 100);
 			section.createDiv({
 				cls: "gw-lib-help",
-				text: `Light is Gemini Flash. Heavy is the stronger Gemini Flash, and it uses more of this month's budget. ${used}% of this month's tutor budget is used.`,
+				text: route?.plan === "free"
+					? `Free stays on Light. Heavy is on the paid plans. ${used}% of this month's tutor budget is used.`
+					: `Light is Gemini Flash. Heavy is the stronger Gemini Flash, and it uses more of this month's budget. ${used}% of this month's tutor budget is used.`,
 			});
 			const picker = section.createDiv({ cls: "gw-seg gw-tutor-weight", attr: { role: "group", "aria-label": "Tutor model" } });
 			this.paintWeightButtons(picker);
