@@ -175,6 +175,51 @@ describe("tutor API", () => {
 		expect(JSON.stringify(result.json)).toContain("[redacted]");
 	});
 
+	it("sends free-plan PDF attachments as text, not OpenRouter document blocks", async () => {
+		const body = `BT /F1 12 Tf 100 700 Td (Shifted Uniform) Tj ET`;
+		const pdf = Buffer.from(`%PDF-1.1\n1 0 obj << /Length ${body.length} >> stream\n${body}\nendstream\nendobj\n%%EOF\n`).toString("base64");
+		const { fetchImpl, calls } = capture({
+			content: [{ type: "text", text: "Here is how a shifted uniform series works." }],
+			stop_reason: "end_turn",
+			usage: { input_tokens: 100, output_tokens: 40 },
+		});
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await route("POST", "/v1/account/plan", { plan: "free" }, server);
+		const result = await route(
+			"POST",
+			"/v1/tutor/complete",
+			{
+				system: "Teach.",
+				tools: [],
+				messages: [
+					{
+						role: "user",
+						content: [
+							{ type: "text", text: "File: quiz.pdf" },
+							{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdf }, title: "quiz.pdf" },
+							{ type: "text", text: "Help me prepare" },
+						],
+					},
+				],
+			},
+			server,
+		);
+		expect(result.status).toBe(200);
+		expect(calls).toHaveLength(1);
+		expect(JSON.stringify(calls[0].body)).not.toContain('"type":"document"');
+		expect(JSON.stringify(calls[0].body)).toContain("Shifted Uniform");
+	});
+
+	it("hides OpenRouter file-balance dollars from free learners", async () => {
+		const { fetchImpl } = capture({ error: { message: "This request requires at least $0.50 in balance for files" } }, 402);
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await route("POST", "/v1/account/plan", { plan: "free" }, server);
+		const result = await route("POST", "/v1/tutor/complete", turn, server);
+		expect(result.status).toBe(502);
+		expect(JSON.stringify(result.json)).not.toMatch(/\$\d|0\.50|balance for files/i);
+		expect(String((result.json as { error?: string }).error)).toMatch(/PDF|paste|text/i);
+	});
+
 	it("sends Google and xAI to their own hosts", async () => {
 		for (const [provider, url] of [
 			["google", "generativelanguage.googleapis.com"],

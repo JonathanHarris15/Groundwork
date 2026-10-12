@@ -17,8 +17,13 @@
  */
 
 import type { ContentBlock, ProviderTool, ChatMessage } from "../agent/types";
+import { withoutDocumentBlocks } from "../files";
 import { USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "./plans";
 import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
+
+/** OpenRouter refuses PDF `document` blocks when the shared wallet is low. Never show that dollar gate. */
+const FILE_BALANCE_ERROR =
+	"That PDF could not be processed on the hosted tutor. Paste the text from the file, or attach a text export instead.";
 
 /**
  * Hosted models on OpenRouter. Rates are the listed OpenRouter prices (Oct 2026).
@@ -249,7 +254,11 @@ export function buildUpstream(decision: Extract<TutorDecision, { action: "hosted
 		url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 		headers["x-goog-api-key"] = apiKey;
 	}
-	const body = kind === "anthropic" ? anthropicBody(call, model) : kind === "openai" ? openaiBody(call, model) : googleBody(call);
+	// Free and Groundwork share one OpenRouter key. PDF `document` blocks hit OpenRouter's
+	// file-balance gate; send extracted text on the hosted path instead. BYOM keeps native PDFs.
+	const forProvider: TutorCall =
+		decision.action === "hosted" ? { ...call, messages: withoutDocumentBlocks(call.messages) } : call;
+	const body = kind === "anthropic" ? anthropicBody(forProvider, model) : kind === "openai" ? openaiBody(forProvider, model) : googleBody(forProvider);
 	return { url, headers, body, kind };
 }
 
@@ -268,7 +277,10 @@ export function upstreamErrorMessage(body: unknown, secrets: string[]): string {
 		else if (record.error && typeof record.error === "object" && typeof record.error.message === "string") message = record.error.message;
 		else if (typeof record.message === "string") message = record.message;
 	}
-	return redactSecrets(message, secrets);
+	message = redactSecrets(message, secrets);
+	if (/balance for files|requires at least \$\d/i.test(message)) return FILE_BALANCE_ERROR;
+	if (/\$\d/.test(message)) return "The model provider refused the request.";
+	return message;
 }
 
 export function redactSecrets(text: string, secrets: string[]): string {

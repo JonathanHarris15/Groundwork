@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/agent/loop";
 import type { ChatMessage, ContentBlock, Provider, ProviderRequest } from "../src/agent/types";
-import { LIMITS, loadVaultFile, mcpContent, resolveVaultFile, userContent, withoutFileData } from "../src/files";
+import { LIMITS, loadVaultFile, mcpContent, resolveVaultFile, userContent, withoutDocumentBlocks, withoutFileData } from "../src/files";
 import { MemoryVaultIO } from "../src/io";
 import { KnowledgeStore } from "../src/store";
 import { TOOLS, toolByName } from "../src/tools";
@@ -90,6 +90,22 @@ describe("vault files", () => {
 		expect(saved).not.toContain(files[1].data!);
 		expect(saved).toContain("read_vault_file");
 		expect(JSON.stringify(messages)).toContain(files[0].data!);
+	});
+
+	it("replaces PDF document blocks with text, including inside tool results", async () => {
+		const { io } = vault();
+		const pdf = await loadVaultFile(io, "resources/Lecture 3.pdf");
+		const messages: ChatMessage[] = [
+			{ role: "user", content: userContent("look", [pdf]) },
+			{
+				role: "user",
+				content: [{ type: "tool_result", tool_use_id: "t", content: userContent("x", [pdf]) as ContentBlock[] }],
+			},
+		];
+		expect(JSON.stringify(messages)).toContain('"type":"document"');
+		const hosted = JSON.stringify(withoutDocumentBlocks(messages));
+		expect(hosted).not.toContain('"type":"document"');
+		expect(hosted).toContain("Lecture 3.pdf");
 	});
 });
 

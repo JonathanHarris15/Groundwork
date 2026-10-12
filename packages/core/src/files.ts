@@ -209,6 +209,74 @@ export function toBase64(buf: ArrayBuffer | Uint8Array): string {
 	return btoa(s);
 }
 
+export function bytesFromBase64(data: string): Uint8Array {
+	if (typeof Buffer !== "undefined") return Uint8Array.from(Buffer.from(data, "base64"));
+	const bin = atob(data);
+	const out = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+	return out;
+}
+
+/** Pull printable text out of simple (uncompressed) PDFs. Compressed streams often yield nothing. */
+export function extractPdfText(bytes: Uint8Array): string {
+	let raw = "";
+	for (let i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]);
+	const chunks: string[] = [];
+	const re = /\((?:\\.|[^\\)])*\)/g;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(raw))) {
+		const s = unescapePdfString(m[0].slice(1, -1));
+		if (/[A-Za-z]{2,}/.test(s)) chunks.push(s);
+	}
+	return chunks.join(" ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Hosted OpenRouter turns cannot send Anthropic `document` blocks: that path requires
+ * provider wallet balance "for files". Replace each PDF with extracted text instead.
+ */
+export function withoutDocumentBlocks(messages: ChatMessage[]): ChatMessage[] {
+	return messages.map((message) => (Array.isArray(message.content) ? { ...message, content: rewriteDocumentBlocks(message.content) } : message));
+}
+
+function rewriteDocumentBlocks(blocks: ContentBlock[]): ContentBlock[] {
+	return blocks.map((block) => {
+		if (block.type === "document") return { type: "text", text: documentBlockAsText(block) };
+		if (block.type === "tool_result" && Array.isArray(block.content)) {
+			return { ...block, content: rewriteDocumentBlocks(block.content.filter(isContentBlock)) };
+		}
+		return block;
+	});
+}
+
+function documentBlockAsText(block: ContentBlock): string {
+	const title = typeof block.title === "string" && block.title.trim() ? block.title.trim() : "attachment.pdf";
+	const source = "source" in block ? asUnknown(block.source) : undefined;
+	const data =
+		source && typeof source === "object" && "type" in source && source.type === "base64" && "data" in source && typeof source.data === "string"
+			? source.data
+			: null;
+	if (data) {
+		const text = extractPdfText(bytesFromBase64(data));
+		if (text) {
+			const clipped = text.length > LIMITS.textChars ? text.slice(0, LIMITS.textChars) : text;
+			return `<file path="${title}">\n${clipped}\n</file>${text.length > LIMITS.textChars ? `\n(Only the first ${LIMITS.textChars.toLocaleString("en")} characters are shown.)` : ""}`;
+		}
+	}
+	return `File ${title} was attached as a PDF. Its text could not be read here. Ask the learner to paste the pages that matter.`;
+}
+
+function unescapePdfString(s: string): string {
+	return s
+		.replace(/\\n/g, "\n")
+		.replace(/\\r/g, "\r")
+		.replace(/\\t/g, "\t")
+		.replace(/\\\(/g, "(")
+		.replace(/\\\)/g, ")")
+		.replace(/\\\\/g, "\\")
+		.replace(/\\(\d{1,3})/g, (_match: string, oct: string) => String.fromCharCode(Number.parseInt(oct, 8)));
+}
+
 function mb(bytes: number): string {
 	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
