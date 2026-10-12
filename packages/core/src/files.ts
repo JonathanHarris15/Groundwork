@@ -231,41 +231,6 @@ export function extractPdfText(bytes: Uint8Array): string {
 	return chunks.join(" ").replace(/\s+/g, " ").trim();
 }
 
-/**
- * Hosted OpenRouter turns cannot send Anthropic `document` blocks: that path requires
- * provider wallet balance "for files". Replace each PDF with extracted text instead.
- */
-export function withoutDocumentBlocks(messages: ChatMessage[]): ChatMessage[] {
-	return messages.map((message) => (Array.isArray(message.content) ? { ...message, content: rewriteDocumentBlocks(message.content) } : message));
-}
-
-function rewriteDocumentBlocks(blocks: ContentBlock[]): ContentBlock[] {
-	return blocks.map((block) => {
-		if (block.type === "document") return { type: "text", text: documentBlockAsText(block) };
-		if (block.type === "tool_result" && Array.isArray(block.content)) {
-			return { ...block, content: rewriteDocumentBlocks(block.content.filter(isContentBlock)) };
-		}
-		return block;
-	});
-}
-
-function documentBlockAsText(block: ContentBlock): string {
-	const title = typeof block.title === "string" && block.title.trim() ? block.title.trim() : "attachment.pdf";
-	const source = "source" in block ? asUnknown(block.source) : undefined;
-	const data =
-		source && typeof source === "object" && "type" in source && source.type === "base64" && "data" in source && typeof source.data === "string"
-			? source.data
-			: null;
-	if (data) {
-		const text = extractPdfText(bytesFromBase64(data));
-		if (text) {
-			const clipped = text.length > LIMITS.textChars ? text.slice(0, LIMITS.textChars) : text;
-			return `<file path="${title}">\n${clipped}\n</file>${text.length > LIMITS.textChars ? `\n(Only the first ${LIMITS.textChars.toLocaleString("en")} characters are shown.)` : ""}`;
-		}
-	}
-	return `File ${title} was attached as a PDF. Its text could not be read here. Ask the learner to paste the pages that matter.`;
-}
-
 function unescapePdfString(s: string): string {
 	return s
 		.replace(/\\n/g, "\n")

@@ -17,13 +17,11 @@
  */
 
 import type { ContentBlock, ProviderTool, ChatMessage } from "../agent/types";
-import { withoutDocumentBlocks } from "../files";
 import { USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "./plans";
 import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
 
-/** OpenRouter refuses PDF `document` blocks when the shared wallet is low. Never show that dollar gate. */
-const FILE_BALANCE_ERROR =
-	"That PDF could not be processed on the hosted tutor. Paste the text from the file, or attach a text export instead.";
+/** OpenRouter's file gate mentions a dollar floor. Never show that amount to learners. */
+const FILE_BALANCE_ERROR = "File attachments are temporarily unavailable on the hosted tutor. Try again in a moment.";
 
 /**
  * Hosted models on OpenRouter. Rates are the listed OpenRouter prices (Oct 2026).
@@ -254,11 +252,7 @@ export function buildUpstream(decision: Extract<TutorDecision, { action: "hosted
 		url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 		headers["x-goog-api-key"] = apiKey;
 	}
-	// Free and Groundwork share one OpenRouter key. PDF `document` blocks hit OpenRouter's
-	// file-balance gate; send extracted text on the hosted path instead. BYOM keeps native PDFs.
-	const forProvider: TutorCall =
-		decision.action === "hosted" ? { ...call, messages: withoutDocumentBlocks(call.messages) } : call;
-	const body = kind === "anthropic" ? anthropicBody(forProvider, model) : kind === "openai" ? openaiBody(forProvider, model) : googleBody(forProvider);
+	const body = kind === "anthropic" ? anthropicBody(call, model) : kind === "openai" ? openaiBody(call, model) : googleBody(call);
 	return { url, headers, body, kind };
 }
 

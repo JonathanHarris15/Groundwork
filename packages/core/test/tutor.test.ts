@@ -14,7 +14,6 @@ import {
 	upstreamErrorMessage,
 	type TutorCall,
 } from "../src/account/tutor";
-import type { ContentBlock } from "../src/agent/types";
 
 const now = new Date("2026-10-01T12:00:00Z");
 const saved = { anthropic: false, openrouter: false, google: false, xai: false, openai: false };
@@ -124,41 +123,6 @@ describe("provider requests", () => {
 		expect(JSON.stringify(upstream.headers)).not.toContain("sk-ant");
 	});
 
-	it("turns hosted PDF document blocks into text so OpenRouter never asks for a file balance", () => {
-		const pdf = simplePdf("Shifted Uniform series");
-		const withPdf: TutorCall = {
-			...call,
-			messages: [
-				{
-					role: "user",
-					content: [
-						{ type: "text", text: "File: resources/quiz.pdf" },
-						{
-							type: "document",
-							source: { type: "base64", media_type: "application/pdf", data: Buffer.from(pdf).toString("base64") },
-							title: "quiz.pdf",
-						},
-						{ type: "text", text: "Help me prepare" },
-					],
-				},
-			],
-		};
-		const hosted = buildUpstream(
-			{ action: "hosted", model: HOSTED_MODEL.id, provider: "openrouter", key: "groundwork", weight: "light" },
-			"sk-or-groundwork",
-			withPdf,
-		);
-		const hostedBody = JSON.stringify(hosted.body);
-		expect(hostedBody).not.toContain('"type":"document"');
-		expect(hostedBody).not.toMatch(/"media_type":"application\/pdf"/);
-		expect(hostedBody).toContain("Shifted Uniform series");
-		expect(hostedBody).toContain("Help me prepare");
-
-		const byom = buildUpstream({ action: "key", provider: "anthropic", model: "claude-sonnet-4-5", key: "user" }, "sk-ant-user", withPdf);
-		const byomBlocks = ((byom.body as { messages: Array<{ content: ContentBlock[] }> }).messages[0].content);
-		expect(byomBlocks.some((block) => block.type === "document")).toBe(true);
-	});
-
 	it("never surfaces an OpenRouter file-balance dollar amount to the learner", () => {
 		const message = upstreamErrorMessage(
 			{ error: { message: "This request requires at least $0.50 in balance for files" } },
@@ -166,7 +130,7 @@ describe("provider requests", () => {
 		);
 		expect(message).not.toMatch(/\$\d/);
 		expect(message).not.toMatch(/0\.50|balance for files/i);
-		expect(message.toLowerCase()).toMatch(/file|attach|paste/);
+		expect(message.toLowerCase()).toMatch(/file|attach/);
 	});
 
 	it("calls each bring-your-own provider at its own API", () => {
@@ -257,8 +221,3 @@ function status(action: "hosted" | "key" | "blocked") {
 	);
 }
 
-function simplePdf(text: string): Uint8Array {
-	const body = `BT /F1 12 Tf 100 700 Td (${text}) Tj ET`;
-	const src = `%PDF-1.1\n1 0 obj << /Length ${body.length} >> stream\n${body}\nendstream\nendobj\n%%EOF\n`;
-	return new TextEncoder().encode(src);
-}
