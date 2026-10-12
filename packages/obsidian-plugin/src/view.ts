@@ -3498,6 +3498,7 @@ function iconFor(name: string): string {
 		case "search_knowledge":
 		case "get_concepts":
 		case "suggest_what_to_study":
+		case "mark_known":
 			return "brain";
 		case "set_goal":
 		case "get_goal":
