@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeStats, FLASHCARD_CREDIT, predictCorrect, type Evidence } from "../src/model";
+import { computeStats, FLASHCARD_CREDIT, predictCorrect, statedSolidAbility, type Evidence } from "../src/model";
 
 const day = (n: number) => new Date(Date.UTC(2026, 0, 1) + n * 86_400_000).toISOString();
 const ev = (n: number, outcome: Evidence["outcome"], difficulty = 3, extra: Partial<Evidence> = {}): Evidence => ({
@@ -163,5 +163,38 @@ describe("flashcard credit", () => {
 		const stats = computeStats([...quiz, ...cards], new Date(day(1)));
 		expect(stats.mastery).toBeLessThan(0.8);
 		expect(stats.status).not.toBe("solid");
+	});
+});
+
+describe("stated prior knowledge", () => {
+	const stated = (n: number, difficulty = 3, extra: Partial<Evidence> = {}): Evidence => ({
+		ts: day(n),
+		concept: "x",
+		outcome: "correct",
+		difficulty,
+		kind: "explain",
+		source: "stated",
+		...extra,
+	});
+
+	it("marks a concept solid from one honest claim", () => {
+		const stats = computeStats([stated(0, 3)], new Date(day(0)));
+		expect(stats.status).toBe("solid");
+		expect(stats.floor).toBe(3);
+		expect(stats.attempts).toBe(1);
+		expect(stats.mastery).toBeGreaterThanOrEqual(0.8);
+		expect(stats.ability).toBeGreaterThanOrEqual(statedSolidAbility(3) - 0.001);
+	});
+
+	it("records the claimed depth as the floor", () => {
+		const stats = computeStats([stated(0, 4)], new Date(day(0)));
+		expect(stats.status).toBe("solid");
+		expect(stats.floor).toBe(4);
+	});
+
+	it("lets a later quiz miss pull the concept down", () => {
+		const after = computeStats([stated(0, 3), ev(1, "incorrect", 3)], new Date(day(1)));
+		expect(after.status).not.toBe("solid");
+		expect(after.mastery).toBeLessThan(0.8);
 	});
 });

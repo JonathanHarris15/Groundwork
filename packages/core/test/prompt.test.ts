@@ -32,6 +32,13 @@ describe("teaching method", () => {
 		expect(method).toContain("Start this only when they ask to study for one");
 	});
 
+	it("believes prior knowledge and records it with mark_known", () => {
+		expect(method).toContain("## Prior knowledge");
+		expect(method).toContain("mark_known");
+		expect(method).toContain("believe them");
+		expect(method).toContain("Do not quiz them to verify");
+	});
+
 	it("names the default read and write folders, including a file to submit", () => {
 		expect(method).toContain("`resources/`");
 		expect(method).toContain("`submissions/`");

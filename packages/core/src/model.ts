@@ -48,8 +48,13 @@ export interface Evidence {
 	note?: string;
 	session?: string;
 	device?: string;
-	/** A flashcard rating rather than a graded quiz answer. See FLASHCARD_CREDIT. */
-	source?: "flashcard";
+	/**
+	 * Provenance of this event.
+	 * - omitted / quiz tools: a graded answer
+	 * - `"flashcard"`: self-reported recall; see FLASHCARD_CREDIT (cannot make solid)
+	 * - `"stated"`: the learner said they already know it; see stated prior knowledge below
+	 */
+	source?: "flashcard" | "stated";
 }
 
 /**
@@ -103,6 +108,15 @@ export function difficultyLocation(difficulty: number): number {
 	return clamp(Math.round(difficulty), 1, 5) - 3;
 }
 
+/**
+ * Ability where mastery reaches SOLID for a question of difficulty d.
+ * A stated "I already know this" claim jumps ability to at least this, so one
+ * honest claim can mark the concept solid at the depth they named.
+ */
+export function statedSolidAbility(difficulty: number): number {
+	return Math.log(SOLID / (1 - SOLID)) + difficultyLocation(difficulty);
+}
+
 export function emptyStats(): ConceptStats {
 	return {
 		ability: 0,
@@ -132,6 +146,8 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 	let ceiling: number | undefined;
 	const misconceptions = new Map<string, number>();
 	const cardCredits: Array<{ t: number; gain: number }> = [];
+	/** A stated "I know this" claim may mark solid with a single event. */
+	let statedKnown = false;
 
 	for (const ev of events) {
 		const t = Date.parse(ev.ts);
@@ -155,7 +171,18 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 			cardCredits.push({ t, gain });
 			continue;
 		}
-		ability = clamp(ability + Math.max(0.25, k) * (y - p), -4, 4);
+		if (ev.source === "stated") {
+			// Believe them: jump ability to solid at the depth they claimed.
+			// A later quiz miss can still pull it down; event order wins.
+			if (isCorrect) {
+				ability = clamp(Math.max(ability, statedSolidAbility(d)), -4, 4);
+				statedKnown = true;
+			} else {
+				ability = clamp(ability + Math.max(0.25, k) * (y - p), -4, 4);
+			}
+		} else {
+			ability = clamp(ability + Math.max(0.25, k) * (y - p), -4, 4);
+		}
 
 		const gapDays = last === undefined ? 0 : (t - last) / DAY_MS;
 		if (attempts === 0) {
@@ -197,7 +224,8 @@ export function computeStats(evidence: Evidence[], now: Date = new Date()): Conc
 	const reviewAfterDays = halfLife * Math.log2(1 / REVIEW_AT_RETENTION);
 
 	let status: ConceptStatus;
-	if (mastery >= SOLID && attempts >= 2) status = current >= SOLID ? "solid" : "rusty";
+	// Two graded answers, or one honest "I already know this" claim, can mark solid.
+	if (mastery >= SOLID && (attempts >= 2 || statedKnown)) status = current >= SOLID ? "solid" : "rusty";
 	else if (current >= SHAKY) status = "shaky";
 	else status = "learning";
 
