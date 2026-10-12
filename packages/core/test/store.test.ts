@@ -160,6 +160,30 @@ nodes:
 		expect(report.nodes[0]?.role).toBe("target");
 	});
 
+	it("believes a prior-knowledge claim and marks the concept solid", async () => {
+		const { io, store } = makeStore();
+		const tool = toolByName("mark_known")!;
+		const result = await tool.run({ title: "Chain rule", what: "I already know the chain rule" }, { store });
+		expect(result.isError).toBeFalsy();
+		expect(result.text).toContain("marked it known");
+		expect(result.text).toContain("solid");
+		const concept = await store.resolve("Chain rule");
+		expect(concept?.stats.status).toBe("solid");
+		expect(concept?.stats.floor).toBe(3);
+		const evidence = await store.evidenceFor("chain-rule");
+		expect(evidence).toHaveLength(1);
+		expect(evidence[0]?.source).toBe("stated");
+		expect(await io.read("concepts/Chain rule.md")).toContain("stated");
+
+		const report = await store.setGoal({
+			title: "Calc",
+			targets: ["Chain rule"],
+			nodes: [{ title: "Chain rule" }],
+		});
+		expect(report.goal.built).toEqual(["chain-rule"]);
+		expect(report.goal.targets).toEqual([]);
+	});
+
 	it("overview reports goals, counts, and misconceptions", async () => {
 		const { store } = makeStore();
 		await store.ensureLayout();

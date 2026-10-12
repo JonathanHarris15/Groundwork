@@ -286,7 +286,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "upsert_concept",
 		description:
-			"Create or update a concept on the account. Only after they opt in to study. A concept is a reusable idea, never a file or a task on a file (that is a goal; put the file in sources). Direct prerequisites only; missing ones are created as stubs and merged unless replacePrerequisites is true. Sections replace. No path or document title in the note.",
+			"Create or update a concept on the account. Only after they opt in to study. A concept is a reusable idea, never a file or a task on a file (that is a goal; put the file in sources). Direct prerequisites only; missing ones are created as stubs and merged unless replacePrerequisites is true. Sections replace. No path or document title in the note. When they say they already know something, use mark_known instead.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -309,6 +309,40 @@ export const TOOLS: ToolDef[] = [
 			return {
 				text: `${created ? "Created" : "Updated"} [[${concept.title}]] (${concept.path}).${extra}`,
 				summary: `${created ? "Created" : "Updated"} concept “${concept.title}”`,
+			};
+		},
+	},
+	{
+		name: "mark_known",
+		description:
+			"Believe the learner when they say they already know a concept. Creates the concept if needed and records it as known (solid) at the depth they claim. Allowed without study opt-in. Do not quiz them to verify. One call per concept they named.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				title: str("Reusable idea they said they know, e.g. 'Chain rule'. Not a lecture, homework, exam, or fluency task."),
+				what: str("What they said, and any depth they claimed (e.g. 'I already know the chain rule')."),
+				difficulty: {
+					type: "integer",
+					minimum: 1,
+					maximum: 5,
+					description: "Depth they claim on the 1–5 quiz scale (default 3 apply). Higher when they claim exam-level fluency.",
+				},
+				domain: str("Optional subject area, e.g. 'calculus'."),
+			},
+			required: ["title", "what"],
+		},
+		async run(input: { title: string; what: string; difficulty?: number; domain?: string }, { store, session }) {
+			const { concept, created, before, after } = await store.markKnown({
+				title: input.title,
+				what: input.what,
+				difficulty: input.difficulty,
+				domain: input.domain,
+				session: session?.id,
+			});
+			const prior = before.attempts ? `${pct(before.current)} (${before.status})` : "unassessed";
+			return {
+				text: `${created ? "Created" : "Updated"} [[${concept.title}]] and marked it known from their word. ${prior} → ${pct(after.current)} (${after.status}; ${describeEdge(after)}). Believe them; do not quiz to verify.`,
+				summary: `Marked “${concept.title}” known`,
 			};
 		},
 	},

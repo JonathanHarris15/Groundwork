@@ -439,6 +439,31 @@ export class KnowledgeStore {
 		return { concept: (await this.requireConcept(concept.id)), before, after };
 	}
 
+	/**
+	 * Believe a prior-knowledge claim: create the concept if needed, then record
+	 * stated evidence so it becomes solid at the depth they named.
+	 */
+	async markKnown(input: {
+		title: string;
+		what: string;
+		difficulty?: number;
+		domain?: string;
+		session?: string;
+	}): Promise<{ concept: Concept; created: boolean; before: ConceptStats; after: ConceptStats }> {
+		const { concept, created } = await this.upsertConcept({ title: input.title, domain: input.domain });
+		const difficulty = clampLevel(input.difficulty ?? 3);
+		const { before, after } = await this.recordEvidence(concept.title, {
+			outcome: "correct",
+			difficulty,
+			kind: "explain",
+			source: "stated",
+			question: input.what,
+			note: input.what,
+			session: input.session,
+		});
+		return { concept: (await this.requireConcept(concept.id)), created, before, after };
+	}
+
 	/** Recomputes a concept's stats from evidence and rewrites its generated frontmatter and history. */
 	async refreshConcept(id: string): Promise<ConceptStats> {
 		const concept = await this.requireConcept(id);
@@ -1435,7 +1460,8 @@ function historyTable(evidence: Evidence[]): string {
 		.map((e) => {
 			const q = (e.question ?? e.note ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ").slice(0, 140);
 			const miss = e.misconception ? ` — *${e.misconception.replace(/\|/g, "\\|")}*` : "";
-			return `| ${e.ts.slice(0, 10)} | ${icon[e.outcome]}${e.slip ? " slip" : ""} | d${e.difficulty} ${e.kind} | ${q}${miss} |`;
+			const kind = e.source === "stated" ? "stated" : e.kind;
+			return `| ${e.ts.slice(0, 10)} | ${icon[e.outcome]}${e.slip ? " slip" : ""} | d${e.difficulty} ${kind} | ${q}${miss} |`;
 		});
 	return ["| Date | | Level | Question |", "| --- | --- | --- | --- |", ...rows].join("\n");
 }

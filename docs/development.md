@@ -175,7 +175,7 @@ The concept map in the tutor, and on the signed-in account page, is that depende
 - *Slips*: a careless error in otherwise right work (arithmetic, a sign, a typo) is graded as a slip. It is recorded as correct with 0.9 credit, and it never creates a misconception or a step back.
 - *Misconceptions*: each distractor can carry the belief that would lead someone to pick it. Choosing it records that misconception on the concept until a correct answer at that level retires it. "I don't know" is recorded as an honest gap, never as a misconception.
 
-Flashcard ratings do not write this evidence. Quiz cards do.
+Flashcard ratings do not write this evidence. Quiz cards do. When the learner says they already know a concept, `mark_known` writes a `stated` evidence event that can make the concept solid from their word alone (unlike flashcards).
 
 ## Community plugin checklist
 

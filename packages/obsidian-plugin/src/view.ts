@@ -183,6 +183,7 @@ const TOOL_VERBS: Record<string, string> = {
 	search_knowledge: "Searching what you already know",
 	get_concepts: "Reading concept notes",
 	upsert_concept: "Updating a concept note",
+	mark_known: "Recording what you already know",
 	set_goal: "Mapping the goal's dependencies",
 	get_goal: "Checking goal progress",
 	set_goal_status: "Updating goal status",
@@ -3497,6 +3498,7 @@ function iconFor(name: string): string {
 		case "search_knowledge":
 		case "get_concepts":
 		case "suggest_what_to_study":
+		case "mark_known":
 			return "brain";
 		case "set_goal":
 		case "get_goal":

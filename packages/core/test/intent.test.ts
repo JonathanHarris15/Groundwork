@@ -73,4 +73,12 @@ describe("classifyLearnerAsk", () => {
 		expect(studyToolBlock("set_goal", [{ role: "user", text: "summarize my documents" }])?.isError).toBe(true);
 		expect(studyToolBlock("survey_documents", [{ role: "user", text: "summarize my documents" }])).toBeNull();
 	});
+
+	it("allows mark_known without study opt-in when they disclose prior knowledge", () => {
+		const claiming = [{ role: "user" as const, text: "I already know the chain rule" }];
+		expect(classifyLearnerAsk(claiming[0]!.text)).toBe("answer");
+		expect(studyToolBlock("mark_known", claiming)).toBeNull();
+		expect(studyToolBlock("upsert_concept", claiming)?.isError).toBe(true);
+		expect(studyToolBlock("quiz", claiming)?.isError).toBe(true);
+	});
 });
