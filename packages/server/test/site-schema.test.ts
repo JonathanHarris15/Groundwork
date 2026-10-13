@@ -106,7 +106,7 @@ describe("site schema", () => {
 			const limit = rows.find((row) => row.feature === "Monthly limit")?.cells[id] ?? "";
 			const sync = rows.find((row) => row.feature === "Sync across computers")?.cells[id] ?? "";
 			expect(heavy.startsWith("Yes")).toBe(hostedHeavyAllowed({ plan: id, ownModel: PLANS[id].ownModel }));
-			expect(light).toBe(PLANS[id].ownModel ? "No" : "Yes");
+			expect(light).toBe(PLANS[id].ownModel ? "Your own model" : "Yes");
 			expect(cards === "Yes").toBe(paidPlan(id));
 			expect(review).toBe("Yes");
 			expect(sync).toBe("Yes");
@@ -117,6 +117,8 @@ describe("site schema", () => {
 				expect(pricing).toContain(cell);
 			}
 		}
+		expect(rows.find((row) => row.feature === "Light model")?.cells.byom).toBe("Your own model");
+		expect(rows.find((row) => row.feature === "Heavy model")?.cells.byom).toBe("Your own model");
 		expect(pricing).toContain(`$${PLANS.byom.priceUsdPerMonth}/month`);
 		expect(pricing).toContain(`$${PLANS.included.priceUsdPerMonth}/month`);
 	});

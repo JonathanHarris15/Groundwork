@@ -192,7 +192,7 @@ function priceBit(id: PlanId): string {
 /**
  * Cells follow the plan record and the paid-plan gates.
  * Light is the hosted model (`ownModel` is false). Hosted Heavy is the Groundwork plan only.
- * Bring your own model keeps the learner's Claude subscription or pasted key.
+ * Bring your own model does not use those hosted models. Its Light and Heavy cells say so.
  * New flashcards are refused on Free; reviewing a deck you already have is not.
  * A hosted plan shows the share of the month used. The dollar allowance stays off the page.
  * Sync is the account record, on every plan.
@@ -204,15 +204,16 @@ export function planComparison(): Array<{ feature: string; cells: Record<PlanId,
 			: "Your account shows the share of that month you’ve used.";
 	const heavy = (id: PlanId) => {
 		if (id === "included" && !PLANS.included.ownModel) return "Yes";
-		if (PLANS[id].ownModel) return "No. You use your own model and key.";
+		if (PLANS[id].ownModel) return "Your own model";
 		return "No";
 	};
+	const light = (id: PlanId) => (PLANS[id].ownModel ? "Your own model" : "Yes");
 	const own = (id: PlanId) => {
 		if (PLANS[id].ownModel) return `Claude on this computer, or a key from ${providerList()}.`;
 		return id === "included" ? "No. We run the models." : "No";
 	};
 	return [
-		{ feature: "Light model", cells: { free: PLANS.free.ownModel ? "No" : "Yes", byom: PLANS.byom.ownModel ? "No" : "Yes", included: PLANS.included.ownModel ? "No" : "Yes" } },
+		{ feature: "Light model", cells: { free: light("free"), byom: light("byom"), included: light("included") } },
 		{ feature: "Heavy model", cells: { free: heavy("free"), byom: heavy("byom"), included: heavy("included") } },
 		{ feature: "Monthly limit", cells: { free: monthly("free"), byom: monthly("byom"), included: monthly("included") } },
 		{ feature: "New flashcards", cells: { free: "No", byom: "Yes", included: "Yes" } },
