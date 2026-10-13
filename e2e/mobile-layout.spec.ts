@@ -11,6 +11,7 @@ const pages = [
 	"/get-started",
 	"/privacy",
 	"/terms",
+	"/changelog",
 	"/this-route-does-not-exist",
 	"/admin/usage",
 ];
@@ -37,6 +38,45 @@ test("no horizontal overflow and a single header row at 360px", async ({ page })
 			expect(layout.ctaTall, `${href} CTA`).toBe(true);
 		}
 	}
+});
+
+test("hero pricing link and plan table stay inside 360px", async ({ page }) => {
+	await page.setViewportSize({ width: 360, height: 800 });
+	await page.goto("/");
+	const link = page.locator(".hero-copy a.hero-quiet");
+	await expect(link).toBeVisible();
+	await expect(link).toHaveAttribute("href", "/pricing");
+	await expect(link).not.toHaveClass(/cta/);
+	const home = await measureHeader(page);
+	expect(home.overflow).toBeLessThanOrEqual(1);
+	expect(home.ctaInFold).toBe(true);
+
+	await page.goto("/pricing");
+	const table = page.locator("table.plan-compare");
+	await expect(table).toBeVisible();
+	await expect(table).toContainText("Light model");
+	await expect(table).toContainText("Heavy model");
+	await expect(table).toContainText("Monthly limit");
+	await expect(table).toContainText("New flashcards");
+	await expect(table).toContainText("Review existing decks");
+	await expect(table).toContainText("Your own model or key");
+	await expect(table).toContainText("Sync across computers");
+	await expect(page.locator(".plan-card-recommended")).toContainText("Recommended");
+	await expect(page.locator("body")).not.toContainText("Most popular");
+	const fit = await page.evaluate(() => {
+		const scroller = document.querySelector(".compare-scroll");
+		if (!scroller) return null;
+		const box = scroller.getBoundingClientRect();
+		return {
+			overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+			scrolls: scroller.scrollWidth > scroller.clientWidth + 1,
+			inside: box.left >= -1 && box.right <= window.innerWidth + 1,
+		};
+	});
+	expect(fit).not.toBeNull();
+	expect(fit?.overflow).toBeLessThanOrEqual(1);
+	expect(fit?.scrolls).toBe(true);
+	expect(fit?.inside).toBe(true);
 });
 
 test("desktop keeps the inline nav at 1280px", async ({ page }) => {

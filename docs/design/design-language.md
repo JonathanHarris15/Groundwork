@@ -68,6 +68,12 @@ The top of `/admin/usage` is two count cards, Users and Paid users, above the fr
 
 `/get-started` and the empty account page share one checklist, mounted by `setup.js` into `[data-setup]`. Three steps, in order: Get Obsidian, Add Groundwork, Connect your account. The detected desktop OS gets the download button. The other two systems are text links. A phone (by user agent, not by viewport width) sees “Groundwork runs on your computer” with copy, share, and a QR code, and the three steps stay underneath. Done is the word “Done”, not a color alone. The connect link is `obsidian://groundwork?code=…`. It does not carry a refresh token.
 
+## Pricing page
+
+The Groundwork plan ($20) is the recommended card: an accent border in the logo blue (`#45A9F0`) and a “Recommended” badge. The badge says Recommended. It does not say Most popular.
+
+The comparison table sits between the plan cards and Questions. One column per plan. On a narrow page the table scrolls inside its own region so the page itself does not scroll sideways.
+
 ## Copy
 
 - Action labels are titles only, with no time estimates ("Practice exam", not "Practice exam · 30m").

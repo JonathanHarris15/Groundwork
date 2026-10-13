@@ -30,7 +30,7 @@ async function seedLargeAccount(request: APIRequestContext) {
 	});
 }
 
-const publicPages = ["/", "/pricing", "/practice-tests", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms"];
+const publicPages = ["/", "/pricing", "/practice-tests", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms", "/changelog"];
 
 test.beforeEach(async ({ page }) => {
 	await page.addInitScript(() => localStorage.setItem("gw-consent-hide", "1"));
@@ -64,6 +64,9 @@ test("HEAD matches GET", async ({ request }) => {
 test("landing and 404", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.getByRole("heading", { name: /Learn it from the ground up/i })).toBeVisible();
+	await expect(page.locator(".hero-copy .sub")).toContainText("Built for college students and adult learners");
+	await expect(page.locator(".hero-copy a.hero-quiet")).toHaveAttribute("href", "/pricing");
+	await expect(page.locator(".hero-copy a.hero-quiet")).toHaveText("Pricing");
 	await expect(page.locator("body")).toContainText("Bring your own model is $6/month");
 	await expect(page.locator("body")).toContainText("Groundwork is $20/month");
 	await expect(page.locator("body")).toContainText("Start free on the Light model");
