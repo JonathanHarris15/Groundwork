@@ -122,7 +122,7 @@ describe("ads tracking", () => {
 	});
 
 	it("publishes real pages with the contact email and no draft markers", () => {
-		const paths = ["/", "/pricing", "/practice-tests", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms", "/404.html"];
+		const paths = ["/", "/pricing", "/practice-tests", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms", "/changelog", "/404.html"];
 		for (const href of paths) {
 			const body = readSite(href)?.body ?? "";
 			expect(body.length).toBeGreaterThan(200);
@@ -182,6 +182,8 @@ describe("ads tracking", () => {
 		expect(String(readSite("/pricing")?.body)).not.toContain("G-F4236HGZSM");
 		expect(readSite("/privacy")?.body).toContain("delete");
 		expect(sitemapXml()).toContain("https://groundworklearn.com/pricing");
+		expect(sitemapXml()).toContain("https://groundworklearn.com/changelog");
+		expect(sitemapXml()).not.toContain("llms.txt");
 		expect(sitemapXml()).not.toContain("graph-harness");
 		expect(robotsTxt()).toContain("Disallow: /v1/");
 		expect(renderSite("/nope")).toBeNull();

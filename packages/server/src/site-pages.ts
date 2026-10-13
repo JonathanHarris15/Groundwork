@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { PLANS, USER_KEY_PROVIDERS, type PlanId } from "../../core/src/account/plans.ts";
 import { CONTACT_EMAIL_DEFAULT } from "./tracking";
 
 const ORIGIN = "https://groundworklearn.com";
@@ -91,6 +92,7 @@ function footer(): string {
 		<nav class="foot-links" aria-label="Footer">
 			<a href="/privacy">Privacy</a>
 			<a href="/terms">Terms</a>
+			<a href="/changelog">Changelog</a>
 			<a href="mailto:${EMAIL}" data-contact-email>${EMAIL}</a>
 			<button type="button" class="foot-button" data-consent-open>Cookies</button>
 		</nav>
@@ -104,7 +106,7 @@ function footer(): string {
 	</footer>`;
 }
 
-function page(spec: { path: string; title: string; description: string; main: string; map?: boolean; noindex?: boolean; wide?: boolean; scripts?: string }): string {
+function page(spec: { path: string; title: string; description: string; main: string; map?: boolean; noindex?: boolean; wide?: boolean; scripts?: string; jsonLd?: string }): string {
 	const url = `${ORIGIN}${spec.path}`;
 	const mapScript = spec.map
 		? `<script type="module" src="/force-graph.js?v=4"></script>
@@ -137,7 +139,8 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
 		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
-		<link rel="stylesheet" href="/styles.css?v=20" />
+		<link rel="stylesheet" href="/styles.css?v=21" />
+		${spec.jsonLd ?? ""}
 		<script src="/tracking.js?v=7"></script>
 	</head>
 	<body>
@@ -160,11 +163,375 @@ function page(spec: { path: string; title: string; description: string; main: st
 `;
 }
 
+const PLAN_ORDER: PlanId[] = ["free", "byom", "included"];
+
+/** Public names, in the order the pricing card already uses. */
+const KEY_LABEL: Record<(typeof USER_KEY_PROVIDERS)[number], string> = {
+	anthropic: "Anthropic",
+	openrouter: "OpenRouter",
+	google: "Google",
+	xai: "xAI",
+	openai: "OpenAI",
+};
+
+const KEY_ORDER: Array<(typeof USER_KEY_PROVIDERS)[number]> = ["openrouter", "anthropic", "google", "xai", "openai"];
+
+function providerList(): string {
+	const missing = USER_KEY_PROVIDERS.filter((id) => !KEY_ORDER.includes(id));
+	if (missing.length) throw new Error(`Name every provider key: ${missing.join(", ")}`);
+	const labels = KEY_ORDER.map((id) => KEY_LABEL[id]);
+	const last = labels[labels.length - 1] ?? "";
+	return `${labels.slice(0, -1).join(", ")}, or ${last}`;
+}
+
+function priceBit(id: PlanId): string {
+	const price = PLANS[id].priceUsdPerMonth;
+	return price === 0 ? "$0" : `$${price}/month`;
+}
+
+/**
+ * Cells follow the plan record and the paid-plan gates.
+ * Light is the hosted model (`ownModel` is false). Hosted Heavy is the Groundwork plan only.
+ * Bring your own model keeps the learner's Claude subscription or pasted key.
+ * New flashcards are refused on Free; reviewing a deck you already have is not.
+ * A hosted plan shows the share of the month used. The dollar allowance stays off the page.
+ * Sync is the account record, on every plan.
+ */
+export function planComparison(): Array<{ feature: string; cells: Record<PlanId, string> }> {
+	const monthly = (id: PlanId) =>
+		PLANS[id].ownModel || PLANS[id].hostedCreditUsd <= 0
+			? "Not metered here. Model use is billed by the provider, not by Groundwork."
+			: "Your account shows the share of that month you’ve used.";
+	const heavy = (id: PlanId) => {
+		if (id === "included" && !PLANS.included.ownModel) return "Yes";
+		if (PLANS[id].ownModel) return "No. You use your own model and key.";
+		return "No";
+	};
+	const own = (id: PlanId) => {
+		if (PLANS[id].ownModel) return `Claude on this computer, or a key from ${providerList()}.`;
+		return id === "included" ? "No. We run the models." : "No";
+	};
+	return [
+		{ feature: "Light model", cells: { free: PLANS.free.ownModel ? "No" : "Yes", byom: PLANS.byom.ownModel ? "No" : "Yes", included: PLANS.included.ownModel ? "No" : "Yes" } },
+		{ feature: "Heavy model", cells: { free: heavy("free"), byom: heavy("byom"), included: heavy("included") } },
+		{ feature: "Monthly limit", cells: { free: monthly("free"), byom: monthly("byom"), included: monthly("included") } },
+		{ feature: "New flashcards", cells: { free: "No", byom: "Yes", included: "Yes" } },
+		{ feature: "Review existing decks", cells: { free: "Yes", byom: "Yes", included: "Yes" } },
+		{ feature: "Your own model or key", cells: { free: own("free"), byom: own("byom"), included: own("included") } },
+		{ feature: "Sync across computers", cells: { free: "Yes", byom: "Yes", included: "Yes" } },
+	];
+}
+
+function comparisonTable(): string {
+	const head = PLAN_ORDER.map((id) => {
+		const badge = id === "included" ? `<span class="plan-col-note">Recommended</span>` : "";
+		return `<th scope="col">${PLANS[id].name}${badge}<span class="plan-price">${priceBit(id)}</span></th>`;
+	}).join("");
+	const rows = planComparison()
+		.map((row) => {
+			const cells = PLAN_ORDER.map((id) => `<td data-plan="${PLANS[id].name}">${row.cells[id]}</td>`).join("");
+			return `<tr><th scope="row">${row.feature}</th>${cells}</tr>`;
+		})
+		.join("");
+	return `<section class="mkt-section" aria-labelledby="compare-title">
+		<h2 id="compare-title">Compare plans</h2>
+		<p class="compare-hint">Scroll sideways to see every plan.</p>
+		<div class="compare-scroll" tabindex="0" aria-label="Compare plans">
+			<table class="plan-compare">
+				<thead><tr><th scope="col">Feature</th>${head}</tr></thead>
+				<tbody>${rows}</tbody>
+			</table>
+		</div>
+	</section>`;
+}
+
+interface FaqItem {
+	q: string;
+	a: string;
+}
+
+function pricingFaq(): FaqItem[] {
+	const byom = PLANS.byom.priceUsdPerMonth;
+	const included = PLANS.included.priceUsdPerMonth;
+	return [
+		{ q: "Do I need Obsidian?", a: "Yes. Groundwork is a plugin for Obsidian desktop." },
+		{ q: "Does it work on my phone?", a: "No. Groundwork is desktop only. You can sign up on your phone and install on your computer later." },
+		{ q: "What does “bring your own model” mean?", a: "Groundwork uses your Claude subscription or your API key instead of ours, which is why the plan costs less." },
+		{ q: "How am I billed?", a: "Through Stripe, monthly." },
+		{ q: "Can I change plans later?", a: "Yes. Pick another plan on your account page. To change or cancel a paid plan, open Manage billing. That goes to Stripe." },
+		{
+			q: "What is Heavy?",
+			a: `Free stays on Light, with a monthly limit. Heavy is on the paid plans. Groundwork is $${included} a month and includes Heavy. Bring your own model is $${byom} a month and uses your own model and key.`,
+		},
+		{
+			q: "Are flashcards free?",
+			a: `Reviewing decks you already have is free. Making new flashcards is on the paid plans, Groundwork at $${included} a month or bring your own model at $${byom}.`,
+		},
+		{ q: "Does my progress carry over between plans?", a: "Yes. Your goals, concept map, quiz history, and decks stay on your account when you change plans. Progress syncs across your computers either way." },
+	];
+}
+
+function practiceFaq(): FaqItem[] {
+	const byom = PLANS.byom.priceUsdPerMonth;
+	const included = PLANS.included.priceUsdPerMonth;
+	return [
+		{ q: "Who is Groundwork for?", a: "College students and adult learners, 18 and older. It isn’t built for high-school students." },
+		{ q: "Which subjects?", a: "Any course you can name. Calculus, statistics, and chemistry work well because math renders in LaTeX." },
+		{ q: "Do I need to upload anything?", a: "No. A topic is enough. Slides, notes, or a practice exam make the questions closer to your course." },
+		{ q: "Are these real exam questions?", a: "No. Groundwork writes new practice questions. It doesn’t have your professor’s exam." },
+		{ q: "Does it run on a Chromebook, phone, or tablet?", a: "No. It’s a plugin for Obsidian on a Windows, Mac, or Linux computer." },
+		{ q: "Is it free?", a: `Yes. Free is the Light model, with a monthly limit. Heavy and new flashcards are paid. Bring your own model is $${byom} a month. Groundwork is $${included} a month.` },
+	];
+}
+
+function faqHtml(items: FaqItem[]): string {
+	return items.map((item) => `<h3>${item.q}</h3>\n\t\t\t\t<p>${item.a}</p>`).join("\n");
+}
+
+function jsonLdScript(nodes: unknown[]): string {
+	const json = JSON.stringify({ "@context": "https://schema.org", "@graph": nodes }).replace(/</g, "\\u003c");
+	return `<script type="application/ld+json">${json}</script>`;
+}
+
+function organizationNode(): Record<string, unknown> {
+	return {
+		"@type": "Organization",
+		name: "Groundwork",
+		url: ORIGIN,
+		logo: `${ORIGIN}/og.png`,
+	};
+}
+
+function softwareApplicationNode(): Record<string, unknown> {
+	return {
+		"@type": "SoftwareApplication",
+		name: "Groundwork",
+		url: `${ORIGIN}/`,
+		applicationCategory: "EducationalApplication",
+		operatingSystem: "Windows, Mac, or Linux",
+		description: "A tutor plugin for Obsidian desktop. It maps what you know from foundations up to your goal, quizzes you at the edge, and plans exam prep.",
+		offers: PLAN_ORDER.map((id) => {
+			const price = String(PLANS[id].priceUsdPerMonth);
+			return {
+				"@type": "Offer",
+				name: PLANS[id].name,
+				price,
+				priceCurrency: "USD",
+				url: `${ORIGIN}/pricing`,
+				priceSpecification: {
+					"@type": "UnitPriceSpecification",
+					price,
+					priceCurrency: "USD",
+					billingDuration: "P1M",
+					unitText: "month",
+					unitCode: "MON",
+				},
+			};
+		}),
+	};
+}
+
+function faqNode(items: FaqItem[]): Record<string, unknown> {
+	return {
+		"@type": "FAQPage",
+		mainEntity: items.map((item) => ({
+			"@type": "Question",
+			name: item.q,
+			acceptedAnswer: { "@type": "Answer", text: item.a },
+		})),
+	};
+}
+
+export function homeJsonLdScript(): string {
+	return jsonLdScript([organizationNode(), softwareApplicationNode()]);
+}
+
+/** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
+const RELEASES: Array<{ version: string; date: string; body: string }> = [
+	{
+		version: "0.2.4",
+		date: "2026-10-12",
+		body: "If you say you already know a concept, Groundwork marks it known. The connect link from before 0.2.3 still works.",
+	},
+	{
+		version: "0.2.3",
+		date: "2026-10-11",
+		body: "Start free puts you on the Free plan and opens a checklist: get Obsidian, add Groundwork, connect your account. On a phone, the page can copy, share, or show a QR code so you finish on a computer.",
+	},
+	{
+		version: "0.2.2",
+		date: "2026-10-11",
+		body: "Heavy and new flashcards stay on the paid plans. Free stays on Light, and decks you already have stay readable. The site header fits a phone.",
+	},
+	{
+		version: "0.2.1",
+		date: "2026-10-09",
+		body: "An admin page records free-plan tutor usage.",
+	},
+	{
+		version: "0.2.0",
+		date: "2026-10-09",
+		body: "The tutor chooses which notes to read for a turn. A concept map in chat stays inside its pane.",
+	},
+	{
+		version: "0.1.17",
+		date: "2026-10-08",
+		body: "A long tutor turn ends with an answer. The tutor reads a document before summarizing it. Code in a tutor reply is styled.",
+	},
+	{
+		version: "0.1.16",
+		date: "2026-10-08",
+		body: "The tutor answers the question first. Practice-test results show the score and what broke. The site has a practice tests page, and it says Groundwork is for college students and adult learners, 18 and older.",
+	},
+	{
+		version: "0.1.15",
+		date: "2026-10-08",
+		body: "Attaching a file without a read folder says where to add one.",
+	},
+	{
+		version: "0.1.14",
+		date: "2026-10-07",
+		body: "Fixes for the Obsidian community plugin scan. The Free plan’s monthly tutor limit is lower.",
+	},
+	{
+		version: "0.1.13",
+		date: "2026-10-06",
+		body: "You can study a whole flashcard deck in one sitting. The tutor has Light and Heavy. Plans are Free, Bring your own model at $6 a month, and Groundwork at $20 a month.",
+	},
+	{
+		version: "0.1.12",
+		date: "2026-10-06",
+		body: "You can delete and rename flashcard decks in the Library. The site has privacy and terms pages.",
+	},
+	{
+		version: "0.1.11",
+		date: "2026-10-06",
+		body: "Goal concepts on the map are drawn with a ring and a red flag.",
+	},
+	{
+		version: "0.1.10",
+		date: "2026-10-06",
+		body: "A figure opens full screen and runs in the tutor window. Flashcard ratings sit on the card. A missed quiz does not raise how ready a concept looks. Checkout accepts a promo code.",
+	},
+	{
+		version: "0.1.9",
+		date: "2026-10-06",
+		body: "The tutor can draw a figure beside the lesson. An open quiz is still there after you close Obsidian.",
+	},
+	{
+		version: "0.1.8",
+		date: "2026-10-05",
+		body: "The concept map scrolls more smoothly. Flashcard decks can be named. The account card shows the share of the month’s tutor budget you’ve used.",
+	},
+	{
+		version: "0.1.7",
+		date: "2026-10-05",
+		body: "Concepts are marked solid, shaky, learning, rusty, or not started, in the plugin and on the site. Library, Settings, and Flashcards use the same screen as Learn, Map, and Goals.",
+	},
+	{
+		version: "0.1.6",
+		date: "2026-10-05",
+		body: "Learn opens on a hub. You can pin the goal you’re working on. Flashcards follow that goal.",
+	},
+	{
+		version: "0.1.5",
+		date: "2026-10-05",
+		body: "The concept map is a pyramid and shows every concept. Concepts that aren’t on the path fade back.",
+	},
+	{
+		version: "0.1.4",
+		date: "2026-10-05",
+		body: "Signing out on the site ends the session. A past-due subscription stays on the paid plan.",
+	},
+	{
+		version: "0.1.3",
+		date: "2026-10-05",
+		body: "The plugin description no longer says “Obsidian”, so the community listing can accept it.",
+	},
+	{
+		version: "0.1.2",
+		date: "2026-10-05",
+		body: "The account page has an interactive concept map. The study record stays on the account. Open Obsidian points at the community plugin.",
+	},
+	{
+		version: "0.1.1",
+		date: "2026-10-03",
+		body: "Fixes so the Obsidian community plugin scan can read the release.",
+	},
+	{
+		version: "0.1.0",
+		date: "2026-10-02",
+		body: "First tagged release for Obsidian’s community plugins. The plugin manifest is at the root of the repository so the listing can find it.",
+	},
+];
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function longDate(iso: string): string {
+	const [year, month, day] = iso.split("-").map(Number);
+	return `${MONTHS[(month ?? 1) - 1]} ${day}, ${year}`;
+}
+
+function changelogPage(): string {
+	const entries = RELEASES.map(
+		(release) => `<article class="release">
+			<h2><a href="https://github.com/JonathanHarris15/Groundwork/releases/tag/${release.version}">${release.version}</a></h2>
+			<p class="release-date"><time datetime="${release.date}">${longDate(release.date)}</time></p>
+			<p>${release.body}</p>
+		</article>`,
+	).join("");
+	return page({
+		path: "/changelog",
+		title: "Changelog · Groundwork",
+		description: "What shipped in Groundwork, from the tagged plugin releases.",
+		main: `
+			<h1>Changelog</h1>
+			<p class="mkt-sub">Dated notes from the tagged releases, 0.1.0 through ${RELEASES[0]?.version}. Each version links to its GitHub release.</p>
+			${entries}
+		`,
+	});
+}
+
+export function llmsTxt(): string {
+	const free = PLANS.free.priceUsdPerMonth;
+	const byom = PLANS.byom.priceUsdPerMonth;
+	const included = PLANS.included.priceUsdPerMonth;
+	return `# Groundwork
+
+> A tutor plugin for Obsidian desktop, built for college students and adult learners, 18 and older, prepping quantitative exams. It maps the concepts you’re learning, marks how well you know each one, and plans the next step toward your exam date.
+
+Groundwork runs on a Windows, Mac, or Linux computer. It does not run on a phone, tablet, or Chromebook. It is listed in Obsidian’s community plugins.
+
+## Pricing
+
+- [Free](${ORIGIN}/pricing): $${free} per month. Light model, with a monthly limit. Your account shows the share of that month you’ve used.
+- [Bring your own model](${ORIGIN}/pricing): $${byom} per month. You use the Claude subscription on your computer, or a key you paste. New flashcards are included. Hosted Heavy is not included.
+- [Groundwork](${ORIGIN}/pricing): $${included} per month. Recommended. Light or Heavy. We run the models. New flashcards are included.
+
+## Pages
+
+- [Home](${ORIGIN}/)
+- [Pricing](${ORIGIN}/pricing)
+- [Get started](${ORIGIN}/get-started)
+- [Practice tests](${ORIGIN}/practice-tests)
+- [Exam prep](${ORIGIN}/exam-prep)
+- [Concept map](${ORIGIN}/concept-map)
+- [Quizzes and flashcards](${ORIGIN}/quizzes-flashcards)
+- [Goals](${ORIGIN}/goals)
+- [Changelog](${ORIGIN}/changelog)
+- [Privacy](${ORIGIN}/privacy)
+- [Terms](${ORIGIN}/terms)
+- [Listed in Obsidian’s community plugins](https://community.obsidian.md/plugins/groundwork)
+`;
+}
+
 function pricingPage(): string {
+	const faq = pricingFaq();
 	return page({
 		path: "/pricing",
 		title: "Groundwork pricing: Free, $6/mo, or $20/mo",
 		description: "Start free on the Light model. Heavy and new flashcards are on Bring your own model ($6/mo) or Groundwork ($20/mo). Billed through Stripe.",
+		jsonLd: jsonLdScript([organizationNode(), softwareApplicationNode(), faqNode(faq)]),
 		main: `
 			<h1>Plans</h1>
 			<p class="mkt-sub">All three plans run in Obsidian desktop. Free is the Light model, with a monthly limit. Heavy and new flashcards are on Bring your own model ($6/month) and Groundwork ($20/month).</p>
@@ -182,31 +549,18 @@ function pricingPage(): string {
 					<p>Use a model you already pay for. Connect the Claude subscription on your computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. Heavy uses that model and key. Flashcards are included. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 covers Groundwork.</p>
 					<a class="cta" href="/?plan=byom#signin">Choose $6${ARROW}</a>
 				</li>
-				<li class="plan-card">
+				<li class="plan-card plan-card-recommended">
+					<span class="plan-badge">Recommended</span>
 					<h2>Groundwork</h2>
 					<p class="price">$20<span>/month</span></p>
 					<p>Light or Heavy. We run the models. Flashcards are included. No keys to manage.</p>
 					<a class="cta" href="/?plan=included#signin">Choose $20${ARROW}</a>
 				</li>
 			</ul>
+			${comparisonTable()}
 			<section class="mkt-section">
 				<h2>Questions</h2>
-				<h3>Do I need Obsidian?</h3>
-				<p>Yes. Groundwork is a plugin for Obsidian desktop.</p>
-				<h3>Does it work on my phone?</h3>
-				<p>No. Groundwork is desktop only. You can sign up on your phone and install on your computer later.</p>
-				<h3>What does “bring your own model” mean?</h3>
-				<p>Groundwork uses your Claude subscription or your API key instead of ours, which is why the plan costs less.</p>
-				<h3>How am I billed?</h3>
-				<p>Through Stripe, monthly.</p>
-				<h3>Can I change plans later?</h3>
-				<p>Yes. Pick another plan on your account page. To change or cancel a paid plan, open Manage billing. That goes to Stripe.</p>
-				<h3>What is Heavy?</h3>
-				<p>Free stays on Light, with a monthly limit. Heavy is on the paid plans. Groundwork is $20 a month and includes Heavy. Bring your own model is $6 a month and uses your own model and key.</p>
-				<h3>Are flashcards free?</h3>
-				<p>Reviewing decks you already have is free. Making new flashcards is on the paid plans, Groundwork at $20 a month or bring your own model at $6.</p>
-				<h3>Does my progress carry over between plans?</h3>
-				<p>Yes. Your goals, concept map, quiz history, and decks stay on your account when you change plans. Progress syncs across your computers either way.</p>
+				${faqHtml(faq)}
 			</section>
 			${cta("/#signin", "Start free")}
 		`,
@@ -214,10 +568,12 @@ function pricingPage(): string {
 }
 
 function practicePage(): string {
+	const faq = practiceFaq();
 	return page({
 		path: "/practice-tests",
 		title: "Practice tests for college exams, in Obsidian | Groundwork",
 		description: "Practice questions and practice tests for calculus, statistics, and chemistry exams. See which concept broke, with explanations after each question.",
+		jsonLd: jsonLdScript([faqNode(faq)]),
 		main: `
 			<h1>Practice tests that show what broke.</h1>
 			<p class="mkt-sub">Name a topic, or add your slides, notes, or a practice exam. Groundwork writes practice questions and practice tests for your midterm or final, then shows which concept broke. Requires Obsidian desktop.</p>
@@ -259,20 +615,7 @@ function practicePage(): string {
 				height: 2764,
 				alt: "Concept map for Calc 1 final, with the goal concepts and the foundations under them.",
 			})}`)}
-			${section("Questions", [], `
-				<h3>Who is Groundwork for?</h3>
-				<p>College students and adult learners, 18 and older. It isn’t built for high-school students.</p>
-				<h3>Which subjects?</h3>
-				<p>Any course you can name. Calculus, statistics, and chemistry work well because math renders in LaTeX.</p>
-				<h3>Do I need to upload anything?</h3>
-				<p>No. A topic is enough. Slides, notes, or a practice exam make the questions closer to your course.</p>
-				<h3>Are these real exam questions?</h3>
-				<p>No. Groundwork writes new practice questions. It doesn’t have your professor’s exam.</p>
-				<h3>Does it run on a Chromebook, phone, or tablet?</h3>
-				<p>No. It’s a plugin for Obsidian on a Windows, Mac, or Linux computer.</p>
-				<h3>Is it free?</h3>
-				<p>Yes. Free is the Light model, with a monthly limit. Heavy and new flashcards are paid. Bring your own model is $6 a month. Groundwork is $20 a month.</p>
-			`)}
+			${section("Questions", [], faqHtml(faq))}
 			${cta("/#signin", "Start free")}
 		`,
 	});
@@ -459,6 +802,7 @@ const PAGES: Array<{ path: string; file: string; html: () => string }> = [
 	{ path: "/get-started", file: "get-started/index.html", html: startPage },
 	{ path: "/privacy", file: "privacy/index.html", html: privacyPage },
 	{ path: "/terms", file: "terms/index.html", html: termsPage },
+	{ path: "/changelog", file: "changelog/index.html", html: changelogPage },
 ];
 
 export function publicPagePaths(): string[] {
@@ -466,6 +810,7 @@ export function publicPagePaths(): string[] {
 }
 
 export function sitemapXml(): string {
+	// /llms.txt is a model card, not an HTML page, so it stays out of the sitemap.
 	const urls = publicPagePaths().map((href) => `  <url><loc>${ORIGIN}${href === "/" ? "/" : href}</loc></url>`).join("\n");
 	return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
@@ -491,6 +836,7 @@ export function renderSite(urlPath: string): { body: string; type: string } | nu
 	if (hit) return { body: hit.html(), type: "text/html; charset=utf-8" };
 	if (urlPath === "/sitemap.xml") return { body: sitemapXml(), type: "application/xml; charset=utf-8" };
 	if (urlPath === "/robots.txt") return { body: robotsTxt(), type: "text/plain; charset=utf-8" };
+	if (urlPath === "/llms.txt") return { body: llmsTxt(), type: "text/plain; charset=utf-8" };
 	return null;
 }
 
@@ -500,6 +846,7 @@ export function siteFiles(): SiteFile[] {
 		{ path: "/admin/usage", file: "admin/usage/index.html", body: adminUsageShell(), type: "text/html; charset=utf-8" },
 		{ path: "/sitemap.xml", file: "sitemap.xml", body: sitemapXml(), type: "application/xml; charset=utf-8" },
 		{ path: "/robots.txt", file: "robots.txt", body: robotsTxt(), type: "text/plain; charset=utf-8" },
+		{ path: "/llms.txt", file: "llms.txt", body: llmsTxt(), type: "text/plain; charset=utf-8" },
 	];
 }
 
