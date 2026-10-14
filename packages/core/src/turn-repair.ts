@@ -11,6 +11,24 @@ export function isQuestionTool(name: string): boolean {
 	return QUESTION_TOOLS.has(name);
 }
 
+/** The model explained a missing card or goal by inventing a rule about the app. */
+export function inventsAppBehavior(text: string): boolean {
+	return (
+		/\b(?:our |the )?system requires\b/i.test(text) ||
+		/\bformal confirmation\b/i.test(text) ||
+		/\bofficial question\b/i.test(text) ||
+		/\bgoal tracker\b/i.test(text) ||
+		/\binitialize the goal\b/i.test(text) ||
+		/\bdid(?:n't| not) (?:pop up|load|appear) because\b/i.test(text) ||
+		/\bunlock\b.{0,40}\b(?:features|quizzes|quiz|goal)\b/i.test(text)
+	);
+}
+
+/** They asked permission to study or to make a goal, instead of starting. */
+export function asksToConfirmStudy(text: string): boolean {
+	return /do you want to study this or make a goal/i.test(text) || /want me to set this up as a goal and quiz you/i.test(text);
+}
+
 /** Prose that promises a question. The card is what the learner actually sees. */
 export function announcesQuestion(text: string): boolean {
 	return (
@@ -32,15 +50,24 @@ export function announcesQuestion(text: string): boolean {
  * the thing the learner is waiting on.
  */
 export function repairNote(input: { userText: string; assistantText: string; calledQuestion: boolean; calledGoal: boolean }): string | null {
+	const objective = statesLearningObjective(visibleAsk(input.userText));
+	const invented = inventsAppBehavior(input.assistantText);
+	const gated = objective && asksToConfirmStudy(input.assistantText);
+	const spoken = input.assistantText.replace(/want me to set this up as a goal and quiz you on it\??/gi, " ");
 	const lines: string[] = [];
-	if (!input.calledQuestion && announcesQuestion(input.assistantText)) {
+	if (invented) {
 		lines.push(
-			"You announced a question and no quiz, ask_user, or practice_test card was shown. Call quiz for a graded question, or ask_user when there is no right answer. The card is the question. Do not describe it in prose.",
+			"You invented a rule about how the app works. There is no confirmation step and nothing to unlock. Do not explain the app. If a card or goal did not appear, call the tool again. If it still fails, say it did not load.",
 		);
 	}
-	if (!input.calledGoal && statesLearningObjective(visibleAsk(input.userText))) {
+	if (!input.calledQuestion && (announcesQuestion(spoken) || gated || objective)) {
 		lines.push(
-			"They stated an objective they are working toward. Call set_goal now: a short title and the concepts that objective needs. Then tell them the plan in a few sentences. Do not ask whether to make a goal.",
+			"Call quiz for a graded question, or ask_user when there is no right answer. The card is the question. Do not ask permission first, and do not describe the card in prose.",
+		);
+	}
+	if (!input.calledGoal && objective) {
+		lines.push(
+			"They stated an objective they are working toward. Call set_goal on this turn and start studying. A goal and a quiz go together. Do not ask whether to study or make a goal.",
 		);
 	}
 	if (!lines.length) return null;

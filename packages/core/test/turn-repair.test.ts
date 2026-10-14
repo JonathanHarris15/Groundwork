@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcesQuestion, repairNote } from "../src/turn-repair";
+import { announcesQuestion, inventsAppBehavior, repairNote } from "../src/turn-repair";
 
 describe("announced questions", () => {
 	const announced = [
@@ -44,6 +44,31 @@ describe("announced questions", () => {
 			repairNote({
 				userText: "what's the chain rule?",
 				assistantText: "The chain rule multiplies rates.",
+				calledQuestion: false,
+				calledGoal: false,
+			}),
+		).toBeNull();
+	});
+
+	it("repairs an invented confirmation gate into a goal and a quiz", () => {
+		const apology =
+			"Ah! My apologies—the interactive quiz card didn't pop up because our system requires a formal confirmation step before it can initialize the goal tracker and start launching interactive quizzes. Do you want to study this or make a goal for it?";
+		expect(inventsAppBehavior(apology)).toBe(true);
+		expect(inventsAppBehavior("The chain rule multiplies rates.")).toBe(false);
+		const note = repairNote({
+			userText: "I'm working toward being able to do the homework",
+			assistantText: apology,
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(note).toContain("did not load");
+		expect(note).toContain("Call quiz");
+		expect(note).toContain("Call set_goal");
+		expect(note).toContain("Do not ask whether to study or make a goal");
+		expect(
+			repairNote({
+				userText: "put together a study guide for derivatives",
+				assistantText: "Want me to set this up as a goal and quiz you on it?",
 				calledQuestion: false,
 				calledGoal: false,
 			}),

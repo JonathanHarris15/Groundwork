@@ -108,6 +108,72 @@ describe("AgentSession with the demo tutor", () => {
 		expect((await store.goals()).map((g) => g.title)).toEqual(["Parabolas"]);
 	});
 
+	it("starts the goal and a quiz when the reply invented a confirmation gate", async () => {
+		const asked: string[] = [];
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		await store.upsertConcept({ title: "Derivative", summary: "A rate of change." });
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				const last = messageText(req.messages[req.messages.length - 1]!);
+				if (/tutor_repair/.test(last)) {
+					return {
+						content: [
+							{
+								type: "tool_use",
+								id: "g1",
+								name: "set_goal",
+								input: { title: "Homework", targets: ["Derivative"], nodes: [{ title: "Derivative" }] },
+							},
+							{
+								type: "tool_use",
+								id: "q1",
+								name: "quiz",
+								input: {
+									concept: "Derivative",
+									question: "What is a derivative?",
+									explanation: "A rate of change.",
+									difficulty: 2,
+									kind: "check",
+									options: [
+										{ label: "A rate of change", value: "rate" },
+										{ label: "A constant", value: "constant" },
+									],
+									correctAnswer: "rate",
+								},
+							},
+						],
+						stopReason: "tool_use",
+					};
+				}
+				const reply =
+					"The quiz card didn't pop up because our system requires a formal confirmation step before it can initialize the goal tracker. Do you want to study this or make a goal for it?";
+				req.onText(reply);
+				return { content: [{ type: "text", text: reply }], stopReason: "end_turn" };
+			},
+		};
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			ui: {
+				async quiz(q) {
+					asked.push(q.question);
+					return { dontKnow: false, selected: ["rate"] };
+				},
+				async ask() {
+					return null;
+				},
+			},
+			session: { id: "s" },
+		});
+		await agent.send("I'm working toward being able to do the homework", () => undefined);
+		expect((await store.goals()).map((g) => g.title)).toEqual(["Homework"]);
+		expect(asked).toEqual(["What is a derivative?"]);
+	});
+
 	it("saves a goal when they state an objective, even if the first reply forgot the tool", async () => {
 		const { agent, store } = await session();
 		const events: AgentEvent[] = [];

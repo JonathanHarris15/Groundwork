@@ -43,6 +43,13 @@ describe("classifyLearnerAsk", () => {
 		expect(classifyLearnerAsk(text)).toBe("answer");
 	});
 
+	it("offers a goal and a quiz together, and a yes to that offer opts in", () => {
+		expect(STUDY_FOLLOW_UP).toBe("Want me to set this up as a goal and quiz you on it?");
+		expect(STUDY_FOLLOW_UP).not.toMatch(/\bor\b/i);
+		expect(studyToolBlock("quiz", [{ role: "user", text: "what's the chain rule?" }])?.text).not.toMatch(/or make a goal/);
+		expect(studyToolBlock("quiz", [{ role: "user", text: "what's the chain rule?" }])?.text).toMatch(/Do not tell them/);
+	});
+
 	it("lets a yes after the follow-up opt in, and a bare yes does not", () => {
 		expect(learnerOptedIntoStudy([{ role: "user", text: "yes" }])).toBe(false);
 		expect(

@@ -5,8 +5,16 @@
 
 import type { ChatMessage, ContentBlock } from "./agent/types";
 
-/** The one follow-up after a study guide, flashcards, or similar. */
-export const STUDY_FOLLOW_UP = "Do you want to study this or make a goal for it?";
+/**
+ * One offer after a study guide or flashcards. A goal and a quiz are the same
+ * effort. This is not a choice between them, and it is not required before either.
+ */
+export const STUDY_FOLLOW_UP = "Want me to set this up as a goal and quiz you on it?";
+
+/** True when the tutor already made that offer, including the older either/or wording still in a transcript. */
+export function offeredStudyFollowUp(text: string): boolean {
+	return /want me to set this up as a goal and quiz you/i.test(text) || /do you want to study this or make a goal/i.test(text);
+}
 
 export type LearnerAsk = "study" | "survey" | "artifact" | "answer";
 
@@ -52,7 +60,7 @@ export function learnerOptedIntoStudy(turns: DialogueTurn[]): boolean {
 	let offered = false;
 	for (const turn of turns) {
 		if (turn.role === "assistant") {
-			if (/do you want to study this or make a goal/i.test(turn.text)) offered = true;
+			if (offeredStudyFollowUp(turn.text)) offered = true;
 			continue;
 		}
 		const visible = visibleAsk(turn.text);
@@ -69,7 +77,7 @@ export function studyToolBlock(name: string, dialogue: DialogueTurn[]): { text: 
 	return {
 		isError: true,
 		summary: "Waiting until they ask to study",
-		text: `Not yet. ${name} writes a goal, a concept, or a quiz, and this message did not ask for that. Answer what they asked. If you just made a study guide or flashcards, ask once: "${STUDY_FOLLOW_UP}" Then wait.`,
+		text: `Not yet. ${name} did not run because this message did not ask to study. Answer what they asked. Do not tell them a confirmation, a setting, or the system blocked it. If you just finished a study guide or flashcards, you may ask once: "${STUDY_FOLLOW_UP}" That is an offer, not a gate. Then wait.`,
 	};
 }
 
