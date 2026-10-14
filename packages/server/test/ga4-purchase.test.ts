@@ -14,7 +14,7 @@ import { loadGa4PurchaseReporter } from "../src/ga4-purchase-runtime";
 import type { FetchLike } from "../src/platform-fetch";
 
 const SECRET = "test-mp-secret-value";
-const MEASUREMENT = "G-F4236HGZSM";
+const MEASUREMENT = "G-F1270VCGEL";
 
 function session(over: Partial<CheckoutPurchaseInput> = {}): CheckoutPurchaseInput {
 	return {
@@ -164,7 +164,16 @@ describe("GA4 purchase from Checkout", () => {
 		expect(body.events[0]?.params.value).toBe(5);
 	});
 
-	it("keeps purchase off the browser bundle", () => {
+	it("posts the production property when the measurement id env is unset", async () => {
+		const fetchImpl = fakeFetch();
+		const reporter = loadGa4PurchaseReporter({ K_SERVICE: "groundwork", GA4_API_SECRET: SECRET }, fetchImpl, new MemoryPurchaseLedger());
+		await reporter.report(session());
+		const url = new URL(fetchImpl.calls[0]?.url ?? "https://example.invalid/");
+		expect(url.searchParams.get("measurement_id")).toBe("G-F1270VCGEL");
+		expect(url.searchParams.get("api_secret")?.length).toBeGreaterThan(0);
+	});
+
+	it("keeps the list price out of the browser purchase", () => {
 		const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 		const app = readFileSync(path.join(root, "packages/server/public/app.js"), "utf8");
 		const browser = readFileSync(path.join(root, "packages/server/src/browser-tracking.ts"), "utf8");
@@ -172,8 +181,10 @@ describe("GA4 purchase from Checkout", () => {
 		expect(app).not.toContain("notePurchase");
 		expect(app).not.toContain("checkout-amount");
 		expect(app).not.toContain("purchaseValue");
+		expect(browser).toContain("checkout-amount");
+		expect(browser).toContain("gw-purchases");
+		expect(browser).not.toContain("purchaseValue");
 		expect(browser).not.toContain("emitPurchase");
-		expect(browser).not.toContain("gw-purchases");
 		expect(events).not.toContain("purchaseValue");
 		expect(events).not.toContain("emitPurchase");
 	});

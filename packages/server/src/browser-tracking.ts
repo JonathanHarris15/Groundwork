@@ -1,14 +1,18 @@
 import { configureMeasurementTags, emitObsidianConnected, emitSetupLinkSent, emitSignUp, type Ga4EventClient } from "./ga4-events";
 import {
 	attributionFromSearch,
+	checkoutSuccessFromSearch,
 	cleanGaClientId,
 	cleanGaSessionId,
+	clientPurchaseParams,
 	consentDefaults,
 	gaClientIdFromCookie,
 	gaSessionIdFromCookie,
 	hasClientAttribution,
 	mergeAttribution,
 	shouldLoadMeasurementTag,
+	shouldRecordPurchase,
+	signUpAdsSendTo,
 	tagScriptUrl,
 	type Attribution,
 	type ConsentChoice,
@@ -18,6 +22,7 @@ const ATTR_KEY = "gw-attribution";
 const CONSENT_KEY = "gw-consent";
 const CONSENT_HIDE_KEY = "gw-consent-hide";
 const SIGNUP_KEY = "gw-sign-up";
+const PURCHASE_KEY = "gw-purchases";
 
 declare global {
 	interface Window {
@@ -34,13 +39,14 @@ declare global {
 	}
 }
 
-function webConfigFrom(value: unknown): { ga4MeasurementId?: string | null; googleAdsId?: string | null; contactEmail?: string } | null {
+function webConfigFrom(value: unknown): { ga4MeasurementId?: string | null; googleAdsId?: string | null; contactEmail?: string; ga4ServerPurchase?: boolean } | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const row = value as Record<string, unknown>;
 	return {
 		ga4MeasurementId: typeof row.ga4MeasurementId === "string" || row.ga4MeasurementId === null ? row.ga4MeasurementId : undefined,
 		googleAdsId: typeof row.googleAdsId === "string" || row.googleAdsId === null ? row.googleAdsId : undefined,
 		contactEmail: typeof row.contactEmail === "string" ? row.contactEmail : undefined,
+		ga4ServerPurchase: row.ga4ServerPurchase === true,
 	};
 }
 
@@ -186,6 +192,13 @@ const tagReady = new Promise<void>((resolve) => {
 
 /** Set only after gtag.js has loaded on the live site. Checkout reads the client id from it. */
 let loadedMeasurementId: string | null = null;
+/** Ads id from web-config, including when the tag script stays unloaded. */
+let loadedAdsId: string | null = null;
+/** True when the webhook sends purchase, so the browser must not send it too. */
+let serverReportsPurchase = false;
+
+/** Captured at parse time. The account page clears the success query after that. */
+const landingPurchase = checkoutSuccessFromSearch(location.search);
 
 async function bootTag(): Promise<void> {
 	try {
@@ -195,8 +208,39 @@ async function bootTag(): Promise<void> {
 	}
 }
 
+function readPurchaseIds(): string[] {
+	const stored = readJson<unknown>(PURCHASE_KEY);
+	if (!Array.isArray(stored)) return [];
+	return stored.filter((item): item is string => typeof item === "string");
+}
+
+/**
+ * One purchase for this Checkout Session, with the Stripe total.
+ * Skipped when the server sends it, when the visitor opted out, or when the amount is unknown.
+ */
+async function reportClientPurchase(): Promise<void> {
+	const pending = landingPurchase;
+	if (!pending || serverReportsPurchase) return;
+	if (readChoice() === "denied") return;
+	const already = readPurchaseIds();
+	if (!shouldRecordPurchase(pending.sessionId, already)) return;
+	let amount: number | null = null;
+	try {
+		const res = await window["fetch"](`/v1/billing/checkout-amount?session_id=${encodeURIComponent(pending.sessionId)}`);
+		if (!res.ok) return;
+		const body = (await res.json()) as { amountUsd?: unknown };
+		amount = typeof body.amountUsd === "number" ? body.amountUsd : null;
+	} catch {
+		return;
+	}
+	const params = clientPurchaseParams(pending.sessionId, amount ?? Number.NaN, readAttribution() ?? {}, pending.plan);
+	if (!params) return;
+	gtag("event", "purchase", params);
+	writeJson(PURCHASE_KEY, [...already, pending.sessionId]);
+}
+
 async function loadTag(): Promise<void> {
-	let config: { ga4MeasurementId?: string | null; googleAdsId?: string | null; contactEmail?: string } | null = null;
+	let config: { ga4MeasurementId?: string | null; googleAdsId?: string | null; contactEmail?: string; ga4ServerPurchase?: boolean } | null = null;
 	try {
 		const res = await window["fetch"]("/v1/web-config");
 		if (res.ok) config = webConfigFrom(await res.json());
@@ -211,6 +255,8 @@ async function loadTag(): Promise<void> {
 		}
 	}
 	const ids = { ga4: config?.ga4MeasurementId ?? null, ads: config?.googleAdsId ?? null };
+	loadedAdsId = ids.ads;
+	serverReportsPurchase = config?.ga4ServerPurchase === true;
 	const src = tagScriptUrl(ids);
 	const nav = window["navigator"] as Navigator | undefined;
 	const allowed = shouldLoadMeasurementTag({
@@ -266,10 +312,15 @@ const ga4Client: Ga4EventClient = {
 			/* ignore */
 		}
 	},
+	signUpConversionSendTo() {
+		return signUpAdsSendTo(loadedAdsId);
+	},
 };
 
 function noteSignUp(created: boolean, method: string): void {
-	emitSignUp(ga4Client, created, method);
+	void tagReady.then(() => {
+		emitSignUp(ga4Client, created, method);
+	});
 }
 
 function noteObsidian(body: { first?: boolean } | null): void {
@@ -330,6 +381,10 @@ document.addEventListener("click", (click) => {
 	const target = click.target;
 	if (!(target instanceof Element)) return;
 	if (target.closest("[data-consent-open]")) openConsent();
+});
+
+void tagReady.then(() => {
+	void reportClientPurchase();
 });
 
 if (document.readyState === "loading") {

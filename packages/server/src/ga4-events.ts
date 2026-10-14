@@ -7,12 +7,17 @@ export interface Ga4EventClient {
 	attribution(): Attribution;
 	signUpAlreadyFired(): boolean;
 	markSignUpFired(): void;
+	/** Ads conversion `send_to`, read after the tag config is known. Null when Ads is off or is another account. */
+	signUpConversionSendTo(): string | null;
 }
 
 export function emitSignUp(client: Ga4EventClient, created: boolean, method: string): boolean {
 	if (!shouldFireSignUp(created, client.signUpAlreadyFired())) return false;
 	client.markSignUpFired();
-	client.gtag("event", "sign_up", { ...client.attribution(), method });
+	const attribution = client.attribution();
+	client.gtag("event", "sign_up", { ...attribution, method });
+	const sendTo = client.signUpConversionSendTo();
+	if (sendTo) client.gtag("event", "conversion", { ...attribution, send_to: sendTo });
 	return true;
 }
 
@@ -27,7 +32,10 @@ export function emitObsidianConnected(client: Ga4EventClient, first: boolean): b
 	return true;
 }
 
-/** Configures GA4, and the Ads tag only when an AW- id is set. No conversion labels are sent. */
+/**
+ * Configures GA4, and the Ads tag when an AW- id is set.
+ * Omitting `send_page_view` leaves the automatic page_view on.
+ */
 export function configureMeasurementTags(
 	gtag: GtagFn,
 	ids: { ga4: string | null; ads: string | null },
