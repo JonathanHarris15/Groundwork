@@ -29,6 +29,9 @@ export const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.29.5/full/";
 const PREPARE = `
 import os
 os.environ.clear()
+os.makedirs("/tmp", exist_ok=True)
+os.environ["HOME"] = "/tmp"
+os.environ["MPLCONFIGDIR"] = "/tmp"
 for _name in ("figure.svg", "figure.png", "figure.gif", "figure.webp"):
     try:
         os.remove(_name)

@@ -150,6 +150,7 @@ export class ClaudeCodeSession implements TutorSession {
 	private repaired = false;
 	private calledQuestion = false;
 	private calledGoal = false;
+	private calledFigure = false;
 	private turnUserText = "";
 	private turnContext: TutorTurnContext | null = null;
 	/** System text the live Claude Code process was started with. */
@@ -177,6 +178,7 @@ export class ClaudeCodeSession implements TutorSession {
 		this.repaired = false;
 		this.calledQuestion = false;
 		this.calledGoal = false;
+		this.calledFigure = false;
 		this.turnUserText = text;
 		this.dialogue.push({ role: "user", text });
 		const onAbort = () => this.interrupt();
@@ -222,6 +224,7 @@ export class ClaudeCodeSession implements TutorSession {
 			assistantText: assistant?.text ?? "",
 			calledQuestion: this.calledQuestion,
 			calledGoal: this.calledGoal,
+			calledFigure: this.calledFigure,
 		});
 		if (!note) return false;
 		this.repaired = true;
@@ -382,6 +385,7 @@ export class ClaudeCodeSession implements TutorSession {
 			const summary = pointed.length && pointed.length === result.files?.length ? `Found ${pointed.join(", ")}` : result.summary;
 			if (!result.isError && isQuestionTool(name)) this.calledQuestion = true;
 			if (!result.isError && name === "set_goal") this.calledGoal = true;
+			if (!result.isError && name === "show_figure") this.calledFigure = true;
 			emit?.({ type: "tool_end", id, name, summary, isError: !!result.isError, text: result.text });
 			return { content, isError: !!result.isError };
 		});
