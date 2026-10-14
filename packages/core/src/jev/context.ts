@@ -11,6 +11,7 @@
 
 import type { FolderAccess } from "../access";
 import { fileKind, listVaultFiles, loadVaultFile, basename, type VaultFile } from "../files";
+import { classifyLearnerAsk, visibleAsk } from "../intent";
 import type { HttpClient } from "../http";
 import { httpClient } from "../http";
 import type { VaultIO } from "../io";
@@ -24,6 +25,11 @@ export const INCLUDE_LEARNER_AT = 0.45;
 export const INCLUDE_FILE_AT = 0.6;
 /** Files judged in one call. The rest stay closed and can be opened with a tool. */
 export const CONTEXT_FILE_CANDIDATES = 24;
+/**
+ * A short profile and no vault files skip the selector. That round trip costs
+ * more than the tokens it would drop, and a direct question does not need it.
+ */
+export const SELECTOR_PROFILE_CHARS = 2_000;
 /** Files actually opened, highest need first. Attached files win a tie. */
 export const CONTEXT_MAX_FILES = 8;
 export const CONTEXT_MAX_PIECES = 80;
@@ -230,9 +236,11 @@ export async function prepareTutorTurn(input: {
 		const parts = promptParts(input.extra, input.access);
 		const instructions = parts.filter((part) => !part.required).map(instructionPiece);
 		const learner = learnerPieces(input.profile, input.tutorContext);
-		const files = input.io ? await filePieces(input.io, input.access?.readFolders ?? [], input.attached) : attachedPieces(input.attached);
+		const scanVault = !!input.io && turnNeedsVaultFiles(input.message, input.attached.length);
+		const files = scanVault ? await filePieces(input.io!, input.access?.readFolders ?? [], input.attached) : attachedPieces(input.attached);
 		const optional = [...instructions, ...learner, ...files].slice(0, CONTEXT_MAX_PIECES);
 		if (!optional.length) return full;
+		if (files.length === 0 && input.profile.length + input.tutorContext.length < SELECTOR_PROFILE_CHARS) return full;
 		const include = await input.selector.select(input.message, optional, input.signal);
 		if (!include) return full;
 		return applySelection(input, parts, learner, files, new Set(include));
@@ -260,22 +268,24 @@ function attachedPieces(attached: VaultFile[]): ContextPiece[] {
 	}));
 }
 
+/** A direct question does not walk the vault. A file, a survey, or an attachment does. */
+export function turnNeedsVaultFiles(message: string, attachedCount: number): boolean {
+	if (attachedCount > 0) return true;
+	const visible = visibleAsk(message);
+	if (!visible) return false;
+	if (classifyLearnerAsk(visible) === "survey") return true;
+	return /\b(?:files?|documents?|notes?|lectures?|slides?|pdfs?|attachments?|syllabus|vault|homework|homeworks|assignments?|problem sets?|readings?)\b/i.test(visible);
+}
+
 async function filePieces(io: VaultIO, folders: readonly string[], attached: VaultFile[]): Promise<ContextPiece[]> {
-	const pieces: ContextPiece[] = [];
+	const wanted: Array<{ path: string; attached: boolean }> = [];
 	const seen = new Set<string>();
-	const push = async (path: string, isAttached: boolean) => {
-		if (!path || seen.has(path) || pieces.length >= CONTEXT_FILE_CANDIDATES) return;
+	const push = (path: string, isAttached: boolean) => {
+		if (!path || seen.has(path) || wanted.length >= CONTEXT_FILE_CANDIDATES) return;
 		seen.add(path);
-		const file = attached.find((item) => item.path === path);
-		pieces.push({
-			id: `file:${path}`,
-			kind: "file",
-			title: path,
-			text: file ? attachedExcerpt(file) : await vaultExcerpt(io, path),
-			attached: isAttached,
-		});
+		wanted.push({ path, attached: isAttached });
 	};
-	for (const file of attached) await push(file.path, true);
+	for (const file of attached) push(file.path, true);
 	for (const folder of folders) {
 		let paths: string[] = [];
 		try {
@@ -283,9 +293,20 @@ async function filePieces(io: VaultIO, folders: readonly string[], attached: Vau
 		} catch {
 			continue;
 		}
-		for (const path of paths) await push(path, false);
+		for (const path of paths) push(path, false);
 	}
-	return pieces;
+	return Promise.all(
+		wanted.map(async (row) => {
+			const file = attached.find((item) => item.path === row.path);
+			return {
+				id: `file:${row.path}`,
+				kind: "file" as const,
+				title: row.path,
+				text: file ? attachedExcerpt(file) : await vaultExcerpt(io, row.path),
+				attached: row.attached,
+			};
+		}),
+	);
 }
 
 function attachedExcerpt(file: VaultFile): string {

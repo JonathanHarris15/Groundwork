@@ -69,6 +69,7 @@ describe("tutor API", () => {
 		expect(calls[0].url).toBe("https://openrouter.ai/api/v1/messages");
 		expect(calls[0].headers.get("authorization")).toBe("Bearer sk-or-groundwork");
 		expect(calls[0].body.model).toBe("google/gemini-3.8-flash");
+		expect(calls[0].body.stream).toBeUndefined();
 		expect(JSON.stringify(result.json)).not.toContain("sk-or-groundwork");
 		expect(JSON.stringify(result.json)).not.toMatch(/\$\d|creditUsd|remainingUsd|hostedCredit/);
 		expect(result.json).toMatchObject({ route: { action: "hosted", provider: "openrouter" }, budgetUsed: expect.any(Number) });
@@ -299,4 +300,75 @@ describe("tutor API", () => {
 		expect(JSON.stringify(kept.json)).not.toContain("Define a limit.");
 	});
 
+	it("streams the first token before the model finishes, then charges the turn", async () => {
+		let release: () => void = () => undefined;
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const encoder = new TextEncoder();
+		const first = anthropicSse([
+			{ type: "message_start", message: { usage: { input_tokens: 2000, output_tokens: 1 } } },
+			{ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+			{ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "A limit" } },
+		]);
+		const rest = anthropicSse([
+			{ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: " is the value being approached." } },
+			{ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 500 } },
+			{ type: "message_stop" },
+		]);
+		const calls: Array<{ body: Record<string, unknown> }> = [];
+		const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+			calls.push({ body: JSON.parse(String(init?.body)) });
+			const stream = new ReadableStream<Uint8Array>({
+				async start(controller) {
+					controller.enqueue(encoder.encode(first));
+					await held;
+					controller.enqueue(encoder.encode(rest));
+					controller.close();
+				},
+			});
+			return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+		}) as typeof fetch;
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "free");
+		const result = await route("POST", "/v1/tutor/complete", { ...turn, stream: true }, server);
+		expect(calls[0].body.stream).toBe(true);
+		expect(result.sse).toEqual(expect.any(Function));
+		const writes: string[] = [];
+		let firstWrite = "";
+		const finished = result.sse!(async (chunk) => {
+			writes.push(chunk);
+			if (!firstWrite) {
+				firstWrite = chunk;
+				release();
+			}
+		}, new AbortController().signal);
+		await finished;
+		expect(firstWrite).toContain("A limit");
+		expect(firstWrite).not.toContain("approached");
+		expect(writes.at(-1)).toContain('"type":"done"');
+		expect(writes.join("")).toContain("is the value being approached.");
+		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0.0034 });
+		expect(JSON.stringify(writes)).not.toMatch(/\$\d|creditUsd|hostedCredit/);
+	});
+
+	it("settles a streamed request as JSON when the provider ignores streaming", async () => {
+		const { fetchImpl, calls } = capture({
+			content: [{ type: "text", text: "A limit is the value being approached." }],
+			stop_reason: "end_turn",
+			usage: { input_tokens: 2_000, output_tokens: 500 },
+		});
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "free");
+		const result = await route("POST", "/v1/tutor/complete", { ...turn, stream: true }, server);
+		expect(result.sse).toBeUndefined();
+		expect(result.status).toBe(200);
+		expect(calls[0].body.stream).toBe(true);
+		expect(result.json).toMatchObject({ stopReason: "end_turn", budgetUsed: expect.any(Number) });
+		await expect(server.accounts.get("local")).resolves.toMatchObject({ spentUsd: 0.0034 });
+	});
 });
+
+function anthropicSse(events: unknown[]): string {
+	return events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+}

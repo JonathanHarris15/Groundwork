@@ -132,6 +132,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 	const bearer = sessionBearer(req);
 	const result = await route(verb, url.pathname, body, deps, bearer, meta);
 	if (bearer && result.status < 400) result.headers = { ...result.headers, "set-cookie": sessionCookie(bearer, forwarded === "https") };
+	if (result.sse) {
+		await writeSse(res, result);
+		return;
+	}
 	send(res, result, head);
 }
 
@@ -176,6 +180,37 @@ function sessionCookie(authorization: string, secure: boolean): string {
 	const parts = [`gw_id=${encodeURIComponent(token)}`, "HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=3300"];
 	if (secure) parts.push("Secure");
 	return parts.join("; ");
+}
+
+async function writeSse(res: ServerResponse, result: RouteResult): Promise<void> {
+	const extra = result.headers ?? {};
+	res.writeHead(result.status, {
+		"content-type": "text/event-stream; charset=utf-8",
+		"cache-control": "no-cache, no-transform",
+		connection: "keep-alive",
+		"x-accel-buffering": "no",
+		"access-control-allow-origin": "*",
+		"access-control-allow-headers": "authorization, content-type, stripe-signature",
+		"access-control-allow-methods": "GET, HEAD, POST, PUT, OPTIONS",
+		...extra,
+	});
+	res.socket?.setNoDelay(true);
+	const ac = new AbortController();
+	const onClose = () => ac.abort();
+	res.on("close", onClose);
+	try {
+		await result.sse?.((chunk) => {
+			if (!res.writableEnded) res.write(chunk);
+		}, ac.signal);
+	} catch (err) {
+		if (!res.writableEnded) {
+			const message = err instanceof Error ? err.message : "The tutor stream failed.";
+			res.write(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`);
+		}
+	} finally {
+		res.off("close", onClose);
+		if (!res.writableEnded) res.end();
+	}
 }
 
 function send(res: ServerResponse, result: RouteResult, head = false): void {

@@ -209,6 +209,67 @@ describe("prepareTutorTurn", () => {
 		expect(prepared.note).toContain("resources/lecture-3.md");
 	});
 
+	it("skips the vault and the selector on a plain question", async () => {
+		const io = vault();
+		let reads = 0;
+		const read = io.read.bind(io);
+		io.read = async (path) => {
+			reads++;
+			return read(path);
+		};
+		let selected = false;
+		const prepared = await prepareTutorTurn({
+			selector: {
+				async select() {
+					selected = true;
+					return [];
+				},
+			},
+			message: "what's the chain rule?",
+			profile,
+			tutorContext: "",
+			attached: [],
+			io,
+			access: { readFolders: ["resources"], writeFolders: [] },
+		});
+		expect(selected).toBe(false);
+		expect(reads).toBe(0);
+		expect(prepared.selected).toBe(false);
+		expect(prepared.files).toEqual([]);
+		expect(prepared.system).toContain("# Exam prep");
+	});
+
+	it("reads vault excerpts together when the turn is about a file", async () => {
+		const io = vault();
+		let active = 0;
+		let maxActive = 0;
+		const read = io.read.bind(io);
+		io.read = async (path) => {
+			active++;
+			maxActive = Math.max(maxActive, active);
+			await new Promise((resolve) => setTimeout(resolve, 40));
+			try {
+				return await read(path);
+			} finally {
+				active--;
+			}
+		};
+		await prepareTutorTurn({
+			selector: {
+				async select() {
+					return [];
+				},
+			},
+			message: "What does the syllabus say we cover?",
+			profile,
+			tutorContext: "",
+			attached: [],
+			io,
+			access: { readFolders: ["resources"], writeFolders: [] },
+		});
+		expect(maxActive).toBeGreaterThan(1);
+	});
+
 	it("keeps today's context when the call fails, and still aborts when the learner stops", async () => {
 		const io = vault();
 		const attached = [await loadVaultFile(io, "resources/lecture-3.md")];

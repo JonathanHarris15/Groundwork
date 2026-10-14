@@ -265,7 +265,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private uiFileInput!: HTMLInputElement;
 	private pendingFiles: PendingFile[] = [];
 
-	private segment: { wrap: HTMLElement; el: HTMLElement; text: string; comp: Component | null; timer: number | null; version: number } | null = null;
+	private segment: { wrap: HTMLElement; el: HTMLElement; text: string; comp: Component | null; timer: number | null; version: number; painting: boolean; dirty: boolean } | null = null;
 	private toolChips = new Map<string, HTMLElement>();
 
 	private waitingQuiz: PreparedQuiz | null = null;
@@ -807,16 +807,11 @@ export class ChatView extends ItemView implements ToolUI {
 				if (!this.segment) {
 					const wrap = this.turn();
 					const el = this.assistantSlot(wrap);
-					this.segment = { wrap, el, text: "", comp: null, timer: null, version: 0 };
+					this.segment = { wrap, el, text: "", comp: null, timer: null, version: 0, painting: false, dirty: false };
 				}
+				const first = this.segment.text.length === 0;
 				this.segment.text += e.text;
-				if (this.segment.timer === null) {
-					const seg = this.segment;
-					seg.timer = window.setTimeout(() => {
-						seg.timer = null;
-						if (this.segment === seg) void this.renderSegment(seg);
-					}, 70);
-				}
+				this.schedulePaint(this.segment, first);
 				break;
 			}
 			case "tool_start": {
@@ -869,6 +864,38 @@ export class ChatView extends ItemView implements ToolUI {
 		}
 	}
 
+	/** One markdown render at a time. The first token paints immediately; later tokens share a short timer. */
+	private schedulePaint(seg: NonNullable<ChatView["segment"]>, immediate: boolean): void {
+		if (seg.timer !== null) {
+			if (!immediate) return;
+			window.clearTimeout(seg.timer);
+			seg.timer = null;
+		}
+		if (immediate) {
+			this.paintSegment(seg);
+			return;
+		}
+		seg.timer = window.setTimeout(() => {
+			seg.timer = null;
+			if (this.segment === seg) this.paintSegment(seg);
+		}, 80);
+	}
+
+	private paintSegment(seg: NonNullable<ChatView["segment"]>): void {
+		if (seg.painting) {
+			seg.dirty = true;
+			return;
+		}
+		seg.painting = true;
+		seg.dirty = false;
+		void this.renderSegment(seg).finally(() => {
+			seg.painting = false;
+			if (!seg.dirty) return;
+			seg.dirty = false;
+			this.paintSegment(seg);
+		});
+	}
+
 	private async renderSegment(seg: NonNullable<ChatView["segment"]>): Promise<void> {
 		const version = ++seg.version;
 		const next = createDiv();
@@ -906,7 +933,8 @@ export class ChatView extends ItemView implements ToolUI {
 		this.record.items.push({ kind: "assistant", text });
 		seg.wrap.dataset.anchor = `item:${this.record.items.length - 1}`;
 		this.attachPendingFigures(seg.wrap);
-		void this.renderSegment(seg);
+		seg.dirty = true;
+		this.paintSegment(seg);
 	}
 
 	// ── ToolUI ──────────────────────────────────────────────────────────
