@@ -3,6 +3,7 @@ import { MathField } from "./math-field";
 import {
 	FAMILIARITY_LABELS,
 	familiarityLabel,
+	choiceKey,
 	gradeQuiz,
 	letter,
 	formatBelief,
@@ -321,8 +322,9 @@ export class QuizCard {
 		this.restore(a.response);
 		this.lock();
 		this.freezeFreeAnswer(a.response);
+		const verified = choiceKey(this.quiz);
 		for (const [v, el] of this.optionEls) {
-			const isKey = this.quiz.correct.includes(v);
+			const isKey = verified.includes(v);
 			const picked = a.response.selected.includes(v);
 			el.toggleClass("is-correct", isKey);
 			el.toggleClass("is-wrong", picked && !isKey);

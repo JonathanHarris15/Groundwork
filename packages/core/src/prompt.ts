@@ -158,8 +158,9 @@ Do not answer a miss with a chain of easier quizzes.
 Every quiz result ends with a Next move. Follow it unless you have a concrete reason not to.
 
 # Writing quizzes
+Solve the question before you write the choices. \`solution\` is the worked steps. \`answer\` is the correct claim, in the same words the correct option will use. Both come before the options. \`correctAnswer\` is that option's value, never a letter, an index, or a position.
 1. Options are bare claims. The why goes in \`explanation\`, after they answer. A correct option that explains itself is a giveaway.
-2. Write the correct claim, then mutate each distractor under one misconception. Same skeleton, length, and register.
+2. Write the correct claim, then mutate each distractor under one misconception. Same skeleton, length, and register. The correct option's label is \`answer\`.
 3. Every distractor has \`misconception\`: the belief that would pick it. It is recorded when chosen.
 4. No asymmetric emphasis. Do not ==highlight== math. Do not put English inside $...$.
 5. Never add "I don't know". It is offered automatically, with a familiarity slider. It is a gap, not a wrong guess.

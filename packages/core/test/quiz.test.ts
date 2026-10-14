@@ -51,6 +51,94 @@ describe("quiz", () => {
 		expect(parseChatAnswer(q, "6")).toEqual(["c"]);
 		expect(parseChatAnswer(q, "1/3")).toEqual(["b"]);
 		expect(parseChatAnswer(q, "a and c")).toEqual(["a", "c"]);
+		const onScreen = { ...q, options: [q.options[1], q.options[2], q.options[0]] };
+		expect(parseChatAnswer(onScreen, "A")).toEqual(["b"]);
+		expect(parseChatAnswer(onScreen, "C")).toEqual(["a"]);
+		expect(gradeQuiz(onScreen, { dontKnow: false, selected: parseChatAnswer(onScreen, "C") }).correct).toBe(true);
+	});
+
+	it("keys the sign chart of (u-1)(u-3) by the solved claim, not the wrong index", () => {
+		const signs = {
+			concept: "Sign of a product",
+			question: "What are the signs of $p(u) = (u-1)(u-3)$ across $u<1$, $1<u<3$, and $u>3$?",
+			solution: "p(0)=(0-1)(0-3)=3>0, p(2)=(2-1)(2-3)=-1<0, p(4)=(4-1)(4-3)=3>0.",
+			answer: "positive, negative, positive",
+			options: [
+				{ label: "negative, positive, negative", value: "a" },
+				{ label: "positive, negative, positive", value: "b" },
+			],
+			correctAnswer: "a",
+			explanation: "Left of both roots the factors are negative, so the product is positive. Between the roots it is negative. Right of both roots it is positive. The signs are positive, negative, positive.",
+			difficulty: 3,
+			kind: "check" as const,
+		};
+		const shown = prepareQuiz(signs, () => 0);
+		expect(shown.options.find((o) => shown.correct.includes(o.value))?.label).toBe("positive, negative, positive");
+		expect(gradeQuiz(shown, { dontKnow: false, selected: ["b"] }).correct).toBe(true);
+		expect(gradeQuiz(shown, { dontKnow: false, selected: ["a"] }).correct).toBe(false);
+		const shuffled = prepareQuiz(signs, () => 0.99);
+		expect(shuffled.options.find((o) => shuffled.correct.includes(o.value))?.label).toBe("positive, negative, positive");
+		expect(gradeQuiz(shuffled, { dontKnow: false, selected: [shuffled.options.find((o) => o.label.startsWith("positive"))!.value] }).correct).toBe(true);
+	});
+
+	it("selects the worked claim when the key is only a letter", () => {
+		const q = prepareQuiz({ ...base, answer: "1/3", correctAnswer: "a" });
+		expect(q.correct).toEqual(["b"]);
+		expect(gradeQuiz(q, { dontKnow: false, selected: ["b"] }).correct).toBe(true);
+		expect(gradeQuiz(q, { dontKnow: false, selected: ["a"] }).correct).toBe(false);
+	});
+
+	it("re-verifies a stored sign-chart key at grade time", () => {
+		const poisoned = {
+			id: "q_poison",
+			concept: "Sign of a product",
+			question: "What are the signs of $p(u) = (u-1)(u-3)$ across $u<1$, $1<u<3$, and $u>3$?",
+			format: "choice" as const,
+			options: [
+				{ label: "negative, positive, negative", value: "a" },
+				{ label: "positive, negative, positive", value: "b" },
+			],
+			correct: ["a"],
+			explanation: "At a point left of 1 the product is positive. Between the roots it is negative. Past 3 it is positive.",
+			difficulty: 3,
+			kind: "check" as const,
+			multiSelect: false,
+		};
+		expect(gradeQuiz(poisoned, { dontKnow: false, selected: ["b"] }).correct).toBe(true);
+		expect(gradeQuiz(poisoned, { dontKnow: false, selected: ["b"] }).correctLabels).toEqual(["positive, negative, positive"]);
+		expect(gradeQuiz(poisoned, { dontKnow: false, selected: ["a"] }).correct).toBe(false);
+	});
+
+	it("does not show a sign chart whose explanation contradicts the check", () => {
+		expect(() =>
+			prepareQuiz({
+				concept: "Sign of a product",
+				question: "What are the signs of p(u) = (u-1)(u-3) across u<1, 1<u<3, u>3?",
+				options: [
+					{ label: "negative, positive, negative", value: "a" },
+					{ label: "positive, negative, positive", value: "b" },
+				],
+				correctAnswer: "b",
+				explanation: "The signs are negative, positive, negative.",
+				difficulty: 3,
+				kind: "check",
+			}),
+		).toThrow(/not shown/);
+	});
+
+	it("does not show a sign chart when no option matches the check", () => {
+		expect(() =>
+			prepareQuiz({
+				...base,
+				question: "What are the signs of $p(u)=(u-1)(u-3)$ across $u<1$, $1<u<3$, $u>3$?",
+				options: [
+					{ label: "negative, positive, negative", value: "a" },
+					{ label: "negative, negative, negative", value: "b" },
+				],
+				correctAnswer: "a",
+				explanation: "The signs are negative, positive, negative.",
+			}),
+		).toThrow(/not shown/);
 	});
 });
 
@@ -106,6 +194,10 @@ describe("orientation", () => {
 		expect(prompt).toContain("Define every symbol and term the first time you use it");
 		expect(prompt).toContain("Always show where this is going");
 		expect(quizInputSchema.required).toContain("purpose");
+		const fields = Object.keys(quizInputSchema.properties ?? {});
+		expect(fields.indexOf("solution")).toBeLessThan(fields.indexOf("options"));
+		expect(fields.indexOf("answer")).toBeLessThan(fields.indexOf("options"));
+		expect(fields.indexOf("answer")).toBeLessThan(fields.indexOf("correctAnswer"));
 	});
 });
 
