@@ -21,6 +21,7 @@ import {
 	PRODUCTION_GA4_MEASUREMENT_ID,
 	PRODUCTION_GOOGLE_ADS_ID,
 	SIGN_UP_ADS_CONVERSION_SEND_TO,
+	browserPurchaseFromCheckout,
 	checkoutSuccessFromSearch,
 	clientPurchaseParams,
 	ga4MeasurementProtocolReady,
@@ -114,15 +115,42 @@ describe("ads tracking", () => {
 		expect(checkoutSuccessFromSearch("?billing=success&session_id=cs_test_1&plan=included")).toEqual({ sessionId: "cs_test_1", plan: "included" });
 		expect(checkoutSuccessFromSearch("?billing=cancel&session_id=cs_test_1")).toBeNull();
 		expect(checkoutSuccessFromSearch("?billing=success&session_id=sub_123")).toBeNull();
-		expect(clientPurchaseParams("cs_test_1", 0, { gclid: "CjwKCtestclick" }, "included")).toEqual({
-			gclid: "CjwKCtestclick",
+		expect(clientPurchaseParams("cs_test_1", 0, "USD", { gclid: "CjwKCtestclick" }, "included")).toBeNull();
+		expect(clientPurchaseParams("cs_test_1", 15, "eur", {}, "byom")).toEqual({
 			transaction_id: "cs_test_1",
-			value: 0,
-			currency: "USD",
-			items: [{ item_id: "included", item_name: "Groundwork", price: 0, quantity: 1 }],
+			value: 15,
+			currency: "EUR",
+			items: [{ item_id: "byom", item_name: "Bring your own model", price: 15, quantity: 1 }],
 		});
-		expect(clientPurchaseParams("cs_test_1", 15, {}, "byom")?.value).toBe(15);
-		expect(clientPurchaseParams("not-a-session", 20, {}, "included")).toBeNull();
+		expect(clientPurchaseParams("in_paid_1", 20, "USD", {}, "included")?.transaction_id).toBe("in_paid_1");
+		expect(clientPurchaseParams("not-a-session", 20, "USD", {}, "included")).toBeNull();
+		expect(clientPurchaseParams("cs_test_1", 20, "", {}, "included")).toBeNull();
+
+		const comp = browserPurchaseFromCheckout({ amount: 0, currency: "USD", transactionId: "cs_comp" }, "cs_comp", {}, "included");
+		expect(comp).toEqual({ action: "comp", remember: ["cs_comp"] });
+		const paid = browserPurchaseFromCheckout(
+			{ amount: 15, currency: "eur", transactionId: "in_paid_1" },
+			"cs_paid",
+			{ gclid: "CjwKCtestclick" },
+			"included",
+		);
+		expect(paid).toEqual({
+			action: "purchase",
+			remember: ["cs_paid", "in_paid_1"],
+			params: {
+				gclid: "CjwKCtestclick",
+				transaction_id: "in_paid_1",
+				value: 15,
+				currency: "EUR",
+				items: [{ item_id: "included", item_name: "Groundwork", price: 15, quantity: 1 }],
+			},
+		});
+		expect(browserPurchaseFromCheckout({ plan: "included" }, "cs_paid", {}, "included")).toEqual({ action: "skip" });
+		expect(browserPurchaseFromCheckout({ amount: 180, currency: "USD" }, "not-a-session", {}, "included")).toEqual({ action: "skip" });
+		if (comp.action !== "comp" || paid.action !== "purchase") throw new Error("expected a comp and a paid purchase");
+		expect(shouldRecordPurchase("cs_comp", comp.remember)).toBe(false);
+		expect(shouldRecordPurchase("cs_paid", paid.remember)).toBe(false);
+		expect(shouldRecordPurchase("in_paid_1", paid.remember)).toBe(false);
 	});
 
 	it("loads the measurement tag only for a real visitor on the live host", () => {
@@ -172,7 +200,7 @@ describe("ads tracking", () => {
 		expect(practice).toContain("Name a topic, or add your slides, notes, or a practice exam.");
 		expect(practice).toContain('href="/#signin"');
 		expect(practice).toContain("Requires Obsidian desktop. Sign up here, install on your computer.");
-		expect(practice).toContain('src="/tracking.js?v=8"');
+		expect(practice).toContain('src="/tracking.js?v=9"');
 		expect(practice).toContain('href="/practice-tests">Practice tests</a>');
 		expect(practice).not.toMatch(/\b\d+\s+questions?\b/i);
 		expect(practice.toLowerCase()).not.toContain("personalized feedback on every answer");

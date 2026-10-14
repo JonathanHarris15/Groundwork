@@ -273,12 +273,21 @@ test("a returning account does not fire sign_up", async ({ page }) => {
 	expect(await countEvents(page, "sign_up")).toBe(0);
 });
 
-test("the success page reports the Stripe amount once", async ({ page }) => {
+test("a comp does not fire purchase, and a paid checkout fires once", async ({ page }) => {
 	let amountHits = 0;
 	const google: string[] = [];
 	await page.route("**/v1/billing/checkout-amount**", async (route) => {
 		amountHits += 1;
-		await route.fulfill({ json: { amountUsd: 0, currency: "USD" } });
+		const sessionId = new URL(route.request().url()).searchParams.get("session_id");
+		if (sessionId === "cs_comp") {
+			await route.fulfill({ json: { amount: 0, currency: "USD", transactionId: "cs_comp" } });
+			return;
+		}
+		if (sessionId === "cs_paid") {
+			await route.fulfill({ json: { amount: 15, currency: "eur", transactionId: "in_paid_1" } });
+			return;
+		}
+		await route.fulfill({ status: 404, json: { error: "Unknown checkout." } });
 	});
 	await page.route("**/v1/web-config", async (route) => {
 		const response = await route.fetch();
@@ -289,36 +298,50 @@ test("the success page reports the Stripe amount once", async ({ page }) => {
 		const url = request.url();
 		if (/googletagmanager|google-analytics|\/g\/collect/.test(url)) google.push(url);
 	});
-	await page.goto("/?billing=success&session_id=cs_test_1&plan=included");
+
+	await page.goto("/?billing=success&session_id=cs_comp&plan=included");
+	await page.waitForLoadState("networkidle");
+	expect(await countEvents(page, "purchase")).toBe(0);
+	expect(amountHits).toBe(1);
+	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toContain("cs_comp");
+
+	await page.goto("/?billing=success&session_id=cs_comp&plan=included");
+	await page.waitForLoadState("networkidle");
+	expect(await countEvents(page, "purchase")).toBe(0);
+	expect(amountHits).toBe(1);
+
+	await page.goto("/?billing=success&session_id=cs_paid&plan=included");
 	await expect.poll(async () => purchaseParams(page)).toEqual([
 		{
-			transaction_id: "cs_test_1",
-			value: 0,
-			currency: "USD",
-			items: [{ item_id: "included", item_name: "Groundwork", price: 0, quantity: 1 }],
+			transaction_id: "in_paid_1",
+			value: 15,
+			currency: "EUR",
+			items: [{ item_id: "included", item_name: "Groundwork", price: 15, quantity: 1 }],
 		},
 	]);
-	expect(amountHits).toBe(1);
+	expect(amountHits).toBe(2);
 	expect(await countEvents(page, "conversion")).toBe(0);
 	expect(google).toEqual([]);
-	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toContain("cs_test_1");
+	const stored = await page.evaluate(() => localStorage.getItem("gw-purchases"));
+	expect(stored).toContain("cs_paid");
+	expect(stored).toContain("in_paid_1");
 
-	await page.goto("/?billing=success&session_id=cs_test_1&plan=included");
+	await page.goto("/?billing=success&session_id=cs_paid&plan=included");
 	await page.waitForLoadState("networkidle");
 	expect(await countEvents(page, "purchase")).toBe(0);
-	expect(amountHits).toBe(1);
+	expect(amountHits).toBe(2);
 
-	await page.goto("/?billing=success&subscription_id=sub_123&plan=byom");
+	await page.goto("/?billing=success&session_id=sub_123&plan=byom");
 	await page.waitForLoadState("networkidle");
 	expect(await countEvents(page, "purchase")).toBe(0);
-	expect(amountHits).toBe(1);
+	expect(amountHits).toBe(2);
 });
 
 test("an opt-out or a server purchase skips the browser purchase", async ({ page }) => {
 	let amountHits = 0;
 	await page.route("**/v1/billing/checkout-amount**", async (route) => {
 		amountHits += 1;
-		await route.fulfill({ json: { amountUsd: 20, currency: "USD" } });
+		await route.fulfill({ json: { amount: 20, currency: "USD", transactionId: "cs_test_denied" } });
 	});
 	await page.addInitScript(() => {
 		localStorage.setItem("gw-consent", "denied");

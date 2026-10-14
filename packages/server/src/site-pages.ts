@@ -141,7 +141,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
 		<link rel="stylesheet" href="/styles.css?v=21" />
 		${spec.jsonLd ?? ""}
-		<script src="/tracking.js?v=8"></script>
+		<script src="/tracking.js?v=9"></script>
 	</head>
 	<body>
 		<div class="page mkt">

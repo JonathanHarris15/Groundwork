@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { AccountDirectory } from "../src/accounts";
-import { applyStripeEvent, checkoutSuccessUrl, createBilling, escapeStripeSearch, isMissingStripeCustomer, membershipFromSubscription, paidAmountUsd, planFromSubscription, recurringAmountUsd, refreshPaidMemberships, resetStripeEventDedupe, syncStripeMembership, type PaidMembershipClient, type StripeMembershipClient } from "../src/billing";
+import { applyStripeEvent, checkoutSuccessUrl, collectedPurchase, createBilling, escapeStripeSearch, isMissingStripeCustomer, membershipFromSubscription, paidAmountUsd, planFromSubscription, recurringAmountUsd, refreshPaidMemberships, resetStripeEventDedupe, syncStripeMembership, type PaidMembershipClient, type StripeMembershipClient } from "../src/billing";
 
 const prices = { byom: "price_byom", included: "price_included" };
 
@@ -156,27 +156,97 @@ describe("checkout promotion codes", () => {
 		expect(calls).toEqual(["cs_live_abc", "cs_live_abc"]);
 	});
 
-	it("reads the amount paid from the Checkout session, including a free promotion", async () => {
+	it("reads the amount Stripe collected, and does not turn a comp into the list price", async () => {
 		const accounts = new AccountDirectory();
+		const expanded: unknown[] = [];
+		const invoices: string[] = [];
 		const stripe = {
 			checkout: {
 				sessions: {
-					async retrieve(id: string) {
-						if (id === "cs_free") return { amount_total: 0 };
-						if (id === "cs_paid") return { amount_total: 1500 };
+					async retrieve(id: string, params?: { expand?: string[] }) {
+						expanded.push(params?.expand);
+						if (id === "cs_free") {
+							return {
+								id,
+								status: "complete",
+								payment_status: "no_payment_required",
+								amount_total: 18000,
+								currency: "usd",
+								invoice: { id: "in_free", amount_paid: 0, currency: "usd" },
+							};
+						}
+						if (id === "cs_paid") {
+							return {
+								id,
+								status: "complete",
+								payment_status: "paid",
+								amount_total: 2000,
+								currency: "usd",
+								invoice: "in_paid",
+							};
+						}
 						throw new Error("missing");
 					},
 				},
 			},
+			invoices: {
+				async retrieve(id: string) {
+					invoices.push(id);
+					if (id === "in_paid") return { id, amount_paid: 1500, currency: "usd" };
+					throw new Error("missing invoice");
+				},
+			},
 		} as unknown as Stripe;
 		const billing = createBilling(stripe, prices, "whsec_test", accounts);
-		await expect(billing.checkoutAmount?.("cs_free")).resolves.toBe(0);
-		await expect(billing.checkoutAmount?.("cs_paid")).resolves.toBe(15);
+		await expect(billing.checkoutAmount?.("cs_free")).resolves.toEqual({ amount: 0, currency: "USD", transactionId: "in_free" });
+		await expect(billing.checkoutAmount?.("cs_paid")).resolves.toEqual({ amount: 15, currency: "USD", transactionId: "in_paid" });
 		await expect(billing.checkoutAmount?.("cs_missing")).resolves.toBeNull();
 		await expect(billing.checkoutAmount?.("not-a-session")).resolves.toBeNull();
+		expect(expanded).toEqual([["invoice"], ["invoice"], ["invoice"]]);
+		expect(invoices).toEqual(["in_paid"]);
 		expect(paidAmountUsd(0)).toBe(0);
 		expect(paidAmountUsd(undefined)).toBeNull();
 		expect(paidAmountUsd(-1)).toBeNull();
+
+		expect(collectedPurchase({
+			id: "cs_list",
+			status: "complete",
+			payment_status: "paid",
+			amount_total: 18000,
+			currency: "usd",
+			invoice: { id: "in_list", amount_paid: 0, currency: "usd" },
+		})).toEqual({ amount: 0, currency: "USD", transactionId: "in_list" });
+		expect(collectedPurchase({
+			id: "cs_once",
+			status: "complete",
+			payment_status: "paid",
+			amount_total: 2000,
+			currency: "usd",
+		})).toEqual({ amount: 20, currency: "USD", transactionId: "cs_once" });
+		expect(collectedPurchase({
+			id: "cs_eur",
+			status: "complete",
+			payment_status: "paid",
+			amount_total: 1500,
+			currency: "eur",
+		})).toEqual({ amount: 15, currency: "EUR", transactionId: "cs_eur" });
+		expect(collectedPurchase({
+			id: "cs_yen",
+			status: "complete",
+			payment_status: "paid",
+			amount_total: 2000,
+			currency: "jpy",
+		})).toEqual({ amount: 2000, currency: "JPY", transactionId: "cs_yen" });
+		expect(collectedPurchase({
+			id: "cs_comp",
+			status: "complete",
+			payment_status: "no_payment_required",
+			amount_total: 18000,
+			currency: "usd",
+		})).toEqual({ amount: 0, currency: "USD", transactionId: "cs_comp" });
+		expect(collectedPurchase({ id: "cs_open", status: "open", payment_status: "unpaid", amount_total: 2000, currency: "usd" })).toBeNull();
+		expect(collectedPurchase({ id: "cs_unloaded", status: "complete", payment_status: "paid", amount_total: 18000, currency: "usd", invoice: "in_unloaded" })).toBeNull();
+		expect(collectedPurchase({ id: "cs_nocurrency", status: "complete", payment_status: "paid", amount_total: 2000, currency: null })).toBeNull();
 	});
 
 	it("keeps a 100% off forever subscription on our price and sets the plan", async () => {

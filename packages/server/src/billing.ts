@@ -25,11 +25,11 @@ export interface Billing {
 	 */
 	sync?(uid: string, email?: string): Promise<void>;
 	/**
-	 * Dollars paid on a Checkout Session, from amount_total. Zero is a real payment.
-	 * The success page uses this when the Measurement Protocol secret is unset.
-	 * The list price is never the purchase value.
+	 * What Stripe collected on a Checkout Session.
+	 * Invoice `amount_paid` when the session has an invoice, otherwise `amount_total` on a paid session.
+	 * Zero is a comp. Null means the collected amount is not known. The list price is never used.
 	 */
-	checkoutAmount?(sessionId: string): Promise<number | null>;
+	checkoutAmount?(sessionId: string): Promise<CheckoutCollected | null>;
 	/** Accounts carrying the GROUNDWORKTESTER promotion, when Stripe can say so. */
 	couponHolders?(): Promise<Array<{ uid: string; code: string }>>;
 	/** Write active and trialing memberships onto the accounts Stripe already knows. */
@@ -325,8 +325,23 @@ export function createBilling(
 		async checkoutAmount(sessionId) {
 			if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return null;
 			try {
-				const session = await stripe.checkout.sessions.retrieve(sessionId);
-				return paidAmountUsd(session.amount_total);
+				const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["invoice"] });
+				let invoice = session.invoice;
+				if (typeof invoice === "string") {
+					try {
+						invoice = await stripe.invoices.retrieve(invoice);
+					} catch {
+						return null;
+					}
+				}
+				return collectedPurchase({
+					id: session.id,
+					status: session.status,
+					payment_status: session.payment_status,
+					amount_total: session.amount_total,
+					currency: session.currency,
+					invoice: invoice && typeof invoice === "object" ? { id: invoice.id, amount_paid: invoice.amount_paid, currency: invoice.currency } : null,
+				});
 			} catch {
 				return null;
 			}
@@ -626,10 +641,72 @@ function priceId(price: string | { id?: string | null } | null | undefined): str
 	return undefined;
 }
 
-/** Checkout `amount_total` is cents. A 100% off promotion is 0, which is still a purchase. */
+/** Checkout `amount_total` is cents. A 100% off promotion is 0, which is still a purchase on the server. */
 export function paidAmountUsd(amountTotal: number | null | undefined): number | null {
 	if (typeof amountTotal !== "number" || !Number.isFinite(amountTotal) || amountTotal < 0) return null;
 	return amountTotal / 100;
+}
+
+/** Collected amount for one Checkout Session. The browser fires only when `amount` is above 0. */
+export interface CheckoutCollected {
+	amount: number;
+	currency: string;
+	transactionId: string;
+}
+
+export interface CheckoutAmountSource {
+	id?: string | null;
+	status?: string | null;
+	payment_status?: string | null;
+	amount_total?: number | null;
+	currency?: string | null;
+	invoice?: string | { id?: string | null; amount_paid?: number | null; currency?: string | null } | null;
+}
+
+const ZERO_DECIMAL = new Set("bif clp djf gnf jpy kmf krw mga pyg rwf ugx vnd vuv xaf xof xpf".split(" "));
+const THREE_DECIMAL = new Set("bhd jod kwd omr tnd".split(" "));
+
+/**
+ * Amount Stripe collected.
+ * An expanded invoice uses `amount_paid` and ignores `amount_total`, so a list price on the session is not revenue.
+ * An invoice id that was not loaded is unknown.
+ * With no invoice, only `payment_status: paid` may use `amount_total`. `no_payment_required` collected nothing.
+ */
+export function collectedPurchase(session: CheckoutAmountSource): CheckoutCollected | null {
+	const sessionId = session.id?.trim() ?? "";
+	if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return null;
+	if (session.status !== "complete") return null;
+	const invoice = session.invoice;
+	if (typeof invoice === "string") return null;
+	if (invoice && typeof invoice === "object") {
+		const paid = moneyFromMinor(invoice.amount_paid, invoice.currency ?? session.currency);
+		if (!paid) return null;
+		const invoiceId = invoice.id?.trim() ?? "";
+		const transactionId = /^in_[A-Za-z0-9_]+$/.test(invoiceId) ? invoiceId : sessionId;
+		return { amount: paid.amount, currency: paid.currency, transactionId };
+	}
+	if (session.payment_status === "no_payment_required") {
+		return { amount: 0, currency: isoCurrency(session.currency) ?? "", transactionId: sessionId };
+	}
+	if (session.payment_status !== "paid") return null;
+	const paid = moneyFromMinor(session.amount_total, session.currency);
+	if (!paid) return null;
+	return { amount: paid.amount, currency: paid.currency, transactionId: sessionId };
+}
+
+function moneyFromMinor(minor: number | null | undefined, currency: string | null | undefined): { amount: number; currency: string } | null {
+	if (typeof minor !== "number" || !Number.isFinite(minor) || minor < 0) return null;
+	const code = isoCurrency(currency);
+	if (!code) return null;
+	const lower = code.toLowerCase();
+	const exp = ZERO_DECIMAL.has(lower) ? 0 : THREE_DECIMAL.has(lower) ? 3 : 2;
+	const scale = 10 ** exp;
+	return { amount: Math.round(minor) / scale, currency: code };
+}
+
+function isoCurrency(currency: string | null | undefined): string | null {
+	const code = currency?.trim().toUpperCase() ?? "";
+	return /^[A-Z]{3}$/.test(code) ? code : null;
 }
 
 /** Stripe replaces `{CHECKOUT_SESSION_ID}` so a refresh of the success page can be deduped. */

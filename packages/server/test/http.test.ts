@@ -273,12 +273,16 @@ describe("account server", () => {
 			billing: billing({
 				configured: true,
 				async checkoutAmount(sessionId) {
-					return sessionId === "cs_free" ? 0 : null;
+					if (sessionId === "cs_free") return { amount: 0, currency: "USD", transactionId: "cs_free" };
+					if (sessionId === "cs_paid") return { amount: 15, currency: "EUR", transactionId: "in_paid" };
+					return null;
 				},
 			}),
 		});
 		const zero = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "cs_free" });
-		expect(zero).toEqual({ status: 200, json: { amountUsd: 0, currency: "USD" } });
+		expect(zero).toEqual({ status: 200, json: { amount: 0, currency: "USD", transactionId: "cs_free" } });
+		const collected = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "cs_paid" });
+		expect(collected).toEqual({ status: 200, json: { amount: 15, currency: "EUR", transactionId: "in_paid" } });
 		const unknown = await route("GET", "/v1/billing/checkout-amount", null, amountServer, undefined, { sessionId: "nope" });
 		expect(unknown.status).toBe(404);
 		resetCheckoutAmountLimits();

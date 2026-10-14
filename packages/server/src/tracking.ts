@@ -123,21 +123,65 @@ export function checkoutSuccessFromSearch(search: string): { sessionId: string; 
 }
 
 /**
- * Browser purchase params. `amountUsd` is Stripe `amount_total` in dollars, never the list price.
- * `0` is a real total.
+ * Browser purchase params.
+ * `amount` is what Stripe collected, in major units. Zero is not a purchase.
+ * `currency` is Stripe's ISO code. The list price is never used.
  */
 export function clientPurchaseParams(
-	sessionId: string,
-	amountUsd: number,
+	transactionId: string,
+	amount: number,
+	currency: string,
 	attribution: Attribution,
 	plan: "byom" | "included" | null,
 ): Record<string, unknown> | null {
-	if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return null;
-	if (typeof amountUsd !== "number" || !Number.isFinite(amountUsd) || amountUsd < 0) return null;
-	const params: Record<string, unknown> = { ...attribution, transaction_id: sessionId, value: amountUsd, currency: "USD" };
-	if (plan === "byom") params.items = [{ item_id: "byom", item_name: "Bring your own model", price: amountUsd, quantity: 1 }];
-	if (plan === "included") params.items = [{ item_id: "included", item_name: "Groundwork", price: amountUsd, quantity: 1 }];
+	const id = purchaseTransactionId(transactionId);
+	const code = currency.trim().toUpperCase();
+	if (!id) return null;
+	if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) return null;
+	if (!/^[A-Z]{3}$/.test(code)) return null;
+	const params: Record<string, unknown> = { ...attribution, transaction_id: id, value: amount, currency: code };
+	if (plan === "byom") params.items = [{ item_id: "byom", item_name: "Bring your own model", price: amount, quantity: 1 }];
+	if (plan === "included") params.items = [{ item_id: "included", item_name: "Groundwork", price: amount, quantity: 1 }];
 	return params;
+}
+
+export type BrowserPurchase =
+	| { action: "skip" }
+	| { action: "comp"; remember: string[] }
+	| { action: "purchase"; params: Record<string, unknown>; remember: string[] };
+
+/**
+ * Decide a browser purchase from the checkout-amount response.
+ * A comp is remembered so a reload does not ask again, and it does not fire.
+ * A missing amount is skipped and not remembered, so nothing is filled in from the plan.
+ */
+export function browserPurchaseFromCheckout(
+	body: unknown,
+	sessionId: string,
+	attribution: Attribution,
+	plan: "byom" | "included" | null,
+): BrowserPurchase {
+	const session = purchaseTransactionId(sessionId);
+	if (!session) return { action: "skip" };
+	if (!body || typeof body !== "object") return { action: "skip" };
+	const row = body as Record<string, unknown>;
+	const amount = row.amount;
+	if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) return { action: "skip" };
+	if (amount === 0) return { action: "comp", remember: [session] };
+	if (typeof row.currency !== "string") return { action: "skip" };
+	const stated = typeof row.transactionId === "string" ? purchaseTransactionId(row.transactionId) : null;
+	const transactionId = stated ?? session;
+	const params = clientPurchaseParams(transactionId, amount, row.currency, attribution, plan);
+	if (!params) return { action: "skip" };
+	const remember = transactionId === session ? [session] : [session, transactionId];
+	return { action: "purchase", params, remember };
+}
+
+/** Checkout Session id (`cs_…`) or Invoice id (`in_…`). */
+export function purchaseTransactionId(value: string | null | undefined): string | null {
+	if (!value) return null;
+	const id = value.trim();
+	return /^(?:cs|in)_[A-Za-z0-9_]+$/.test(id) ? id : null;
 }
 
 export function tagScriptUrl(ids: { ga4: string | null; ads: string | null }): string | null {

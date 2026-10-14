@@ -183,6 +183,8 @@ describe("GA4 purchase from Checkout", () => {
 		expect(app).not.toContain("purchaseValue");
 		expect(browser).toContain("checkout-amount");
 		expect(browser).toContain("gw-purchases");
+		expect(browser).toContain("browserPurchaseFromCheckout");
+		expect(browser).not.toContain("amountUsd");
 		expect(browser).not.toContain("purchaseValue");
 		expect(browser).not.toContain("emitPurchase");
 		expect(events).not.toContain("purchaseValue");

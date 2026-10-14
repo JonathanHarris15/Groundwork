@@ -81,9 +81,9 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 		if (method === "GET" && path === "/v1/billing/checkout-amount") {
 			if (meta.ip && !allowCheckoutAmount(meta.ip)) return { status: 429, json: { error: "Too many requests." } };
-			const amountUsd = await deps.billing.checkoutAmount?.(meta.sessionId ?? "");
-			if (amountUsd == null) return { status: 404, json: { error: "Unknown checkout." } };
-			return { status: 200, json: { amountUsd, currency: "USD" } };
+			const paid = await deps.billing.checkoutAmount?.(meta.sessionId ?? "");
+			if (!paid) return { status: 404, json: { error: "Unknown checkout." } };
+			return { status: 200, json: { amount: paid.amount, currency: paid.currency, transactionId: paid.transactionId } };
 		}
 		const setup = await publicSetupRoute(method, path, body, deps, meta);
 		if (setup) return setup;

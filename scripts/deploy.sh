@@ -6,7 +6,7 @@
 # GA4 is the production default (G-F1270VCGEL) when GA4_MEASUREMENT_ID is unset.
 # Google Ads is the production default (AW-18498207004) when GOOGLE_ADS_ID is unset.
 # GA4_API_SECRET is optional. Deploy does not set or replace environment variables.
-# GA4_API_SECRET is the Measurement Protocol secret for G-F1270VCGEL. Without it, the browser sends purchase.
+# GA4_API_SECRET is the Measurement Protocol secret for G-F1270VCGEL. Without it, the browser sends a purchase only when Stripe collected more than zero.
 
 set -euo pipefail
 
