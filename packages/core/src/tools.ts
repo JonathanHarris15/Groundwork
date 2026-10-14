@@ -1015,7 +1015,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "show_figure",
 		description:
-			"Show one figure in the left margin. Plates: plot, plot3d, story, conjugation, sentence, or a rough map. A real place: kind image or geo with a public url. kind svg is your drawing. kind program is Python that writes figure.svg, figure.png, figure.gif, or figure.webp inside Groundwork. Then say what to look at. Do not paste the picture.",
+			"Show one figure in the left margin. Any plot, surface, geometry, function, data series, or spatial picture uses kind program: Python with numpy and matplotlib that writes figure.png. Do not draw ASCII art. ASCII is only a short inline mark such as x^2. plot3d is one surface. A surface plus a plane and two point classes, such as a paraboloid x3 = r^2, is kind program with projection=\"3d\" and a surface x**2 + y**2. Other plates: story, conjugation, sentence, or a rough map. A real place: kind image or geo with a public url. kind svg is your drawing. Then say what to look at. Do not paste the picture.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -1024,13 +1024,13 @@ export const TOOLS: ToolDef[] = [
 				kind: {
 					type: "string",
 					enum: ["plot", "plot3d", "story", "map", "conjugation", "sentence", "image", "svg", "geo", "program"],
-					description: "plot, plot3d, story, map, conjugation, sentence, image, svg, geo, or program.",
+					description: "program for a plot, surface, geometry, function, data, or spatial picture. plot and plot3d are one exact plate. story, map, conjugation, sentence, image, svg, or geo for the rest.",
 				},
 				url: str("Public https URL for kind image or geo."),
 				credit: str("Where an image or map came from."),
 				markup: str("SVG markup for kind svg. No scripts."),
 				geojson: { type: "object", description: "GeoJSON for kind geo, when you already have it. Otherwise pass url." },
-				source: str("Python source for kind program. Groundwork runs it. Write figure.svg, figure.png, figure.gif, or figure.webp."),
+				source: str("Python for kind program. Import numpy and matplotlib, call matplotlib.use(\"Agg\") before pyplot, and write figure.png (or figure.svg, figure.gif, figure.webp). A 3D scene uses add_subplot(projection=\"3d\")."),
 				xLabel: str("Horizontal axis name."),
 				yLabel: str("Vertical axis name."),
 				zLabel: str("Height axis name, for plot3d."),

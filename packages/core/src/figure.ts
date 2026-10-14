@@ -142,14 +142,53 @@ export interface SessionFigure {
 	sessionId?: string;
 }
 
-export const FIGURE_GUIDANCE = `# Figures
-When a picture teaches better than another paragraph, call \`show_figure\`, then say what to look at. It sits in the left margin and is saved on their account. One figure per idea. Do not paste it into the chat. Mermaid is only for a goal's dependency map.
+/**
+ * A paraboloid x3 = r^2, a separating plane, and two point classes.
+ * The tutor guidance and the figure test share this source.
+ */
+export const PARABOLOID_FIGURE_SOURCE = `import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import mpl_toolkits.mplot3d
 
-The tool fields are the spec. Plates, when the shape is exact: plot, plot3d, story, conjugation, sentence, or a rough map. A real place: kind image with a public url (Wikimedia is a good first stop), or kind geo with a public GeoJSON url plus markers. Name the source in \`credit\`. kind svg is a drawing you write: no scripts, no remote images, \`<animate>\` for motion. kind program is Python that writes figure.svg, figure.png, figure.gif, or figure.webp. It runs inside Groundwork for at most 20 seconds, with the standard library plus matplotlib, numpy, and pillow when imported. It cannot see their files.
+rng = np.random.default_rng(0)
+n = 18
+x = np.linspace(-1.4, 1.4, n)
+y = np.linspace(-1.4, 1.4, n)
+X, Y = np.meshgrid(x, y)
+Z = X**2 + Y**2
+plane = np.full_like(Z, 1.0)
+pts = rng.uniform(-1.2, 1.2, (24, 2))
+lifted = pts[:, 0]**2 + pts[:, 1]**2
+below = lifted < 1.0
+fig = plt.figure(figsize=(4.2, 3.4))
+ax = fig.add_subplot(111, projection="3d")
+ax.plot_surface(X, Y, Z, color="#d7c4a3", alpha=0.45, linewidth=0, antialiased=False)
+ax.plot_surface(X, Y, plane, color="#8aa4c8", alpha=0.28, linewidth=0, antialiased=False)
+ax.scatter(pts[below, 0], pts[below, 1], lifted[below], c="#3cc56f", s=40, depthshade=False)
+ax.scatter(pts[~below, 0], pts[~below, 1], lifted[~below], c="#f0565b", s=40, depthshade=False)
+ax.set_xlabel("x1")
+ax.set_ylabel("x2")
+ax.set_zlabel("x3")
+fig.savefig("figure.png", dpi=64)`.trim();
+
+export const FIGURE_GUIDANCE = `# Figures
+A plot, surface, geometry, function, data series, or spatial picture is a figure. Call \`show_figure\` with kind program. The source is Python using numpy and matplotlib, and it writes figure.png. Do not draw ASCII art in a code block or anywhere else. ASCII is only for a short inline mark such as x^2. Then say what to look at. The figure sits in the left margin and is saved on their account. One figure per idea. Do not paste it into the chat. Mermaid is only for a goal's dependency map.
+
+plot3d is one surface from an expression, drawn as a still. A surface plus a plane, or two classes of points, is kind program. This draws a paraboloid x3 = r^2, a separating plane, and the two classes:
+
+\`\`\`python
+${PARABOLOID_FIGURE_SOURCE}
+\`\`\`
+
+The program runs inside Groundwork for at most 20 seconds, with the standard library plus matplotlib, numpy, and pillow when imported. It cannot see their files. It may also write figure.svg, figure.gif, or figure.webp. Call matplotlib.use("Agg") before pyplot.
+
+Other plates, when the shape is exact and it is not a plot: story, conjugation, sentence, or a rough map. A real place: kind image with a public url (Wikimedia is a good first stop), or kind geo with a public GeoJSON url plus markers. Name the source in \`credit\`. kind svg is a drawing you write: no scripts, no remote images, \`<animate>\` for motion.
 
 \`fetch_public\` reads one public https URL so you can choose. It refuses private addresses. Image bytes must be under 200000.
 
-Plot expressions use + - * / ^ and parentheses. Functions: sin, cos, tan, asin, acos, atan, exp, log, ln, log10, sqrt, abs. Constants: pi, e. Write 2*x, not 2x. \`^\` is right-associative, and \`-x^2\` means \`-(x^2)\`. A plot breaks at a gap or an asymptote. plot3d is z from an expression in x and y, drawn as a still.`;
+Plot expressions use + - * / ^ and parentheses. Functions: sin, cos, tan, asin, acos, atan, exp, log, ln, log10, sqrt, abs. Constants: pi, e. Write 2*x, not 2x. \`^\` is right-associative, and \`-x^2\` means \`-(x^2)\`. A plot breaks at a gap or an asymptote.`;
 
 export const FIGURE_PROMPT = `# You draw one figure
 They highlighted a passage and asked for a picture. You may call \`fetch_public\` for one public https URL. Then reply with one JSON object and nothing else.
@@ -162,7 +201,7 @@ Choose the kind that fits:
 - image — a public picture you fetched. Fields: title, kind "image", url, credit
 - geo — public map data with your marks on top. Fields: title, kind "geo", url (GeoJSON) or geojson, markers: [{ name, lat, lon, side }], movements: [{ from, to, label }], credit
 - svg — a drawing you write, including an animated SVG. Fields: title, kind "svg", markup
-- program — Python that writes figure.svg, figure.png, figure.gif, or figure.webp. It runs inside Groundwork; do not ask the learner to install Python. Fields: title, kind "program", language "python", source
+- program — Python using numpy and matplotlib that writes figure.png (or figure.svg, figure.gif, or figure.webp). It runs inside Groundwork. Do not sketch ASCII art. Fields: title, kind "program", language "python", source
 - conjugation — a verb table. Fields: title, kind "conjugation", lemma, language, tense, rows: [{ person, form }], highlight
 - sentence — a grammar diagram. Fields: title, kind "sentence", words: [{ text, role: "subject"|"verb"|"object"|"complement"|"modifier", of }]
 

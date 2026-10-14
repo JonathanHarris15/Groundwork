@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { STUDY_FOLLOW_UP } from "../src/intent";
-import { buildSystemPrompt } from "../src/prompt";
+import { buildSystemPrompt, promptParts } from "../src/prompt";
+import { toolByName } from "../src/tools";
 
 describe("teaching method", () => {
 	const method = buildSystemPrompt();
@@ -37,6 +38,19 @@ describe("teaching method", () => {
 		expect(method).toContain("## A question they answer");
 		expect(method).toContain("The card is the question");
 		expect(method).toContain("let's try one");
+		expect(method).toContain("## A picture");
+		expect(method).toContain("numpy");
+		expect(method).toContain("matplotlib");
+		expect(method).toContain("figure.png");
+		expect(method).toContain("Do not draw ASCII art");
+		expect(promptParts().find((part) => part.id === "figures")?.required).toBe(true);
+		const figure = toolByName("show_figure");
+		expect(figure?.description).toContain("kind program");
+		expect(figure?.description).toContain("numpy");
+		expect(figure?.description).toContain("matplotlib");
+		expect(figure?.description).toContain("figure.png");
+		expect(figure?.description).toContain("x**2 + y**2");
+		expect(figure?.description).not.toMatch(/or make a goal/);
 		expect(method).toContain("The dropdown does not opt them in");
 		expect(method).toContain("Start this only when they ask to study for one");
 	});

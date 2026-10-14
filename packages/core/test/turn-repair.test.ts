@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcesQuestion, inventsAppBehavior, repairNote } from "../src/turn-repair";
+import { announcesQuestion, asciiDiagram, inventsAppBehavior, repairNote } from "../src/turn-repair";
 
 describe("announced questions", () => {
 	const announced = [
@@ -71,6 +71,46 @@ describe("announced questions", () => {
 				assistantText: "Want me to set this up as a goal and quiz you on it?",
 				calledQuestion: false,
 				calledGoal: false,
+			}),
+		).toBeNull();
+	});
+
+	it("turns an ASCII sketch into a figure and leaves a program and inline math alone", () => {
+		const sketch = [
+			"```",
+			"          x3",
+			"          |",
+			"    ------+------",
+			"   /      |      \\",
+			"  /   *   |   *   \\",
+			" /________|________\\",
+			"         / \\",
+			"       x1   x2",
+			"```",
+			"The plane separates the two classes.",
+		].join("\n");
+		expect(asciiDiagram(sketch)).toBe(true);
+		expect(asciiDiagram("```python\nimport numpy as np\nprint(1)\n```")).toBe(false);
+		expect(asciiDiagram("A short inline mark such as x^2.")).toBe(false);
+		expect(asciiDiagram("```\n| term | value |\n| --- | --- |\n| slope | 2 |\n```")).toBe(false);
+		const note = repairNote({
+			userText: "Show me the paraboloid that lifts points to x3 = r^2 with a separating plane.",
+			assistantText: sketch,
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(note).toContain("Call show_figure");
+		expect(note).toContain("numpy");
+		expect(note).toContain("figure.png");
+		expect(note).not.toContain("Call quiz");
+		expect(note).not.toContain("Call set_goal");
+		expect(
+			repairNote({
+				userText: "Show me the paraboloid that lifts points to x3 = r^2 with a separating plane.",
+				assistantText: sketch,
+				calledQuestion: false,
+				calledGoal: false,
+				calledFigure: true,
 			}),
 		).toBeNull();
 	});

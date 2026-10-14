@@ -1,6 +1,7 @@
 /**
  * One extra model step when a turn stops short: an objective with no goal,
- * or a sentence that announces a question and never calls the card tool.
+ * a sentence that announces a question and never calls the card tool, or an
+ * ASCII diagram where a figure should have been.
  */
 
 import { statesLearningObjective, visibleAsk } from "./intent";
@@ -29,6 +30,31 @@ export function asksToConfirmStudy(text: string): boolean {
 	return /do you want to study this or make a goal/i.test(text) || /want me to set this up as a goal and quiz you/i.test(text);
 }
 
+const CODE_FENCE = /(?:```|~~~)[^\n]*\n([\s\S]*?)(?:```|~~~)/g;
+const BOX_DRAWING = /[─│┌┐└┘├┤┬┴┼╭╮╯╰╱╲╔╗╚╝║═]/;
+const SOURCE_CODE = /\b(?:import|from|def|class|function|const|let|return|plt\.|np\.)\b/;
+
+/** A fenced sketch, not a program and not a short inline mark such as x^2. */
+export function asciiDiagram(text: string): boolean {
+	if (BOX_DRAWING.test(text)) return true;
+	CODE_FENCE.lastIndex = 0;
+	for (const match of text.matchAll(CODE_FENCE)) {
+		if (fencedArt(match[1] ?? "")) return true;
+	}
+	return false;
+}
+
+function fencedArt(body: string): boolean {
+	const lines = body.split("\n").filter((line) => line.trim());
+	if (lines.length < 3) return false;
+	if (SOURCE_CODE.test(body)) return false;
+	const slashes = body.match(/[\\/]/g)?.length ?? 0;
+	if (slashes < 4) return false;
+	const symbols = body.match(/[|\\/\-_=+*^<>]/g)?.length ?? 0;
+	const words = body.match(/[A-Za-z0-9]+/g)?.length ?? 0;
+	return symbols >= 12 && symbols > words;
+}
+
 /** Prose that promises a question. The card is what the learner actually sees. */
 export function announcesQuestion(text: string): boolean {
 	return (
@@ -49,7 +75,13 @@ export function announcesQuestion(text: string): boolean {
  * Hidden note for one follow-up completion. Null when this turn already did
  * the thing the learner is waiting on.
  */
-export function repairNote(input: { userText: string; assistantText: string; calledQuestion: boolean; calledGoal: boolean }): string | null {
+export function repairNote(input: {
+	userText: string;
+	assistantText: string;
+	calledQuestion: boolean;
+	calledGoal: boolean;
+	calledFigure?: boolean;
+}): string | null {
 	const objective = statesLearningObjective(visibleAsk(input.userText));
 	const invented = inventsAppBehavior(input.assistantText);
 	const gated = objective && asksToConfirmStudy(input.assistantText);
@@ -68,6 +100,11 @@ export function repairNote(input: { userText: string; assistantText: string; cal
 	if (!input.calledGoal && objective) {
 		lines.push(
 			"They stated an objective they are working toward. Call set_goal on this turn and start studying. A goal and a quiz go together. Do not ask whether to study or make a goal.",
+		);
+	}
+	if (!input.calledFigure && asciiDiagram(input.assistantText)) {
+		lines.push(
+			"You drew an ASCII diagram. Call show_figure with kind program. The source is Python using numpy and matplotlib, and it writes figure.png. Do not sketch the picture in a code block.",
 		);
 	}
 	if (!lines.length) return null;

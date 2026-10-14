@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isTutorMemoryPath } from "../src/account";
-import { figureFile, figureForChat, parseFigureSpec, renderFigure, saveFigure } from "../src/figure";
+import { existsSync, writeFileSync } from "node:fs";
+import { FIGURE_GUIDANCE, PARABOLOID_FIGURE_SOURCE, figureFile, figureForChat, parseFigureSpec, renderFigure, saveFigure } from "../src/figure";
 import { sanitizeSvg } from "../src/figure-svg";
 import { assertPublicHttpsUrl, fetchPublic, isPrivateAddress } from "../src/figure-net";
 import { loadPyodide } from "pyodide";
@@ -151,6 +152,20 @@ open("figure.svg","w").write('<svg xmlns="http://www.w3.org/2000/svg" width="40"
 			delete process.env.GW_FIGURE_SENTINEL;
 		}
 	}, 120_000);
+
+	it("renders the paraboloid, the plane, and both point classes", async () => {
+		expect(FIGURE_GUIDANCE).toContain(PARABOLOID_FIGURE_SOURCE);
+		expect(PARABOLOID_FIGURE_SOURCE).toContain('projection="3d"');
+		expect(PARABOLOID_FIGURE_SOURCE).toContain("X**2 + Y**2");
+		const produced = await runPythonFigure(PARABOLOID_FIGURE_SOURCE, nodePyodideSpawn());
+		expect(produced.media?.mime).toBe("image/png");
+		const bytes = Buffer.from(produced.media?.base64 ?? "", "base64");
+		expect(bytes.byteLength).toBeGreaterThan(1_000);
+		expect(bytes.byteLength).toBeLessThanOrEqual(200_000);
+		expect(produced.media?.width ?? 0).toBeGreaterThan(100);
+		expect(produced.media?.height ?? 0).toBeGreaterThan(100);
+		if (existsSync("/opt/cursor/artifacts")) writeFileSync("/opt/cursor/artifacts/paraboloid-figure.png", bytes);
+	}, 180_000);
 
 function nodePyodideSpawn(): (source: string, signal?: AbortSignal) => Promise<PythonRun> {
 	let py: Awaited<ReturnType<typeof loadPyodide>> | null = null;

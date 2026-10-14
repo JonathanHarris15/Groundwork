@@ -71,6 +71,7 @@ export class AgentSession implements TutorSession {
 		let repaired = false;
 		let calledQuestion = false;
 		let calledGoal = false;
+		let calledFigure = false;
 		for (let step = 0; step < maxSteps; step++) {
 			if (signal?.aborted) return;
 			const force = forcingAnswer(step, maxSteps);
@@ -89,7 +90,7 @@ export class AgentSession implements TutorSession {
 
 			const uses = res.content.filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use");
 			if (!uses.length) {
-				if (!repaired && this.repairTurn(turnAt, calledQuestion, calledGoal)) {
+				if (!repaired && this.repairTurn(turnAt, calledQuestion, calledGoal, calledFigure)) {
 					repaired = true;
 					continue;
 				}
@@ -151,6 +152,7 @@ export class AgentSession implements TutorSession {
 				}
 				if (!isError && isQuestionTool(use.name)) calledQuestion = true;
 				if (!isError && use.name === "set_goal") calledGoal = true;
+				if (!isError && use.name === "show_figure") calledFigure = true;
 				onEvent({ type: "tool_end", id: use.id, name: use.name, summary, isError, text });
 				const content = files?.length ? [{ type: "text", text }, ...files.flatMap(fileBlocks)] : text;
 				results.push({ type: "tool_result", tool_use_id: use.id, content, ...(isError ? { is_error: true } : {}) });
@@ -175,14 +177,15 @@ export class AgentSession implements TutorSession {
 		onEvent({ type: "continue_offer", text: unfinished.note });
 	}
 
-	/** One follow-up when the model announced a question or skipped a stated objective. */
-	private repairTurn(turnAt: number, calledQuestion: boolean, calledGoal: boolean): boolean {
+	/** One follow-up when the model announced a question, skipped a stated objective, or drew ASCII. */
+	private repairTurn(turnAt: number, calledQuestion: boolean, calledGoal: boolean, calledFigure: boolean): boolean {
 		const user = this.messages[turnAt - 1];
 		const note = repairNote({
 			userText: user ? messageText(user) : "",
 			assistantText: assistantTextSince(this.messages, turnAt),
 			calledQuestion,
 			calledGoal,
+			calledFigure,
 		});
 		if (!note) return false;
 		this.messages.push({ role: "user", content: [{ type: "text", text: note }] });

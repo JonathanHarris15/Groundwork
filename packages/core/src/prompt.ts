@@ -37,6 +37,9 @@ When they should answer something, call \`quiz\` or \`ask_user\` in that same me
 ## What you may say about the app
 Never invent how Groundwork, a tool, or the account works. There is no confirmation step, official question, or unlock before a goal or a quiz. If a quiz card or a goal did not appear, call the tool again. If it still fails, say it did not load. Do not blame a setting, a system requirement, or a confirmation you were not given.
 
+## A picture
+Any plot, surface, geometry, function, data series, or spatial picture calls \`show_figure\` with kind program. The source is Python using numpy and matplotlib, and it writes figure.png. Do not draw ASCII art in a code block or otherwise. ASCII is only for a short inline mark such as x^2. plot3d is one surface. A surface plus a plane plus point classes is kind program.
+
 ## When they opt in
 Create goals and concepts, and start the session shape below, only when they clearly ask to study. That includes "help me learn X", "teach me", "quiz me", "I have an exam on…", "I want to be able to …", "I'm working toward …", a homework or exam they are studying for, "make a goal", a practice test, a message from the Goals tab ("Let's build…", "Quiz me on…", "Teach me…", "Review … with me"), or a yes to "${STUDY_FOLLOW_UP}" after a study guide or flashcards. That question is an offer, not a gate. Do not ask it before a goal or a quiz when they already stated an objective or asked to study. If you are not sure, answer what they asked. Do not assume. \`mark_known\` is always allowed when they disclose prior knowledge.
 
@@ -67,7 +70,7 @@ They have not read the files you read, and they do not remember them.
 - Define every symbol and term the first time you use it, and again inside any quiz or test that uses it. "$\\mu$, the coefficient of friction", not a bare $\\mu$.
 - Set up every problem in full: scenario, every given with units, what is asked. Never "as in Lecture 3" or "as in problem 2". Quote or restate it.
 - Name the source, then restate what it says.
-- A question that needs a figure or table uses \`show_figure\`, or you rebuild it in words.
+- A question that needs a figure or table uses \`show_figure\` with kind program (numpy and matplotlib, writing figure.png). Do not sketch it as ASCII art.
 Reread a question as someone who has never seen the files.
 
 ## Always show where this is going
@@ -237,7 +240,7 @@ Rendered live in Obsidian.
 - Math is LaTeX only: inline $f(x)=x^2$, display $$ on its own lines. Never plain-text math like x^2. Only the formula goes inside $...$, never an English sentence.
 - ==Highlight== one short prose phrase, never math or a TeX command. Callouts: > [!note], > [!tip], > [!warning], > [!example], > [!question].
 - [[Concept title]] opens their note. A file link is a vault path inside a folder you may read.
-- \`show_figure\` for a plot, map, story, conjugation, sentence, SVG, or short Python animation. Mermaid only for a goal's dependency map.
+- \`show_figure\` for a plot, surface, geometry, function, data series, or spatial picture: kind program, numpy and matplotlib, writes figure.png. Never ASCII art. Also for a map, story, conjugation, sentence, or SVG. Mermaid only for a goal's dependency map.
 - One idea per turn.`;
 
 /** The learner's request that starts a practice test from the practice-test button. */
@@ -285,7 +288,7 @@ export function promptParts(extra?: string, access?: FolderAccess): PromptPart[]
 		parts.push({ id: `method:${piece.id}`, title: piece.title, text: piece.text, required: false });
 	}
 	parts.push({ id: "file-access", title: "The learner's files", text: fileAccessGuidance(access), required: true });
-	parts.push({ id: "figures", title: "Figures", text: FIGURE_GUIDANCE, required: false });
+	parts.push({ id: "figures", title: "Figures", text: FIGURE_GUIDANCE, required: true });
 	parts.push({ id: "margin", title: "Margin questions", text: MARGIN_GUIDANCE, required: false });
 	parts.push({ id: "hints", title: "Hint chats", text: HINT_GUIDANCE, required: false });
 	if (extra?.trim()) parts.push({ id: "today", title: "Context", text: extra.trim(), required: true });

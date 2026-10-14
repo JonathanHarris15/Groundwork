@@ -273,6 +273,61 @@ describe("AgentSession with the demo tutor", () => {
 		await agent.send("help me learn slopes", () => undefined);
 		expect(asked).toEqual(["What is the slope?"]);
 	});
+
+	it("replaces an ASCII sketch with a figure", async () => {
+		const shown: string[] = [];
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		const sketch = ["```", "          x3", "          |", "    ------+------", "   /      |      \\", "  /   *   |   *   \\", " /________|________\\", "         / \\", "       x1   x2", "```"].join("\n");
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				const last = messageText(req.messages[req.messages.length - 1]!);
+				if (/tutor_repair/.test(last)) {
+					expect(last).toContain("show_figure");
+					expect(last).not.toContain("Call quiz");
+					return {
+						content: [
+							{
+								type: "tool_use",
+								id: "f1",
+								name: "show_figure",
+								input: { title: "Lift", kind: "plot", series: [{ expr: "x^2", mark: "line" }] },
+							},
+						],
+						stopReason: "tool_use",
+					};
+				}
+				if (/Showing a plot figure/.test(last)) {
+					const reply = "The curve is the lift.";
+					req.onText(reply);
+					return { content: [{ type: "text", text: reply }], stopReason: "end_turn" };
+				}
+				req.onText(sketch);
+				return { content: [{ type: "text", text: sketch }], stopReason: "end_turn" };
+			},
+		};
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			ui: {
+				async quiz() {
+					return null;
+				},
+				async ask() {
+					return null;
+				},
+				showFigure(figure) {
+					shown.push(figure.title);
+				},
+			},
+			session: { id: "s" },
+		});
+		await agent.send("Show me the paraboloid that lifts points to x3 = r^2 with a separating plane.", () => undefined);
+		expect(shown).toEqual(["Lift"]);
+	});
 });
 
 function session(ui: Partial<ToolUI> = {}): Promise<{ agent: AgentSession; store: KnowledgeStore }> {
