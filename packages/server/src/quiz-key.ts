@@ -1,8 +1,19 @@
-import { askQuizKeyModel, parseQuizKeySubject, type HttpClient, type HttpResponse, type QuizKeyModelResult } from "@groundwork/core";
+import {
+	askFreeKeyModel,
+	askQuizKeyModel,
+	parseFreeKeySubject,
+	parseQuizKeySubject,
+	type FreeKeyModelResult,
+	type HttpClient,
+	type HttpResponse,
+	type QuizKeyModelResult,
+} from "@groundwork/core";
 import type { FetchLike } from "./platform-fetch";
 
 /** The OpenRouter key stays on the server. The plugin only sends the question. */
-export async function checkQuizKey(fetchImpl: FetchLike, apiKey: string, body: unknown): Promise<QuizKeyModelResult> {
+export async function checkQuizKey(fetchImpl: FetchLike, apiKey: string, body: unknown): Promise<QuizKeyModelResult | FreeKeyModelResult> {
+	const free = parseFreeKeySubject(body);
+	if (free) return askFreeKeyModel(asHttp(fetchImpl), apiKey, free);
 	const subject = parseQuizKeySubject(body);
 	if (!subject) throw Object.assign(new Error("Send the question, the options, and the keyed option."), { status: 400 });
 	return askQuizKeyModel(asHttp(fetchImpl), apiKey, subject);

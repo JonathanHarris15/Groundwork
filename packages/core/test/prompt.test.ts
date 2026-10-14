@@ -38,6 +38,14 @@ describe("teaching method", () => {
 		expect(method).toContain("## A question they answer");
 		expect(method).toContain("The card is the question");
 		expect(method).toContain("let's try one");
+		expect(method).toContain("Quick Check");
+		expect(method).toContain('format "free"');
+		expect(method).toContain("rhetorical question");
+		expect(method).toContain("reference answer matches the explanation");
+		const quiz = toolByName("quiz");
+		expect(quiz?.description).toContain("Quick Check");
+		expect(quiz?.description).toContain("format free");
+		expect(quiz?.description).not.toMatch(/or make a goal/);
 		expect(method).toContain("## A picture");
 		expect(method).toContain("numpy");
 		expect(method).toContain("matplotlib");

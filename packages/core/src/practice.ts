@@ -6,6 +6,7 @@
 
 import { seedLadder } from "./diagnose";
 import { FREE_RESPONSE_GRADING, recordQuizAnswer, stripMd } from "./grading";
+import type { QuizKeyVerifier } from "./quiz-key-jev";
 import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
 import { demoteHeadings, safeFileName, serializeNote, wikilink } from "./markdown";
 import type { ConceptStats, ConceptStatus, Outcome } from "./model";
@@ -120,6 +121,7 @@ interface TestGrading {
 	test: PreparedTest;
 	response: TestResponse;
 	session?: { id: string };
+	keyVerifier?: QuizKeyVerifier;
 	grades: Map<string, QuizGrade>;
 	before: Map<string, ConceptStats>;
 	after: Map<string, ConceptStats>;
@@ -138,8 +140,14 @@ export function answerFor(test: PreparedTest, response: TestResponse, questionId
 }
 
 /** Record everything that grades itself; free-response answers wait for the tutor. */
-export async function startTestGrading(store: KnowledgeStore, test: PreparedTest, response: TestResponse, session?: { id: string }): Promise<TestGrading> {
-	const state: TestGrading = { test, response, session, grades: new Map(), before: new Map(), after: new Map() };
+export async function startTestGrading(
+	store: KnowledgeStore,
+	test: PreparedTest,
+	response: TestResponse,
+	session?: { id: string },
+	keyVerifier?: QuizKeyVerifier,
+): Promise<TestGrading> {
+	const state: TestGrading = { test, response, session, keyVerifier, grades: new Map(), before: new Map(), after: new Map() };
 	for (const q of test.questions) {
 		const r = answerFor(test, response, q.id);
 		if (needsJudgment(q, r)) continue;
@@ -150,7 +158,7 @@ export async function startTestGrading(store: KnowledgeStore, test: PreparedTest
 }
 
 async function recordOne(store: KnowledgeStore, state: TestGrading, q: PreparedQuiz, r: QuizResponse, judgment?: FreeResponseJudgment): Promise<void> {
-	const o = await recordQuizAnswer(store, q, r, state.session, judgment);
+	const o = await recordQuizAnswer(store, q, r, state.session, judgment, state.keyVerifier);
 	if (!state.before.has(o.conceptTitle)) state.before.set(o.conceptTitle, o.before);
 	state.after.set(o.conceptTitle, o.after);
 	state.grades.set(q.id, o.grade);

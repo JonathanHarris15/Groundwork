@@ -154,7 +154,9 @@ const questionProperties: Record<string, JSONSchema> = {
 			"Choice: the value of the option whose label equals answer. Not a letter, not an index, and not the option's position. The question is checked before it is shown; a key that disagrees with the worked answer or an independent check is fixed or the question is not shown.",
 		anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
 	},
-	referenceAnswer: str("Free only (required): the model answer, with LaTeX. Shown to the learner after grading."),
+	referenceAnswer: str(
+		"Free only (required): the model answer, with LaTeX. Shown to the learner after grading. Checked before the card is shown. A reference that does not match the explanation, or that is wrong, is fixed or the question is not shown.",
+	),
 	rubric: str("Free only: what full credit requires and what earns partial credit."),
 	explanation: str("Revealed after answering: why the correct answer is correct (and why tempting distractors are wrong)."),
 	difficulty: {
@@ -541,7 +543,7 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again or say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
+			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Do not ask in a Quick Check callout or leave a question for the chat. An open answer uses format free. When there are options, use choice. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again or say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. A free-response reference answer gets that same model check. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session, grader, keyVerifier, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
@@ -579,10 +581,10 @@ export const TOOLS: ToolDef[] = [
 			properties: { quiz_id: str("The quiz_id from the quiz result."), ...judgmentProperties },
 			required: ["quiz_id", "outcome", "feedback"],
 		},
-		async run(input: FreeResponseJudgment & { quiz_id: string }, { store, ui, session }) {
+		async run(input: FreeResponseJudgment & { quiz_id: string }, { store, ui, session, keyVerifier, signal }) {
 			const pending = takeAwaiting(input.quiz_id);
 			if (!pending) return { text: `No free-response answer is waiting with quiz_id ${input.quiz_id}. It may already be graded.`, isError: true };
-			const outcome = await recordQuizAnswer(store, pending.quiz, pending.response, session, input);
+			const outcome = await recordQuizAnswer(store, pending.quiz, pending.response, session, input, keyVerifier, signal);
 			ui?.quizRecorded?.(outcome);
 			const text = describeQuizOutcome(outcome);
 			return { text: ui ? withMarginNotes(text, ui) : text, summary: outcomeSummary(outcome), data: outcome };
@@ -610,7 +612,7 @@ export const TOOLS: ToolDef[] = [
 			const test = { ...prepared, questions: await confirmTestQuestions(prepared.questions, keyVerifier, signal) };
 			const response = await ui.test(test);
 			if (!response) return { text: withMarginNotes("The learner closed the practice test without submitting. Nothing was recorded.", ui), summary: "Practice test dismissed" };
-			const state = await startTestGrading(store, test, response, session);
+			const state = await startTestGrading(store, test, response, session, keyVerifier);
 			await gradeOutstandingWritten(store, state, grader, signal);
 			if (ungraded(state).length) {
 				return { text: withMarginNotes(describeTestForGrading(state), ui), summary: `Practice test submitted — grading ${ungraded(state).length} written answer${ungraded(state).length === 1 ? "" : "s"}` };

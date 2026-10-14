@@ -122,4 +122,62 @@ describe("quiz key route", () => {
 		const result = await route("POST", "/v1/quiz-key", { question: "Slope?" }, deps({ openRouterKey: "sk-or-server" }));
 		expect(result.status).toBe(400);
 	});
+
+	it("checks a free-response reference without billing the learner", async () => {
+		let synced = 0;
+		const recorded: Array<{ costUsd: number; chargedUsd: number }> = [];
+		let sent: { model?: unknown; reasoning?: unknown; messages?: Array<{ content?: string }> } | null = null;
+		const server = deps({
+			openRouterKey: "sk-or-server-secret",
+			billing: billing({
+				async sync() {
+					synced += 1;
+				},
+			}),
+			usage: {
+				async record(_uid, call) {
+					recorded.push({ costUsd: call.costUsd, chargedUsd: call.chargedUsd });
+				},
+			} as UsageDirectory,
+			async fetchImpl(_url, init) {
+				sent = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { model?: unknown; reasoning?: unknown; messages?: Array<{ content?: string }> };
+				return new Response(
+					JSON.stringify({
+						content: [
+							{
+								type: "text",
+								text: '{"matchesExplanation":false,"referenceCorrect":false,"learnerCorrect":null,"correctedReference":"w=(1,-1), b=0"}',
+							},
+						],
+						stop_reason: "end_turn",
+						usage: { input_tokens: 400, output_tokens: 80 },
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
+			},
+		});
+		const result = await route(
+			"POST",
+			"/v1/quiz-key",
+			{
+				format: "free",
+				question: "What weights and bias make sign(w·x+b) match the labels?",
+				explanation: "w=(1,-1) and b=0 separates the classes.",
+				reference: "w=(1,1), b=0",
+			},
+			server,
+		);
+		expect(synced).toBe(0);
+		expect(result.status).toBe(200);
+		expect(JSON.stringify(result.json)).not.toContain("sk-or-server-secret");
+		expect(result.json).toMatchObject({
+			model: "openai/gpt-6-luna",
+			costUsd: 0.00008,
+			verdict: { referenceCorrect: false, correctedReference: "w=(1,-1), b=0" },
+		});
+		expect(sent?.model).toBe("openai/gpt-6-luna");
+		expect(sent?.reasoning).toEqual({ effort: "low" });
+		expect(sent?.messages?.[0]?.content).toContain("w=(1,1), b=0");
+		expect(recorded).toEqual([{ costUsd: 0, chargedUsd: 0 }]);
+	});
 });

@@ -8,6 +8,7 @@ import { buildUpstream, readUpstream, upstreamErrorMessage } from "./account/tut
 import type { HttpClient } from "./http";
 import { httpClient } from "./http";
 import { QuizKeyError, signChartAnswer, signChartOption, type QuizKeyCheck } from "./quiz-key";
+import type { FreeResponseJudgment, PreparedQuiz, QuizResponse } from "./quiz";
 import { asRecord, asText, asUnknown } from "./unknown";
 
 /** `FASTBROWSE_LLM_MODEL` in the jev smoke check. */
@@ -30,6 +31,15 @@ const QUIZ_KEY_SYSTEM = [
 	"correctValue: the value of the one right option, or null if none or more than one is right.",
 ].join(" ");
 
+const FREE_KEY_SYSTEM = [
+	"You check a free-response reference answer. Reply with one JSON object and no other text.",
+	'{"matchesExplanation":boolean,"referenceCorrect":boolean,"learnerCorrect":boolean|null,"correctedReference":string|null}',
+	"matchesExplanation: the reference answer makes the same claim as the worked solution and explanation.",
+	"referenceCorrect: the reference answer is right.",
+	"learnerCorrect: the learner's answer is right, or null when no learner answer was given.",
+	"correctedReference: a correct reference when the given one is wrong, otherwise null.",
+].join(" ");
+
 export interface QuizKeyVerdict {
 	matchesExplanation: boolean;
 	keyedCorrect: boolean;
@@ -46,6 +56,31 @@ export interface QuizKeyModelResult {
 	model: string;
 }
 
+export interface FreeKeyVerdict {
+	matchesExplanation: boolean;
+	referenceCorrect: boolean;
+	learnerCorrect: boolean | null;
+	correctedReference: string | null;
+}
+
+export interface FreeKeyModelResult {
+	verdict: FreeKeyVerdict;
+	latencyMs: number;
+	costUsd: number;
+	inputTokens: number;
+	outputTokens: number;
+	model: string;
+}
+
+/** A free-response question, plus the learner's answer when this check is grading. */
+export interface FreeKeySubject {
+	question: string;
+	explanation: string;
+	solution?: string;
+	reference: string;
+	learnerAnswer?: string;
+}
+
 /** The part of a choice question the check needs. A prepared quiz satisfies it. */
 export interface QuizKeySubject {
 	question: string;
@@ -56,11 +91,13 @@ export interface QuizKeySubject {
 	correct: string[];
 	format?: string;
 	multiSelect?: boolean;
+	reference?: string;
 	keyCheck?: QuizKeyCheck;
 }
 
 export interface QuizKeyVerifier {
 	verify(quiz: QuizKeySubject, signal?: AbortSignal): Promise<QuizKeyModelResult>;
+	verifyFree?(quiz: FreeKeySubject, signal?: AbortSignal): Promise<FreeKeyModelResult>;
 }
 
 export function quizKeyCostUsd(usage: { input: number; output: number }): number {
@@ -69,21 +106,35 @@ export function quizKeyCostUsd(usage: { input: number; output: number }): number
 }
 
 export function parseQuizKeyVerdict(text: string): QuizKeyVerdict | null {
-	const start = text.indexOf("{");
-	const end = text.lastIndexOf("}");
-	if (start < 0 || end <= start) return null;
-	let raw: unknown;
-	try {
-		raw = asUnknown(JSON.parse(text.slice(start, end + 1)));
-	} catch {
-		return null;
-	}
-	return verdictFrom(raw);
+	const raw = jsonObject(text);
+	return raw ? verdictFrom(raw) : null;
+}
+
+export function parseFreeKeyVerdict(text: string): FreeKeyVerdict | null {
+	const raw = jsonObject(text);
+	return raw ? freeVerdictFrom(raw) : null;
+}
+
+export function parseFreeKeySubject(body: unknown): FreeKeySubject | null {
+	const record = asRecord(body);
+	if (!record || record.format !== "free") return null;
+	const question = asText(record.question).trim();
+	const reference = asText(record.reference ?? record.referenceAnswer).trim();
+	if (!question || !reference) return null;
+	const solution = asText(record.solution).trim();
+	const learner = asText(record.learnerAnswer).trim();
+	return {
+		question,
+		explanation: asText(record.explanation).trim(),
+		solution: solution || undefined,
+		reference,
+		learnerAnswer: learner || undefined,
+	};
 }
 
 export function parseQuizKeySubject(body: unknown): QuizKeySubject | null {
 	const record = asRecord(body);
-	if (!record) return null;
+	if (!record || record.format === "free") return null;
 	const question = asText(record.question).trim();
 	if (!question) return null;
 	const optionsRaw = record.options;
@@ -117,16 +168,19 @@ export function parseQuizKeySubject(body: unknown): QuizKeySubject | null {
 }
 
 export function asQuizKeyModelResult(value: unknown): QuizKeyModelResult | null {
-	const record = asRecord(value);
-	if (!record) return null;
-	const verdict = verdictFrom(record.verdict);
-	const latencyMs = finite(record.latencyMs);
-	const costUsd = finite(record.costUsd);
-	const inputTokens = finite(record.inputTokens);
-	const outputTokens = finite(record.outputTokens);
-	if (!verdict || latencyMs === null || costUsd === null || inputTokens === null || outputTokens === null) return null;
-	const model = typeof record.model === "string" && record.model.trim() ? record.model.trim() : QUIZ_KEY_MODEL;
-	return { verdict, latencyMs, costUsd, inputTokens, outputTokens, model };
+	const parsed = modelEnvelope(value);
+	if (!parsed) return null;
+	const verdict = verdictFrom(parsed.verdict);
+	if (!verdict) return null;
+	return { ...parsed.envelope, verdict };
+}
+
+export function asFreeKeyModelResult(value: unknown): FreeKeyModelResult | null {
+	const parsed = modelEnvelope(value);
+	if (!parsed) return null;
+	const verdict = freeVerdictFrom(parsed.verdict);
+	if (!verdict) return null;
+	return { ...parsed.envelope, verdict };
 }
 
 /**
@@ -134,49 +188,23 @@ export function asQuizKeyModelResult(value: unknown): QuizKeyModelResult | null 
  * Reasoning stays on low so a check stays a fraction of a cent.
  */
 export async function askQuizKeyModel(http: HttpClient, apiKey: string, quiz: QuizKeySubject, signal?: AbortSignal): Promise<QuizKeyModelResult> {
-	const call = {
-		system: QUIZ_KEY_SYSTEM,
-		messages: [{ role: "user" as const, content: quizKeyUser(quiz) }],
-		tools: [],
-		maxTokens: QUIZ_KEY_MAX_TOKENS,
-		model: QUIZ_KEY_MODEL,
-	};
-	const upstream = buildUpstream({ action: "key", provider: "openrouter", model: QUIZ_KEY_MODEL, key: "user" }, apiKey, call);
-	const payload = asRecord(upstream.body);
-	if (!payload) throw new Error("Could not build the quiz key check.");
-	delete payload.tools;
-	payload.reasoning = { effort: "low" };
-	const started = Date.now();
-	const res = await http(upstream.url, {
-		method: "POST",
-		headers: upstream.headers,
-		body: JSON.stringify(payload),
-		signal,
-	});
-	const latencyMs = Math.max(0, Date.now() - started);
-	const body = await res.json();
-	if (!res.ok) throw new Error(upstreamErrorMessage(body, [apiKey]));
-	const read = readUpstream(upstream.kind, body);
-	if (!read.ok) throw new Error(read.error);
-	const text = read.result.content
-		.filter((block) => block.type === "text")
-		.map((block) => (block.type === "text" ? block.text : ""))
-		.join("");
-	const verdict = parseQuizKeyVerdict(text);
+	const checked = await completeCheck(http, apiKey, QUIZ_KEY_SYSTEM, quizKeyUser(quiz), signal);
+	const verdict = parseQuizKeyVerdict(checked.text);
 	if (!verdict) throw new Error("The quiz key check did not return a verdict.");
-	const usage = billedUsage(body, read.result.usage);
-	return {
-		verdict,
-		latencyMs,
-		costUsd: quizKeyCostUsd(usage),
-		inputTokens: usage.input,
-		outputTokens: usage.output,
-		model: QUIZ_KEY_MODEL,
-	};
+	return { ...checked.result, verdict };
+}
+
+/** The same OpenRouter check for a free-response reference, and for a written answer at grade time. */
+export async function askFreeKeyModel(http: HttpClient, apiKey: string, quiz: FreeKeySubject, signal?: AbortSignal): Promise<FreeKeyModelResult> {
+	const checked = await completeCheck(http, apiKey, FREE_KEY_SYSTEM, freeKeyUser(quiz), signal);
+	const verdict = parseFreeKeyVerdict(checked.text);
+	if (!verdict) throw new Error("The quiz key check did not return a verdict.");
+	return { ...checked.result, verdict };
 }
 
 /** Confirm the key that would be shown. A miss, a disagreement, or a failed call throws and the card stays hidden. */
 export async function confirmQuizKey<T extends QuizKeySubject>(quiz: T, verifier?: QuizKeyVerifier, signal?: AbortSignal): Promise<T> {
+	if (quiz.format === "free") return confirmFreeKey(quiz, verifier, signal);
 	if (!needsModelKeyCheck(quiz) || !verifier || quiz.keyCheck) return quiz;
 	let result: QuizKeyModelResult;
 	try {
@@ -210,6 +238,52 @@ export async function recheckQuizKey<T extends QuizKeySubject>(quiz: T, verifier
 	return stamp(quiz, acceptable, result);
 }
 
+/**
+ * Confirm a free-response reference before the card is shown.
+ * With no free-response checker, the question is shown as written.
+ * A failed call, a reference that does not match its explanation, or a wrong
+ * reference with no replacement keeps the card hidden.
+ */
+export async function confirmFreeKey<T extends QuizKeySubject>(quiz: T, verifier?: QuizKeyVerifier, signal?: AbortSignal): Promise<T> {
+	if (quiz.format !== "free" || !verifier?.verifyFree || quiz.keyCheck) return quiz;
+	const reference = quiz.reference?.trim() ?? "";
+	if (!reference) throw new QuizKeyError("A free-response question needs a reference answer. The question was not shown.");
+	let result: FreeKeyModelResult;
+	try {
+		result = await verifier.verifyFree(freeSubject(quiz, reference), signal);
+	} catch (err) {
+		if (err instanceof QuizKeyError) throw err;
+		throw new QuizKeyError("The independent key check did not answer. Call quiz again. The question was not shown.");
+	}
+	const decision = decideFree(reference, result.verdict);
+	if ("refuse" in decision) throw new QuizKeyError(decision.refuse);
+	return stampFree(quiz, decision.reference, result);
+}
+
+/**
+ * A written answer that matches the verified reference, or that the key check
+ * accepts, is correct. A check that says otherwise leaves the existing judgment.
+ * A correct judgment is left as it is.
+ */
+export async function acceptFreeAnswer(
+	quiz: PreparedQuiz,
+	response: QuizResponse,
+	judgment: FreeResponseJudgment | undefined,
+	verifier?: QuizKeyVerifier,
+	signal?: AbortSignal,
+): Promise<FreeResponseJudgment | undefined> {
+	if (quiz.format !== "free" || !judgment || response.dontKnow || !response.text?.trim()) return judgment;
+	if (sameAnswer(response.text, quiz.reference ?? "")) return { ...judgment, outcome: "correct" };
+	if (judgment.outcome === "correct" || judgment.slip === true || !verifier?.verifyFree) return judgment;
+	try {
+		const result = await verifier.verifyFree(freeSubject(quiz, quiz.reference ?? "", response.text), signal);
+		if (result.verdict.learnerCorrect) return { ...judgment, outcome: "correct" };
+		return judgment;
+	} catch {
+		return judgment;
+	}
+}
+
 /** Calls the Groundwork server. The OpenRouter key never leaves that server. */
 export function remoteQuizKeyVerifier(baseUrl: string, fetchImpl: HttpClient = httpClient(), authorization?: () => Promise<string | null>): QuizKeyVerifier {
 	const root = baseUrl.replace(/\/$/, "");
@@ -233,6 +307,28 @@ export function remoteQuizKeyVerifier(baseUrl: string, fetchImpl: HttpClient = h
 			});
 			if (!res.ok) throw new Error(`Quiz key check failed (${res.status}).`);
 			const parsed = asQuizKeyModelResult(await res.json());
+			if (!parsed) throw new Error("Quiz key check returned no verdict.");
+			return parsed;
+		},
+		async verifyFree(quiz, signal) {
+			const token = await authorization?.();
+			const headers: Record<string, string> = { "content-type": "application/json" };
+			if (token) headers.authorization = `Bearer ${token}`;
+			const res = await fetchImpl(`${root}/v1/quiz-key`, {
+				method: "POST",
+				headers,
+				body: JSON.stringify({
+					format: "free",
+					question: quiz.question,
+					explanation: quiz.explanation,
+					solution: quiz.solution,
+					reference: quiz.reference,
+					learnerAnswer: quiz.learnerAnswer,
+				}),
+				signal,
+			});
+			if (!res.ok) throw new Error(`Quiz key check failed (${res.status}).`);
+			const parsed = asFreeKeyModelResult(await res.json());
 			if (!parsed) throw new Error("Quiz key check returned no verdict.");
 			return parsed;
 		},
@@ -339,4 +435,151 @@ function billedUsage(body: unknown, reported: { input: number; output: number })
 
 function count(value: unknown): number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+async function completeCheck(
+	http: HttpClient,
+	apiKey: string,
+	system: string,
+	user: string,
+	signal?: AbortSignal,
+): Promise<{ text: string; result: Omit<QuizKeyModelResult, "verdict"> }> {
+	const call = {
+		system,
+		messages: [{ role: "user" as const, content: user }],
+		tools: [],
+		maxTokens: QUIZ_KEY_MAX_TOKENS,
+		model: QUIZ_KEY_MODEL,
+	};
+	const upstream = buildUpstream({ action: "key", provider: "openrouter", model: QUIZ_KEY_MODEL, key: "user" }, apiKey, call);
+	const payload = asRecord(upstream.body);
+	if (!payload) throw new Error("Could not build the quiz key check.");
+	delete payload.tools;
+	payload.reasoning = { effort: "low" };
+	const started = Date.now();
+	const res = await http(upstream.url, {
+		method: "POST",
+		headers: upstream.headers,
+		body: JSON.stringify(payload),
+		signal,
+	});
+	const latencyMs = Math.max(0, Date.now() - started);
+	const body = await res.json();
+	if (!res.ok) throw new Error(upstreamErrorMessage(body, [apiKey]));
+	const read = readUpstream(upstream.kind, body);
+	if (!read.ok) throw new Error(read.error);
+	const text = read.result.content
+		.filter((block) => block.type === "text")
+		.map((block) => (block.type === "text" ? block.text : ""))
+		.join("");
+	const usage = billedUsage(body, read.result.usage);
+	return {
+		text,
+		result: {
+			latencyMs,
+			costUsd: quizKeyCostUsd(usage),
+			inputTokens: usage.input,
+			outputTokens: usage.output,
+			model: QUIZ_KEY_MODEL,
+		},
+	};
+}
+
+function decideFree(reference: string, verdict: FreeKeyVerdict): { reference: string } | { refuse: string } {
+	if (verdict.matchesExplanation && verdict.referenceCorrect) return { reference };
+	const corrected = verdict.correctedReference?.trim() ?? "";
+	if (!verdict.referenceCorrect && corrected) return { reference: corrected };
+	if (!verdict.referenceCorrect) {
+		return { refuse: "The reference answer is wrong and the check did not supply a replacement. Recompute and call quiz again. The question was not shown." };
+	}
+	return { refuse: "The reference answer does not match the explanation. Recompute and call quiz again. The question was not shown." };
+}
+
+function stampFree<T extends QuizKeySubject>(quiz: T, reference: string, result: FreeKeyModelResult): T {
+	quiz.reference = reference;
+	quiz.keyCheck = {
+		model: result.model,
+		latencyMs: result.latencyMs,
+		costUsd: result.costUsd,
+		inputTokens: result.inputTokens,
+		outputTokens: result.outputTokens,
+		correct: [],
+	};
+	return quiz;
+}
+
+function freeSubject(quiz: { question: string; explanation: string; solution?: string }, reference: string, learnerAnswer?: string): FreeKeySubject {
+	const learner = learnerAnswer?.trim();
+	return {
+		question: quiz.question,
+		explanation: quiz.explanation,
+		solution: quiz.solution,
+		reference,
+		learnerAnswer: learner || undefined,
+	};
+}
+
+function freeKeyUser(quiz: FreeKeySubject): string {
+	return JSON.stringify({
+		question: clip(quiz.question),
+		solution: clip(quiz.solution),
+		explanation: clip(quiz.explanation),
+		reference: clip(quiz.reference),
+		learnerAnswer: clip(quiz.learnerAnswer),
+	});
+}
+
+function sameAnswer(written: string, reference: string): boolean {
+	const left = normalizeAnswer(written);
+	const right = normalizeAnswer(reference);
+	return left.length > 0 && left === right;
+}
+
+function normalizeAnswer(text: string): string {
+	return text
+		.toLowerCase()
+		.replace(/\$+/g, "")
+		.replace(/\\[a-z]+/gi, "")
+		.replace(/[{}]/g, "")
+		.replace(/[.,;:!?'"`]/g, "")
+		.replace(/\s+/g, "");
+}
+
+function jsonObject(text: string): unknown {
+	const start = text.indexOf("{");
+	const end = text.lastIndexOf("}");
+	if (start < 0 || end <= start) return undefined;
+	try {
+		return asUnknown(JSON.parse(text.slice(start, end + 1)));
+	} catch {
+		return undefined;
+	}
+}
+
+function modelEnvelope(value: unknown): { verdict: unknown; envelope: Omit<QuizKeyModelResult, "verdict"> } | null {
+	const record = asRecord(value);
+	if (!record) return null;
+	const latencyMs = finite(record.latencyMs);
+	const costUsd = finite(record.costUsd);
+	const inputTokens = finite(record.inputTokens);
+	const outputTokens = finite(record.outputTokens);
+	if (latencyMs === null || costUsd === null || inputTokens === null || outputTokens === null) return null;
+	const model = typeof record.model === "string" && record.model.trim() ? record.model.trim() : QUIZ_KEY_MODEL;
+	return { verdict: record.verdict, envelope: { latencyMs, costUsd, inputTokens, outputTokens, model } };
+}
+
+function freeVerdictFrom(value: unknown): FreeKeyVerdict | null {
+	const record = asRecord(value);
+	if (!record) return null;
+	if (typeof record.matchesExplanation !== "boolean") return null;
+	if (typeof record.referenceCorrect !== "boolean") return null;
+	if (record.learnerCorrect !== null && typeof record.learnerCorrect !== "boolean") return null;
+	if (record.correctedReference !== null && typeof record.correctedReference !== "string") return null;
+	const corrected = typeof record.correctedReference === "string" ? record.correctedReference.trim() : "";
+	return {
+		matchesExplanation: record.matchesExplanation,
+		referenceCorrect: record.referenceCorrect,
+		learnerCorrect: typeof record.learnerCorrect === "boolean" ? record.learnerCorrect : null,
+		correctedReference: corrected || null,
+	};
 }

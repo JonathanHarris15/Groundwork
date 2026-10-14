@@ -2,7 +2,7 @@ import { nextMove, type PrerequisiteState } from "./diagnose";
 import { judgeUnderstanding, pickLabel } from "./judgments";
 import { describeEdge, predictCorrect, type ConceptStats } from "./model";
 import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
-import { recheckQuizKey, type QuizKeyVerifier } from "./quiz-key-jev";
+import { acceptFreeAnswer, recheckQuizKey, type QuizKeyVerifier } from "./quiz-key-jev";
 import { familiarityLabel, gradeQuiz, needsJudgment, type FreeResponseJudgment, type PreparedQuiz, type QuizGrade, type QuizResponse } from "./quiz";
 import type { KnowledgeStore } from "./store";
 
@@ -84,6 +84,9 @@ export async function recordQuizAnswer(
 		}
 	}
 	const checked = await recheckQuizKey(quiz, keyVerifier, signal);
+	const accepted = await acceptFreeAnswer(checked, response, applied, keyVerifier, signal);
+	if (accepted && applied && accepted.outcome === "correct" && applied.outcome !== "correct" && applied.slip !== true) judgmentNote = undefined;
+	applied = accepted;
 	const grade = gradeQuiz(checked, response, applied);
 	const { concept, before, after } = await store.recordEvidence(checked.concept, {
 		outcome: grade.outcome,
