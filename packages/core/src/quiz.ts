@@ -1,5 +1,5 @@
 import { MAX_FAMILIARITY, type EvidenceKind, type Outcome } from "./model";
-import { choiceKey, settleChoice } from "./quiz-key";
+import { choiceKey, settleChoice, type QuizKeyCheck } from "./quiz-key";
 import { asUnknown } from "./unknown";
 import { normalizeTutorMarkdown } from "./tutor-markdown";
 
@@ -60,6 +60,8 @@ export interface PreparedQuiz {
 	difficulty: number;
 	kind: EvidenceKind;
 	multiSelect: boolean;
+	/** Set when a separate model check confirmed the key. Absent on a question that was not checked. */
+	keyCheck?: QuizKeyCheck;
 }
 
 export interface QuizResponse {
@@ -237,7 +239,9 @@ export function gradeQuiz(quiz: PreparedQuiz, response: QuizResponse, judgment?:
 		};
 	}
 	const sel = [...new Set(response.selected)];
-	const ok = sel.length === key.length && sel.every((v) => key.includes(v));
+	const ok = quiz.multiSelect
+		? sel.length === key.length && sel.every((v) => key.includes(v))
+		: sel.length === 1 && key.includes(sel[0] ?? "");
 	const wrongPicks = sel.filter((v) => !key.includes(v));
 	const misconception = wrongPicks
 		.map((v) => quiz.options.find((o) => o.value === v)?.misconception)

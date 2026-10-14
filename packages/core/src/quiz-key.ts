@@ -21,6 +21,16 @@ export interface ChoiceKeyInput {
 	multiSelect: boolean;
 }
 
+/** What the model check recorded. Grading uses `correct` and does not call the model again. */
+export interface QuizKeyCheck {
+	model: string;
+	latencyMs: number;
+	costUsd: number;
+	inputTokens: number;
+	outputTokens: number;
+	correct: string[];
+}
+
 /** Enough of a prepared choice question to re-check the key at grade time. */
 export interface GradedChoice {
 	format: string;
@@ -31,6 +41,7 @@ export interface GradedChoice {
 	answer?: string;
 	options: KeyOption[];
 	correct: string[];
+	keyCheck?: Pick<QuizKeyCheck, "correct">;
 }
 
 const SIGN = /^(?:positive|pos|\+|negative|neg|−|–|-)$/i;
@@ -54,6 +65,7 @@ export function choiceKey(quiz: GradedChoice): string[] {
 		const hit = matchSigns(quiz.options, math);
 		if (hit) return [hit.value];
 	}
+	if (quiz.keyCheck?.correct.length) return quiz.keyCheck.correct;
 	const explained = statedSignsOption(quiz.options, `${quiz.solution ?? ""}\n${quiz.explanation}`);
 	if (explained && !quiz.correct.includes(explained.value)) return [explained.value];
 	const claim = matchClaim(quiz.options, quiz.answer);
@@ -153,6 +165,13 @@ function signToken(part: string): "positive" | "negative" | null {
 	const token = part.toLowerCase().replace(/[$*.]/g, "").trim();
 	if (!SIGN.test(token)) return null;
 	return token === "+" || token === "positive" || token === "pos" ? "positive" : "negative";
+}
+
+/** The option whose label is the sign chart of this question, or null when this is not that question. */
+export function signChartOption(question: string, options: KeyOption[]): KeyOption | null {
+	const math = signChartAnswer(question);
+	if (!math) return null;
+	return matchSigns(options, math) ?? null;
 }
 
 /**

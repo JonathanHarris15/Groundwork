@@ -19,6 +19,7 @@ export * from "./mastery-tone";
 export * from "./store";
 export * from "./quiz";
 export { choiceKey } from "./quiz-key";
+export * from "./quiz-key-jev";
 export * from "./diagnose";
 export * from "./grading";
 export * from "./jev";

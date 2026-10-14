@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, requestUrl, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, FLASHCARDS_REQUIRE_UPGRADE, GroundworkProvider, HEAVY_REQUIRES_UPGRADE, streamingHttp, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, PATHS, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, replaceTutorMemoryFiles, setHttpClient, signInWithCustomToken, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type UsageEventKind, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, FLASHCARDS_REQUIRE_UPGRADE, GroundworkProvider, HEAVY_REQUIRES_UPGRADE, streamingHttp, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, PATHS, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, remoteQuizKeyVerifier, replaceTutorMemoryFiles, setHttpClient, signInWithCustomToken, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type QuizKeyVerifier, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type UsageEventKind, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import { BUILD, readBuildStamp } from "./build";
 import { sessionFromRedeem, type RedeemPayload } from "./connect";
@@ -371,6 +371,11 @@ export default class GroundworkPlugin extends Plugin {
 	/** Jev context selection goes through the website. This device never holds the Jev key. */
 	contextSelector(): ContextSelector {
 		return remoteContextSelector(accountOrigin(), obsidianHttp, () => this.accountAccessToken());
+	}
+
+	/** Choice-key check goes through the website. This device never holds the OpenRouter key. */
+	quizKeyVerifier(): QuizKeyVerifier {
+		return remoteQuizKeyVerifier(accountOrigin(), obsidianHttp, () => this.accountAccessToken());
 	}
 
 	claudeCodeConfig(): ClaudeCodeConfig | null {

@@ -19,6 +19,7 @@ export interface AgentOptions {
 	/** Read and write folders for vault file tools. Omitted uses the defaults. */
 	access?: FolderAccess;
 	grader?: ToolContext["grader"];
+	keyVerifier?: ToolContext["keyVerifier"];
 	/** Free accounts cannot save new cards. Omit to allow. */
 	flashcardsWritable?: boolean;
 }
@@ -132,6 +133,7 @@ export class AgentSession implements TutorSession {
 							signal,
 							access: this.opts.access,
 							grader: this.opts.grader,
+							keyVerifier: this.opts.keyVerifier,
 							profile: this.turnContext?.profile,
 							tutorContext: this.turnContext?.tutorContext,
 							flashcardsWritable: this.opts.flashcardsWritable,

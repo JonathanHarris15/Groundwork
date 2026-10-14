@@ -23,6 +23,8 @@ import {
 	type TestResponse,
 } from "./practice";
 import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
+import { confirmQuizKey, type QuizKeyVerifier } from "./quiz-key-jev";
+import { QuizKeyError } from "./quiz-key";
 import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
 import { isBuilt } from "./graph";
 import { cardsToPractice, loadFlashcardLibrary, saveFlashcard } from "./flashcards";
@@ -83,6 +85,8 @@ export interface ToolContext {
 	access?: FolderAccess;
 	/** Server-side Jev grader. When set, written answers are graded without another tutor turn. */
 	grader?: AnswerGrader;
+	/** Separate model check for a choice key. When set, a choice question is not shown until the key is confirmed. */
+	keyVerifier?: QuizKeyVerifier;
 	/** This turn's learner profile, after context selection. Omit to send the saved file. */
 	profile?: string;
 	/** This turn's tutor notes. Omit to send the saved note. */
@@ -537,22 +541,22 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again or say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown. A key that disagrees with an independent check is fixed, or the question is not shown and you must call quiz again. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
+			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again or say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
 		inputSchema: quizInputSchema,
-		async run(input: QuizInput, { store, ui, session, grader, signal }) {
+		async run(input: QuizInput, { store, ui, session, grader, keyVerifier, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
 			const hit = await store.resolveForEvidence(input.concept, input.question);
 			if (!hit) {
 				return { text: `Unknown concept "${input.concept}". Create it with upsert_concept (or set_goal) first, then ask again.`, isError: true };
 			}
 			const concept = hit.concept;
-			const quiz = prepareQuiz({ ...input, concept: concept.title });
+			const quiz = await confirmQuizKey(prepareQuiz({ ...input, concept: concept.title }), keyVerifier, signal);
 			const response = await ui.quiz(quiz);
 			if (!response) return { text: withMarginNotes("The learner dismissed the quiz without answering. Nothing was recorded.", ui), summary: "Quiz dismissed" };
 			if (needsJudgment(quiz, response)) {
 				const [judgment] = await judgmentsFor(grader, [toGradeItem(quiz, response)], signal);
 				if (!judgment) return { text: withMarginNotes(awaitJudgment(quiz, response), ui), summary: `Answer submitted on ${concept.title} — grading` };
-				const outcome = await recordQuizAnswer(store, quiz, response, session, judgment);
+				const outcome = await recordQuizAnswer(store, quiz, response, session, judgment, keyVerifier, signal);
 				ui.quizRecorded?.(outcome);
 				return {
 					text: withMarginNotes(`${describeQuizOutcome(outcome)}\n\nAlready graded. Teach from this result.`, ui),
@@ -560,7 +564,7 @@ export const TOOLS: ToolDef[] = [
 					data: outcome,
 				};
 			}
-			const outcome = await recordQuizAnswer(store, quiz, response, session);
+			const outcome = await recordQuizAnswer(store, quiz, response, session, undefined, keyVerifier, signal);
 			ui.quizRecorded?.(outcome);
 			const matched = hit.matchedFrom ? `Matched “${hit.matchedFrom}” to [[${concept.title}]].\n` : "";
 			return { text: withMarginNotes(matched + describeQuizOutcome(outcome), ui), summary: outcomeSummary(outcome), data: outcome };
@@ -590,7 +594,7 @@ export const TOOLS: ToolDef[] = [
 		description:
 			"A full practice test: many questions, no feedback until they submit. Only when they asked for a test, or exam prep they opted into hits a checkpoint. Choice grades on submit. Grade written answers with grade_practice_test unless the result already graded them. Cover the exam plan or goal at the required levels. The evaluation is saved to tests/ and shown to them.",
 		inputSchema: practiceTestInputSchema,
-		async run(input: PracticeTestInput, { store, ui, session, grader, signal }) {
+		async run(input: PracticeTestInput, { store, ui, session, grader, keyVerifier, signal }) {
 			if (!ui?.test) return { text: "practice_test needs an interactive surface; quiz them one question at a time instead.", isError: true };
 			const unknown: string[] = [];
 			const questions: QuizInput[] = [];
@@ -602,7 +606,8 @@ export const TOOLS: ToolDef[] = [
 			if (unknown.length) {
 				return { text: `Unknown concepts: ${[...new Set(unknown)].join(", ")}. Create them with upsert_concept (or set_goal) first, then give the test.`, isError: true };
 			}
-			const test = prepareTest({ ...input, questions });
+			const prepared = prepareTest({ ...input, questions });
+			const test = { ...prepared, questions: await confirmTestQuestions(prepared.questions, keyVerifier, signal) };
 			const response = await ui.test(test);
 			if (!response) return { text: withMarginNotes("The learner closed the practice test without submitting. Nothing was recorded.", ui), summary: "Practice test dismissed" };
 			const state = await startTestGrading(store, test, response, session);
@@ -1174,6 +1179,19 @@ async function goalCalendarFields(store: KnowledgeStore, report: GoalReport) {
 		weights: report.nodes.map((node) => ({ title: titleOf(node.id), percent: Math.round(timing.weights[node.id] ?? 0) })),
 		studiedDays: timing.schedule?.studiedDays ?? 0,
 	};
+}
+
+async function confirmTestQuestions(questions: PreparedQuiz[], verifier: QuizKeyVerifier | undefined, signal?: AbortSignal): Promise<PreparedQuiz[]> {
+	return Promise.all(
+		questions.map(async (question, index) => {
+			try {
+				return await confirmQuizKey(question, verifier, signal);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "The key was not confirmed.";
+				throw new QuizKeyError(`Question ${index + 1}: ${message}`);
+			}
+		}),
+	);
 }
 
 export function toolByName(name: string): ToolDef | undefined {
