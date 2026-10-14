@@ -75,6 +75,68 @@ describe("announced questions", () => {
 		).toBeNull();
 	});
 
+	it("turns a Quick Check into a free-response card and stays quiet once a card ran", () => {
+		const callout = [
+			"A perceptron labels a point $x$ with $\\operatorname{sign}(w \\cdot x + b)$.",
+			"",
+			"> [!question] Quick Check",
+			"> What weights $w$ and bias $b$ make $\\operatorname{sign}(w \\cdot x + b)$ match the labels?",
+			">",
+			"> Hint: try small integers.",
+		].join("\n");
+		const note = repairNote({
+			userText: "explain the perceptron",
+			assistantText: callout,
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(note).toContain('format "free"');
+		expect(note).toContain("referenceAnswer");
+		expect(note).toContain("weights");
+		expect(note).toContain("bias");
+		expect(note).not.toContain("Hint:");
+		expect(note).not.toContain("Call set_goal");
+		expect(
+			repairNote({
+				userText: "explain the perceptron",
+				assistantText: callout,
+				calledQuestion: true,
+				calledGoal: false,
+			}),
+		).toBeNull();
+	});
+
+	it("turns a trailing question into a free-response card", () => {
+		const note = repairNote({
+			userText: "explain the perceptron",
+			assistantText: ["The boundary is $\\operatorname{sign}(w \\cdot x + b)$.", "", "What weights and bias make that match the labels?", "", "Hint: try small integers."].join("\n"),
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(note).toContain('format "free"');
+		expect(note).toContain("What weights and bias make that match the labels?");
+		expect(note).not.toContain("Hint:");
+	});
+
+	it("leaves a rhetorical question that the same message answers", () => {
+		expect(
+			repairNote({
+				userText: "explain the sign chart",
+				assistantText: "Why does the sign flip? The factors change sign between the roots.",
+				calledQuestion: false,
+				calledGoal: false,
+			}),
+		).toBeNull();
+		expect(
+			repairNote({
+				userText: "explain the sign chart",
+				assistantText: ["> [!question] Why does the sign flip?", "", "The factors change sign between the roots."].join("\n"),
+				calledQuestion: false,
+				calledGoal: false,
+			}),
+		).toBeNull();
+	});
+
 	it("turns an ASCII sketch into a figure and leaves a program and inline math alone", () => {
 		const sketch = [
 			"```",

@@ -55,6 +55,17 @@ function fencedArt(body: string): boolean {
 	return symbols >= 12 && symbols > words;
 }
 
+const OPEN_OFFER = /^(?:want me to|do you want|shall i|should i)\b/i;
+const SHORT_OFFER = /^(?:right|okay|ok|see|clear|follow|got it)\b|\b(?:sound good|make sense)\b/i;
+
+/** A Quick Check heading, a waiting question callout, or a trailing question. */
+export function awaitsChatAnswer(text: string): boolean {
+	const spoken = stripStudyOffer(text);
+	if (hasQuickCheck(spoken)) return true;
+	if (questionCalloutAwaits(spoken)) return true;
+	return trailingQuestion(spoken) !== null;
+}
+
 /** Prose that promises a question. The card is what the learner actually sees. */
 export function announcesQuestion(text: string): boolean {
 	return (
@@ -85,14 +96,16 @@ export function repairNote(input: {
 	const objective = statesLearningObjective(visibleAsk(input.userText));
 	const invented = inventsAppBehavior(input.assistantText);
 	const gated = objective && asksToConfirmStudy(input.assistantText);
-	const spoken = input.assistantText.replace(/want me to set this up as a goal and quiz you on it\??/gi, " ");
+	const spoken = stripStudyOffer(input.assistantText);
 	const lines: string[] = [];
 	if (invented) {
 		lines.push(
 			"You invented a rule about how the app works. There is no confirmation step and nothing to unlock. Do not explain the app. If a card or goal did not appear, call the tool again. If it still fails, say it did not load.",
 		);
 	}
-	if (!input.calledQuestion && (announcesQuestion(spoken) || gated || objective)) {
+	if (!input.calledQuestion && awaitsChatAnswer(spoken)) {
+		lines.push(freeResponseRepair(spoken));
+	} else if (!input.calledQuestion && (announcesQuestion(spoken) || gated || objective)) {
 		lines.push(
 			"Call quiz for a graded question, or ask_user when there is no right answer. The card is the question. Do not ask permission first, and do not describe the card in prose.",
 		);
@@ -109,4 +122,144 @@ export function repairNote(input: {
 	}
 	if (!lines.length) return null;
 	return `<tutor_repair>\n${lines.join("\n")}\n</tutor_repair>`;
+}
+
+function stripStudyOffer(text: string): string {
+	return text.replace(/want me to set this up as a goal and quiz you on it\??/gi, " ");
+}
+
+function freeResponseRepair(text: string): string {
+	const question = clipQuestion(awaitedQuestion(text));
+	return `Call quiz with format "free". Put this question on the card: ${question} Put the model answer in referenceAnswer and the worked steps in solution. Do not leave a Quick Check callout or a question in prose.`;
+}
+
+function awaitedQuestion(text: string): string {
+	if (hasQuickCheck(text)) return extractQuickCheck(text);
+	if (questionCalloutAwaits(text)) return extractQuestionCallout(text);
+	return trailingQuestion(text) ?? "the question you just asked";
+}
+
+function clipQuestion(question: string): string {
+	const flat = question.replace(/\s+/g, " ").trim();
+	const capped = flat.length > 600 ? `${flat.slice(0, 600)}…` : flat;
+	return /[.!?]$/.test(capped) ? capped : `${capped}.`;
+}
+
+function hasQuickCheck(text: string): boolean {
+	return text.split("\n").some((line) => isQuickCheckLabel(line));
+}
+
+function isQuickCheckLabel(line: string): boolean {
+	const plain = line
+		.trim()
+		.replace(/^>\s?/, "")
+		.replace(/^#+\s*/, "")
+		.replace(/\*\*/g, "")
+		.trim();
+	return /^\[![a-z]+\]\s*quick check\b/i.test(plain) || /^quick check\b/i.test(plain);
+}
+
+function questionCalloutAwaits(text: string): boolean {
+	const found = questionCallout(text);
+	if (!found || !found.body.includes("?")) return false;
+	const after = sentencesOf(dropHintLines(found.after));
+	while (after.length && isOffer(after[after.length - 1] ?? "")) after.pop();
+	const last = after[after.length - 1]?.trim() ?? "";
+	return !last || last.endsWith("?");
+}
+
+function questionCallout(text: string): { body: string; after: string } | null {
+	const lines = text.split("\n");
+	const start = lines.findIndex((line) => /^>\s*\[!question\]/i.test(line.trim()));
+	if (start < 0) return null;
+	let end = start;
+	for (let i = start; i < lines.length; i++) {
+		const trimmed = lines[i]?.trim() ?? "";
+		if (trimmed && !trimmed.startsWith(">")) break;
+		end = i;
+	}
+	return { body: lines.slice(start, end + 1).join("\n"), after: lines.slice(end + 1).join("\n") };
+}
+
+function extractQuestionCallout(text: string): string {
+	const found = questionCallout(text);
+	if (!found) return trailingQuestion(text) ?? "the question you just asked";
+	return calloutBody(found.body) || "the question you just asked";
+}
+
+function extractQuickCheck(text: string): string {
+	const lines = text.split("\n");
+	const start = lines.findIndex((line) => isQuickCheckLabel(line));
+	if (start < 0) return "the question in your Quick Check";
+	const quoted = /^\s*>/.test(lines[start] ?? "");
+	const body: string[] = [];
+	const rest = quickCheckRemainder(lines[start] ?? "");
+	if (rest) body.push(rest);
+	for (let i = start + 1; i < lines.length; i++) {
+		const trimmed = lines[i]?.trim() ?? "";
+		if (quoted) {
+			if (trimmed && !trimmed.startsWith(">")) break;
+		} else if (!trimmed) {
+			if (body.length) break;
+		}
+		const plain = trimmed.replace(/^(?:>\s?)+/, "");
+		if (!plain || /^hint\s*:/i.test(plain)) continue;
+		body.push(plain);
+	}
+	return body.join(" ").trim() || "the question in your Quick Check";
+}
+
+function quickCheckRemainder(line: string): string {
+	return line
+		.trim()
+		.replace(/^(?:>\s?)+/, "")
+		.replace(/^#+\s*/, "")
+		.replace(/\*\*/g, "")
+		.replace(/^\[![a-z]+\]\s*/i, "")
+		.replace(/^quick check\b[:\s\-–—]*/i, "")
+		.trim();
+}
+
+function calloutBody(block: string): string {
+	const body: string[] = [];
+	for (const line of block.split("\n")) {
+		const plain = line
+			.trim()
+			.replace(/^>\s?/, "")
+			.replace(/^\[!question\]\s*/i, "")
+			.trim();
+		if (!plain || /^hint\s*:/i.test(plain) || /^quick check\b[:\s\-–—]*$/i.test(plain)) continue;
+		body.push(plain);
+	}
+	return body.join(" ").trim();
+}
+
+function trailingQuestion(text: string): string | null {
+	const sentences = sentencesOf(dropHintLines(text));
+	while (sentences.length && isOffer(sentences[sentences.length - 1] ?? "")) sentences.pop();
+	const last = sentences[sentences.length - 1]?.trim() ?? "";
+	return last.endsWith("?") ? last : null;
+}
+
+function dropHintLines(text: string): string {
+	return text
+		.split("\n")
+		.filter((line) => !/^hint\s*:/i.test(line.trim().replace(/^(?:>\s?)+/, "")))
+		.join("\n");
+}
+
+function sentencesOf(text: string): string[] {
+	const flat = text.replace(/\s+/g, " ").trim();
+	if (!flat) return [];
+	return flat
+		.split(/(?<=[.!?])\s+/)
+		.map((sentence) => sentence.trim())
+		.filter(Boolean);
+}
+
+function isOffer(sentence: string): boolean {
+	const bare = sentence.replace(/[.!?]+$/g, "").trim();
+	if (!bare) return false;
+	if (OPEN_OFFER.test(bare)) return true;
+	return bare.split(/\s+/).length <= 8 && SHORT_OFFER.test(bare);
 }

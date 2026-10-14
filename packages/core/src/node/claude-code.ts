@@ -52,6 +52,7 @@ export interface ClaudeCodeSessionOptions extends ClaudeCodeConfig {
 	/** Read and write folders. Claude Code's Read tool is held to the same read folders. */
 	access?: FolderAccess;
 	grader?: ToolContext["grader"];
+	keyVerifier?: ToolContext["keyVerifier"];
 }
 
 /**
@@ -374,7 +375,7 @@ export class ClaudeCodeSession implements TutorSession {
 			try {
 				if (!tool) throw new Error(`Unknown tool ${name}`);
 				const blocked = studyToolBlock(name, this.dialogue);
-				result = blocked ?? (await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader, profile: this.turnContext?.profile, tutorContext: this.turnContext?.tutorContext }));
+				result = blocked ?? (await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader, keyVerifier: this.opts.keyVerifier, profile: this.turnContext?.profile, tutorContext: this.turnContext?.tutorContext }));
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}

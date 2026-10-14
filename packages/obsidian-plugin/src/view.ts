@@ -586,6 +586,7 @@ export class ChatView extends ItemView implements ToolUI {
 				history,
 				access,
 				grader: this.plugin.answerGrader(),
+				keyVerifier: this.plugin.quizKeyVerifier(),
 			});
 			return this.agent;
 		}
@@ -610,6 +611,7 @@ export class ChatView extends ItemView implements ToolUI {
 			messages,
 			access,
 			grader: this.plugin.answerGrader(),
+			keyVerifier: runtime.runtime === "proxy" ? this.plugin.quizKeyVerifier() : undefined,
 			flashcardsWritable: free ? false : undefined,
 		});
 		return this.agent;
@@ -1023,8 +1025,7 @@ export class ChatView extends ItemView implements ToolUI {
 
 	quizRecorded(o: QuizOutcome): void {
 		const card = this.liveQuizCards.get(o.quiz.id);
-		if (o.quiz.format === "free") card?.showAnswer({ response: o.response, grade: o.grade, before: o.before, after: o.after });
-		else card?.showRecorded(o.before, o.after);
+		card?.showAnswer({ response: o.response, grade: o.grade, before: o.before, after: o.after });
 		this.liveQuizCards.delete(o.quiz.id);
 		if (this.record.openQuiz?.id === o.quiz.id) this.record.openQuiz = undefined;
 		this.record.items.push({ kind: "quiz", quiz: o.quiz, response: o.response, grade: o.grade, before: o.before, after: o.after });
@@ -1070,7 +1071,9 @@ export class ChatView extends ItemView implements ToolUI {
 		this.reader.release();
 		if (this.waitingQuiz?.id === quiz.id) this.waitingQuiz = null;
 		try {
-			const settled = await settleQuizAnswer(this.plugin.store, quiz, response, this.session, this.plugin.answerGrader());
+			const runtime = this.plugin.runtime();
+			const keyVerifier = runtime.runtime === "proxy" || runtime.runtime === "claude" ? this.plugin.quizKeyVerifier() : undefined;
+			const settled = await settleQuizAnswer(this.plugin.store, quiz, response, this.session, this.plugin.answerGrader(), keyVerifier);
 			if (this.record.openQuiz?.id === quiz.id) this.record.openQuiz = undefined;
 			if ("outcome" in settled) {
 				this.quizRecorded(settled.outcome);
@@ -3143,10 +3146,10 @@ export class ChatView extends ItemView implements ToolUI {
 		if (runtime.runtime === "setup") return null;
 		if (runtime.runtime === "claude") {
 			const cfg = this.plugin.claudeCodeConfig();
-			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session, access, grader: this.plugin.answerGrader() }) : null;
+			return cfg ? new ClaudeCodeSession({ ...cfg, store, tools, system, session, access, grader: this.plugin.answerGrader(), keyVerifier: this.plugin.quizKeyVerifier() }) : null;
 		}
 		const p = runtime.runtime === "proxy" ? this.plugin.makeGroundworkProvider() : new DemoAsideProvider();
-		return new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8, access, grader: this.plugin.answerGrader() });
+		return new AgentSession({ provider: p, store, tools, system, session, maxSteps: 8, access, grader: this.plugin.answerGrader(), keyVerifier: runtime.runtime === "proxy" ? this.plugin.quizKeyVerifier() : undefined });
 	}
 
 	private dropAsides(): void {

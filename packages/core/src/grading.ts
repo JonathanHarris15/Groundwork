@@ -2,6 +2,7 @@ import { nextMove, type PrerequisiteState } from "./diagnose";
 import { judgeUnderstanding, pickLabel } from "./judgments";
 import { describeEdge, predictCorrect, type ConceptStats } from "./model";
 import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
+import { acceptFreeAnswer, recheckQuizKey, type QuizKeyVerifier } from "./quiz-key-jev";
 import { familiarityLabel, gradeQuiz, needsJudgment, type FreeResponseJudgment, type PreparedQuiz, type QuizGrade, type QuizResponse } from "./quiz";
 import type { KnowledgeStore } from "./store";
 
@@ -60,6 +61,8 @@ export async function recordQuizAnswer(
 	response: QuizResponse,
 	session?: { id: string },
 	judgment?: FreeResponseJudgment,
+	keyVerifier?: QuizKeyVerifier,
+	signal?: AbortSignal,
 ): Promise<QuizOutcome> {
 	let applied = judgment;
 	let judgmentNote: string | undefined;
@@ -80,14 +83,18 @@ export async function recordQuizAnswer(
 			applied = { ...judgment, outcome: graded.outcome, slip: graded.slip };
 		}
 	}
-	const grade = gradeQuiz(quiz, response, applied);
-	const { concept, before, after } = await store.recordEvidence(quiz.concept, {
+	const checked = await recheckQuizKey(quiz, keyVerifier, signal);
+	const accepted = await acceptFreeAnswer(checked, response, applied, keyVerifier, signal);
+	if (accepted && applied && accepted.outcome === "correct" && applied.outcome !== "correct" && applied.slip !== true) judgmentNote = undefined;
+	applied = accepted;
+	const grade = gradeQuiz(checked, response, applied);
+	const { concept, before, after } = await store.recordEvidence(checked.concept, {
 		outcome: grade.outcome,
-		difficulty: quiz.difficulty,
-		kind: quiz.kind,
-		question: stripMd(quiz.question),
-		chosen: quiz.format === "free" ? undefined : grade.selectedLabels.join(" | ") || undefined,
-		response: quiz.format === "free" && response.text ? response.text.slice(0, 2000) : undefined,
+		difficulty: checked.difficulty,
+		kind: checked.kind,
+		question: stripMd(checked.question),
+		chosen: checked.format === "free" ? undefined : grade.selectedLabels.join(" | ") || undefined,
+		response: checked.format === "free" && response.text ? response.text.slice(0, 2000) : undefined,
 		correctAnswer: grade.correctLabels.join(" | ").slice(0, 500),
 		misconception: grade.misconception,
 		slip: grade.slip,
@@ -104,13 +111,13 @@ export async function recordQuizAnswer(
 		session?.id ?? "default",
 		{
 			concept: concept.title,
-			difficulty: quiz.difficulty,
-			question: stripMd(quiz.question),
+			difficulty: checked.difficulty,
+			question: stripMd(checked.question),
 			outcome: grade.outcome,
 			familiarity: response.familiarity,
 			misconception: grade.misconception,
 			slip: grade.slip,
-			kind: quiz.kind,
+			kind: checked.kind,
 		},
 		{ prerequisites, floor: after.floor, ceiling: after.ceiling },
 	);
@@ -119,12 +126,12 @@ export async function recordQuizAnswer(
 		const piece = await pickLabel(
 			client,
 			"Which prerequisite is the piece this missed question actually depends on?",
-			{ concept: concept.title, question: stripMd(quiz.question), misconception: grade.misconception ?? "" },
+			{ concept: concept.title, question: stripMd(checked.question), misconception: grade.misconception ?? "" },
 			weak.map((p) => ({ id: p.title, label: p.title, detail: `${p.status}${p.floor ? `, holds d${p.floor}` : ""}` })),
 		);
 		if (piece) guidance = `${guidance}\nThe missing piece is ${piece}. Ask about that prerequisite, not the others.`;
 	}
-	return { quiz, response, grade, before, after, conceptTitle: concept.title, guidance: guidance || undefined, judgmentNote };
+	return { quiz: checked, response, grade, before, after, conceptTitle: concept.title, guidance: guidance || undefined, judgmentNote };
 }
 
 /** Free-response answers wait here until the tutor grades them with grade_answer. */
@@ -160,13 +167,14 @@ export async function settleQuizAnswer(
 	response: QuizResponse,
 	session?: { id: string },
 	grader?: AnswerGrader,
+	keyVerifier?: QuizKeyVerifier,
 ): Promise<{ outcome: QuizOutcome } | { pending: string }> {
 	if (needsJudgment(quiz, response)) {
 		const [judgment] = await judgmentsFor(grader, [toGradeItem(quiz, response)]);
 		if (!judgment) return { pending: awaitJudgment(quiz, response) };
-		return { outcome: await recordQuizAnswer(store, quiz, response, session, judgment) };
+		return { outcome: await recordQuizAnswer(store, quiz, response, session, judgment, keyVerifier) };
 	}
-	return { outcome: await recordQuizAnswer(store, quiz, response, session) };
+	return { outcome: await recordQuizAnswer(store, quiz, response, session, undefined, keyVerifier) };
 }
 
 export function takeAwaiting(quizId: string): { quiz: PreparedQuiz; response: QuizResponse } | undefined {

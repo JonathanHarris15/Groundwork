@@ -17,6 +17,7 @@ import type { ConnectCodeDirectory } from "./connect-codes";
 import type { SetupFunnel } from "./setup-funnel";
 import type { DownloadCache } from "./obsidian-downloads";
 import { publicSetupRoute, signedInSetupRoute } from "./setup-routes";
+import { checkQuizKey } from "./quiz-key";
 
 export interface ServerDeps {
 	auth: Auth;
@@ -95,7 +96,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 
 		const identity = await deps.auth.uid(authorization);
 		const uid = identity.uid;
-		if (path !== "/v1/groundwork" && path !== "/v1/memory" && path !== "/v1/grade" && path !== "/v1/context") {
+		if (path !== "/v1/groundwork" && path !== "/v1/memory" && path !== "/v1/grade" && path !== "/v1/context" && path !== "/v1/quiz-key") {
 			try {
 				await deps.billing.sync?.(uid, identity.email);
 			} catch (err) {
@@ -293,6 +294,25 @@ export async function route(method: string, path: string, body: unknown, deps: S
 				console.error("Could not record grading usage.", err);
 			}
 			return { status: 200, json: { judgments } };
+		}
+		if (method === "POST" && path === "/v1/quiz-key") {
+			if (!deps.openRouterKey) return { status: 503, json: { error: "Quiz key check is not set up on this server yet." } };
+			const result = await checkQuizKey(deps.fetchImpl ?? platformFetch, deps.openRouterKey, body);
+			try {
+				await deps.usage?.record(uid, {
+					plan: view.plan ?? "none",
+					model: "unknown",
+					feature: "grading",
+					calls: 1,
+					costUsd: 0,
+					chargedUsd: 0,
+					inputTokens: result.inputTokens,
+					outputTokens: result.outputTokens,
+				});
+			} catch (err) {
+				console.error("Could not record a quiz key check.", err);
+			}
+			return { status: 200, json: result };
 		}
 		return { status: 404, json: { error: "Not found." } };
 	} catch (err) {
