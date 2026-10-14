@@ -26,6 +26,7 @@ export * from "./tools";
 export * from "./intent";
 export * from "./turn-repair";
 export * from "./account/anthropic-stream";
+export * from "./agent/tutor-events";
 export * from "./prompt";
 export * from "./aside";
 export * from "./figure";
