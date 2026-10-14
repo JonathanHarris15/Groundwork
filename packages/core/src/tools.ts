@@ -129,6 +129,8 @@ const questionProperties: Record<string, JSONSchema> = {
 		description:
 			'"choice" (default) grades instantly. "free": they type an answer (LaTeX renders) and you grade it with grade_answer unless the result says already graded. Use free when they must produce something.',
 	},
+	solution: str("Choice: the worked solution, written before the options. Solve the question here first. Not shown until after they answer."),
+	answer: str("Choice: the correct claim in the same words as the correct option, written after the solution and before the options. Not a letter and not an index."),
 	options: {
 		type: "array",
 		minItems: 2,
@@ -137,14 +139,15 @@ const questionProperties: Record<string, JSONSchema> = {
 			type: "object",
 			properties: {
 				label: str("The option as shown. A bare claim with no justification. Markdown/LaTeX allowed."),
-				value: str("Short stable id used in correctAnswer, e.g. 'a' or 'chain-rule'."),
+				value: str("The claim this option makes, or a stable id for that claim. Not a letter that means its position, and not an index."),
 				misconception: str("Distractors only: the specific wrong belief that would lead someone to pick this."),
 			},
 			required: ["label", "value"],
 		},
 	},
 	correctAnswer: {
-		description: "Choice only: option value (single-select) or array of values (multi-select, exact-set grading).",
+		description:
+			"Choice: the value of the option whose label equals answer. Not a letter, not an index, and not the option's position. The question is checked before it is shown; a key that disagrees with the worked answer or an independent check is fixed or the question is not shown.",
 		anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
 	},
 	referenceAnswer: str("Free only (required): the model answer, with LaTeX. Shown to the learner after grading."),
@@ -534,7 +537,7 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again or say it did not load. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
+			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again or say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown. A key that disagrees with an independent check is fixed, or the question is not shown and you must call quiz again. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session, grader, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };

@@ -18,6 +18,7 @@ export * from "./goal-plan";
 export * from "./mastery-tone";
 export * from "./store";
 export * from "./quiz";
+export { choiceKey } from "./quiz-key";
 export * from "./diagnose";
 export * from "./grading";
 export * from "./jev";

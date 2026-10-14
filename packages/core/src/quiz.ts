@@ -1,4 +1,5 @@
 import { MAX_FAMILIARITY, type EvidenceKind, type Outcome } from "./model";
+import { choiceKey, settleChoice } from "./quiz-key";
 import { asUnknown } from "./unknown";
 import { normalizeTutorMarkdown } from "./tutor-markdown";
 
@@ -25,6 +26,10 @@ export interface QuizInput {
 	referenceAnswer?: string;
 	/** Free response: what full credit and partial credit require. */
 	rubric?: string;
+	/** Worked steps, written before the options. Not shown until after the answer. */
+	solution?: string;
+	/** The correct claim, in the same words as the correct option. Not a letter or an index. */
+	answer?: string;
 	explanation: string;
 	difficulty: number;
 	kind?: EvidenceKind;
@@ -49,6 +54,8 @@ export interface PreparedQuiz {
 	correct: string[];
 	reference?: string;
 	rubric?: string;
+	solution?: string;
+	answer?: string;
 	explanation: string;
 	difficulty: number;
 	kind: EvidenceKind;
@@ -121,7 +128,9 @@ export function prepareQuiz(input: QuizInput, random: () => number = Math.random
 		question: normalizeTutorMarkdown(String(input.question ?? "").trim()),
 		details: input.details?.trim() ? normalizeTutorMarkdown(input.details.trim()) : undefined,
 		purpose: input.purpose?.trim() ? normalizeTutorMarkdown(input.purpose.trim()) : undefined,
-		explanation: normalizeTutorMarkdown(input.explanation?.trim() ?? ""),
+		explanation: normalizeTutorMarkdown(input.explanation?.trim() || input.solution?.trim() || ""),
+		solution: input.solution?.trim() ? normalizeTutorMarkdown(input.solution.trim()) : undefined,
+		answer: input.answer?.trim() ? normalizeTutorMarkdown(input.answer.trim()) : undefined,
 		difficulty: Math.min(5, Math.max(1, Math.round(input.difficulty || 3))),
 		kind: input.kind ?? "check",
 	};
@@ -166,6 +175,16 @@ export function prepareQuiz(input: QuizInput, random: () => number = Math.random
 	const multiSelect = input.multiSelect ?? correct.length > 1;
 	if (!multiSelect && correct.length > 1) throw new Error("Several correct answers require multiSelect: true.");
 
+	const settled = settleChoice({
+		question: base.question,
+		explanation: base.explanation,
+		solution: base.solution,
+		answer: base.answer,
+		options,
+		stated: [...new Set(correct)],
+		multiSelect,
+	});
+
 	if (input.shuffle !== false) {
 		for (let i = options.length - 1; i > 0; i--) {
 			const j = Math.floor(random() * (i + 1));
@@ -173,7 +192,7 @@ export function prepareQuiz(input: QuizInput, random: () => number = Math.random
 		}
 	}
 
-	return { ...base, format, options, correct: [...new Set(correct)], multiSelect };
+	return { ...base, format, options, correct: settled, multiSelect };
 }
 
 /** Models sometimes send a multi-select answer as a JSON-encoded string. */
@@ -198,7 +217,8 @@ export function needsJudgment(quiz: PreparedQuiz, response: QuizResponse): boole
 
 export function gradeQuiz(quiz: PreparedQuiz, response: QuizResponse, judgment?: FreeResponseJudgment): QuizGrade {
 	const label = (v: string) => quiz.options.find((o) => o.value === v)?.label ?? v;
-	const correctLabels = quiz.format === "free" ? [quiz.reference ?? ""] : quiz.correct.map(label);
+	const key = quiz.format === "free" ? quiz.correct : choiceKey(quiz);
+	const correctLabels = quiz.format === "free" ? [quiz.reference ?? ""] : key.map(label);
 	if (response.dontKnow) {
 		return { outcome: "dont_know", correct: false, selectedLabels: [], correctLabels };
 	}
@@ -217,8 +237,8 @@ export function gradeQuiz(quiz: PreparedQuiz, response: QuizResponse, judgment?:
 		};
 	}
 	const sel = [...new Set(response.selected)];
-	const ok = sel.length === quiz.correct.length && sel.every((v) => quiz.correct.includes(v));
-	const wrongPicks = sel.filter((v) => !quiz.correct.includes(v));
+	const ok = sel.length === key.length && sel.every((v) => key.includes(v));
+	const wrongPicks = sel.filter((v) => !key.includes(v));
 	const misconception = wrongPicks
 		.map((v) => quiz.options.find((o) => o.value === v)?.misconception)
 		.filter(Boolean)
@@ -245,10 +265,10 @@ export function parseChatAnswer(quiz: PreparedQuiz, answer: string | string[]): 
 		const p = raw.replace(/[().:]/g, "").trim();
 		const byValue = quiz.options.find((o) => o.value === raw || o.value === p);
 		const byLabel = quiz.options.find((o) => o.label.toLowerCase() === raw.toLowerCase());
-		let byLetter: QuizOption | undefined;
-		if (/^[a-z]$/i.test(p)) byLetter = quiz.options[p.toLowerCase().charCodeAt(0) - 97];
-		else if (/^\d+$/.test(p)) byLetter = quiz.options[Number(p) - 1];
-		const hit = byValue ?? byLabel ?? byLetter;
+		const displayIndex = /^[a-z]$/i.test(p) ? p.toLowerCase().charCodeAt(0) - 97 : /^\d+$/.test(p) ? Number(p) - 1 : -1;
+		const byDisplay = displayIndex >= 0 && displayIndex < quiz.options.length ? quiz.options[displayIndex] : undefined;
+		// A letter or a number is the option on screen. It is not an option whose value happens to be that letter.
+		const hit = byDisplay ?? byValue ?? byLabel;
 		if (hit && !out.includes(hit.value)) out.push(hit.value);
 	}
 	if (!out.length && !Array.isArray(answer)) {
