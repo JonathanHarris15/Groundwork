@@ -14,7 +14,7 @@ export interface WebConfig {
 	ga4MeasurementId: string | null;
 	/** Google Ads id (AW-…). Production defaults to AW-18498207004 when the env var is unset. */
 	googleAdsId: string | null;
-	/** True when the Stripe webhook sends purchase. False means the browser sends it. */
+	/** True when the Stripe webhook sends purchase. False means the browser sends a purchase only when Stripe collected more than zero. */
 	ga4ServerPurchase: boolean;
 }
 

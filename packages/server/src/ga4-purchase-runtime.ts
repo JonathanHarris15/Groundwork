@@ -6,7 +6,7 @@ import { ga4MeasurementProtocolReady, resolveMeasurementIds } from "./tracking";
 /**
  * Sends purchases only on Cloud Run. A laptop, Playwright, or an agent server must not
  * post to the production Measurement Protocol endpoint, even if the secret is in the environment.
- * Until `GA4_API_SECRET` is the secret for this property, the browser sends the purchase and the webhook still succeeds.
+ * Until `GA4_API_SECRET` is the secret for this property, the browser sends a purchase only when Stripe collected more than zero. The webhook still succeeds.
  */
 export function loadGa4PurchaseReporter(
 	env: NodeJS.ProcessEnv = process.env,
@@ -30,7 +30,7 @@ export function loadGa4PurchaseReporter(
 			const result = await deliverPurchase(session, { measurementId, apiSecret, ledger: store, fetchImpl });
 			if (result === "unconfigured" && !warned) {
 				warned = true;
-				console.error("GA4 purchase was not sent from the server. Set GA4_API_SECRET to the Measurement Protocol secret for this property. The browser sends it until then.");
+				console.error("GA4 purchase was not sent from the server. Set GA4_API_SECRET to the Measurement Protocol secret for this property. Until then the browser sends a purchase only when Stripe collected more than zero.");
 			}
 		},
 	};

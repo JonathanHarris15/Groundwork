@@ -1,10 +1,10 @@
 import { configureMeasurementTags, emitObsidianConnected, emitSetupLinkSent, emitSignUp, type Ga4EventClient } from "./ga4-events";
 import {
 	attributionFromSearch,
+	browserPurchaseFromCheckout,
 	checkoutSuccessFromSearch,
 	cleanGaClientId,
 	cleanGaSessionId,
-	clientPurchaseParams,
 	consentDefaults,
 	gaClientIdFromCookie,
 	gaSessionIdFromCookie,
@@ -215,8 +215,9 @@ function readPurchaseIds(): string[] {
 }
 
 /**
- * One purchase for this Checkout Session, with the Stripe total.
+ * One purchase for this Checkout Session, only when Stripe collected more than zero.
  * Skipped when the server sends it, when the visitor opted out, or when the amount is unknown.
+ * A comp is stored so a reload does not fire. The plan in the URL is not a price.
  */
 async function reportClientPurchase(): Promise<void> {
 	const pending = landingPurchase;
@@ -224,19 +225,29 @@ async function reportClientPurchase(): Promise<void> {
 	if (readChoice() === "denied") return;
 	const already = readPurchaseIds();
 	if (!shouldRecordPurchase(pending.sessionId, already)) return;
-	let amount: number | null = null;
+	let body: unknown = null;
 	try {
 		const res = await window["fetch"](`/v1/billing/checkout-amount?session_id=${encodeURIComponent(pending.sessionId)}`);
 		if (!res.ok) return;
-		const body = (await res.json()) as { amountUsd?: unknown };
-		amount = typeof body.amountUsd === "number" ? body.amountUsd : null;
+		body = await res.json();
 	} catch {
 		return;
 	}
-	const params = clientPurchaseParams(pending.sessionId, amount ?? Number.NaN, readAttribution() ?? {}, pending.plan);
-	if (!params) return;
-	gtag("event", "purchase", params);
-	writeJson(PURCHASE_KEY, [...already, pending.sessionId]);
+	const decision = browserPurchaseFromCheckout(body, pending.sessionId, readAttribution() ?? {}, pending.plan);
+	if (decision.action === "skip") return;
+	if (decision.action === "purchase") gtag("event", "purchase", decision.params);
+	writeJson(PURCHASE_KEY, rememberIds(already, decision.remember));
+}
+
+function rememberIds(already: string[], extra: readonly string[]): string[] {
+	const seen = new Set(already);
+	const out = [...already];
+	for (const id of extra) {
+		if (seen.has(id)) continue;
+		seen.add(id);
+		out.push(id);
+	}
+	return out;
 }
 
 async function loadTag(): Promise<void> {
