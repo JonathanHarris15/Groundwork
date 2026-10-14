@@ -229,6 +229,34 @@ test("sign_up fires only when the account was just created", async ({ page }) =>
 	expect(await countEvents(page, "sign_up")).toBe(0);
 });
 
+test("a new account fires the Ads conversion once", async ({ page }) => {
+	await page.route("**/v1/web-config", async (route) => {
+		const response = await route.fetch();
+		const json = await response.json();
+		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F1270VCGEL", googleAdsId: "AW-18498207004" } });
+	});
+	await page.route("**/v1/account", async (route) => {
+		if (route.request().method() !== "GET") {
+			await route.continue();
+			return;
+		}
+		const response = await route.fetch();
+		const json = await response.json();
+		await route.fulfill({ response, json: { ...json, created: true } });
+	});
+	await page.goto("/?gclid=CjwKCtestclick#signin");
+	await page.getByRole("button", { name: "Continue on this device" }).click();
+	await expect.poll(async () => countEvents(page, "sign_up")).toBe(1);
+	await expect.poll(async () => countEvents(page, "conversion")).toBe(1);
+	expect(await conversionParams(page)).toEqual([{ send_to: "AW-18498207004/O9fRCK3JzJsdEJz60PRE", gclid: "CjwKCtestclick" }]);
+
+	await page.goto("/?dedupe=1#signin");
+	await page.getByRole("button", { name: "Continue on this device" }).click();
+	await expect(page.getByRole("heading", { name: /Welcome|Choose a plan/i })).toBeVisible();
+	expect(await countEvents(page, "conversion")).toBe(0);
+	expect(await countEvents(page, "sign_up")).toBe(0);
+});
+
 test("a returning account does not fire sign_up", async ({ page }) => {
 	await page.route("**/v1/account", async (route) => {
 		if (route.request().method() !== "GET") {
@@ -245,35 +273,73 @@ test("a returning account does not fire sign_up", async ({ page }) => {
 	expect(await countEvents(page, "sign_up")).toBe(0);
 });
 
-test("the success page does not emit a purchase", async ({ page }) => {
+test("the success page reports the Stripe amount once", async ({ page }) => {
 	let amountHits = 0;
 	const google: string[] = [];
 	await page.route("**/v1/billing/checkout-amount**", async (route) => {
 		amountHits += 1;
-		await route.fulfill({ status: 500, body: "no" });
+		await route.fulfill({ json: { amountUsd: 0, currency: "USD" } });
 	});
 	await page.route("**/v1/web-config", async (route) => {
 		const response = await route.fetch();
 		const json = await response.json();
-		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: "AW-123" } });
+		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F1270VCGEL", googleAdsId: "AW-18498207004", ga4ServerPurchase: false } });
 	});
 	page.on("request", (request) => {
 		const url = request.url();
 		if (/googletagmanager|google-analytics|\/g\/collect/.test(url)) google.push(url);
 	});
 	await page.goto("/?billing=success&session_id=cs_test_1&plan=included");
-	await page.waitForFunction(() => Boolean((window as unknown as { GroundworkTracking?: unknown }).GroundworkTracking));
-	await page.waitForLoadState("networkidle");
-	expect(await purchaseParams(page)).toEqual([]);
-	expect(await countEvents(page, "purchase")).toBe(0);
+	await expect.poll(async () => purchaseParams(page)).toEqual([
+		{
+			transaction_id: "cs_test_1",
+			value: 0,
+			currency: "USD",
+			items: [{ item_id: "included", item_name: "Groundwork", price: 0, quantity: 1 }],
+		},
+	]);
+	expect(amountHits).toBe(1);
 	expect(await countEvents(page, "conversion")).toBe(0);
-	expect(amountHits).toBe(0);
 	expect(google).toEqual([]);
-	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toBeNull();
+	expect(await page.evaluate(() => localStorage.getItem("gw-purchases"))).toContain("cs_test_1");
+
+	await page.goto("/?billing=success&session_id=cs_test_1&plan=included");
+	await page.waitForLoadState("networkidle");
+	expect(await countEvents(page, "purchase")).toBe(0);
+	expect(amountHits).toBe(1);
 
 	await page.goto("/?billing=success&subscription_id=sub_123&plan=byom");
-	await page.waitForFunction(() => Boolean((window as unknown as { GroundworkTracking?: unknown }).GroundworkTracking));
+	await page.waitForLoadState("networkidle");
 	expect(await countEvents(page, "purchase")).toBe(0);
+	expect(amountHits).toBe(1);
+});
+
+test("an opt-out or a server purchase skips the browser purchase", async ({ page }) => {
+	let amountHits = 0;
+	await page.route("**/v1/billing/checkout-amount**", async (route) => {
+		amountHits += 1;
+		await route.fulfill({ json: { amountUsd: 20, currency: "USD" } });
+	});
+	await page.addInitScript(() => {
+		localStorage.setItem("gw-consent", "denied");
+	});
+	await page.goto("/?billing=success&session_id=cs_test_denied&plan=included");
+	await page.waitForLoadState("networkidle");
+	expect(await countEvents(page, "purchase")).toBe(0);
+	expect(amountHits).toBe(0);
+
+	await page.addInitScript(() => {
+		localStorage.setItem("gw-consent", "granted");
+	});
+	await page.route("**/v1/web-config", async (route) => {
+		const response = await route.fetch();
+		const json = await response.json();
+		await route.fulfill({ response, json: { ...json, ga4ServerPurchase: true } });
+	});
+	await page.goto("/?billing=success&session_id=cs_test_server&plan=byom");
+	await page.waitForLoadState("networkidle");
+	expect(await countEvents(page, "purchase")).toBe(0);
+	expect(amountHits).toBe(0);
 });
 
 test("automation does not send page_view, sign_up, or purchase to the production property", async ({ page }) => {
@@ -284,7 +350,7 @@ test("automation does not send page_view, sign_up, or purchase to the production
 	await page.route("**/v1/web-config", async (route) => {
 		const response = await route.fetch();
 		const json = await response.json();
-		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F4236HGZSM", googleAdsId: "AW-123" } });
+		await route.fulfill({ response, json: { ...json, ga4MeasurementId: "G-F1270VCGEL", googleAdsId: "AW-123" } });
 	});
 	await page.route(COLLECT, async (route) => {
 		hits.push(route.request().url());
@@ -300,6 +366,7 @@ test("automation does not send page_view, sign_up, or purchase to the production
 		(window as unknown as { GroundworkTracking?: { noteSignUp: (created: boolean, method: string) => void } }).GroundworkTracking?.noteSignUp(true, "Google");
 	});
 	await expect.poll(async () => countEvents(page, "sign_up")).toBe(1);
+	expect(await countEvents(page, "conversion")).toBe(0);
 	await page.waitForLoadState("networkidle");
 	expect(hits).toEqual([]);
 	expect(scripts).toEqual([]);
@@ -503,6 +570,22 @@ async function countEvents(page: Page, name: string): Promise<number> {
 			return Array.from(entry as ArrayLike<unknown>);
 		}
 	}, name);
+}
+
+async function conversionParams(page: Page): Promise<Array<{ send_to?: string; gclid?: string }>> {
+	return page.evaluate(() => {
+		const layer = (window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [];
+		return layer.flatMap((entry) => {
+			const args = argsOf(entry);
+			if (!args || args[1] !== "conversion") return [];
+			const params = args[2] as { send_to?: string; gclid?: string };
+			return [{ send_to: params.send_to, gclid: params.gclid }];
+		});
+		function argsOf(entry: unknown): unknown[] | null {
+			if (entry == null || typeof entry !== "object" || typeof (entry as { length?: unknown }).length !== "number") return null;
+			return Array.from(entry as ArrayLike<unknown>);
+		}
+	});
 }
 
 async function purchaseParams(page: import("@playwright/test").Page): Promise<Array<{ transaction_id?: string; value?: number; currency?: string }>> {

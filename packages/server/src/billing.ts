@@ -26,7 +26,8 @@ export interface Billing {
 	sync?(uid: string, email?: string): Promise<void>;
 	/**
 	 * Dollars paid on a Checkout Session, from amount_total. Zero is a real payment.
-	 * The browser must not turn this into a GA4 purchase. The webhook reports the purchase.
+	 * The success page uses this when the Measurement Protocol secret is unset.
+	 * The list price is never the purchase value.
 	 */
 	checkoutAmount?(sessionId: string): Promise<number | null>;
 	/** Accounts carrying the GROUNDWORKTESTER promotion, when Stripe can say so. */

@@ -57,7 +57,13 @@ export function resolveContactEmail(envValue: string | undefined): string {
 }
 
 /** Production measurement id. Cloud Run uses this when GA4_MEASUREMENT_ID is unset. */
-export const PRODUCTION_GA4_MEASUREMENT_ID = "G-F4236HGZSM";
+export const PRODUCTION_GA4_MEASUREMENT_ID = "G-F1270VCGEL";
+
+/** Production Google Ads id. Cloud Run uses this when GOOGLE_ADS_ID is unset. */
+export const PRODUCTION_GOOGLE_ADS_ID = "AW-18498207004";
+
+/** Ads conversion for a new account. Only this Ads id. A later sign-in does not send it. */
+export const SIGN_UP_ADS_CONVERSION_SEND_TO = "AW-18498207004/O9fRCK3JzJsdEJz60PRE";
 
 /** GA4 ids look like G-ABC123. Ads ids look like AW-123. Anything else is ignored. */
 export function measurementIds(ga4: string | undefined, ads: string | undefined): { ga4: string | null; ads: string | null } {
@@ -70,15 +76,68 @@ export function measurementIds(ga4: string | undefined, ads: string | undefined)
 }
 
 /**
- * GA4 is on in production even when the env var is empty. An explicit env value
- * wins, including a blank override only when it is unset. Ads stays off until
- * GOOGLE_ADS_ID is a real AW- id. Conversion labels are not required.
+ * GA4 and Google Ads are on in production when their env vars are empty.
+ * An explicit env value wins. A blank value counts as unset.
  */
 export function resolveMeasurementIds(input: { ga4: string | undefined; ads: string | undefined; production: boolean }): { ga4: string | null; ads: string | null } {
 	const parsed = measurementIds(input.ga4, input.ads);
-	const explicit = input.ga4?.trim() ?? "";
-	const ga4 = explicit ? parsed.ga4 : input.production ? PRODUCTION_GA4_MEASUREMENT_ID : null;
-	return { ga4, ads: parsed.ads };
+	const explicitGa4 = input.ga4?.trim() ?? "";
+	const explicitAds = input.ads?.trim() ?? "";
+	const ga4 = explicitGa4 ? parsed.ga4 : input.production ? PRODUCTION_GA4_MEASUREMENT_ID : null;
+	const ads = explicitAds ? parsed.ads : input.production ? PRODUCTION_GOOGLE_ADS_ID : null;
+	return { ga4, ads };
+}
+
+/** The sign-up conversion label, or null when this Ads id is not the production account. */
+export function signUpAdsSendTo(adsId: string | null | undefined): string | null {
+	return adsId === PRODUCTION_GOOGLE_ADS_ID ? SIGN_UP_ADS_CONVERSION_SEND_TO : null;
+}
+
+/**
+ * True when Cloud Run can post the Measurement Protocol.
+ * The secret has to be the one for the measurement id this process will send.
+ */
+export function ga4MeasurementProtocolReady(env: {
+	K_SERVICE?: string;
+	GA4_MEASUREMENT_ID?: string;
+	GOOGLE_ADS_ID?: string;
+	GA4_API_SECRET?: string;
+}): boolean {
+	if (!env.K_SERVICE?.trim()) return false;
+	const measurementId = resolveMeasurementIds({
+		ga4: env.GA4_MEASUREMENT_ID,
+		ads: env.GOOGLE_ADS_ID,
+		production: true,
+	}).ga4;
+	return Boolean(measurementId && env.GA4_API_SECRET?.trim());
+}
+
+/** Checkout success return, with a real Checkout Session id. The list price is not here. */
+export function checkoutSuccessFromSearch(search: string): { sessionId: string; plan: "byom" | "included" | null } | null {
+	const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+	if (params.get("billing") !== "success") return null;
+	const id = params.get("session_id")?.trim() ?? "";
+	if (!/^cs_[A-Za-z0-9_]+$/.test(id)) return null;
+	const plan = params.get("plan");
+	return { sessionId: id, plan: plan === "byom" || plan === "included" ? plan : null };
+}
+
+/**
+ * Browser purchase params. `amountUsd` is Stripe `amount_total` in dollars, never the list price.
+ * `0` is a real total.
+ */
+export function clientPurchaseParams(
+	sessionId: string,
+	amountUsd: number,
+	attribution: Attribution,
+	plan: "byom" | "included" | null,
+): Record<string, unknown> | null {
+	if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return null;
+	if (typeof amountUsd !== "number" || !Number.isFinite(amountUsd) || amountUsd < 0) return null;
+	const params: Record<string, unknown> = { ...attribution, transaction_id: sessionId, value: amountUsd, currency: "USD" };
+	if (plan === "byom") params.items = [{ item_id: "byom", item_name: "Bring your own model", price: amountUsd, quantity: 1 }];
+	if (plan === "included") params.items = [{ item_id: "included", item_name: "Groundwork", price: amountUsd, quantity: 1 }];
+	return params;
 }
 
 export function tagScriptUrl(ids: { ga4: string | null; ads: string | null }): string | null {
@@ -171,7 +230,7 @@ const PRODUCTION_HOSTS = new Set(["groundworklearn.com", "www.groundworklearn.co
 
 /**
  * The production tag loads only for a real visitor on the live site.
- * Local servers, Playwright (`navigator.webdriver`), and headless agents must not hit G-F4236HGZSM.
+ * Local servers, Playwright (`navigator.webdriver`), and headless agents must not hit G-F1270VCGEL.
  */
 export function shouldLoadMeasurementTag(input: { hostname: string; webdriver: boolean; userAgent?: string }): boolean {
 	if (input.webdriver) return false;

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveContactEmail, resolveMeasurementIds } from "./tracking";
+import { ga4MeasurementProtocolReady, resolveContactEmail, resolveMeasurementIds } from "./tracking";
 
 /** Public values the account site needs. Nothing in here is a secret. */
 export interface WebConfig {
@@ -10,10 +10,12 @@ export interface WebConfig {
 	/** True when the API accepts requests without Firebase. Never set on production Cloud Run. */
 	localDev: boolean;
 	contactEmail: string;
-	/** GA4 measurement id. Production defaults to G-F4236HGZSM when the env var is unset. */
+	/** GA4 measurement id. Production defaults to G-F1270VCGEL when the env var is unset. */
 	ga4MeasurementId: string | null;
-	/** Google Ads id (AW-…). Null when GOOGLE_ADS_ID is unset. Ads conversions are not required. */
+	/** Google Ads id (AW-…). Production defaults to AW-18498207004 when the env var is unset. */
 	googleAdsId: string | null;
+	/** True when the Stripe webhook sends purchase. False means the browser sends it. */
+	ga4ServerPurchase: boolean;
 }
 
 export function webConfig(billing: boolean, firebaseAdmin: boolean): WebConfig {
@@ -31,7 +33,7 @@ export function webConfig(billing: boolean, firebaseAdmin: boolean): WebConfig {
 	return { firebase, billing, localDev, ...publicSiteFields() };
 }
 
-function publicSiteFields(): { contactEmail: string; ga4MeasurementId: string | null; googleAdsId: string | null } {
+function publicSiteFields(): { contactEmail: string; ga4MeasurementId: string | null; googleAdsId: string | null; ga4ServerPurchase: boolean } {
 	const ids = resolveMeasurementIds({
 		ga4: process.env.GA4_MEASUREMENT_ID,
 		ads: process.env.GOOGLE_ADS_ID,
@@ -41,6 +43,7 @@ function publicSiteFields(): { contactEmail: string; ga4MeasurementId: string | 
 		contactEmail: resolveContactEmail(process.env.CONTACT_EMAIL),
 		ga4MeasurementId: ids.ga4,
 		googleAdsId: ids.ads,
+		ga4ServerPurchase: ga4MeasurementProtocolReady(process.env),
 	};
 }
 

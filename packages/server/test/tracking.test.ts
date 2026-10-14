@@ -19,6 +19,11 @@ import {
 	measurementIds,
 	mergeAttribution,
 	PRODUCTION_GA4_MEASUREMENT_ID,
+	PRODUCTION_GOOGLE_ADS_ID,
+	SIGN_UP_ADS_CONVERSION_SEND_TO,
+	checkoutSuccessFromSearch,
+	clientPurchaseParams,
+	ga4MeasurementProtocolReady,
 	purchaseValue,
 	resolveContactEmail,
 	resolveMeasurementIds,
@@ -26,6 +31,7 @@ import {
 	shouldFireSignUp,
 	shouldLoadMeasurementTag,
 	shouldRecordPurchase,
+	signUpAdsSendTo,
 	tagScriptUrl,
 } from "../src/tracking";
 
@@ -88,15 +94,35 @@ describe("ads tracking", () => {
 		expect(measurementIds("nope", "AW-")).toEqual({ ga4: null, ads: null });
 		expect(tagScriptUrl({ ga4: null, ads: null })).toBeNull();
 		expect(tagScriptUrl({ ga4: "G-ABC123", ads: null })).toContain("G-ABC123");
-		expect(PRODUCTION_GA4_MEASUREMENT_ID).toBe("G-F4236HGZSM");
+		expect(PRODUCTION_GA4_MEASUREMENT_ID).toBe("G-F1270VCGEL");
+		expect(PRODUCTION_GOOGLE_ADS_ID).toBe("AW-18498207004");
+		expect(SIGN_UP_ADS_CONVERSION_SEND_TO).toBe("AW-18498207004/O9fRCK3JzJsdEJz60PRE");
+		expect(signUpAdsSendTo(PRODUCTION_GOOGLE_ADS_ID)).toBe(SIGN_UP_ADS_CONVERSION_SEND_TO);
+		expect(signUpAdsSendTo("AW-123")).toBeNull();
+		expect(signUpAdsSendTo(null)).toBeNull();
 		expect(resolveMeasurementIds({ ga4: undefined, ads: undefined, production: true })).toEqual({
-			ga4: "G-F4236HGZSM",
-			ads: null,
+			ga4: "G-F1270VCGEL",
+			ads: "AW-18498207004",
 		});
-		expect(resolveMeasurementIds({ ga4: "", ads: "", production: true })).toEqual({ ga4: "G-F4236HGZSM", ads: null });
+		expect(resolveMeasurementIds({ ga4: "", ads: "", production: true })).toEqual({ ga4: "G-F1270VCGEL", ads: "AW-18498207004" });
 		expect(resolveMeasurementIds({ ga4: undefined, ads: "AW-123", production: false })).toEqual({ ga4: null, ads: "AW-123" });
-		expect(resolveMeasurementIds({ ga4: "G-OTHER1", ads: undefined, production: true })).toEqual({ ga4: "G-OTHER1", ads: null });
-		expect(resolveMeasurementIds({ ga4: "nope", ads: undefined, production: true })).toEqual({ ga4: null, ads: null });
+		expect(resolveMeasurementIds({ ga4: "G-OTHER1", ads: undefined, production: true })).toEqual({ ga4: "G-OTHER1", ads: "AW-18498207004" });
+		expect(resolveMeasurementIds({ ga4: "nope", ads: "nope", production: true })).toEqual({ ga4: null, ads: null });
+		expect(ga4MeasurementProtocolReady({})).toBe(false);
+		expect(ga4MeasurementProtocolReady({ K_SERVICE: "groundwork" })).toBe(false);
+		expect(ga4MeasurementProtocolReady({ K_SERVICE: "groundwork", GA4_API_SECRET: "secret" })).toBe(true);
+		expect(checkoutSuccessFromSearch("?billing=success&session_id=cs_test_1&plan=included")).toEqual({ sessionId: "cs_test_1", plan: "included" });
+		expect(checkoutSuccessFromSearch("?billing=cancel&session_id=cs_test_1")).toBeNull();
+		expect(checkoutSuccessFromSearch("?billing=success&session_id=sub_123")).toBeNull();
+		expect(clientPurchaseParams("cs_test_1", 0, { gclid: "CjwKCtestclick" }, "included")).toEqual({
+			gclid: "CjwKCtestclick",
+			transaction_id: "cs_test_1",
+			value: 0,
+			currency: "USD",
+			items: [{ item_id: "included", item_name: "Groundwork", price: 0, quantity: 1 }],
+		});
+		expect(clientPurchaseParams("cs_test_1", 15, {}, "byom")?.value).toBe(15);
+		expect(clientPurchaseParams("not-a-session", 20, {}, "included")).toBeNull();
 	});
 
 	it("loads the measurement tag only for a real visitor on the live host", () => {
@@ -146,7 +172,7 @@ describe("ads tracking", () => {
 		expect(practice).toContain("Name a topic, or add your slides, notes, or a practice exam.");
 		expect(practice).toContain('href="/#signin"');
 		expect(practice).toContain("Requires Obsidian desktop. Sign up here, install on your computer.");
-		expect(practice).toContain('src="/tracking.js?v=7"');
+		expect(practice).toContain('src="/tracking.js?v=8"');
 		expect(practice).toContain('href="/practice-tests">Practice tests</a>');
 		expect(practice).not.toMatch(/\b\d+\s+questions?\b/i);
 		expect(practice.toLowerCase()).not.toContain("personalized feedback on every answer");
@@ -202,6 +228,8 @@ describe("ads tracking", () => {
 		expect(home).toContain("$20/month");
 		expect(home).toContain("$6/month");
 		expect(home).not.toContain("G-F4236HGZSM");
+		expect(home).not.toContain("G-F1270VCGEL");
+		expect(home).not.toContain("AW-18498207004");
 		expect(home).not.toContain("$15/month");
 		expect(home).not.toContain("$4/month");
 	});

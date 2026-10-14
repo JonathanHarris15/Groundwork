@@ -117,13 +117,13 @@ Sign in with Google on that site. **Connect Groundwork** opens Obsidian with a o
 
 `GROUNDWORK_PORT` chooses the listen port (default `8787`). `GROUNDWORK_MEMORY_FILE` chooses the local tutor-memory file when Firebase is not configured (default `data/tutor-memory.json`, gitignored).
 
-Production Cloud Run (when `K_SERVICE` is set) loads GA4 with measurement id `G-F4236HGZSM` if `GA4_MEASUREMENT_ID` is unset. Set `GA4_MEASUREMENT_ID` to override that id. The tag script loads only on `groundworklearn.com` (and `www`) when `navigator.webdriver` is false and the browser is not headless automation, so local servers, Playwright, and agent smoke tests do not send hits to the production property. `GOOGLE_ADS_ID` is optional. Leave it unset until Marketing provides an `AW-` id. Conversion labels are not required: when the Ads id and labels are empty, the site does not configure Ads and does not fire Ads conversions. Deploy does not depend on them.
+Production Cloud Run (when `K_SERVICE` is set) loads GA4 with measurement id `G-F1270VCGEL` if `GA4_MEASUREMENT_ID` is unset, and Google Ads with `AW-18498207004` if `GOOGLE_ADS_ID` is unset. Set either env var to override that id. The tag script loads only on `groundworklearn.com` (and `www`) when `navigator.webdriver` is false and the browser is not headless automation, so local servers, Playwright, and agent smoke tests do not send hits to the production property. `gtag('config')` sends `page_view`. A new account fires `sign_up` and, for this Ads id, one conversion `AW-18498207004/O9fRCK3JzJsdEJz60PRE`. A later sign-in fires neither. `obsidian_connected` fires on the first link only. Consent mode still gates the hits. Stored gclid and UTM parameters ride on the events.
 
-Browser events are `sign_up` (new accounts only) and `obsidian_connected` (first link only). `purchase` is not a browser event. The Stripe `checkout.session.completed` webhook sends it with the Measurement Protocol, once per Checkout Session id, with `value` set to Stripe `amount_total` in dollars (`0` when a coupon covers the charge). The list price is never used. That send runs only on Cloud Run, and only when `GA4_API_SECRET` is the Measurement Protocol secret for the stream. Deploy does not set that variable. Until it is set, completed checkouts are not reported and the webhook still succeeds. The browser stores `ga_client_id`, `ga_session_id`, and `gclid` on the Checkout Session at the moment checkout starts. An explicit cookie opt-out skips the purchase hit.
+`purchase` uses the Stripe `amount_total` in dollars (`0` when a coupon covers the charge). The list price is never used. On Cloud Run, the `checkout.session.completed` webhook sends it with the Measurement Protocol when `GA4_API_SECRET` is the secret for `G-F1270VCGEL`. That secret is not set. Until it is, the success page sends `purchase` from the browser, once per Checkout Session id. An explicit cookie opt-out skips the hit. The browser stores `ga_client_id`, `ga_session_id`, and `gclid` on the Checkout Session at the moment checkout starts. Deploy does not set `GA4_API_SECRET`.
 
 ```bash
-GA4_MEASUREMENT_ID=G-F4236HGZSM
-# GOOGLE_ADS_ID=
+GA4_MEASUREMENT_ID=G-F1270VCGEL
+# GOOGLE_ADS_ID=AW-18498207004
 ```
 
 `CONTACT_EMAIL` overrides the address in the footer. The default is the address in `packages/server/src/tracking.ts`.

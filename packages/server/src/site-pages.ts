@@ -141,7 +141,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
 		<link rel="stylesheet" href="/styles.css?v=21" />
 		${spec.jsonLd ?? ""}
-		<script src="/tracking.js?v=7"></script>
+		<script src="/tracking.js?v=8"></script>
 	</head>
 	<body>
 		<div class="page mkt">
@@ -766,7 +766,7 @@ function privacyPage(): string {
 			${section("Finishing setup on a computer", ["Groundwork does not run on a phone. If you sign up on one, this site can copy or share a link to the setup page, and it can show a QR code of that same address. We don’t email the link."])}
 			${section("Keys you paste", ["On the Bring your own model plan you can save a key for OpenRouter, Anthropic, Google, xAI, or OpenAI. The key is stored on your account and used only on Groundwork’s server to call that provider. The plugin does not send the key.", "Claude on your computer is separate. If you use a Claude subscription, Claude Code runs on your machine. That login stays there. Groundwork does not receive it."])}
 			${section("Billing", ["Paid plans are billed by Stripe. Stripe gets what it needs to charge the card and send receipts. Groundwork stores the Stripe customer id and which plan you’re on."])}
-			${section("Cookies, ads, and analytics", ["We use Google Analytics and Google Ads to see which ads bring people here, and whether they create an account, connect Obsidian, or start a paid plan. When checkout completes, the server reports that purchase to Google Analytics with the amount Stripe charged. Google may also use these cookies to personalize the ads you see. You can change that at <a href='https://adssettings.google.com'>adssettings.google.com</a>.", "If you’re in the United States, those cookies are on unless you opt out. Everywhere else they stay off. OK closes the notice and leaves that as it is. Opt out turns them off in this browser. Cookies in the footer opens the notice again."])}
+			${section("Cookies, ads, and analytics", ["We use Google Analytics and Google Ads to see which ads bring people here, and whether they create an account, connect Obsidian, or start a paid plan. When checkout completes, Groundwork reports that purchase to Google Analytics with the amount Stripe charged. Google may also use these cookies to personalize the ads you see. You can change that at <a href='https://adssettings.google.com'>adssettings.google.com</a>.", "If you’re in the United States, those cookies are on unless you opt out. Everywhere else they stay off. OK closes the notice and leaves that as it is. Opt out turns them off in this browser. Cookies in the footer opens the notice again."])}
 			${section("Children", [`We don’t knowingly collect personal information from anyone under 18, including children under 13. If we learn that we have, we delete it. Email <a href="mailto:${EMAIL}" data-contact-email>${EMAIL}</a>.`])}
 			${section("Deletion and questions", [`Email <a href="mailto:${EMAIL}" data-contact-email>${EMAIL}</a> to ask for a copy of your account data or to delete it. Deleting the account removes the study record, saved keys, and the billing link we store. It does not delete files in your Obsidian vault. Cancel a paid plan from Manage billing on your account page, or ask us to cancel it when you write.`])}
 			<p class="fine">See also the <a href="/terms">terms</a>.</p>
