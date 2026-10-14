@@ -4,7 +4,7 @@ import type { Auth } from "./auth";
 import type { Billing } from "./billing";
 import { MemoryConflict, type MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
-import { completeTutor, describeTutor } from "./tutor";
+import { completeTutor, describeTutor, openTutorStream, type TutorCallContext } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
 import { attributionFromHeader, cleanGaClientId, cleanGaSessionId, cleanGclid } from "./tracking";
 import { allowCheckoutAmount } from "./public-limit";
@@ -43,6 +43,8 @@ export interface RouteResult {
 	text?: string;
 	type?: string;
 	headers?: Record<string, string>;
+	/** Tutor token stream. The handler writes these chunks and then ends the response. */
+	sse?: (write: (chunk: string) => void, signal: AbortSignal) => Promise<void>;
 }
 
 export interface RouteMeta {
@@ -210,23 +212,22 @@ export async function route(method: string, path: string, body: unknown, deps: S
 			return { status: 200, json: { ok: true } };
 		}
 		if (method === "POST" && path === "/v1/tutor/complete") {
-			const done = await completeTutor(
-				{
-					view,
-					choice: await deps.accounts.choice(uid),
-					saved: await deps.secrets.saved(uid),
-					userKey: (provider) => deps.secrets.get(uid, provider),
-					openRouterKey: deps.openRouterKey,
-					fetchImpl: deps.fetchImpl ?? platformFetch,
-					charge: (cost) => deps.accounts.charge(uid, cost),
-					record: deps.usage
-						? async (entry) => {
-								await deps.usage?.record(uid, { ...entry, plan: view.plan ?? "none", calls: 1 });
-							}
-						: undefined,
-				},
-				body,
-			);
+			const tutorCtx: TutorCallContext = {
+				view,
+				choice: await deps.accounts.choice(uid),
+				saved: await deps.secrets.saved(uid),
+				userKey: (provider) => deps.secrets.get(uid, provider),
+				openRouterKey: deps.openRouterKey,
+				fetchImpl: deps.fetchImpl ?? platformFetch,
+				charge: (cost) => deps.accounts.charge(uid, cost),
+				record: deps.usage
+					? async (entry) => {
+							await deps.usage?.record(uid, { ...entry, plan: view.plan ?? "none", calls: 1 });
+						}
+					: undefined,
+			};
+			const streamed = !!body && typeof body === "object" && (body as { stream?: unknown }).stream === true;
+			const done = streamed ? await openTutorStream(tutorCtx, body) : await completeTutor(tutorCtx, body);
 			if (done.status === 200) {
 				try {
 					await deps.setupFunnel?.mark("first_tutor_turn", uid);

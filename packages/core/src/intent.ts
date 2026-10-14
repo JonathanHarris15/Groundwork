@@ -5,8 +5,16 @@
 
 import type { ChatMessage, ContentBlock } from "./agent/types";
 
-/** The one follow-up after a study guide, flashcards, or similar. */
-export const STUDY_FOLLOW_UP = "Do you want to study this or make a goal for it?";
+/**
+ * One offer after a study guide or flashcards. A goal and a quiz are the same
+ * effort. This is not a choice between them, and it is not required before either.
+ */
+export const STUDY_FOLLOW_UP = "Want me to set this up as a goal and quiz you on it?";
+
+/** True when the tutor already made that offer, including the older either/or wording still in a transcript. */
+export function offeredStudyFollowUp(text: string): boolean {
+	return /want me to set this up as a goal and quiz you/i.test(text) || /do you want to study this or make a goal/i.test(text);
+}
 
 export type LearnerAsk = "study" | "survey" | "artifact" | "answer";
 
@@ -27,7 +35,7 @@ export const STUDY_TOOLS = new Set([
 	"ask_user",
 ]);
 
-const HIDDEN_BLOCK = /<(working_goal|exam_plan|margin_questions|hint_transcript)>[\s\S]*?<\/\1>/gi;
+const HIDDEN_BLOCK = /<(working_goal|exam_plan|margin_questions|hint_transcript|tutor_repair)>[\s\S]*?<\/\1>/gi;
 
 /** Learner text with the hidden notes the app prepends taken out, so those notes are not an ask. */
 export function visibleAsk(text: string): string {
@@ -52,7 +60,7 @@ export function learnerOptedIntoStudy(turns: DialogueTurn[]): boolean {
 	let offered = false;
 	for (const turn of turns) {
 		if (turn.role === "assistant") {
-			if (/do you want to study this or make a goal/i.test(turn.text)) offered = true;
+			if (offeredStudyFollowUp(turn.text)) offered = true;
 			continue;
 		}
 		const visible = visibleAsk(turn.text);
@@ -69,7 +77,7 @@ export function studyToolBlock(name: string, dialogue: DialogueTurn[]): { text: 
 	return {
 		isError: true,
 		summary: "Waiting until they ask to study",
-		text: `Not yet. ${name} writes a goal, a concept, or a quiz, and this message did not ask for that. Answer what they asked. If you just made a study guide or flashcards, ask once: "${STUDY_FOLLOW_UP}" Then wait.`,
+		text: `Not yet. ${name} did not run because this message did not ask to study. Answer what they asked. Do not tell them a confirmation, a setting, or the system blocked it. If you just finished a study guide or flashcards, you may ask once: "${STUDY_FOLLOW_UP}" That is an offer, not a gate. Then wait.`,
 	};
 }
 
@@ -118,7 +126,46 @@ function isStrongStudy(text: string): boolean {
 }
 
 function isStudy(text: string): boolean {
-	return isStrongStudy(text) || /\blet'?s build\b/i.test(text);
+	return isStrongStudy(text) || /\blet'?s build\b/i.test(text) || statesLearningObjective(text);
+}
+
+/**
+ * They named an outcome they are working toward: a homework, an exam, a skill,
+ * or "I want to be able to …". A direct question that only mentions a homework
+ * ("solve problem 4 on the homework") is not an objective.
+ */
+export function statesLearningObjective(text: string): boolean {
+	const visible = visibleAsk(text);
+	if (!visible) return false;
+	if (isDirectLookup(visible) && !wantsAbility(visible)) return false;
+	return wantsAbility(visible) || homeworkObjective(visible) || examStudy(visible);
+}
+
+function wantsAbility(text: string): boolean {
+	return (
+		/\b(?:want|need|like|trying|hope)(?:\s+\w+){0,4}\s+to be able to\b/i.test(text) ||
+		/\b(?:working|work)\s+towards?\b/i.test(text) ||
+		/\bmy goal is\b/i.test(text) ||
+		/\b(?:i'm|i am|im)\s+trying to\s+(?:learn|understand|get|master|be able)\b/i.test(text)
+	);
+}
+
+function homeworkObjective(text: string): boolean {
+	if (!/\b(?:homework|homeworks|problem sets?|assignments?)\b/i.test(text)) return false;
+	if (isDirectLookup(text) && !wantsAbility(text)) return false;
+	return /\b(?:due|working on|work on|i have|i've got|i’ve got|need to do|have to do|need to finish|have to finish)\b/i.test(text);
+}
+
+function examStudy(text: string): boolean {
+	return (
+		/\b(?:studying|preparing|prepping|getting ready)\s+for\b/i.test(text) &&
+		/\b(?:exam|midterm|final|quiz|test|homework|assignment|problem set)\b/i.test(text)
+	);
+}
+
+/** A request to solve, explain, or look something up. Not an objective by itself. */
+function isDirectLookup(text: string): boolean {
+	return /\b(?:solve|summarize|summarise|explain|answer|what(?:'s| is| does)|show me|graph of)\b/i.test(text);
 }
 
 function isSurvey(text: string): boolean {

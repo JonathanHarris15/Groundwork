@@ -163,6 +163,18 @@ describe("provider requests", () => {
 		);
 		expect(upstream.body).toMatchObject({ model: HOSTED_MODELS.heavy.id });
 		expect(JSON.stringify(upstream.body)).toContain("signature");
+		expect(upstream.body).not.toHaveProperty("stream");
+	});
+
+	it("parses tool arguments that arrived as a JSON string", () => {
+		const read = readUpstream("anthropic", {
+			content: [{ type: "tool_use", id: "toolu_1", name: "quiz", input: "{\"question\":\"What is a limit?\"}" }],
+			stop_reason: "tool_use",
+			usage: { input_tokens: 10, output_tokens: 4 },
+		});
+		expect(read.ok).toBe(true);
+		if (!read.ok) return;
+		expect(read.result.content[0]).toMatchObject({ type: "tool_use", name: "quiz", input: { question: "What is a limit?" } });
 	});
 
 	it("reads a tool call back into the tutor's shape", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyLearnerAsk, learnerOptedIntoStudy, STUDY_FOLLOW_UP, studyToolBlock, visibleAsk } from "../src/intent";
+import { classifyLearnerAsk, learnerOptedIntoStudy, statesLearningObjective, STUDY_FOLLOW_UP, studyToolBlock, visibleAsk } from "../src/intent";
 import { practiceTestRequest, workingGoalNote } from "../src/prompt";
 
 describe("classifyLearnerAsk", () => {
@@ -43,6 +43,13 @@ describe("classifyLearnerAsk", () => {
 		expect(classifyLearnerAsk(text)).toBe("answer");
 	});
 
+	it("offers a goal and a quiz together, and a yes to that offer opts in", () => {
+		expect(STUDY_FOLLOW_UP).toBe("Want me to set this up as a goal and quiz you on it?");
+		expect(STUDY_FOLLOW_UP).not.toMatch(/\bor\b/i);
+		expect(studyToolBlock("quiz", [{ role: "user", text: "what's the chain rule?" }])?.text).not.toMatch(/or make a goal/);
+		expect(studyToolBlock("quiz", [{ role: "user", text: "what's the chain rule?" }])?.text).toMatch(/Do not tell them/);
+	});
+
 	it("lets a yes after the follow-up opt in, and a bare yes does not", () => {
 		expect(learnerOptedIntoStudy([{ role: "user", text: "yes" }])).toBe(false);
 		expect(
@@ -72,6 +79,45 @@ describe("classifyLearnerAsk", () => {
 		expect(studyToolBlock("ingest_exam_materials", [{ role: "user", text: "help me study for the midterm" }])).toBeNull();
 		expect(studyToolBlock("set_goal", [{ role: "user", text: "summarize my documents" }])?.isError).toBe(true);
 		expect(studyToolBlock("survey_documents", [{ role: "user", text: "summarize my documents" }])).toBeNull();
+	});
+
+	it("starts a goal when they state an objective, and not on a plain question", () => {
+		const objectives = [
+			"I'm working toward being able to do the homework",
+			"I am working towards being able to finish the problem set",
+			"I want to be able to do related rates",
+			"I'd like to be able to integrate by parts",
+			"I need to be able to write a proof",
+			"My goal is to understand eigenvalues",
+			"I'm studying for the midterm",
+			"I have a homework due Friday",
+			"I'm working on the homework",
+			"I'm trying to learn the chain rule",
+			"working toward the exam",
+		];
+		for (const text of objectives) {
+			expect(statesLearningObjective(text), text).toBe(true);
+			expect(classifyLearnerAsk(text), text).toBe("study");
+			expect(studyToolBlock("set_goal", [{ role: "user", text }]), text).toBeNull();
+		}
+		const plain = [
+			"what's the chain rule?",
+			"solve this",
+			"can you show me a graph of x^2?",
+			"summarize my documents",
+			"put together a study guide for derivatives",
+			"make flashcards",
+			"I already know the chain rule",
+			"I have the final answer",
+			"solve problem 4 on the homework",
+			"what does the homework ask?",
+			"explain the chain rule",
+			"I finished the homework",
+		];
+		for (const text of plain) {
+			expect(statesLearningObjective(text), text).toBe(false);
+			expect(classifyLearnerAsk(text), text).not.toBe("study");
+		}
 	});
 
 	it("allows mark_known without study opt-in when they disclose prior knowledge", () => {

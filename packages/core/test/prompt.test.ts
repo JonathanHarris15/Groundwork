@@ -28,6 +28,15 @@ describe("teaching method", () => {
 		expect(method).toContain("survey_documents");
 		expect(method).toContain("A list of file names is not the summary");
 		expect(method).toContain("Start this shape only after they opt in");
+		expect(method).toContain("## An objective");
+		expect(method).toContain("call `set_goal` and `quiz` on this turn");
+		expect(method).toContain("## What you may say about the app");
+		expect(method).toContain("Never invent how Groundwork");
+		expect(method).toContain("say it did not load");
+		expect(method).not.toContain("or make a goal");
+		expect(method).toContain("## A question they answer");
+		expect(method).toContain("The card is the question");
+		expect(method).toContain("let's try one");
 		expect(method).toContain("The dropdown does not opt them in");
 		expect(method).toContain("Start this only when they ask to study for one");
 	});

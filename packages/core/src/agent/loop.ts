@@ -1,5 +1,6 @@
 import type { FolderAccess } from "../access";
-import { dialogueFromMessages, studyToolBlock } from "../intent";
+import { dialogueFromMessages, studyToolBlock, visibleAsk } from "../intent";
+import { isQuestionTool, repairNote } from "../turn-repair";
 import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
@@ -67,6 +68,9 @@ export class AgentSession implements TutorSession {
 		const catalog = this.opts.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema }));
 		const research = new ResearchTurn();
 		const turnAt = this.messages.length;
+		let repaired = false;
+		let calledQuestion = false;
+		let calledGoal = false;
 		for (let step = 0; step < maxSteps; step++) {
 			if (signal?.aborted) return;
 			const force = forcingAnswer(step, maxSteps);
@@ -84,7 +88,13 @@ export class AgentSession implements TutorSession {
 			if (res.stopReason === "pause_turn") continue;
 
 			const uses = res.content.filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use");
-			if (!uses.length) return;
+			if (!uses.length) {
+				if (!repaired && this.repairTurn(turnAt, calledQuestion, calledGoal)) {
+					repaired = true;
+					continue;
+				}
+				return;
+			}
 
 			const results: ContentBlock[] = [];
 			const dialogue = dialogueFromMessages(this.messages);
@@ -114,7 +124,7 @@ export class AgentSession implements TutorSession {
 				} else {
 					try {
 						if (!tool) throw new Error(`Unknown tool ${use.name}`);
-						const r = await tool.run(use.input ?? {}, {
+						const r = await tool.run(toolArguments(use.input), {
 							store: this.opts.store,
 							ui: this.opts.ui,
 							session: this.opts.session,
@@ -139,6 +149,8 @@ export class AgentSession implements TutorSession {
 					const warning = research.warning(use.name, use.input);
 					if (warning && !isError) text += `\n\n${warning}`;
 				}
+				if (!isError && isQuestionTool(use.name)) calledQuestion = true;
+				if (!isError && use.name === "set_goal") calledGoal = true;
 				onEvent({ type: "tool_end", id: use.id, name: use.name, summary, isError, text });
 				const content = files?.length ? [{ type: "text", text }, ...files.flatMap(fileBlocks)] : text;
 				results.push({ type: "tool_result", tool_use_id: use.id, content, ...(isError ? { is_error: true } : {}) });
@@ -161,6 +173,20 @@ export class AgentSession implements TutorSession {
 			this.messages.push({ role: "assistant", content: [{ type: "text", text: unfinished.answer || unfinished.note }] });
 		}
 		onEvent({ type: "continue_offer", text: unfinished.note });
+	}
+
+	/** One follow-up when the model announced a question or skipped a stated objective. */
+	private repairTurn(turnAt: number, calledQuestion: boolean, calledGoal: boolean): boolean {
+		const user = this.messages[turnAt - 1];
+		const note = repairNote({
+			userText: user ? messageText(user) : "",
+			assistantText: assistantTextSince(this.messages, turnAt),
+			calledQuestion,
+			calledGoal,
+		});
+		if (!note) return false;
+		this.messages.push({ role: "user", content: [{ type: "text", text: note }] });
+		return true;
 	}
 
 	/** A paused turn can stop on a tool call that never received a result. */
@@ -203,6 +229,36 @@ export function errorCode(err: unknown): string | undefined {
 	if (!err || typeof err !== "object" || !("code" in err)) return undefined;
 	const code = (err as { code?: unknown }).code;
 	return typeof code === "string" && code ? code : undefined;
+}
+
+function messageText(message: ChatMessage): string {
+	if (typeof message.content === "string") return visibleAsk(message.content);
+	return visibleAsk(
+		message.content
+			.filter((block): block is Extract<ContentBlock, { type: "text" }> => block.type === "text" && typeof block.text === "string")
+			.map((block) => block.text)
+			.join("\n"),
+	);
+}
+
+function assistantTextSince(messages: ChatMessage[], turnAt: number): string {
+	return messages
+		.slice(turnAt)
+		.filter((message) => message.role === "assistant")
+		.map((message) => (typeof message.content === "string" ? message.content : message.content.filter((block) => block.type === "text").map((block) => (block as { text?: string }).text ?? "").join("")))
+		.join("\n");
+}
+
+function toolArguments(input: unknown): unknown {
+	if (typeof input === "string") {
+		try {
+			const parsed: unknown = JSON.parse(input);
+			if (parsed && typeof parsed === "object") return parsed;
+		} catch {
+			return {};
+		}
+	}
+	return input ?? {};
 }
 
 function toolsForStep(catalog: ProviderTool[], research: ResearchTurn, force: boolean): ProviderTool[] {

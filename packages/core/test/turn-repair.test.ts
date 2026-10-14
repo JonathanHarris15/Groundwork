@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import { announcesQuestion, inventsAppBehavior, repairNote } from "../src/turn-repair";
+
+describe("announced questions", () => {
+	const announced = [
+		"Here's a question.",
+		"Here’s a question.",
+		"Here is a problem.",
+		"Let's try one.",
+		"Let’s try this.",
+		"Lets try another question.",
+		"Try this one.",
+		"Quick question.",
+		"A question for you.",
+		"Let me quiz you.",
+		"See if you can.",
+	];
+	const plain = ["The chain rule multiplies rates.", "The answer is 2.", "A question mark is not a quiz.", "Here is the derivative."];
+
+	it("recognizes an announcement and ignores a plain answer", () => {
+		for (const text of announced) expect(announcesQuestion(text), text).toBe(true);
+		for (const text of plain) expect(announcesQuestion(text), text).toBe(false);
+	});
+
+	it("asks for a card once, and stays quiet once a card or a goal already ran", () => {
+		const note = repairNote({
+			userText: "I want to be able to do the homework",
+			assistantText: "Let's try one.",
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(note).toContain("<tutor_repair>");
+		expect(note).toContain("Call quiz");
+		expect(note).toContain("Call set_goal");
+		expect(
+			repairNote({
+				userText: "I want to be able to do the homework",
+				assistantText: "Let's try one.",
+				calledQuestion: true,
+				calledGoal: true,
+			}),
+		).toBeNull();
+		expect(
+			repairNote({
+				userText: "what's the chain rule?",
+				assistantText: "The chain rule multiplies rates.",
+				calledQuestion: false,
+				calledGoal: false,
+			}),
+		).toBeNull();
+	});
+
+	it("repairs an invented confirmation gate into a goal and a quiz", () => {
+		const apology =
+			"Ah! My apologies—the interactive quiz card didn't pop up because our system requires a formal confirmation step before it can initialize the goal tracker and start launching interactive quizzes. Do you want to study this or make a goal for it?";
+		expect(inventsAppBehavior(apology)).toBe(true);
+		expect(inventsAppBehavior("The chain rule multiplies rates.")).toBe(false);
+		const note = repairNote({
+			userText: "I'm working toward being able to do the homework",
+			assistantText: apology,
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(note).toContain("did not load");
+		expect(note).toContain("Call quiz");
+		expect(note).toContain("Call set_goal");
+		expect(note).toContain("Do not ask whether to study or make a goal");
+		expect(
+			repairNote({
+				userText: "put together a study guide for derivatives",
+				assistantText: "Want me to set this up as a goal and quiz you on it?",
+				calledQuestion: false,
+				calledGoal: false,
+			}),
+		).toBeNull();
+	});
+});
