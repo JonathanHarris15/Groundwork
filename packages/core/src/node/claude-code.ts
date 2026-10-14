@@ -12,6 +12,7 @@ import type { SessionInfo, ToolContext, ToolDef, ToolResult, ToolUI } from "../t
 import type { AgentEvent, TutorSession, TutorTurnContext } from "../agent/types";
 import { errorMessage } from "../agent/loop";
 import { studyToolBlock, type DialogueTurn } from "../intent";
+import { isQuestionTool, repairNote } from "../turn-repair";
 import { guiPathDirs, withGuiPath } from "./env";
 import { pdfLayout, type PdfLayout } from "./pdf-parts";
 
@@ -145,6 +146,11 @@ export class ClaudeCodeSession implements TutorSession {
 	private history: string | undefined;
 	/** Learner and tutor text, so a goal or quiz is refused until they opt in. */
 	private dialogue: DialogueTurn[] = [];
+	/** One repair per send, after an announced question or a missed objective. */
+	private repaired = false;
+	private calledQuestion = false;
+	private calledGoal = false;
+	private turnUserText = "";
 	private turnContext: TutorTurnContext | null = null;
 	/** System text the live Claude Code process was started with. */
 	private startedSystem = "";
@@ -168,6 +174,10 @@ export class ClaudeCodeSession implements TutorSession {
 		this.running = true;
 		this.emit = onEvent;
 		this.signal = signal;
+		this.repaired = false;
+		this.calledQuestion = false;
+		this.calledGoal = false;
+		this.turnUserText = text;
 		this.dialogue.push({ role: "user", text });
 		const onAbort = () => this.interrupt();
 		signal?.addEventListener("abort", onAbort, { once: true });
@@ -201,6 +211,22 @@ export class ClaudeCodeSession implements TutorSession {
 		const last = this.dialogue[this.dialogue.length - 1];
 		if (last?.role === "assistant") last.text += text;
 		else this.dialogue.push({ role: "assistant", text });
+	}
+
+	/** Push one hidden follow-up into the live Claude Code process. */
+	private pushRepair(): boolean {
+		if (this.repaired || !this.input) return false;
+		const assistant = [...this.dialogue].reverse().find((turn) => turn.role === "assistant");
+		const note = repairNote({
+			userText: this.turnUserText,
+			assistantText: assistant?.text ?? "",
+			calledQuestion: this.calledQuestion,
+			calledGoal: this.calledGoal,
+		});
+		if (!note) return false;
+		this.repaired = true;
+		this.input.push({ type: "user", message: { role: "user", content: note }, parent_tool_use_id: null });
+		return true;
 	}
 
 	private async turn(text: string, files: VaultFile[] | undefined, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
@@ -237,6 +263,7 @@ export class ClaudeCodeSession implements TutorSession {
 					throw new Error((msg.subtype === "success" ? msg.result : msg.errors?.join("; ")) || "Claude Code stopped with an error.");
 				}
 				if (!msg.is_error) this.history = undefined;
+				if (!msg.is_error && !signal?.aborted && this.pushRepair()) continue;
 				return;
 			}
 			if (this.handle(msg, onEvent, streamed, external)) reported = true;
@@ -353,6 +380,8 @@ export class ClaudeCodeSession implements TutorSession {
 			const pointed = [...pointers.keys()].map((f) => basename(f.path));
 			const content = mcpContent(result.text, result.files, (f): McpContent[] | undefined => (pointers.has(f) ? [{ type: "text", text: pointers.get(f)! }] : undefined));
 			const summary = pointed.length && pointed.length === result.files?.length ? `Found ${pointed.join(", ")}` : result.summary;
+			if (!result.isError && isQuestionTool(name)) this.calledQuestion = true;
+			if (!result.isError && name === "set_goal") this.calledGoal = true;
 			emit?.({ type: "tool_end", id, name, summary, isError: !!result.isError, text: result.text });
 			return { content, isError: !!result.isError };
 		});

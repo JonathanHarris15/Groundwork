@@ -17,6 +17,7 @@
  */
 
 import type { ContentBlock, ProviderTool, ChatMessage } from "../agent/types";
+import { parseToolInput } from "./anthropic-stream";
 import { USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "./plans";
 import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
 
@@ -224,7 +225,12 @@ export function parseTutorCall(body: unknown): TutorCall | null {
 	return { system: raw.system, messages: raw.messages as ChatMessage[], tools: tools as ProviderTool[], maxTokens, model };
 }
 
-export function buildUpstream(decision: Extract<TutorDecision, { action: "hosted" | "key" }>, apiKey: string, call: TutorCall): UpstreamRequest {
+export function buildUpstream(
+	decision: Extract<TutorDecision, { action: "hosted" | "key" }>,
+	apiKey: string,
+	call: TutorCall,
+	stream = false,
+): UpstreamRequest {
 	const model = decision.action === "hosted" ? decision.model : call.model || decision.model;
 	const provider = decision.action === "hosted" ? "openrouter" : decision.provider;
 	const kind = providerKind(provider);
@@ -249,7 +255,7 @@ export function buildUpstream(decision: Extract<TutorDecision, { action: "hosted
 		url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 		headers["x-goog-api-key"] = apiKey;
 	}
-	const body = kind === "anthropic" ? anthropicBody(call, model) : kind === "openai" ? openaiBody(call, model) : googleBody(call);
+	const body = kind === "anthropic" ? anthropicBody(call, model, stream) : kind === "openai" ? openaiBody(call, model) : googleBody(call);
 	return { url, headers, body, kind };
 }
 
@@ -289,13 +295,14 @@ export function providerNames(): UserKeyProvider[] {
 	return [...USER_KEY_PROVIDERS];
 }
 
-function anthropicBody(call: TutorCall, model: string): unknown {
+function anthropicBody(call: TutorCall, model: string, stream = false): unknown {
 	return {
 		model,
 		max_tokens: call.maxTokens,
 		system: call.system,
 		messages: call.messages,
 		tools: call.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.input_schema })),
+		...(stream ? { stream: true } : {}),
 	};
 }
 
@@ -386,7 +393,7 @@ function googleBody(call: TutorCall): unknown {
 
 function readAnthropic(body: AnthropicMessage): { ok: true; result: UpstreamResult } | { ok: false; error: string } {
 	if (!Array.isArray(body.content)) return { ok: false, error: "The model provider returned no message." };
-	const content = body.content.filter((block) => block && typeof block === "object" && typeof block.type === "string") as ContentBlock[];
+	const content = body.content.filter((block) => block && typeof block === "object" && typeof block.type === "string").map(normalizeToolInput) as ContentBlock[];
 	return {
 		ok: true,
 		result: {
@@ -453,6 +460,11 @@ function flatten(content: string | ContentBlock[] | undefined): string {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
 	return content.map((block) => (block.type === "text" ? ((block as { text?: string }).text ?? "") : JSON.stringify(block))).join("\n");
+}
+
+function normalizeToolInput(block: { type?: string; input?: unknown }): { type?: string; input?: unknown } {
+	if (block.type !== "tool_use") return block;
+	return { ...block, input: parseToolInput("", block.input) };
 }
 
 function count(value: unknown): number {

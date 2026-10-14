@@ -27,7 +27,7 @@ export const STUDY_TOOLS = new Set([
 	"ask_user",
 ]);
 
-const HIDDEN_BLOCK = /<(working_goal|exam_plan|margin_questions|hint_transcript)>[\s\S]*?<\/\1>/gi;
+const HIDDEN_BLOCK = /<(working_goal|exam_plan|margin_questions|hint_transcript|tutor_repair)>[\s\S]*?<\/\1>/gi;
 
 /** Learner text with the hidden notes the app prepends taken out, so those notes are not an ask. */
 export function visibleAsk(text: string): string {
@@ -118,7 +118,46 @@ function isStrongStudy(text: string): boolean {
 }
 
 function isStudy(text: string): boolean {
-	return isStrongStudy(text) || /\blet'?s build\b/i.test(text);
+	return isStrongStudy(text) || /\blet'?s build\b/i.test(text) || statesLearningObjective(text);
+}
+
+/**
+ * They named an outcome they are working toward: a homework, an exam, a skill,
+ * or "I want to be able to …". A direct question that only mentions a homework
+ * ("solve problem 4 on the homework") is not an objective.
+ */
+export function statesLearningObjective(text: string): boolean {
+	const visible = visibleAsk(text);
+	if (!visible) return false;
+	if (isDirectLookup(visible) && !wantsAbility(visible)) return false;
+	return wantsAbility(visible) || homeworkObjective(visible) || examStudy(visible);
+}
+
+function wantsAbility(text: string): boolean {
+	return (
+		/\b(?:want|need|like|trying|hope)(?:\s+\w+){0,4}\s+to be able to\b/i.test(text) ||
+		/\b(?:working|work)\s+towards?\b/i.test(text) ||
+		/\bmy goal is\b/i.test(text) ||
+		/\b(?:i'm|i am|im)\s+trying to\s+(?:learn|understand|get|master|be able)\b/i.test(text)
+	);
+}
+
+function homeworkObjective(text: string): boolean {
+	if (!/\b(?:homework|homeworks|problem sets?|assignments?)\b/i.test(text)) return false;
+	if (isDirectLookup(text) && !wantsAbility(text)) return false;
+	return /\b(?:due|working on|work on|i have|i've got|i’ve got|need to do|have to do|need to finish|have to finish)\b/i.test(text);
+}
+
+function examStudy(text: string): boolean {
+	return (
+		/\b(?:studying|preparing|prepping|getting ready)\s+for\b/i.test(text) &&
+		/\b(?:exam|midterm|final|quiz|test|homework|assignment|problem set)\b/i.test(text)
+	);
+}
+
+/** A request to solve, explain, or look something up. Not an objective by itself. */
+function isDirectLookup(text: string): boolean {
+	return /\b(?:solve|summarize|summarise|explain|answer|what(?:'s| is| does)|show me|graph of)\b/i.test(text);
 }
 
 function isSurvey(text: string): boolean {

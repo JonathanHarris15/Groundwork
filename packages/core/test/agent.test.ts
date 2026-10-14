@@ -107,7 +107,184 @@ describe("AgentSession with the demo tutor", () => {
 		await agent.send("yes", (e) => events.push(e));
 		expect((await store.goals()).map((g) => g.title)).toEqual(["Parabolas"]);
 	});
+
+	it("saves a goal when they state an objective, even if the first reply forgot the tool", async () => {
+		const { agent, store } = await session();
+		const events: AgentEvent[] = [];
+		await agent.send("I want to be able to do the homework on derivatives", (e) => events.push(e));
+		expect((await store.goals()).map((g) => g.title)).toEqual(["Homework"]);
+		expect(events.some((e) => e.type === "tool_end" && e.name === "set_goal" && !e.isError)).toBe(true);
+	});
+
+	it("does not start a goal for a direct question", async () => {
+		const { agent, store } = await session();
+		await agent.send("what's the chain rule?", () => undefined);
+		expect(await store.goals()).toEqual([]);
+	});
+
+	it("turns an announced question into a quiz card", async () => {
+		const asked: string[] = [];
+		const { agent, store } = await session({
+			async quiz(q) {
+				asked.push(q.question);
+				return { dontKnow: false, selected: [q.correct[0] ?? ""] };
+			},
+		});
+		await store.upsertConcept({ title: "Slope of a line", summary: "Rise over run." });
+		await agent.send("help me learn slopes", () => undefined);
+		expect(asked).toEqual(["What is the slope?"]);
+	});
+
+	it("asks the model only once more when it keeps announcing and never calls the tool", async () => {
+		let calls = 0;
+		const io = new MemoryVaultIO();
+		const store = new KnowledgeStore(io);
+		await store.ensureLayout();
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				calls++;
+				req.onText("Here's a question.");
+				return { content: [{ type: "text", text: "Here's a question." }], stopReason: "end_turn" };
+			},
+		};
+		const agent = new AgentSession({ provider, store, tools: TOOLS, system: buildSystemPrompt(), session: { id: "s" } });
+		await agent.send("help me learn slopes", () => undefined);
+		expect(calls).toBe(2);
+	});
+
+	it("shows a quiz card when the tool arguments arrive as a JSON string", async () => {
+		const asked: string[] = [];
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		await store.upsertConcept({ title: "Slope of a line", summary: "Rise over run." });
+		let calls = 0;
+		const provider: Provider = {
+			name: "scripted",
+			async complete() {
+				calls++;
+				if (calls > 1) return { content: [{ type: "text", text: "Rise over run." }], stopReason: "end_turn" };
+				return {
+					content: [
+						{
+							type: "tool_use",
+							id: "q1",
+							name: "quiz",
+							input: JSON.stringify({
+								concept: "Slope of a line",
+								question: "What is the slope?",
+								explanation: "Rise over run.",
+								difficulty: 2,
+								kind: "check",
+								options: [
+									{ label: "2", value: "2" },
+									{ label: "3", value: "3" },
+								],
+								correctAnswer: "2",
+							}),
+						},
+					],
+					stopReason: "tool_use",
+				};
+			},
+		};
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			ui: {
+				async quiz(q) {
+					asked.push(q.question);
+					return { dontKnow: false, selected: ["2"] };
+				},
+				async ask() {
+					return null;
+				},
+			},
+			session: { id: "s" },
+		});
+		await agent.send("help me learn slopes", () => undefined);
+		expect(asked).toEqual(["What is the slope?"]);
+	});
 });
+
+function session(ui: Partial<ToolUI> = {}): Promise<{ agent: AgentSession; store: KnowledgeStore }> {
+	const store = new KnowledgeStore(new MemoryVaultIO());
+	const full: ToolUI = {
+		async quiz() {
+			return null;
+		},
+		async ask() {
+			return null;
+		},
+		...ui,
+	};
+	return store.ensureLayout().then(() => ({
+		store,
+		agent: new AgentSession({
+			provider: scriptedTutor(),
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			ui: full,
+			session: { id: "s" },
+		}),
+	}));
+}
+
+/** First reply is prose. A repair note is answered with the tool the note asks for. */
+function scriptedTutor(): Provider {
+	return {
+		name: "scripted",
+		async complete(req) {
+			const last = messageText(req.messages[req.messages.length - 1]!);
+			if (/tutor_repair/.test(last) && /set_goal/.test(last)) {
+				return {
+					content: [{ type: "tool_use", id: "g1", name: "set_goal", input: { title: "Homework", targets: ["Derivative"], nodes: [{ title: "Derivative" }] } }],
+					stopReason: "tool_use",
+				};
+			}
+			if (/tutor_repair/.test(last) && /quiz/.test(last)) {
+				return {
+					content: [
+						{
+							type: "tool_use",
+							id: "q1",
+							name: "quiz",
+							input: {
+								concept: "Slope of a line",
+								question: "What is the slope?",
+								explanation: "Rise over run.",
+								difficulty: 2,
+								kind: "check",
+								options: [
+									{ label: "2", value: "2" },
+									{ label: "3", value: "3" },
+								],
+								correctAnswer: "2",
+							},
+						},
+					],
+					stopReason: "tool_use",
+				};
+			}
+			if (/chain rule/i.test(last)) {
+				const reply = "The chain rule multiplies rates along a composition.";
+				req.onText(reply);
+				return { content: [{ type: "text", text: reply }], stopReason: "end_turn" };
+			}
+			if (/homework/i.test(last)) {
+				const reply = "We can work on that.";
+				req.onText(reply);
+				return { content: [{ type: "text", text: reply }], stopReason: "end_turn" };
+			}
+			const reply = "Let's try one.";
+			req.onText(reply);
+			return { content: [{ type: "text", text: reply }], stopReason: "end_turn" };
+		},
+	};
+}
 
 function messageText(message: ChatMessage): string {
 	if (typeof message.content === "string") return message.content;
