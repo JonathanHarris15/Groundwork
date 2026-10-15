@@ -1,5 +1,5 @@
 import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthropic, normalizeAnthropicMessages } from "../account/anthropic-messages";
-import { scrubLearnerText } from "../learner-text";
+import { holdsFixturePrefix, isGarbageReply, LOST_REPLY, scrubLearnerText } from "../learner-text";
 import type { FolderAccess } from "../access";
 import { dialogueFromMessages, studyToolBlock, visibleAsk } from "../intent";
 import { isQuestionTool, repairNote } from "../turn-repair";
@@ -73,6 +73,7 @@ export class AgentSession implements TutorSession {
 		const research = new ResearchTurn();
 		const turnAt = this.messages.length;
 		let repaired = false;
+		let garbageRetries = 0;
 		let calledQuestion = false;
 		let calledGoal = false;
 		let calledFigure = false;
@@ -82,11 +83,28 @@ export class AgentSession implements TutorSession {
 			const tools = toolsForStep(catalog, research, force);
 			const note = force ? stepsClosedNote() : research.exhausted ? researchClosedNote() : "";
 			const system = this.turnContext?.system ?? this.opts.system;
-			const res = await this.complete(note ? `${system}\n\n${note}` : system, tools, signal, onEvent);
-			this.messages.push({ role: "assistant", content: presentAssistant(res.content) });
-			if (res.stopReason === "pause_turn") continue;
-
+			const speech = new HeldSpeech((text) => onEvent({ type: "text_delta", text }));
+			const res = await this.complete(note ? `${system}\n\n${note}` : system, tools, signal, (delta) => speech.push(delta));
 			const uses = res.content.filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use");
+			if (res.stopReason === "pause_turn") {
+				speech.flush();
+				this.messages.push({ role: "assistant", content: presentAssistant(res.content) });
+				continue;
+			}
+			if (!uses.length && isGarbageReply(assistantPlain(res.content))) {
+				speech.discard();
+				if (garbageRetries < 2) {
+					garbageRetries += 1;
+					this.messages.push({ role: "user", content: [{ type: "text", text: BLANK_REPLY }] });
+					continue;
+				}
+				speech.emit(LOST_REPLY);
+				this.messages.push({ role: "assistant", content: [{ type: "text", text: LOST_REPLY }] });
+				return;
+			}
+			speech.flush();
+			this.messages.push({ role: "assistant", content: presentAssistant(res.content) });
+
 			if (!uses.length) {
 				if (!repaired && this.repairTurn(turnAt, calledQuestion, calledGoal, calledFigure)) {
 					repaired = true;
@@ -162,7 +180,7 @@ export class AgentSession implements TutorSession {
 	}
 
 	/** Repair the saved thread, then send it. If the provider still rejects the history, drop it to text and retry once. */
-	private async complete(system: string, tools: ProviderTool[], signal: AbortSignal | undefined, onEvent: (e: AgentEvent) => void): Promise<ProviderResponse> {
+	private async complete(system: string, tools: ProviderTool[], signal: AbortSignal | undefined, onText: (delta: string) => void): Promise<ProviderResponse> {
 		this.healStored();
 		const call = (messages: ChatMessage[]) =>
 			this.opts.provider.complete({
@@ -170,7 +188,7 @@ export class AgentSession implements TutorSession {
 				messages,
 				tools,
 				signal,
-				onText: (d) => onEvent({ type: "text_delta", text: d }),
+				onText,
 			});
 		try {
 			return await call(messagesForAnthropic(this.messages));
@@ -245,6 +263,51 @@ export class AgentSession implements TutorSession {
 			this.messages.push({ role: "assistant", content: [{ type: "text", text: "(stopped)" }] });
 		}
 	}
+}
+
+const BLANK_REPLY = "<tutor_repair>\nThat reply was empty. Continue this turn: answer the learner, or call the tool that does the next step. Do not stop yet.\n</tutor_repair>";
+
+/** Holds a reply that is still only a test id, so the learner never sees it. */
+class HeldSpeech {
+	private held = "";
+	private live = false;
+
+	constructor(private readonly emit: (text: string) => void) {}
+
+	push(delta: string): void {
+		if (!delta) return;
+		if (this.live) {
+			this.emit(delta);
+			return;
+		}
+		this.held += delta;
+		if (holdsFixturePrefix(this.held)) return;
+		this.live = true;
+		const text = scrubLearnerText(this.held);
+		this.held = "";
+		if (text) this.emit(text);
+	}
+
+	discard(): void {
+		this.held = "";
+		this.live = false;
+	}
+
+	flush(): void {
+		if (this.live) return;
+		const text = scrubLearnerText(this.held);
+		this.held = "";
+		if (!text || isGarbageReply(text)) return;
+		this.emit(text);
+	}
+}
+
+function assistantPlain(content: ContentBlock[]): string {
+	const parts: string[] = [];
+	for (const block of content) {
+		if (block.type === "text" && typeof block.text === "string") parts.push(block.text);
+	}
+	return parts.join("");
 }
 
 /** Drop internal fixture ids before they are stored or sent back to the model. */
