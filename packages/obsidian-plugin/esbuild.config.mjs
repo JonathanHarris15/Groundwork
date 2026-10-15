@@ -58,6 +58,10 @@ const ctx = await esbuild.context({
 	format: "cjs",
 	platform: "browser",
 	target: "es2022",
+	// Node builtins stay external so the renderer can require() them. Do not alias
+	// node:url here: Pyodide's loader is the one that dynamic-imports it, inside the
+	// figure worker, and a fake url module would break the Agent SDK. The worker
+	// marks Electron as the browser runtime before loading Pyodide.
 	external: ["obsidian", "electron", "pyodide", "@codemirror/*", "@lezer/*", ...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
 	// The Agent SDK calls createRequire(import.meta.url) at load time; CJS has no import.meta, so give it a real file URL.
 	define: {

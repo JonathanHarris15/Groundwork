@@ -23,8 +23,20 @@ export type PythonSpawn = (source: string, signal?: AbortSignal) => Promise<Pyth
 const OUTPUTS = ["figure.svg", "figure.png", "figure.gif", "figure.webp"] as const;
 const RUN_MS = 20_000;
 const LOAD_MS = 90_000;
+/** Shown on the figure card when the runtime cannot start. */
+export const FIGURE_DRAW_RETRY = "The figure didn't draw. Try again.";
 /** Pyodide build pinned for the plugin worker and the Node tests. */
 export const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.29.5/full/";
+
+const LOADER_FAILURE = /node:url|dynamically imported module/i;
+
+/** Card and tool copy when a figure fails. Loader errors stay off the screen. */
+export function figureFailureMessage(err: unknown): string {
+	const raw = err instanceof Error ? err.message.trim() : typeof err === "string" ? err.trim() : "";
+	if (!raw || LOADER_FAILURE.test(raw)) return FIGURE_DRAW_RETRY;
+	if (/\btry again\b/i.test(raw)) return raw;
+	return `${raw} Try again.`;
+}
 
 const PREPARE = `
 import os
@@ -73,6 +85,31 @@ interface PyodideLike {
  * is fetched from a pinned build the first time a figure needs Python.
  */
 export const PYTHON_WORKER_SOURCE = `
+// Obsidian's renderer is Electron. Pyodide treats process.versions.node as Node
+// and then loads node:url through a dynamic import, which the renderer fetches as a URL and cannot load.
+function useBrowserRuntime() {
+  var proc = typeof process === "object" && process ? process : null;
+  if (!proc || !proc.versions || typeof proc.versions.node !== "string") return;
+  try { proc.browser = true; } catch (err) {}
+  try { proc.type = "renderer"; } catch (err) {}
+  try { Object.defineProperty(proc, "browser", { configurable: true, value: true }); } catch (err) {}
+  try { Object.defineProperty(proc, "type", { configurable: true, value: "renderer" }); } catch (err) {}
+  if (proc.browser === true && proc.type === "renderer") return;
+  if (proc.versions && typeof proc.versions.node === "string") {
+    try { delete proc.versions.node; } catch (err) {}
+    try { Object.defineProperty(proc.versions, "node", { configurable: true, value: undefined }); } catch (err) {}
+  }
+  if (proc.browser === true && proc.type === "renderer") return;
+  if (!(proc.versions && typeof proc.versions.node === "string")) return;
+  try {
+    Object.defineProperty(globalThis, "process", {
+      configurable: true,
+      writable: true,
+      value: { browser: true, type: "renderer", env: {}, versions: {} },
+    });
+  } catch (err) {}
+}
+useBrowserRuntime();
 let py = null;
 function clip(current, chunk) {
   const text = String(chunk);
@@ -83,6 +120,7 @@ self.onmessage = async (event) => {
   const msg = event.data || {};
   try {
     if (msg.type === "load") {
+      useBrowserRuntime();
       importScripts(String(msg.indexURL || "") + "pyodide.js");
       py = await loadPyodide({ indexURL: msg.indexURL });
       self.postMessage({ type: "ready" });
@@ -220,7 +258,7 @@ async function runInBrowserWorker(source: string, signal?: AbortSignal): Promise
 			window.clearTimeout(execTimer);
 			signal?.removeEventListener("abort", onAbort);
 			dropWorker();
-			reject(err instanceof Error ? err : new Error("The figure runtime couldn't start."));
+			reject(err instanceof Error ? err : new Error(FIGURE_DRAW_RETRY));
 		};
 		const stop = () => {
 			dropWorker();
@@ -237,7 +275,7 @@ async function runInBrowserWorker(source: string, signal?: AbortSignal): Promise
 				return;
 			}
 			if (data?.type === "error") {
-				fail(new Error(data.message || "The figure runtime couldn't start."));
+				fail(new Error(figureFailureMessage(data.message || FIGURE_DRAW_RETRY)));
 				return;
 			}
 			if (data?.type !== "done") return;
@@ -256,7 +294,7 @@ async function runInBrowserWorker(source: string, signal?: AbortSignal): Promise
 				files,
 			});
 		};
-		worker.onerror = () => fail(new Error("The figure runtime couldn't start."));
+		worker.onerror = () => fail(new Error(FIGURE_DRAW_RETRY));
 		worker.postMessage({ type: "run", source });
 	});
 }
@@ -270,7 +308,7 @@ function browserWorker(): Promise<Worker> {
 		const timer = window.setTimeout(() => {
 			worker.terminate();
 			URL.revokeObjectURL(url);
-			reject(new Error("The figure runtime couldn't start."));
+			reject(new Error(FIGURE_DRAW_RETRY));
 		}, LOAD_MS);
 		worker.onmessage = (event: MessageEvent) => {
 			const data = event.data as { type?: string; message?: string };
@@ -285,13 +323,13 @@ function browserWorker(): Promise<Worker> {
 				window.clearTimeout(timer);
 				worker.terminate();
 				URL.revokeObjectURL(url);
-				reject(new Error(data.message || "The figure runtime couldn't start."));
+				reject(new Error(figureFailureMessage(data.message || FIGURE_DRAW_RETRY)));
 			}
 		};
 		worker.onerror = () => {
 			window.clearTimeout(timer);
 			URL.revokeObjectURL(url);
-			reject(new Error("The figure runtime couldn't start."));
+			reject(new Error(FIGURE_DRAW_RETRY));
 		};
 		worker.postMessage({ type: "load", indexURL: PYODIDE_INDEX });
 	});

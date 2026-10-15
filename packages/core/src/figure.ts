@@ -4,6 +4,7 @@ import { asUnknown } from "./unknown";
 import { drawFigure } from "./figure-draw";
 import { geoPlate } from "./figure-geo";
 import type { FigureMedia } from "./figure-python";
+export { figureFailureMessage, FIGURE_DRAW_RETRY } from "./figure-python";
 import { realizeFigure, type FigureDeps } from "./figure-realize";
 import type { KnowledgeStore } from "./store";
 

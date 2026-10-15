@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { FIGURE_DRAW_RETRY, figureFailureMessage } from "@groundwork/core";
 import { FigureCard, openFigureStage, type FigureCardModel } from "../src/figure-card";
 
 vi.mock("obsidian", () => ({
@@ -126,6 +127,14 @@ describe("full screen figure", () => {
 		expect(pending.card.el.querySelector(".gw-figure-full")).toBeNull();
 		const failed = figureCard({ id: "fig_e", title: "Drawing", error: "Couldn’t draw that" });
 		expect(failed.card.el.querySelector(".gw-figure-full")).toBeNull();
+	});
+
+	it("shows a retry instead of the node:url loader error", () => {
+		const message = figureFailureMessage(new Error("Failed to fetch dynamically imported module: node:url"));
+		const failed = figureCard({ id: "fig_e2", title: "Couldn't draw that", error: message });
+		const text = failed.card.el.querySelector(".gw-figure-error")?.textContent ?? "";
+		expect(text).toBe(FIGURE_DRAW_RETRY);
+		expect(text).not.toMatch(/node:url/);
 	});
 });
 

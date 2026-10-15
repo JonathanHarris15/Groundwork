@@ -6,6 +6,7 @@ import {
 	HINT_PROMPT,
 	asideOpening,
 	FIGURE_PROMPT,
+	figureFailureMessage,
 	figureFile,
 	figureForChat,
 	figureFromModelText,
@@ -3411,7 +3412,7 @@ export class ChatView extends ItemView implements ToolUI {
 			this.figureAgents.delete(pendingId);
 		}
 		if (error && !text.trim()) {
-			stateHolder.update({ id: pendingId, title: "Couldn't draw that", quote, error: "The tutor couldn't draw a figure for that passage." });
+			stateHolder.update({ id: pendingId, title: "Couldn't draw that", quote, error: figureFailureMessage(error) });
 			return;
 		}
 		try {
@@ -3427,8 +3428,7 @@ export class ChatView extends ItemView implements ToolUI {
 			this.scheduleHighlights();
 			await this.persist();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "The tutor couldn't draw a figure for that passage.";
-			card.update({ id: pendingId, title: "Couldn't draw that", quote, error: message });
+			card.update({ id: pendingId, title: "Couldn't draw that", quote, error: figureFailureMessage(err) });
 		}
 	}
 

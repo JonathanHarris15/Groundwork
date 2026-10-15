@@ -604,6 +604,73 @@ if (scenario === "signed-in") {
 	await page.waitForSelector(`${rootSel}.is-goals`, { timeout: 15_000 });
 	await sleep(1000);
 	await shot("14-dark-goals");
+
+	await tab("learn").click();
+	await page.waitForSelector(`${rootSel}:not(.is-goals) .gw-turn[data-anchor="item:1"]`, { timeout: 20_000 });
+	const logisticSource = readFileSync(path.join(root, "scripts/fixtures/logistic-l2-figure.py"), "utf8");
+	await page.evaluate(
+		({ quote, source, anchor }) => {
+			const orig = window.fetch.bind(window);
+			let tutorCalls = 0;
+			window.fetch = async (input, init) => {
+				const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+				if (!url.includes("/v1/tutor/complete")) return orig(input, init);
+				tutorCalls += 1;
+				const spec = {
+					title: "Logistic loss with L2",
+					caption: "The loss surface over weight and bias.",
+					kind: "program",
+					language: "python",
+					source,
+				};
+				const text = tutorCalls === 1 ? JSON.stringify(spec) : "Look at the valley of the loss.";
+				return new Response(
+					JSON.stringify({
+						content: [{ type: "text", text }],
+						stopReason: "end_turn",
+						usage: { input: 8, output: 40 },
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
+			};
+			const view = globalThis.app?.workspace?.getLeavesOfType("groundwork-chat")?.[0]?.view;
+			if (!view || typeof view.requestFigure !== "function") throw new Error("Figure request is not available on the tutor view");
+			const turns = [...document.querySelectorAll(".gw-turn[data-anchor]")].map((node) => node.getAttribute("data-anchor"));
+			if (!turns.includes(anchor)) throw new Error(`Missing figure anchor ${anchor} (${turns.join(", ")})`);
+			window.__gwFigure = view.requestFigure(anchor, quote).then(
+				() => "done",
+				(err) => (err instanceof Error ? err.message : String(err)),
+			);
+		},
+		{ quote: "logistic loss and L2 regularization", source: logisticSource, anchor: "item:1" },
+	);
+	try {
+		await page.waitForFunction(
+			() => {
+				const card = document.querySelector(".gw-figure");
+				if (!card) return false;
+				const text = card.textContent ?? "";
+				if (/node:url|dynamically imported module/i.test(text)) throw new Error(text);
+				const failed = card.querySelector(".gw-figure-error");
+				if (failed) throw new Error(failed.textContent || "figure error");
+				const image = card.querySelector(".gw-figure-img");
+				return image instanceof HTMLImageElement && image.src.startsWith("data:image/png");
+			},
+			{ timeout: 180_000 },
+		);
+	} catch (err) {
+		await shot("15-numpy-figure-failed");
+		const detail = await page.evaluate(async () => ({
+			figure: document.querySelector(".gw-figure")?.textContent ?? "",
+			settled: await Promise.race([
+				Promise.resolve(window.__gwFigure ?? "missing"),
+				new Promise((resolve) => window.setTimeout(() => resolve("pending"), 1000)),
+			]),
+		}));
+		throw new Error(`Numpy figure did not draw (${JSON.stringify(detail)}): ${err instanceof Error ? err.message : String(err)}`);
+	}
+	await sleep(400);
+	await shotGroundwork("15-numpy-logistic-l2");
 }
 
 if (scenario === "signed-out") {
