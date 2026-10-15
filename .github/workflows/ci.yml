@@ -72,6 +72,7 @@ jobs:
               - 'scripts/seed-e2e-tutor-memory.mjs'
               - 'scripts/seed-obsidian-graph-vault.mjs'
               - 'scripts/fixtures/obsidian-test-vault/**'
+              - 'scripts/fixtures/logistic-l2-figure.py'
               - '.github/workflows/ci.yml'
       - name: Skip Obsidian e2e (unchanged paths on PR)
         if: github.event_name == 'pull_request' && steps.paths.outputs.obsidian != 'true'
