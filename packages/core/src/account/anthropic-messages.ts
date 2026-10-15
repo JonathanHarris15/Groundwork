@@ -1,9 +1,13 @@
 /**
- * The Anthropic Messages API rejects a turn the tutor would otherwise send:
- * an empty block, two messages of the same role, a tool call with no result,
- * a thread that starts or ends on the assistant. OpenRouter reports all of
- * those as "Invalid Anthropic Messages API request". Repair the array before
- * it is sent. The conversation in memory stays as the tutor recorded it.
+ * The Anthropic Messages API rejects a turn the tutor would otherwise send.
+ * OpenRouter reports every schema miss as "Invalid Anthropic Messages API request".
+ * A saved session that contains one of those misses — a thinking block, a tool
+ * result whose content is an array (a PDF document block from a homework file),
+ * an empty block, two turns of the same role, or a tool call with no result —
+ * is replayed on every later message, so the whole chat goes down.
+ * Repair the array and keep the repaired copy. Flatten tool results to text.
+ * Drop thinking blocks; this request does not enable extended thinking, and
+ * sending one back is itself an invalid request.
  */
 
 import type { ChatMessage, ContentBlock } from "../agent/types";
@@ -22,15 +26,38 @@ export function plainTutorError(text: string): string {
 	return TUTOR_SEND_RETRY;
 }
 
+/** Stored-session repair. Does not invent a trailing "Continue." turn. */
 export function normalizeAnthropicMessages(messages: ChatMessage[]): ChatMessage[] {
 	const cleaned = messages.map(cleanMessage).filter((message): message is ChatMessage => message !== null);
 	const merged = mergeRoles(cleaned);
 	const opened = merged[0]?.role === "assistant" ? [{ role: "user" as const, content: "Continue from the conversation so far." }, ...merged] : merged;
-	const paired = pairTools(opened);
-	if (!paired.length) return [{ role: "user", content: "Continue." }];
-	const last = paired[paired.length - 1];
-	if (last?.role === "assistant") paired.push({ role: "user", content: "Continue." });
-	return paired;
+	return pairTools(opened);
+}
+
+/** The body of one Messages API call. A thread that still ends on the assistant gets a user turn. */
+export function messagesForAnthropic(messages: ChatMessage[]): ChatMessage[] {
+	const healed = normalizeAnthropicMessages(messages);
+	if (!healed.length || healed[healed.length - 1]?.role === "assistant") return [...healed, { role: "user", content: "Continue." }];
+	return healed;
+}
+
+/**
+ * Last resort when a repaired history is still rejected. One user message, text
+ * only, so the next attempt cannot replay a tool call or a document block.
+ */
+export function collapseAnthropicTranscript(messages: ChatMessage[]): ChatMessage[] {
+	const lines: string[] = [];
+	for (const message of normalizeAnthropicMessages(messages)) {
+		const text = plainMessage(message).trim();
+		if (!text) continue;
+		lines.push(`${message.role === "assistant" ? "Tutor" : "Learner"}: ${text}`);
+	}
+	const body = lines.join("\n\n").trim().slice(-40_000);
+	return [{ role: "user", content: body || "Continue." }];
+}
+
+export function invalidAnthropicRequest(text: string): boolean {
+	return /Invalid Anthropic Messages API request|That didn't go through/i.test(text) || /messages\.\d+/i.test(text);
 }
 
 function cleanMessage(message: ChatMessage): ChatMessage | null {
@@ -58,20 +85,10 @@ function cleanBlock(role: "user" | "assistant", block: ContentBlock): ContentBlo
 	if (block.type === "tool_result" && role === "user") {
 		const id = typeof block.tool_use_id === "string" ? block.tool_use_id.trim() : "";
 		if (!id) return [];
-		const content = resultContent(block.content);
-		return [{ type: "tool_result", tool_use_id: id, content, ...(block.is_error ? { is_error: true } : {}) }];
+		return [{ type: "tool_result", tool_use_id: id, content: resultContent(block.content), ...(block.is_error ? { is_error: true } : {}) }];
 	}
-	if (block.type === "thinking" && role === "assistant") {
-		const thinking = typeof block.thinking === "string" ? block.thinking : "";
-		const signature = typeof block.signature === "string" ? block.signature.trim() : "";
-		if (!thinking.trim() || !signature) return [];
-		return [{ type: "thinking", thinking, signature }];
-	}
-	if (block.type === "redacted_thinking" && role === "assistant") {
-		const data = typeof block.data === "string" ? block.data.trim() : "";
-		if (!data) return [];
-		return [{ type: "redacted_thinking", data }];
-	}
+	// Extended thinking is not turned on. A stored thinking block makes every later request invalid.
+	if (block.type === "thinking" || block.type === "redacted_thinking") return [];
 	if ((block.type === "image" || block.type === "document") && role === "user" && block.source) return [block];
 	return [];
 }
@@ -90,14 +107,39 @@ function objectInput(input: unknown): Record<string, unknown> {
 	return {};
 }
 
-function resultContent(content: unknown): string | ContentBlock[] {
+/** OpenRouter's Messages schema accepts a string here. An array, including a PDF document block, is rejected. */
+function resultContent(content: unknown): string {
 	if (typeof content === "string") return content.trim() ? content : "No result.";
 	if (!Array.isArray(content)) return "No result.";
-	const blocks = content.flatMap((block) => {
-		if (!block || typeof block !== "object" || typeof (block as { type?: unknown }).type !== "string") return [];
-		return cleanBlock("user", block as ContentBlock).filter((item) => item.type !== "tool_result" && item.type !== "tool_use");
-	});
-	return blocks.length ? blocks : "No result.";
+	const text = content
+		.map((block) => {
+			if (!block || typeof block !== "object") return "";
+			const record = block as Record<string, unknown>;
+			if (record.type === "text" && typeof record.text === "string") return record.text.trim();
+			if (record.type === "image" || record.type === "document") {
+				const title = typeof record.title === "string" && record.title.trim() ? record.title.trim() : "file";
+				return `[A ${record.type} named ${title} was attached. It isn't kept in saved history; open it again with read_vault_file if you need it.]`;
+			}
+			return "";
+		})
+		.filter(Boolean)
+		.join("\n");
+	return text || "No result.";
+}
+
+function plainMessage(message: ChatMessage): string {
+	return asBlocks(message.content)
+		.map((block) => {
+			if (block.type === "text" && typeof block.text === "string") return block.text;
+			if (block.type === "tool_use") {
+				const name = fields(block).name;
+				return `Tool ${typeof name === "string" && name.trim() ? name : "call"} was called.`;
+			}
+			if (block.type === "tool_result") return resultText(block);
+			return "";
+		})
+		.filter(Boolean)
+		.join("\n");
 }
 
 function mergeRoles(messages: ChatMessage[]): ChatMessage[] {

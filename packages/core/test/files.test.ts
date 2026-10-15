@@ -156,6 +156,10 @@ describe("file tools", () => {
 		expect(first.map((b) => b.type)).toEqual(["text", "image", "text"]);
 		const result = (requests[1][2].content as ContentBlock[])[0] as Extract<ContentBlock, { type: "tool_result" }>;
 		expect(result.type).toBe("tool_result");
-		expect((result.content as ContentBlock[]).map((b) => b.type)).toEqual(["text", "text", "document"]);
+		expect(typeof result.content).toBe("string");
+		expect(result.content).toContain("Lecture 3.pdf");
+		expect(result.content).toContain("read_vault_file");
+		expect(JSON.stringify(requests[1])).not.toContain('"type":"document"');
+		expect(JSON.stringify(requests[1])).not.toContain('"type": "document"');
 	});
 });

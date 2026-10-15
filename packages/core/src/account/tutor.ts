@@ -17,7 +17,7 @@
  */
 
 import type { ContentBlock, ProviderTool, ChatMessage } from "../agent/types";
-import { normalizeAnthropicMessages, plainTutorError, TUTOR_SEND_RETRY } from "./anthropic-messages";
+import { messagesForAnthropic, plainTutorError, TUTOR_SEND_RETRY } from "./anthropic-messages";
 import { parseToolInput } from "./anthropic-stream";
 import { USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "./plans";
 import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
@@ -302,7 +302,7 @@ function anthropicBody(call: TutorCall, model: string, stream = false): unknown 
 		model,
 		max_tokens: call.maxTokens,
 		system: call.system,
-		messages: normalizeAnthropicMessages(call.messages),
+		messages: messagesForAnthropic(call.messages),
 		tools: call.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.input_schema })),
 		...(stream ? { stream: true } : {}),
 	};

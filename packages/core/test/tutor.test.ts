@@ -144,7 +144,7 @@ describe("provider requests", () => {
 		expect(JSON.stringify(google.body)).toContain("functionResponse");
 	});
 
-	it("keeps a thinking block so a later tool turn can send it back", () => {
+	it("reads a thinking block and leaves it out of the next request", () => {
 		const read = readUpstream("anthropic", {
 			content: [
 				{ type: "thinking", thinking: "Check the definition.", signature: "sig" },
@@ -162,7 +162,9 @@ describe("provider requests", () => {
 			{ ...call, messages: [{ role: "assistant", content: read.result.content }] },
 		);
 		expect(upstream.body).toMatchObject({ model: HOSTED_MODELS.heavy.id });
-		expect(JSON.stringify(upstream.body)).toContain("signature");
+		// A thinking block in a later turn is an invalid Messages request. The tool call stays.
+		expect(JSON.stringify(upstream.body)).not.toContain("signature");
+		expect(JSON.stringify(upstream.body)).toContain("get_goal");
 		expect(upstream.body).not.toHaveProperty("stream");
 	});
 

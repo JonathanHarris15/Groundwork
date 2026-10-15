@@ -198,6 +198,8 @@ export class ClaudeCodeSession implements TutorSession {
 			}
 		} catch (err) {
 			this.teardown();
+			// Do not resume this session on the next message. Its stored history is what the API rejected.
+			if (claudeSessionReplay(errorMessage(err))) this.sessionId = undefined;
 			if (!signal?.aborted) onEvent({ type: "error", message: friendlyError(errorMessage(err)) });
 		} finally {
 			signal?.removeEventListener("abort", onAbort);

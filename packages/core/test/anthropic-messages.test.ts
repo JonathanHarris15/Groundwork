@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAnthropicMessages, plainTutorError, TUTOR_SEND_RETRY } from "../src/account/anthropic-messages";
+import { messagesForAnthropic, normalizeAnthropicMessages, plainTutorError, TUTOR_SEND_RETRY } from "../src/account/anthropic-messages";
 import { buildUpstream, upstreamErrorMessage } from "../src/account/tutor";
 import { AgentSession } from "../src/agent/loop";
 import type { AgentEvent, ChatMessage, ContentBlock, Provider } from "../src/agent/types";
@@ -47,8 +47,11 @@ function assertSendable(messages: ChatMessage[]): void {
 			if (block.type === "tool_result") {
 				const id = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
 				expect(pending.has(id)).toBe(true);
+				expect(typeof block.content).toBe("string");
 				pending.delete(id);
 			}
+			expect(block.type).not.toBe("thinking");
+			expect(block.type).not.toBe("document");
 		}
 		if (message.role === "user") expect(pending.size).toBe(0);
 	}
@@ -181,5 +184,125 @@ describe("pick up the homework conversation", () => {
 		for (const messages of seen) assertSendable(messages);
 		expect(JSON.stringify(seen[1])).toContain("DAEN 429 Homework 3 Concepts");
 		expect(JSON.stringify(seen[1])).not.toContain('"text":""');
+	});
+});
+
+/** What OpenRouter's Anthropic adapter rejects with "Invalid Anthropic Messages API request". */
+function poisonedReason(messages: ChatMessage[]): string | null {
+	if (!messages.length) return "empty";
+	if (messages[0]?.role !== "user") return "leading assistant";
+	const pending = new Set<string>();
+	let previous: string | null = null;
+	for (const message of messages) {
+		if (message.role === previous) return "same role twice";
+		previous = message.role;
+		const content = blocks(message);
+		if (!content.length) return "empty message";
+		for (const block of content) {
+			if (block.type === "text" && typeof block.text === "string" && !block.text.trim()) return "empty text";
+			if (block.type === "thinking" || block.type === "redacted_thinking") return "thinking block";
+			if (block.type === "tool_use") {
+				const id = typeof block.id === "string" ? block.id : "";
+				if (!id) return "tool_use without id";
+				pending.add(id);
+			}
+			if (block.type === "tool_result") {
+				const id = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
+				if (!pending.has(id)) return "tool_result without tool_use";
+				if (typeof block.content !== "string") return "tool_result content is not a string";
+				if (Array.isArray(block.content) && block.content.some((part) => part.type === "document")) return "document inside tool_result";
+				pending.delete(id);
+			}
+		}
+		if (message.role === "user" && pending.size) return "tool_use without tool_result";
+	}
+	if (pending.size) return "dangling tool_use";
+	if (messages[messages.length - 1]?.role !== "user") return "ends on assistant";
+	return null;
+}
+
+const poisonedSession: ChatMessage[] = [
+	{ role: "user", content: PICK_UP },
+	{
+		role: "assistant",
+		content: [
+			{ type: "thinking", thinking: "Open the homework PDF.", signature: "sig" },
+			{ type: "text", text: "" },
+			{ type: "tool_use", id: "toolu_pdf", name: "read_vault_file", input: { path: "DAEN 429 Homework 3.pdf" } },
+		],
+	},
+	{
+		role: "user",
+		content: [
+			{
+				type: "tool_result",
+				tool_use_id: "toolu_pdf",
+				content: [
+					{ type: "text", text: "Opened DAEN 429 Homework 3." },
+					{ type: "document", source: { type: "base64", media_type: "application/pdf", data: "QQ==" }, title: "DAEN 429 Homework 3.pdf" },
+				],
+			},
+		],
+	},
+	{ role: "assistant", content: [{ type: "tool_use", id: "toolu_quiz", name: "quiz", input: { concept: "logistic loss" } }] },
+];
+
+describe("poisoned session outage", () => {
+	it("rejects hello, move on, and pick up while the bad history is replayed", () => {
+		expect(poisonedReason(poisonedSession)).toBeTruthy();
+		for (const text of ["hello?", "move on to something else", PICK_UP]) {
+			const replayed = [...poisonedSession, { role: "user" as const, content: text }];
+			expect(poisonedReason(replayed), text).toBeTruthy();
+		}
+	});
+
+	it("repairs the stored session so later messages are sendable", () => {
+		const healed = normalizeAnthropicMessages(poisonedSession);
+		expect(JSON.stringify(healed)).not.toContain('"type":"document"');
+		expect(JSON.stringify(healed)).not.toContain("signature");
+		expect(JSON.stringify(healed)).toContain("DAEN 429 Homework 3.pdf");
+		expect(JSON.stringify(healed)).toContain("toolu_quiz");
+		for (const text of ["hello?", "move on to something else", PICK_UP]) {
+			const sent = messagesForAnthropic([...healed, { role: "user", content: text }]);
+			expect(poisonedReason(sent), text).toBeNull();
+		}
+	});
+
+	it("self-heals the saved thread and retries when the provider still rejects it", async () => {
+		const seen: ChatMessage[][] = [];
+		let calls = 0;
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				seen.push(req.messages.map((message) => structuredClone(message)));
+				calls += 1;
+				if (calls === 1) throw new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Invalid Anthropic Messages API request"}}');
+				const text = "Hello. We can leave the homework PDF and talk about something else.";
+				req.onText(text);
+				return { content: [{ type: "text", text }], stopReason: "end_turn" };
+			},
+		};
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: [],
+			system: "Teach.",
+			session: { id: "hw", title: "DAEN 429 Homework 3 Concepts" },
+			messages: poisonedSession,
+		});
+		expect(JSON.stringify(agent.messages)).not.toContain('"type":"document"');
+		const events: AgentEvent[] = [];
+		await agent.send("hello?", (event) => events.push(event));
+		expect(events.filter((event) => event.type === "error")).toEqual([]);
+		expect(seen.length).toBe(2);
+		expect(poisonedReason(seen[1] ?? [])).toBeNull();
+		expect(JSON.stringify(agent.messages)).not.toContain('"type":"document"');
+		expect(JSON.stringify(agent.messages)).not.toContain('"type":"thinking"');
+
+		await agent.send("move on to something else", (event) => events.push(event));
+		await agent.send(PICK_UP, (event) => events.push(event));
+		expect(events.filter((event) => event.type === "error")).toEqual([]);
+		for (const messages of seen) expect(poisonedReason(messages)).toBeNull();
 	});
 });
