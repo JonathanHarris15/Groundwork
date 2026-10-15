@@ -209,6 +209,39 @@ export function toBase64(buf: ArrayBuffer | Uint8Array): string {
 	return btoa(s);
 }
 
+export function bytesFromBase64(data: string): Uint8Array {
+	if (typeof Buffer !== "undefined") return Uint8Array.from(Buffer.from(data, "base64"));
+	const bin = atob(data);
+	const out = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+	return out;
+}
+
+/** Pull printable text out of simple (uncompressed) PDFs. Compressed streams often yield nothing. */
+export function extractPdfText(bytes: Uint8Array): string {
+	let raw = "";
+	for (let i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]);
+	const chunks: string[] = [];
+	const re = /\((?:\\.|[^\\)])*\)/g;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(raw))) {
+		const s = unescapePdfString(m[0].slice(1, -1));
+		if (/[A-Za-z]{2,}/.test(s)) chunks.push(s);
+	}
+	return chunks.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function unescapePdfString(s: string): string {
+	return s
+		.replace(/\\n/g, "\n")
+		.replace(/\\r/g, "\r")
+		.replace(/\\t/g, "\t")
+		.replace(/\\\(/g, "(")
+		.replace(/\\\)/g, ")")
+		.replace(/\\\\/g, "\\")
+		.replace(/\\(\d{1,3})/g, (_match: string, oct: string) => String.fromCharCode(Number.parseInt(oct, 8)));
+}
+
 function mb(bytes: number): string {
 	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }

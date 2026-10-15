@@ -11,6 +11,7 @@ import {
 	tutorRuntime,
 	tutorStatus,
 	readUpstream,
+	upstreamErrorMessage,
 	type TutorCall,
 } from "../src/account/tutor";
 
@@ -122,6 +123,16 @@ describe("provider requests", () => {
 		expect(JSON.stringify(upstream.headers)).not.toContain("sk-ant");
 	});
 
+	it("never surfaces an OpenRouter file-balance dollar amount to the learner", () => {
+		const message = upstreamErrorMessage(
+			{ error: { message: "This request requires at least $0.50 in balance for files" } },
+			["sk-or-groundwork"],
+		);
+		expect(message).not.toMatch(/\$\d/);
+		expect(message).not.toMatch(/0\.50|balance for files/i);
+		expect(message.toLowerCase()).toMatch(/file|attach/);
+	});
+
 	it("calls each bring-your-own provider at its own API", () => {
 		const anthropic = buildUpstream({ action: "key", provider: "anthropic", model: "claude-sonnet-4-5", key: "user" }, "sk-ant-user", call);
 		expect(anthropic.url).toBe("https://api.anthropic.com/v1/messages");
@@ -221,3 +232,4 @@ function status(action: "hosted" | "key" | "blocked") {
 		{ via: "claude", provider: null },
 	);
 }
+

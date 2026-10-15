@@ -21,6 +21,9 @@ import { parseToolInput } from "./anthropic-stream";
 import { USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "./plans";
 import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
 
+/** OpenRouter's file gate mentions a dollar floor. Never show that amount to learners. */
+const FILE_BALANCE_ERROR = "File attachments are temporarily unavailable on the hosted tutor. Try again in a moment.";
+
 /**
  * Hosted models on OpenRouter. Rates are the listed OpenRouter prices (Oct 2026).
  * Light is Gemini 3.8 Flash ($0.75 / $3.75 per 1M). Heavy is Gemini 3.5 Flash ($1.50 / $9 per 1M).
@@ -274,7 +277,10 @@ export function upstreamErrorMessage(body: unknown, secrets: string[]): string {
 		else if (record.error && typeof record.error === "object" && typeof record.error.message === "string") message = record.error.message;
 		else if (typeof record.message === "string") message = record.message;
 	}
-	return redactSecrets(message, secrets);
+	message = redactSecrets(message, secrets);
+	if (/balance for files|requires at least \$\d/i.test(message)) return FILE_BALANCE_ERROR;
+	if (/\$\d/.test(message)) return "The model provider refused the request.";
+	return message;
 }
 
 export function redactSecrets(text: string, secrets: string[]): string {

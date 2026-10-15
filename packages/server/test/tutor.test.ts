@@ -176,6 +176,16 @@ describe("tutor API", () => {
 		expect(JSON.stringify(result.json)).toContain("[redacted]");
 	});
 
+	it("hides OpenRouter file-balance dollars from free learners", async () => {
+		const { fetchImpl } = capture({ error: { message: "This request requires at least $0.50 in balance for files" } }, 402);
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await route("POST", "/v1/account/plan", { plan: "free" }, server);
+		const result = await route("POST", "/v1/tutor/complete", turn, server);
+		expect(result.status).toBe(502);
+		expect(JSON.stringify(result.json)).not.toMatch(/\$\d|0\.50|balance for files/i);
+		expect(String((result.json as { error?: string }).error)).toMatch(/file|attach/i);
+	});
+
 	it("sends Google and xAI to their own hosts", async () => {
 		for (const [provider, url] of [
 			["google", "generativelanguage.googleapis.com"],

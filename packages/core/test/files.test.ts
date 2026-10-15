@@ -91,6 +91,7 @@ describe("vault files", () => {
 		expect(saved).toContain("read_vault_file");
 		expect(JSON.stringify(messages)).toContain(files[0].data!);
 	});
+
 });
 
 describe("file tools", () => {
