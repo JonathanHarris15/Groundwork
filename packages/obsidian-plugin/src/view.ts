@@ -38,6 +38,8 @@ import {
 	letter,
 	loadVaultFile,
 	normalizeTutorMarkdown,
+	scrubLearnerText,
+	figureIsVisible,
 	normalizeVaultPath,
 	parseNote,
 	asksToWriteFlashcards,
@@ -839,8 +841,10 @@ export class ChatView extends ItemView implements ToolUI {
 				const chip = this.toolChips.get(e.id);
 				if (!chip) break;
 				this.toolChips.delete(e.id);
+				const fileTool = e.name === "read_vault_file" || e.name === "list_vault_files" || e.name === "survey_documents";
 				// A failed call is feedback for the tutor, which retries or explains in its reply.
-				if (e.isError) {
+				// A file tool says what failed, so the learner can hand over another file.
+				if (e.isError && !fileTool) {
 					chip.remove();
 					break;
 				}
@@ -911,7 +915,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const next = createDiv();
 		const comp = new Component();
 		this.addChild(comp);
-		const md = normalizeTutorMarkdown(seg.text);
+		const md = normalizeTutorMarkdown(scrubLearnerText(seg.text));
 		await MarkdownRenderer.render(this.app, md, next, this.record.notePath ?? "", comp);
 		tagMath(next, md);
 		// A newer render started while this one was in flight; drop the stale output.
@@ -935,7 +939,8 @@ export class ChatView extends ItemView implements ToolUI {
 		this.segment = null;
 		if (seg.timer !== null) window.clearTimeout(seg.timer);
 		seg.timer = null;
-		const text = seg.text.trim();
+		const text = scrubLearnerText(seg.text).trim();
+		seg.text = text;
 		if (!text) {
 			seg.wrap.remove();
 			return;
@@ -1321,7 +1326,7 @@ export class ChatView extends ItemView implements ToolUI {
 			}
 			case "assistant": {
 				const el = this.assistantSlot(this.turn(`item:${index}`));
-				void this.renderMd(el, item.text);
+				void this.renderMd(el, scrubLearnerText(item.text));
 				break;
 			}
 			case "tool": {
@@ -3300,6 +3305,7 @@ export class ChatView extends ItemView implements ToolUI {
 	// ── figures ─────────────────────────────────────────────────────────
 
 	showFigure(figure: SessionFigure): void {
+		if (!figureIsVisible(figure)) return;
 		this.pendingFigures.push(figure);
 		(this.record.figures ??= []).push(figureForChat(figure));
 	}
@@ -3334,6 +3340,7 @@ export class ChatView extends ItemView implements ToolUI {
 	}
 
 	private mountSavedFigure(figure: SessionFigure): void {
+		if (!figureIsVisible(figure) && !figure.hasMedia) return;
 		if (this.figureCards.has(figure.id)) return;
 		let wrap = this.uiMessagesEl.querySelector<HTMLElement>(`.gw-turn[data-anchor="${CSS.escape(figure.anchor)}"]`);
 		if (!wrap) {
@@ -3719,7 +3726,7 @@ function transcript(items: DisplayItem[], asides: AsideThread[] = [], figures: S
 				break;
 			}
 			case "assistant":
-				out.push(demoteHeadings(item.text), "");
+				out.push(demoteHeadings(scrubLearnerText(item.text)), "");
 				break;
 			case "quiz": {
 				const { quiz, grade, response, after } = item;

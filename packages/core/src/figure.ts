@@ -183,7 +183,7 @@ plot3d is one surface from an expression, drawn as a still. A surface plus a pla
 ${PARABOLOID_FIGURE_SOURCE}
 \`\`\`
 
-The program runs inside Groundwork for at most 20 seconds, with the standard library plus matplotlib, numpy, and pillow when imported. It cannot see their files. It may also write figure.svg, figure.gif, or figure.webp. Call matplotlib.use("Agg") before pyplot.
+The program runs inside Groundwork for at most 20 seconds, with the standard library plus matplotlib, numpy, and pillow when imported. It cannot see their files, and it cannot open a PDF, list a directory, or check which packages are installed. read_vault_file reads vault files. It may also write figure.svg, figure.gif, or figure.webp. Call matplotlib.use("Agg") before pyplot.
 
 Other plates, when the shape is exact and it is not a plot: story, conjugation, sentence, or a rough map. A real place: kind image with a public url (Wikimedia is a good first stop), or kind geo with a public GeoJSON url plus markers. Name the source in \`credit\`. kind svg is a drawing you write: no scripts, no remote images, \`<animate>\` for motion.
 
@@ -291,13 +291,30 @@ export function figureForChat(figure: SessionFigure): SessionFigure {
 	return copy;
 }
 
+const VAULT_PROBE =
+	/\b(pypdf|PyPDF2|pdfminer|pdfplumber|pymupdf|fitz|pikepdf|pdf2image)\b|os\.(listdir|walk|scandir)\b|\/home\/pyodide|\bimportlib\b|\bpkgutil\b|\bpathlib\b|\bglob\.glob\b|open\s*\([^)]*\.pdf/i;
+
+/** True when Python is trying to read the vault, a PDF, or the sandbox itself. */
+export function figureReadsVault(source: string): boolean {
+	return VAULT_PROBE.test(source);
+}
+
+/** A card is worth showing only when the figure drew a picture. */
+export function figureIsVisible(figure: { svg?: string; media?: { base64?: string } }): boolean {
+	return Boolean(figure.svg?.trim() || figure.media?.base64);
+}
+
 export async function saveFigure(
 	store: KnowledgeStore,
 	input: unknown,
 	extra?: { quote?: string; sessionId?: string; anchor?: string; id?: string },
 	deps?: FigureDeps,
 ): Promise<SessionFigure> {
-	const realized = await realizeFigure(parseFigureSpec(input), deps);
+	const spec = parseFigureSpec(input);
+	if (spec.kind === "program" && spec.source && figureReadsVault(spec.source)) {
+		throw new Error("The figure sandbox cannot read vault files. Use read_vault_file.");
+	}
+	const realized = await realizeFigure(spec, deps);
 	const figure: SessionFigure = {
 		id: extra?.id && /^fig_[a-z0-9]+$/.test(extra.id) ? extra.id : newFigureId(),
 		anchor: extra?.anchor ?? "",

@@ -1,4 +1,5 @@
 import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthropic, normalizeAnthropicMessages } from "../account/anthropic-messages";
+import { scrubLearnerText } from "../learner-text";
 import type { FolderAccess } from "../access";
 import { dialogueFromMessages, studyToolBlock, visibleAsk } from "../intent";
 import { isQuestionTool, repairNote } from "../turn-repair";
@@ -82,7 +83,7 @@ export class AgentSession implements TutorSession {
 			const note = force ? stepsClosedNote() : research.exhausted ? researchClosedNote() : "";
 			const system = this.turnContext?.system ?? this.opts.system;
 			const res = await this.complete(note ? `${system}\n\n${note}` : system, tools, signal, onEvent);
-			this.messages.push({ role: "assistant", content: res.content });
+			this.messages.push({ role: "assistant", content: presentAssistant(res.content) });
 			if (res.stopReason === "pause_turn") continue;
 
 			const uses = res.content.filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use");
@@ -244,6 +245,15 @@ export class AgentSession implements TutorSession {
 			this.messages.push({ role: "assistant", content: [{ type: "text", text: "(stopped)" }] });
 		}
 	}
+}
+
+/** Drop internal fixture ids before they are stored or sent back to the model. */
+function presentAssistant(content: ContentBlock[]): ContentBlock[] {
+	return content.map((block) => {
+		if (block.type !== "text" || typeof block.text !== "string") return block;
+		const text = scrubLearnerText(block.text);
+		return text === block.text ? block : { type: "text", text };
+	});
 }
 
 export function errorMessage(err: unknown): string {

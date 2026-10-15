@@ -222,7 +222,8 @@ export function fileAccessGuidance(access?: FolderAccess, mode: "tutor" | "read"
 			? `Attached files are saved in \`${firstRead}/\`. When they mention a document you have not seen, list it and read it. Do not guess.`
 			: "They have not opened a folder for reading. You cannot open their files until they add one in Settings.",
 		"Teach from their material: their notation and order, but check the claims. Reading a file does not mean they have read it. Define its notation as you use it, and restate any problem in full.",
-		"A survey of these documents uses `survey_documents`. It reads text up to a size budget. Do not summarize from names alone.",
+		"A survey of text notes uses `survey_documents`. It reads text up to a size budget and does not read a PDF. Do not summarize from names alone.",
+		"When they want a folder of course files, from the start of a class through a midterm: call `list_vault_files`, then `read_vault_file` on each PDF, slide, and note. Name concepts from what those files say, then `set_goal` with those concepts and the file paths in `sources`. Do not use `survey_documents` or `show_figure` to read a PDF.",
 		"An `<exam_plan>` block means they asked to study from those files. Treat it as the starting syllabus: refine, `set_goal`, teach. Put a file on the goal (`sources`) or the exam plan. Do not write the file into a concept.",
 	];
 	if (mode === "tutor") {

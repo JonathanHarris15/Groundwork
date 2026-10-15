@@ -121,6 +121,12 @@ describe("file tools", () => {
 		expect(outside.isError).toBe(true);
 		const allowed = await toolByName("read_vault_file")!.run({ path: "notes.md" }, { store, access: { readFolders: ["courses"], writeFolders: [] } });
 		expect(allowed.files?.[0].path).toBe("courses/calc/notes.md");
+		const slides = await toolByName("read_vault_file")!.run({ path: "slides.pptx" }, { store });
+		expect(slides.isError).toBe(true);
+		expect(slides.summary).toBe("Couldn't read slides.pptx");
+		expect(slides.text).toContain("read_vault_file");
+		expect(slides.text).not.toMatch(/Opened slides\.pptx/);
+		expect(slides.files).toBeUndefined();
 	});
 
 	it("write_submission_file writes only inside a write folder", async () => {
@@ -158,8 +164,14 @@ describe("file tools", () => {
 		expect(result.type).toBe("tool_result");
 		expect(typeof result.content).toBe("string");
 		expect(result.content).toContain("Lecture 3.pdf");
-		expect(result.content).toContain("read_vault_file");
-		expect(JSON.stringify(requests[1])).not.toContain('"type":"document"');
-		expect(JSON.stringify(requests[1])).not.toContain('"type": "document"');
+		expect(result.content).not.toContain("isn't kept in saved history");
+		const follow = requests[1].flatMap((message) => (typeof message.content === "string" ? [] : message.content));
+		const document = follow.find((block) => block.type === "document");
+		expect(document).toMatchObject({
+			type: "document",
+			title: "Lecture 3.pdf",
+			source: { type: "base64", media_type: "application/pdf", data: Buffer.from(PDF).toString("base64") },
+		});
+		expect(follow.some((block) => block.type === "tool_result" && Array.isArray(block.content))).toBe(false);
 	});
 });

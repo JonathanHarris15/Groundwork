@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { figureIsVisible, figureReadsVault, PARABOLOID_FIGURE_SOURCE } from "../src/figure";
 import { FIGURE_DRAW_RETRY, figureFailureMessage, PYTHON_WORKER_SOURCE } from "../src/figure-python";
+import { MemoryVaultIO } from "../src/io";
+import { KnowledgeStore } from "../src/store";
+import { toolByName, type ToolUI } from "../src/tools";
 
 describe("figure failure copy", () => {
 	it("replaces the node:url loader error with a retry", () => {
@@ -15,6 +19,46 @@ describe("figure failure copy", () => {
 
 	it("does not stack retry sentences", () => {
 		expect(figureFailureMessage(FIGURE_DRAW_RETRY)).toBe(FIGURE_DRAW_RETRY);
+	});
+
+	it("hides a sandbox probe that tried to import a PDF library", () => {
+		const message = figureFailureMessage(new Error("ModuleNotFoundError: No module named 'pypdf'\n  File \"/home/pyodide/lib/python3.13/site-packages\""));
+		expect(message).toBe("The figure sandbox cannot read vault files. Use read_vault_file.");
+		expect(message).not.toMatch(/pyodide|pypdf|PyPDF2/);
+	});
+});
+
+describe("figure vault probes", () => {
+	it("does not draw a card when the program tries to read a vault PDF", async () => {
+		expect(figureReadsVault(PARABOLOID_FIGURE_SOURCE)).toBe(false);
+		expect(figureIsVisible({ svg: "" })).toBe(false);
+		expect(figureIsVisible({ svg: "<svg></svg>" })).toBe(true);
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		let shown = 0;
+		const ui: ToolUI = {
+			async quiz() {
+				return null;
+			},
+			async ask() {
+				return null;
+			},
+			showFigure() {
+				shown += 1;
+			},
+		};
+		const tool = toolByName("show_figure")!;
+		for (const source of [
+			"import pypdf\nprint(pypdf)",
+			"import os\nprint(os.listdir('/home/pyodide'))",
+			"import PyPDF2\nPyPDF2.PdfReader('review_lec_1-5.pdf')",
+		]) {
+			const result = await tool.run({ title: "Environment Check", kind: "program", language: "python", source }, { store, ui, session: { id: "s" } });
+			expect(result.isError).toBe(true);
+			expect(result.text).toContain("read_vault_file");
+			expect(result.text).not.toMatch(/\/home\/pyodide|No module named/);
+		}
+		expect(shown).toBe(0);
 	});
 });
 

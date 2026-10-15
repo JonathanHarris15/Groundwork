@@ -57,4 +57,15 @@ describe("surveyDocuments", () => {
 		expect(result.text).not.toContain("outside the read folders");
 		expect(result.summary).toBe("Read 3 documents");
 	});
+
+	it("names PDFs that still need read_vault_file instead of saying the folder is empty", async () => {
+		const io = new MemoryVaultIO();
+		for (let i = 0; i < 8; i++) io.writeBinary(`resources/lec-${i}.pdf`, new TextEncoder().encode("%PDF-1.4\n%%EOF"));
+		const store = new KnowledgeStore(io);
+		const result = await toolByName("survey_documents")!.run({}, { store });
+		expect(result.summary).toBe("8 files need read_vault_file");
+		expect(result.summary).not.toBe("No documents to read");
+		expect(result.text).toContain("The folder is not empty");
+		expect(result.text).toContain("read_vault_file");
+	});
 });

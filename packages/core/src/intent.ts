@@ -157,10 +157,12 @@ function homeworkObjective(text: string): boolean {
 }
 
 function examStudy(text: string): boolean {
-	return (
-		/\b(?:studying|preparing|prepping|getting ready)\s+for\b/i.test(text) &&
-		/\b(?:exam|midterm|final|quiz|test|homework|assignment|problem set)\b/i.test(text)
-	);
+	const exam = /\b(?:exam|midterm|quiz|test|homework|assignment|problem set)\b/i.test(text) || /\bfinal(?!\s+(?:answer|step|result|value|form))\b/i.test(text);
+	if (!exam) return false;
+	if (/\b(?:studying|preparing|prepping|getting ready)\s+for\b/i.test(text)) return true;
+	if (/\b(?:want|need|like|hoping)\s+to\s+(?:be\s+prepared|be\s+ready|know|learn|study|review)\b/i.test(text)) return true;
+	if (/\b(?:learn|study|review|cover|know)\b.{0,80}\b(?:from the start|through the|up to the|until the|to the)\b/i.test(text)) return true;
+	return false;
 }
 
 /** A request to solve, explain, or look something up. Not an objective by itself. */
