@@ -1,3 +1,4 @@
+import { normalizeAnthropicMessages } from "../account/anthropic-messages";
 import type { FolderAccess } from "../access";
 import { dialogueFromMessages, studyToolBlock, visibleAsk } from "../intent";
 import { isQuestionTool, repairNote } from "../turn-repair";
@@ -81,7 +82,7 @@ export class AgentSession implements TutorSession {
 			const system = this.turnContext?.system ?? this.opts.system;
 			const res = await this.opts.provider.complete({
 				system: note ? `${system}\n\n${note}` : system,
-				messages: this.messages,
+				messages: normalizeAnthropicMessages(this.messages),
 				tools,
 				signal,
 				onText: (d) => onEvent({ type: "text_delta", text: d }),

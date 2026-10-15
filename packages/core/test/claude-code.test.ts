@@ -8,7 +8,7 @@ import type { AgentEvent } from "../src/agent/types";
 import { loadVaultFile } from "../src/files";
 import { MemoryVaultIO } from "../src/io";
 import { NodeVaultIO } from "../src/node/fs-io";
-import { checkClaudeCode, claudeCodeEnv, ClaudeCodeSession, findClaudeExecutable, friendlyError } from "../src/node/claude-code";
+import { checkClaudeCode, claudeCodeEnv, claudeSessionReplay, ClaudeCodeSession, findClaudeExecutable, friendlyError } from "../src/node/claude-code";
 import { KnowledgeStore } from "../src/store";
 import { TOOLS, type ToolUI } from "../src/tools";
 import { startMockAnthropic, toolResults, type MockBlock, type MockRequest } from "./fixtures/mock-anthropic";
@@ -374,5 +374,10 @@ describe("Claude Code helpers", () => {
 		expect(friendlyError("Not logged in · Please run /login")).toMatch(/type \/login/);
 		expect(friendlyError("spawn /usr/bin/claude ENOENT")).toMatch(/Install it/);
 		expect(friendlyError("something else")).toBe("something else");
+		expect(friendlyError('API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Invalid Anthropic Messages API request"}}')).toBe(
+			"That didn't go through. Try again.",
+		);
+		expect(claudeSessionReplay("Invalid Anthropic Messages API request")).toBe(true);
+		expect(claudeSessionReplay("No conversation found with id")).toBe(true);
 	});
 });
