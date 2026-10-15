@@ -20,6 +20,8 @@ import {
 	marginNotes,
 	buildSystemPrompt,
 	prepareTutorTurn,
+	asksToResumeConversation,
+	resumePrompt,
 	buildConceptMap,
 	buildFromGroundwork,
 	layoutGroundworkGraph,
@@ -621,6 +623,7 @@ export class ChatView extends ItemView implements ToolUI {
 	private async submit(prefill?: string, opts?: { quiet?: boolean }): Promise<void> {
 		const quiet = opts?.quiet === true;
 		const chatId = this.record.id;
+		const opening = this.record.items.length === 0 && this.record.messages.length === 0;
 		const text = (prefill ?? this.uiInputEl.value).trim();
 		const pending = prefill === undefined ? this.pendingFiles : [];
 		if (!text && !pending.length) return;
@@ -722,6 +725,10 @@ export class ChatView extends ItemView implements ToolUI {
 			});
 			agent.setTurnContext?.(prepared.selected ? { system: prepared.system, profile: prepared.profile, tutorContext: prepared.tutorContext } : null);
 			if (prepared.note) toSend = [toSend, prepared.note].join("\n\n");
+			if (opening && asksToResumeConversation(text)) {
+				const prior = await this.earlierTranscript();
+				if (prior) toSend = resumePrompt(toSend, prior);
+			}
 			await agent.send(toSend, (e) => this.onEvent(e), this.abort.signal, prepared.files);
 		} finally {
 			this.abort = null;
@@ -3513,6 +3520,17 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private async listChats(): Promise<ChatRecord[]> {
 		return (await this.plugin.store.listChats()) as ChatRecord[];
+	}
+
+	/** The chat they were just in, when this Learn thread is still empty. */
+	private async earlierTranscript(): Promise<string | undefined> {
+		const chats = await this.listChats();
+		for (const chat of chats) {
+			if (chat.id === this.record.id || !chat.items?.length) continue;
+			const text = transcript(chat.items, chat.asides ?? [], chat.figures ?? []).trim();
+			if (text) return text;
+		}
+		return undefined;
 	}
 
 	private async latestChat(): Promise<ChatRecord | null> {

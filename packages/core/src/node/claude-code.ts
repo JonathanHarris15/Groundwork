@@ -10,6 +10,7 @@ import { basename, fileBlocks, mcpContent, userContent, type McpContent, type Va
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolResult, ToolUI } from "../tools";
 import type { AgentEvent, TutorSession, TutorTurnContext } from "../agent/types";
+import { plainTutorError } from "../account/anthropic-messages";
 import { errorMessage } from "../agent/loop";
 import { studyToolBlock, type DialogueTurn } from "../intent";
 import { isQuestionTool, repairNote } from "../turn-repair";
@@ -188,10 +189,11 @@ export class ClaudeCodeSession implements TutorSession {
 			try {
 				await this.turn(text, files, onEvent, signal);
 			} catch (err) {
-				if (!this.sessionId || !/No conversation found/i.test(errorMessage(err))) throw err;
-				// The chat was started on another computer (Claude Code keeps sessions locally): start over with the transcript.
+				if (!this.sessionId || !claudeSessionReplay(errorMessage(err))) throw err;
+				// The saved Claude Code session is missing or its message history was rejected. Start over from the transcript.
 				this.teardown();
 				this.sessionId = undefined;
+				if (!this.history) this.history = dialogueTranscript(this.dialogue, text);
 				await this.turn(text, files, onEvent, signal);
 			}
 		} catch (err) {
@@ -489,7 +491,23 @@ export function friendlyError(text: string, code?: string): string {
 	if (/ENOENT|spawn .* ENOENT|not found at/i.test(text)) {
 		return "Couldn't start Claude Code. Install it (https://claude.com/claude-code) or set its path in Settings → Groundwork.";
 	}
-	return text;
+	return plainTutorError(text);
+}
+
+/** A resumed Claude Code session can be missing, or its stored messages can be rejected. Replay the transcript once. */
+export function claudeSessionReplay(text: string): boolean {
+	return /No conversation found/i.test(text) || /Invalid Anthropic Messages API request/i.test(text);
+}
+
+function dialogueTranscript(dialogue: DialogueTurn[], current: string): string | undefined {
+	const turns = [...dialogue];
+	const last = turns[turns.length - 1];
+	if (last?.role === "user" && last.text === current) turns.pop();
+	const text = turns
+		.map((turn) => `${turn.role === "user" ? "Learner" : "Tutor"}: ${turn.text}`)
+		.join("\n\n")
+		.trim();
+	return text ? text.slice(-MAX_HISTORY_CHARS) : undefined;
 }
 
 function plural(n: number, word: string): string {
