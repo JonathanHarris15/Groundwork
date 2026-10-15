@@ -1,3 +1,4 @@
+import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthropic, normalizeAnthropicMessages } from "../account/anthropic-messages";
 import type { FolderAccess } from "../access";
 import { dialogueFromMessages, studyToolBlock, visibleAsk } from "../intent";
 import { isQuestionTool, repairNote } from "../turn-repair";
@@ -5,7 +6,7 @@ import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
 import { ResearchTurn, WEB_RESEARCH_TOOLS, forcingAnswer, researchClosedNote, stepsClosedNote, unfinishedTurn } from "./research";
-import type { AgentEvent, ChatMessage, ContentBlock, Provider, ProviderTool, TutorSession, TutorTurnContext } from "./types";
+import type { AgentEvent, ChatMessage, ContentBlock, Provider, ProviderResponse, ProviderTool, TutorSession, TutorTurnContext } from "./types";
 
 export interface AgentOptions {
 	provider: Provider;
@@ -30,7 +31,7 @@ export class AgentSession implements TutorSession {
 	private turnContext: TutorTurnContext | null = null;
 
 	constructor(private readonly opts: AgentOptions) {
-		this.messages = opts.messages ? [...opts.messages] : [];
+		this.messages = normalizeAnthropicMessages(opts.messages ? [...opts.messages] : []);
 	}
 
 	setTurnContext(ctx: TutorTurnContext | null): void {
@@ -59,6 +60,7 @@ export class AgentSession implements TutorSession {
 				onEvent({ type: "error", message: errorMessage(err), code: errorCode(err) });
 			}
 		} finally {
+			this.healStored();
 			this.running = false;
 			onEvent({ type: "turn_end" });
 		}
@@ -79,13 +81,7 @@ export class AgentSession implements TutorSession {
 			const tools = toolsForStep(catalog, research, force);
 			const note = force ? stepsClosedNote() : research.exhausted ? researchClosedNote() : "";
 			const system = this.turnContext?.system ?? this.opts.system;
-			const res = await this.opts.provider.complete({
-				system: note ? `${system}\n\n${note}` : system,
-				messages: this.messages,
-				tools,
-				signal,
-				onText: (d) => onEvent({ type: "text_delta", text: d }),
-			});
+			const res = await this.complete(note ? `${system}\n\n${note}` : system, tools, signal, onEvent);
 			this.messages.push({ role: "assistant", content: res.content });
 			if (res.stopReason === "pause_turn") continue;
 
@@ -162,6 +158,31 @@ export class AgentSession implements TutorSession {
 			this.messages.push({ role: "user", content: results });
 		}
 		this.finishUnfinished(onEvent, turnAt);
+	}
+
+	/** Repair the saved thread, then send it. If the provider still rejects the history, drop it to text and retry once. */
+	private async complete(system: string, tools: ProviderTool[], signal: AbortSignal | undefined, onEvent: (e: AgentEvent) => void): Promise<ProviderResponse> {
+		this.healStored();
+		const call = (messages: ChatMessage[]) =>
+			this.opts.provider.complete({
+				system,
+				messages,
+				tools,
+				signal,
+				onText: (d) => onEvent({ type: "text_delta", text: d }),
+			});
+		try {
+			return await call(messagesForAnthropic(this.messages));
+		} catch (err) {
+			if (signal?.aborted || !invalidAnthropicRequest(errorMessage(err))) throw err;
+			this.messages.splice(0, this.messages.length, ...collapseAnthropicTranscript(this.messages));
+			return await call(messagesForAnthropic(this.messages));
+		}
+	}
+
+	private healStored(): void {
+		const healed = normalizeAnthropicMessages(this.messages);
+		this.messages.splice(0, this.messages.length, ...healed);
 	}
 
 	/** The step cap still hit. Leave a partial answer and a way to continue, never a bare error. */

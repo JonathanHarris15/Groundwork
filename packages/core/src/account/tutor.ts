@@ -17,6 +17,7 @@
  */
 
 import type { ContentBlock, ProviderTool, ChatMessage } from "../agent/types";
+import { messagesForAnthropic, plainTutorError, TUTOR_SEND_RETRY } from "./anthropic-messages";
 import { parseToolInput } from "./anthropic-stream";
 import { USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "./plans";
 import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
@@ -267,14 +268,15 @@ export function readUpstream(kind: UpstreamKind, body: unknown): { ok: true; res
 }
 
 export function upstreamErrorMessage(body: unknown, secrets: string[]): string {
-	let message = "The model provider refused the request.";
+	let message = "";
 	if (body && typeof body === "object") {
 		const record = body as { error?: { message?: unknown } | string; message?: unknown };
 		if (typeof record.error === "string") message = record.error;
 		else if (record.error && typeof record.error === "object" && typeof record.error.message === "string") message = record.error.message;
 		else if (typeof record.message === "string") message = record.message;
 	}
-	return redactSecrets(message, secrets);
+	if (!message) return TUTOR_SEND_RETRY;
+	return plainTutorError(redactSecrets(message, secrets));
 }
 
 export function redactSecrets(text: string, secrets: string[]): string {
@@ -300,7 +302,7 @@ function anthropicBody(call: TutorCall, model: string, stream = false): unknown 
 		model,
 		max_tokens: call.maxTokens,
 		system: call.system,
-		messages: call.messages,
+		messages: messagesForAnthropic(call.messages),
 		tools: call.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.input_schema })),
 		...(stream ? { stream: true } : {}),
 	};
