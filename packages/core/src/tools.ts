@@ -29,7 +29,7 @@ import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQui
 import { isBuilt } from "./graph";
 import { cardsToPractice, loadFlashcardLibrary, saveFlashcard } from "./flashcards";
 import { daysLeftPhrase } from "./goal-plan";
-import { saveFigure, type SessionFigure } from "./figure";
+import { figureFailureMessage, figureIsVisible, saveFigure, type SessionFigure } from "./figure";
 import { describePublicBody, fetchPublic } from "./figure-net";
 import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalReport, type GoalStatus, type KnowledgeStore } from "./store";
 
@@ -818,7 +818,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "survey_documents",
 		description:
-			"Read the learner's context documents for a summary. Returns each text file up to a size budget, and names files that were not read. Call this when they ask to summarize, survey, or see what is in their documents or notes. A list of names is not a summary.",
+			"Read text notes for a summary, up to a size budget. A PDF, slide, or image is named here, not read. Open those with read_vault_file. Call this when they ask to summarize text notes. A list of names is not a summary.",
 		inputSchema: { type: "object", properties: {} },
 		async run(_input, ctx) {
 			const reads = accessFromContext(ctx).readFolders;
@@ -827,13 +827,19 @@ export const TOOLS: ToolDef[] = [
 			}
 			const read = await surveyDocuments(ctx.store.context, reads);
 			const opened = read.hits.filter((hit) => hit.text).length;
-			return { text: formatSurvey(read, reads), summary: opened ? `Read ${opened} document${opened === 1 ? "" : "s"}` : "No documents to read" };
+			const named = read.hits.length;
+			const summary = opened
+				? `Read ${opened} document${opened === 1 ? "" : "s"}`
+				: named
+					? `${named} file${named === 1 ? "" : "s"} need read_vault_file`
+					: "No documents to read";
+			return { text: formatSurvey(read, reads), summary };
 		},
 	},
 	{
 		name: "list_vault_files",
 		description:
-			"List file names inside the folders the learner allowed (named in your instructions). Names and kinds only. Omit folder to list every allowed folder. Pass a folder only when it is one of those, or a subfolder of one. The rest of the vault stays closed. To summarize the documents, call survey_documents.",
+			"List file names inside the folders the learner allowed (named in your instructions). Names and kinds only. Omit folder to list every allowed folder. Pass a folder only when it is one of those, or a subfolder of one. The rest of the vault stays closed. To read a PDF or slide, call read_vault_file on each file. survey_documents only excerpts text notes.",
 		inputSchema: { type: "object", properties: { folder: str("A read folder, or a subfolder of one. Omit it to list every folder the learner allowed.") } },
 		async run({ folder }: { folder?: string }, ctx) {
 			const { store } = ctx;
@@ -875,7 +881,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "read_vault_file",
 		description:
-			"Open a PDF, image, text, or markdown file inside a folder the learner allowed. Pass a vault path or a file name. Files outside those folders are not opened.",
+			"The only tool that reads a PDF, slide, image, or note in the vault. Pass a vault path or a file name inside a folder the learner allowed. The file is attached on the next turn for you to read. Do not open it with show_figure or Python. Files outside those folders are not opened.",
 		inputSchema: { type: "object", properties: { path: str('e.g. "resources/Lecture 3.pdf" or "Lecture 3.pdf".') }, required: ["path"] },
 		async run({ path }: { path: string }, ctx) {
 			const reads = accessFromContext(ctx).readFolders;
@@ -888,6 +894,13 @@ export const TOOLS: ToolDef[] = [
 				};
 			}
 			const file = await loadVaultFile(ctx.store.context, found);
+			if (file.skipped) {
+				return {
+					text: `Couldn't read ${found}. ${file.skipped} Export it as a PDF, an image, or text, then open that with read_vault_file.`,
+					isError: true,
+					summary: `Couldn't read ${basename(found)}`,
+				};
+			}
 			return { text: `Contents of ${found}:`, files: [file], summary: `Opened ${basename(found)}` };
 		},
 	},
@@ -1025,7 +1038,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "show_figure",
 		description:
-			"Show one figure in the left margin. Any plot, surface, geometry, function, data series, or spatial picture uses kind program: Python with numpy and matplotlib that writes figure.png. Do not draw ASCII art. ASCII is only a short inline mark such as x^2. plot3d is one surface. A surface plus a plane and two point classes, such as a paraboloid x3 = r^2, is kind program with projection=\"3d\" and a surface x**2 + y**2. Other plates: story, conjugation, sentence, or a rough map. A real place: kind image or geo with a public url. kind svg is your drawing. Then say what to look at. Do not paste the picture.",
+			"Show one figure in the left margin. Any plot, surface, geometry, function, data series, or spatial picture uses kind program: Python with numpy and matplotlib that writes figure.png. Do not draw ASCII art. ASCII is only a short inline mark such as x^2. plot3d is one surface. A surface plus a plane and two point classes, such as a paraboloid x3 = r^2, is kind program with projection=\"3d\" and a surface x**2 + y**2. Other plates: story, conjugation, sentence, or a rough map. A real place: kind image or geo with a public url. kind svg is your drawing. Then say what to look at. Do not paste the picture. The sandbox cannot see the vault. Do not use it to open a PDF, list a directory, or check which packages are installed. read_vault_file reads those files.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -1129,7 +1142,19 @@ export const TOOLS: ToolDef[] = [
 			required: ["title", "kind"],
 		},
 		async run(input: unknown, { store, ui, session, signal }) {
-			const figure = await saveFigure(store, input, { sessionId: session?.id }, { signal });
+			let figure: SessionFigure;
+			try {
+				figure = await saveFigure(store, input, { sessionId: session?.id }, { signal });
+			} catch (err) {
+				return { text: figureFailureMessage(err), isError: true, summary: "Couldn't draw the figure" };
+			}
+			if (!figureIsVisible(figure)) {
+				return {
+					text: "That program did not draw a figure. Use show_figure only for a picture. Read vault files with read_vault_file.",
+					isError: true,
+					summary: "No figure to show",
+				};
+			}
 			ui?.showFigure?.(figure);
 			return {
 				text: `Showing a ${figure.kind} figure “${figure.title}” in the left margin (${figure.id}). It is saved on the learner's account. Refer to it in your reply. Do not paste the SVG.`,

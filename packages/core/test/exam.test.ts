@@ -156,4 +156,18 @@ describe("exam material parsing", () => {
 		expect(report.analysis.frontier.length).toBeGreaterThan(0);
 		expect(report.goal.targets.length).toBeGreaterThan(0);
 	});
+
+	it("does not say there are no documents when eight PDFs were selected", async () => {
+		const io = new MemoryVaultIO();
+		const files = Array.from({ length: 8 }, (_, i) => {
+			const path = `resources/lec-${i + 1}.pdf`;
+			io.writeBinary(path, new TextEncoder().encode("%PDF-1.4\n%%EOF"));
+			return path;
+		});
+		const store = new KnowledgeStore(io);
+		const result = await toolByName("ingest_exam_materials")!.run({ files, userText: "midterm", createGoal: false }, { store });
+		expect(result.summary).not.toContain("No documents to read");
+		expect(result.summary).toMatch(/8 files|Couldn't extract topics/);
+		expect(result.text).toContain("read_vault_file");
+	});
 });

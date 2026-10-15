@@ -35,6 +35,13 @@ describe("classifyLearnerAsk", () => {
 		expect(classifyLearnerAsk("Review limits with me.")).toBe("study");
 		expect(classifyLearnerAsk(practiceTestRequest("derivatives"))).toBe("study");
 		expect(classifyLearnerAsk("prep me for the midterm")).toBe("study");
+		expect(
+			classifyLearnerAsk(
+				"Alright lets make a new goal, I need to know all of the content from the start of my 427 class to the midterm. The midterm already happened but I want to be prepared.",
+			),
+		).toBe("study");
+		expect(classifyLearnerAsk("learn everything from the start of the class to the midterm using this folder")).toBe("study");
+		expect(classifyLearnerAsk("I need to know all of the content from the start of my 427 class to the midterm. I want to be prepared.")).toBe("study");
 	});
 
 	it("ignores the hidden working-goal note", () => {

@@ -26,6 +26,7 @@ export * from "./jev";
 export * from "./practice";
 export * from "./tools";
 export * from "./intent";
+export * from "./learner-text";
 export * from "./resume";
 export * from "./turn-repair";
 export * from "./account/anthropic-stream";

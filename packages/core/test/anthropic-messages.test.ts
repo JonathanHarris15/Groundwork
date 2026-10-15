@@ -34,9 +34,18 @@ function assertSendable(messages: ChatMessage[]): void {
 		expect(content.length).toBeGreaterThan(0);
 		for (const block of content) {
 			if (block.type === "text") expect(typeof block.text === "string" && block.text.trim()).not.toBe("");
-			if (block.type === "thinking") {
-				expect(String(block.thinking ?? "").trim()).not.toBe("");
-				expect(String(block.signature ?? "").trim()).not.toBe("");
+			expect(block.type).not.toBe("thinking");
+			expect(block.type).not.toBe("redacted_thinking");
+			expect(block).not.toHaveProperty("caller");
+			expect(block).not.toHaveProperty("citations");
+			if (block.type === "image" || block.type === "document") {
+				expect(message.role).toBe("user");
+				const source = block.source as { type?: string; media_type?: string; data?: string } | undefined;
+				expect(source?.type).toBe("base64");
+				expect(typeof source?.data).toBe("string");
+				expect(source?.data?.length).toBeGreaterThan(0);
+				const allowed = block.type === "image" ? ["image/jpeg", "image/png", "image/gif", "image/webp"] : ["application/pdf", "text/plain"];
+				expect(allowed).toContain(source?.media_type);
 			}
 			if (block.type === "tool_use") {
 				const id = typeof block.id === "string" ? block.id : "";
@@ -48,10 +57,10 @@ function assertSendable(messages: ChatMessage[]): void {
 				const id = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
 				expect(pending.has(id)).toBe(true);
 				expect(typeof block.content).toBe("string");
+				expect(block.content).not.toContain('"type":"document"');
+				expect(block.content).not.toContain('"type":"image"');
 				pending.delete(id);
 			}
-			expect(block.type).not.toBe("thinking");
-			expect(block.type).not.toBe("document");
 		}
 		if (message.role === "user") expect(pending.size).toBe(0);
 	}
@@ -123,6 +132,88 @@ describe("Anthropic message history", () => {
 		expect(banner).not.toMatch(/Invalid Anthropic|sk-ant-secret|invalid_request/);
 		expect(plainTutorError("messages.1.content.0.text: text content blocks must be non-empty")).toBe(TUTOR_SEND_RETRY);
 		expect(plainTutorError("The model provider returned nothing.")).toBe("The model provider returned nothing.");
+	});
+});
+
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+const PDF_DATA = Buffer.from("%PDF-1.4\n%%EOF").toString("base64");
+
+describe("media in every position", () => {
+	it("keeps valid documents and images, and drops thinking and invalid sources", () => {
+		const history: ChatMessage[] = [
+			{
+				role: "user",
+				content: [
+					{ type: "document", source: { type: "base64", media_type: "application/pdf", data: PDF_DATA }, title: "before.pdf" },
+					{ type: "text", text: "The slides are in Recources." },
+					{ type: "image", source: { type: "base64", media_type: "image/jpg", data: PNG } },
+					{ type: "document", source: { type: "base64", media_type: "application/pdf" }, title: "missing.pdf" },
+					{ type: "image", source: { type: "base64", media_type: "image/png", data: PNG } },
+					{ type: "thinking", thinking: "look at the slides", signature: "sig" },
+					{ type: "redacted_thinking", data: "abc" },
+				],
+			},
+			{
+				role: "assistant",
+				content: [
+					{ type: "thinking", thinking: "open the pdf", signature: "sig" },
+					{ type: "redacted_thinking", data: "abc" },
+					{ type: "image", source: { type: "base64", media_type: "image/png", data: PNG } },
+					{ type: "text", text: "Listing the folder.", citations: [] },
+					{
+						type: "tool_use",
+						id: "toolu_list",
+						name: "list_vault_files",
+						input: { folder: "Recources" },
+						caller: { type: "direct" },
+					},
+				],
+			},
+			{
+				role: "user",
+				content: [
+					{ type: "document", source: { type: "base64", media_type: "application/pdf", data: PDF_DATA }, title: "ahead.pdf" },
+					{
+						type: "tool_result",
+						tool_use_id: "toolu_list",
+						content: [
+							{ type: "text", text: "Listed 2 files." },
+							{ type: "thinking", thinking: "hidden", signature: "sig" },
+							{ type: "document", source: { type: "base64", media_type: "application/pdf", data: PDF_DATA }, title: "Lecture1.pdf" },
+							{ type: "image", source: { type: "base64", media_type: "image/png", data: PNG }, title: "board.png" },
+							{ type: "image", source: { type: "base64", media_type: "image/jpg", data: "not-an-image" }, title: "bad.jpg" },
+							{ type: "document", source: { type: "base64", media_type: "application/pdf", data: "" }, title: "empty.pdf" },
+						],
+					},
+					{ type: "document", source: { type: "base64", media_type: "application/pdf", data: PDF_DATA }, title: "after.pdf" },
+				],
+			},
+		];
+		const sent = messagesForAnthropic(history);
+		assertSendable(sent);
+		const encoded = JSON.stringify(sent);
+		expect(encoded).not.toContain('"type":"thinking"');
+		expect(encoded).not.toContain("redacted_thinking");
+		expect(encoded).not.toContain("image/jpg");
+		expect(encoded).not.toContain('"title":"missing.pdf"');
+		expect(encoded).not.toContain('"title":"empty.pdf"');
+		expect(encoded).toContain("missing.pdf");
+		expect(encoded).toContain("empty.pdf");
+		expect(encoded).not.toContain("caller");
+		expect(encoded).not.toContain("citations");
+		expect(encoded).toContain("not a valid attachment");
+		const documents = sent.flatMap(blocks).filter((block) => block.type === "document");
+		const titles = documents.map((block) => block.title);
+		expect(titles).toEqual(expect.arrayContaining(["before.pdf", "ahead.pdf", "Lecture1.pdf", "after.pdf"]));
+		for (const block of documents) {
+			expect(block.source).toMatchObject({ type: "base64", media_type: "application/pdf", data: PDF_DATA });
+		}
+		const images = sent.flatMap(blocks).filter((block) => block.type === "image");
+		expect(images.length).toBeGreaterThan(0);
+		for (const block of images) expect(block.source).toMatchObject({ media_type: "image/png", data: PNG });
+		const result = sent.flatMap(blocks).find((block) => block.type === "tool_result");
+		expect(result && result.type === "tool_result" && result.content).toContain("Listed 2 files.");
+		expect(normalizeAnthropicMessages(sent)).toEqual(sent);
 	});
 });
 
@@ -258,13 +349,18 @@ describe("poisoned session outage", () => {
 
 	it("repairs the stored session so later messages are sendable", () => {
 		const healed = normalizeAnthropicMessages(poisonedSession);
-		expect(JSON.stringify(healed)).not.toContain('"type":"document"');
 		expect(JSON.stringify(healed)).not.toContain("signature");
+		expect(JSON.stringify(healed)).not.toContain("thinking");
 		expect(JSON.stringify(healed)).toContain("DAEN 429 Homework 3.pdf");
 		expect(JSON.stringify(healed)).toContain("toolu_quiz");
+		const pdf = healed.flatMap(blocks).find((block) => block.type === "document");
+		expect(pdf).toMatchObject({ source: { type: "base64", media_type: "application/pdf", data: "QQ==" }, title: "DAEN 429 Homework 3.pdf" });
+		const result = healed.flatMap(blocks).find((block) => block.type === "tool_result");
+		expect(result && result.type === "tool_result" && typeof result.content).toBe("string");
 		for (const text of ["hello?", "move on to something else", PICK_UP]) {
 			const sent = messagesForAnthropic([...healed, { role: "user", content: text }]);
 			expect(poisonedReason(sent), text).toBeNull();
+			assertSendable(sent);
 		}
 	});
 
@@ -291,7 +387,7 @@ describe("poisoned session outage", () => {
 			session: { id: "hw", title: "DAEN 429 Homework 3 Concepts" },
 			messages: poisonedSession,
 		});
-		expect(JSON.stringify(agent.messages)).not.toContain('"type":"document"');
+		expect(JSON.stringify(agent.messages)).toContain('"type":"document"');
 		const events: AgentEvent[] = [];
 		await agent.send("hello?", (event) => events.push(event));
 		expect(events.filter((event) => event.type === "error")).toEqual([]);

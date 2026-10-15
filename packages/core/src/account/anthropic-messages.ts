@@ -1,13 +1,15 @@
 /**
  * The Anthropic Messages API rejects a turn the tutor would otherwise send.
- * OpenRouter reports every schema miss as "Invalid Anthropic Messages API request".
- * A saved session that contains one of those misses — a thinking block, a tool
- * result whose content is an array (a PDF document block from a homework file),
- * an empty block, two turns of the same role, or a tool call with no result —
+ * OpenRouter reports some schema misses as "Invalid Anthropic Messages API request"
+ * and names others. A saved session that contains one of those misses — a thinking
+ * block, an empty block, two turns of the same role, a tool call with no result,
+ * or an image or PDF whose source is missing data or uses a disallowed media type —
  * is replayed on every later message, so the whole chat goes down.
- * Repair the array and keep the repaired copy. Flatten tool results to text.
- * Drop thinking blocks; this request does not enable extended thinking, and
- * sending one back is itself an invalid request.
+ * Repair the transcript and keep the repaired copy. Tool results stay strings.
+ * A valid PDF or image that arrived inside a tool result is moved beside that
+ * result, so the model can still read the file it just opened. Invalid media
+ * becomes a text note. Drop thinking blocks; this request does not enable
+ * extended thinking, and sending one back is itself an invalid request.
  */
 
 import type { ChatMessage, ContentBlock } from "../agent/types";
@@ -85,11 +87,16 @@ function cleanBlock(role: "user" | "assistant", block: ContentBlock): ContentBlo
 	if (block.type === "tool_result" && role === "user") {
 		const id = typeof block.tool_use_id === "string" ? block.tool_use_id.trim() : "";
 		if (!id) return [];
-		return [{ type: "tool_result", tool_use_id: id, content: resultContent(block.content), ...(block.is_error ? { is_error: true } : {}) }];
+		const split = splitResult(block.content);
+		return [
+			{ type: "tool_result", tool_use_id: id, content: split.text, ...(block.is_error ? { is_error: true } : {}) },
+			...split.media,
+		];
 	}
 	// Extended thinking is not turned on. A stored thinking block makes every later request invalid.
 	if (block.type === "thinking" || block.type === "redacted_thinking") return [];
-	if ((block.type === "image" || block.type === "document") && role === "user" && block.source) return [block];
+	// An image on an assistant turn is rejected. Drop it.
+	if ((block.type === "image" || block.type === "document") && role === "user") return mediaOrNote(block);
 	return [];
 }
 
@@ -107,24 +114,63 @@ function objectInput(input: unknown): Record<string, unknown> {
 	return {};
 }
 
-/** OpenRouter's Messages schema accepts a string here. An array, including a PDF document block, is rejected. */
-function resultContent(content: unknown): string {
-	if (typeof content === "string") return content.trim() ? content : "No result.";
-	if (!Array.isArray(content)) return "No result.";
-	const text = content
-		.map((block) => {
-			if (!block || typeof block !== "object") return "";
-			const record = block as Record<string, unknown>;
-			if (record.type === "text" && typeof record.text === "string") return record.text.trim();
-			if (record.type === "image" || record.type === "document") {
-				const title = typeof record.title === "string" && record.title.trim() ? record.title.trim() : "file";
-				return `[A ${record.type} named ${title} was attached. It isn't kept in saved history; open it again with read_vault_file if you need it.]`;
-			}
-			return "";
-		})
-		.filter(Boolean)
-		.join("\n");
-	return text || "No result.";
+const IMAGE_MEDIA = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const DOCUMENT_MEDIA = new Set(["application/pdf", "text/plain"]);
+
+/**
+ * A tool result is a string. A valid PDF or image that came with it is a sibling
+ * block, which this endpoint accepts. A source with no data, or an image type
+ * other than jpeg, png, gif, or webp, is the generic invalid-request error, so
+ * it becomes a note instead of a block.
+ */
+function splitResult(content: unknown): { text: string; media: ContentBlock[] } {
+	if (typeof content === "string") return { text: content.trim() ? content : "No result.", media: [] };
+	if (!Array.isArray(content)) return { text: "No result.", media: [] };
+	const lines: string[] = [];
+	const media: ContentBlock[] = [];
+	for (const block of content) {
+		if (!block || typeof block !== "object") continue;
+		const record = block as Record<string, unknown>;
+		if (record.type === "text" && typeof record.text === "string" && record.text.trim()) {
+			lines.push(record.text.trim());
+			continue;
+		}
+		if (record.type === "image" || record.type === "document") {
+			const kept = validMedia(record);
+			if (kept) media.push(kept);
+			else lines.push(invalidMediaNote(record));
+		}
+	}
+	const text = lines.join("\n") || (media.length ? "Opened the attached file." : "No result.");
+	return { text, media };
+}
+
+function mediaOrNote(block: ContentBlock): ContentBlock[] {
+	const record = block as Record<string, unknown>;
+	const kept = validMedia(record);
+	return kept ? [kept] : [{ type: "text", text: invalidMediaNote(record) }];
+}
+
+function validMedia(block: Record<string, unknown>): ContentBlock | null {
+	if (block.type !== "image" && block.type !== "document") return null;
+	const source = block.source;
+	if (!source || typeof source !== "object") return null;
+	const fields = source as Record<string, unknown>;
+	if (fields.type !== "base64") return null;
+	const mediaType = typeof fields.media_type === "string" ? fields.media_type : "";
+	const data = typeof fields.data === "string" ? fields.data.trim() : "";
+	if (!data) return null;
+	if (block.type === "image" && !IMAGE_MEDIA.has(mediaType)) return null;
+	if (block.type === "document" && !DOCUMENT_MEDIA.has(mediaType)) return null;
+	const clean: ContentBlock = { type: block.type, source: { type: "base64", media_type: mediaType, data } };
+	if (block.type === "document" && typeof block.title === "string" && block.title.trim()) clean.title = block.title.trim();
+	return clean;
+}
+
+function invalidMediaNote(block: Record<string, unknown>): string {
+	const kind = block.type === "image" ? "image" : "document";
+	const title = typeof block.title === "string" && block.title.trim() ? block.title.trim() : "file";
+	return `[The ${kind} ${title} was not a valid attachment, so it was left out. Open it again with read_vault_file.]`;
 }
 
 function plainMessage(message: ChatMessage): string {

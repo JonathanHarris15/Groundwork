@@ -29,11 +29,14 @@ export const FIGURE_DRAW_RETRY = "The figure didn't draw. Try again.";
 export const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.29.5/full/";
 
 const LOADER_FAILURE = /node:url|dynamically imported module/i;
+const SANDBOX_PROBE = /pypdf|PyPDF2|pdfminer|pdfplumber|pymupdf|pikepdf|pyodide|No module named|\blistdir\b|\/home\//i;
 
-/** Card and tool copy when a figure fails. Loader errors stay off the screen. */
+/** Card and tool copy when a figure fails. Loader errors and sandbox probes stay off the screen. */
 export function figureFailureMessage(err: unknown): string {
 	const raw = err instanceof Error ? err.message.trim() : typeof err === "string" ? err.trim() : "";
 	if (!raw || LOADER_FAILURE.test(raw)) return FIGURE_DRAW_RETRY;
+	if (SANDBOX_PROBE.test(raw)) return "The figure sandbox cannot read vault files. Use read_vault_file.";
+	if (/read_vault_file/i.test(raw)) return raw;
 	if (/\btry again\b/i.test(raw)) return raw;
 	return `${raw} Try again.`;
 }

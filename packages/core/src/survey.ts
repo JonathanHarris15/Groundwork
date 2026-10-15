@@ -99,6 +99,9 @@ export function formatSurvey(read: SurveyRead, readFolders: readonly string[]): 
 	const lines = [
 		`Survey of ${where}. ${opened} file${opened === 1 ? "" : "s"} read as text. Write the summary from this. A list of names is not the summary.`,
 	];
+	if (!opened && hits.length) {
+		lines.push("No file was read as text. The folder is not empty. Open each PDF, slide, or image with read_vault_file.");
+	}
 	for (const hit of hits) {
 		lines.push("", `## ${hit.path}`);
 		if (hit.note) lines.push(hit.note);
