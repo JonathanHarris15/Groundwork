@@ -109,7 +109,7 @@ function footer(): string {
 function page(spec: { path: string; title: string; description: string; main: string; map?: boolean; noindex?: boolean; wide?: boolean; scripts?: string; jsonLd?: string }): string {
 	const url = `${ORIGIN}${spec.path}`;
 	const mapScript = spec.map
-		? `<script type="module" src="/force-graph.js?v=4"></script>
+		? `<script type="module" src="/force-graph.js?v=5"></script>
 		<script type="module">
 			for (const host of document.querySelectorAll("[data-concept-map]")) {
 				window.GroundworkGraph?.mountMarketing?.(host);
