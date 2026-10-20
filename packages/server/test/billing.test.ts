@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type Stripe from "stripe";
+import { accountCensus } from "@groundwork/core";
 import { AccountDirectory } from "../src/accounts";
+import { serializeAccount } from "../src/account-store";
 import { applyStripeEvent, checkoutSuccessUrl, collectedPurchase, createBilling, escapeStripeSearch, isMissingStripeCustomer, membershipFromSubscription, paidAmountUsd, planFromSubscription, recurringAmountUsd, refreshPaidMemberships, resetStripeEventDedupe, syncStripeMembership, type PaidMembershipClient, type StripeMembershipClient } from "../src/billing";
 
 const prices = { byom: "price_byom", included: "price_included" };
@@ -402,6 +404,106 @@ describe("stripe plan updates", () => {
 			}),
 		);
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "free", hasBilling: true });
+	});
+
+	it("stores a paying membership from subscription.created and does not demote an incomplete create", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		await accounts.setPlan("ada", "included");
+		await applyStripeEvent(
+			accounts,
+			event("customer.subscription.created", {
+				customer: "cus_ada",
+				metadata: { uid: "ada" },
+				status: "incomplete",
+				items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
+			}),
+			prices,
+		);
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "included" });
+		await applyStripeEvent(
+			accounts,
+			event("customer.subscription.created", {
+				customer: "cus_ada",
+				metadata: { uid: "ada" },
+				status: "active",
+				cancel_at_period_end: true,
+				items: { data: [{ quantity: 1, price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] },
+				discounts: [],
+			}, "evt_created_active"),
+			prices,
+		);
+		const record = (await accounts.list()).find((row) => row.record.uid === "ada")?.record;
+		expect(record?.plan).toBe("byom");
+		expect(record?.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
+	});
+
+	it("retries a webhook whose membership write failed", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		const real = accounts.rememberMembership.bind(accounts);
+		let failed = false;
+		accounts.rememberMembership = async (uid, membership, now) => {
+			if (!failed && membership) {
+				failed = true;
+				throw new Error("Cannot use undefined as a Firestore value");
+			}
+			return real(uid, membership, now);
+		};
+		const evt = event("customer.subscription.updated", {
+			customer: "cus_ada",
+			metadata: { uid: "ada" },
+			status: "active",
+			items: { data: [{ quantity: 1, price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
+			discounts: [],
+		}, "evt_retry_membership");
+		await expect(applyStripeEvent(accounts, evt, prices)).rejects.toThrow(/undefined/);
+		await applyStripeEvent(accounts, evt, prices);
+		expect((await accounts.list()).find((row) => row.record.uid === "ada")?.record.membership).toEqual({ status: "active", plan: "included", amountUsd: 20 });
+	});
+
+	it("stores the subscription from checkout when Stripe returns one", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		const stripe = {
+			webhooks: {
+				constructEvent(raw: string) {
+					return JSON.parse(raw) as Stripe.Event;
+				},
+			},
+			subscriptions: {
+				async retrieve() {
+					return {
+						id: "sub_ada",
+						status: "active",
+						customer: "cus_ada",
+						metadata: { uid: "ada", plan: "included" },
+						items: { data: [{ quantity: 1, price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] },
+						discounts: [],
+					};
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await billing.applyEvent(JSON.stringify({
+			id: "evt_checkout_sub",
+			type: "checkout.session.completed",
+			data: {
+				object: {
+					id: "cs_live_paid",
+					status: "complete",
+					payment_status: "paid",
+					amount_total: 600,
+					currency: "usd",
+					metadata: { uid: "ada", plan: "included" },
+					customer: "cus_ada",
+					subscription: "sub_ada",
+				},
+			},
+		}), "sig");
+		const record = (await accounts.list()).find((row) => row.record.uid === "ada")?.record;
+		expect(record?.plan).toBe("byom");
+		expect(record?.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
 	});
 });
 
@@ -806,4 +908,91 @@ describe("paid membership snapshots", () => {
 		expect(expands[0]).toContain("data.discounts.promotion_code");
 		expect(expands[0]).toContain("data.discounts.source.coupon");
 	});
+
+	it("counts a cancel-at-period-end Groundwork subscription and a paying Bring your own model subscription", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("cliff", { email: "cliff@example.com" });
+		await accounts.setPlan("cliff", "free");
+		await accounts.seen("carson", { email: "carson@example.com" });
+		await accounts.setPlan("carson", "free");
+		await accounts.seen("gwilym", { email: "gwilym@example.com" });
+		await accounts.setPlan("gwilym", "included");
+		const stripe: PaidMembershipClient = {
+			subscriptions: {
+				async list(args) {
+					const data = args.status === "active"
+						? [
+							{
+								id: "sub_cliff",
+								status: "active",
+								cancel_at_period_end: true,
+								metadata: { uid: "cliff" },
+								items: { data: [{ quantity: 1, price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
+								discounts: [],
+							},
+							{
+								id: "sub_carson",
+								status: "active",
+								metadata: { uid: "carson" },
+								items: { data: [{ quantity: 1, price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] },
+								discounts: [],
+							},
+							{
+								id: "sub_gwilym",
+								status: "active",
+								metadata: { uid: "gwilym" },
+								items: { data: [{ quantity: 1, price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
+								discounts: [{ coupon: { percent_off: 100, name: "GROUNDWORKTESTER" }, promotion_code: { code: "GROUNDWORKTESTER" } }],
+							},
+						]
+						: [];
+					return { data, has_more: false };
+				},
+			},
+		};
+		await refreshPaidMemberships(stripe, prices, accounts);
+		await refreshPaidMemberships(stripe, prices, accounts);
+		const listed = await accounts.list();
+		expect(listed.find((row) => row.record.uid === "cliff")?.record.plan).toBe("included");
+		expect(listed.find((row) => row.record.uid === "cliff")?.record.membership).toEqual({ status: "active", plan: "included", amountUsd: 20 });
+		expect(listed.find((row) => row.record.uid === "carson")?.record.plan).toBe("byom");
+		expect(listed.find((row) => row.record.uid === "carson")?.record.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
+		expect(listed.find((row) => row.record.uid === "gwilym")?.record.membership).toMatchObject({ amountUsd: 0, couponCode: "GROUNDWORKTESTER" });
+		for (const row of listed) {
+			const stored = serializeAccount(row.record);
+			expect(JSON.stringify(stored)).not.toContain("undefined");
+			expect(storedValues(stored)).not.toContain(undefined);
+		}
+		const census = accountCensus(
+			listed.map((row) => ({ uid: row.record.uid, email: row.record.email, plan: row.record.plan, createdAt: row.record.createdAt, membership: row.record.membership })),
+			new Date("2026-10-20T12:00:00.000Z"),
+		);
+		expect(census.free + census.paid + census.noPlan + census.other).toBe(census.users);
+		expect(census.byom + census.included).toBe(census.paid);
+		expect(census).toMatchObject({ users: 3, free: 0, noPlan: 0, other: 0, paid: 3, byom: 1, included: 2, paying: 2, comped: 1, orphans: 0 });
+	});
+
+	it("does not store an undefined coupon on a paying membership", () => {
+		const snap = membershipFromSubscription({
+			status: "active",
+			cancel_at_period_end: true,
+			items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" }, quantity: 1 }] },
+			discounts: [],
+		}, prices);
+		expect(snap).toEqual({ status: "active", plan: "included", amountUsd: 20 });
+		const stored = serializeAccount({
+			uid: "ada",
+			plan: "included",
+			period: "2026-10",
+			spentUsd: 0,
+			membership: { status: "active", plan: "included", amountUsd: 20, couponCode: undefined },
+		});
+		expect(stored.membership).toEqual({ status: "active", plan: "included", amountUsd: 20 });
+		expect(Object.keys(stored.membership as object)).not.toContain("couponCode");
+	});
 });
+
+function storedValues(value: unknown): unknown[] {
+	if (!value || typeof value !== "object") return [value];
+	return Object.values(value as Record<string, unknown>).flatMap((item) => storedValues(item));
+}

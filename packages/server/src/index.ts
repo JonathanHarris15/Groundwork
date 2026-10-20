@@ -241,6 +241,8 @@ server.listen(port, host, () => {
 	void usage.backfill(accounts, () => deps.billing.couponHolders?.() ?? Promise.resolve([])).catch((err: unknown) => {
 		console.error("Could not backfill usage.", err);
 	});
+	// Idempotent. A paying subscription with no coupon used to fail this write and leave the census short.
+	void deps.billing.syncMemberships?.();
 	const billing = deps.billing.configured ? "on" : "waiting for Stripe keys";
 	const firebase = deps.auth.firebase ? "on" : "waiting for a service account";
 	const models = deps.openRouterKey ? "on" : "waiting for OPENROUTER_API_KEY";

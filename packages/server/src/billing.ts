@@ -112,7 +112,10 @@ export function membershipFromSubscription(subscription: SubscriptionLike, price
 	const plan = planFromSubscription(subscription, prices);
 	if (plan !== "byom" && plan !== "included") return null;
 	const couponCode = promotionCodesFrom(subscription).find((code) => code.toUpperCase() === TESTER_COUPON);
-	return { status: subscription.status, plan, amountUsd: recurringAmountUsd(subscription), couponCode };
+	// Omit the coupon when there isn't one. Firestore rejects a stored `undefined`.
+	const membership: StoredMembership = { status: subscription.status, plan, amountUsd: recurringAmountUsd(subscription) };
+	if (couponCode) membership.couponCode = couponCode;
+	return membership;
 }
 
 /**
@@ -163,6 +166,7 @@ const MEMBERSHIP_EXPANDS: string[][] = [
 
 /** Copy active and trialing subscriptions onto accounts. Accounts Stripe does not list lose a stale membership. */
 export async function refreshPaidMemberships(stripe: PaidMembershipClient, prices: MembershipPrices, accounts: AccountDirectory): Promise<void> {
+	const known = new Set((await accounts.list()).map((row) => row.record.uid));
 	const seen = new Set<string>();
 	let expandAt = 0;
 	for (const status of ["active", "trialing"] as const) {
@@ -188,11 +192,13 @@ export async function refreshPaidMemberships(stripe: PaidMembershipClient, price
 			if (!listed) throw lastError instanceof Error ? lastError : new Error("Could not list Stripe subscriptions.");
 			for (const subscription of listed.data) {
 				const uid = await membershipUid(accounts, subscription);
-				if (!uid) continue;
+				if (!uid || !known.has(uid)) continue;
 				const snapshot = membershipFromSubscription({ ...subscription, status: subscription.status ?? status }, prices);
 				if (!snapshot) continue;
 				await accounts.rememberMembership(uid, snapshot);
 				if (snapshot.couponCode) await accounts.markCoupon(uid, snapshot.couponCode);
+				const current = await accounts.get(uid);
+				if (current.plan !== snapshot.plan) await accounts.setPlan(uid, snapshot.plan);
 				seen.add(uid);
 			}
 			if (!listed.has_more || !listed.data.length) break;
@@ -311,6 +317,17 @@ export function createBilling(
 			await applyStripeEvent(accounts, event, prices, hooks);
 			if (event.type === "checkout.session.completed") {
 				const session = event.data.object;
+				const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+				if (subId && stripe.subscriptions?.retrieve) {
+					try {
+						const subscription = await stripe.subscriptions.retrieve(subId, {
+							expand: ["discounts", "discounts.promotion_code", "discounts.source.coupon"],
+						});
+						await applyLiveSubscription(accounts, subscription, prices, hooks);
+					} catch (err) {
+						console.error("Could not store the checkout membership.", err);
+					}
+				}
 				await reporter.report({
 					id: session.id,
 					status: session.status,
@@ -382,6 +399,15 @@ export function createBilling(
  */
 export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe.Event, prices?: MembershipPrices, hooks?: BillingHooks): Promise<void> {
 	if (event.id && !rememberStripeEvent(event.id)) return;
+	try {
+		await dispatchStripeEvent(accounts, event, prices, hooks);
+	} catch (err) {
+		if (event.id) seenStripeEvents.delete(event.id);
+		throw err;
+	}
+}
+
+async function dispatchStripeEvent(accounts: AccountDirectory, event: Stripe.Event, prices?: MembershipPrices, hooks?: BillingHooks): Promise<void> {
 	if (event.type === "checkout.session.completed") {
 		const session = event.data.object;
 		const uid = session.metadata?.uid || session.client_reference_id || undefined;
@@ -396,31 +422,52 @@ export async function applyStripeEvent(accounts: AccountDirectory, event: Stripe
 		}
 		return;
 	}
-	if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+	if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
 		const subscription = event.data.object;
 		const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
 		const uid = subscription.metadata?.uid || (await accounts.findByCustomer(customer))?.uid;
 		if (!uid) return;
-		const entitled = event.type === "customer.subscription.updated" && subscriptionIsEntitled(subscription.status);
+		const entitled = event.type !== "customer.subscription.deleted" && subscriptionIsEntitled(subscription.status);
+		// `created` can arrive as `incomplete` before checkout finishes. Do not wipe the plan that checkout just set.
 		if (!entitled) {
+			if (event.type === "customer.subscription.created") return;
 			await accounts.setPlan(uid, "free");
 			await accounts.rememberMembership(uid, null);
 			await rememberTesterCoupon(accounts, uid, subscription);
 			return;
 		}
-		const planned = prices ? planFromSubscription(subscription, prices) : subscription.metadata?.plan;
-		if (planned === "byom" || planned === "included") {
-			const before = await accounts.get(uid);
+		await applyLiveSubscription(accounts, subscription, prices, hooks);
+	}
+}
+
+/**
+ * Store the plan and membership Stripe currently has.
+ * Active and trialing count, including a subscription that cancels at period end.
+ * `past_due` keeps the paid plan and drops the census snapshot, matching the webhook.
+ */
+export async function applyLiveSubscription(
+	accounts: AccountDirectory,
+	subscription: MembershipSubscription & { metadata?: { uid?: string | null; plan?: string | null } | null },
+	prices?: MembershipPrices,
+	hooks?: BillingHooks,
+): Promise<void> {
+	if (!subscriptionIsEntitled(subscription.status)) return;
+	const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
+	const uid = subscription.metadata?.uid?.trim() || (customer ? (await accounts.findByCustomer(customer))?.uid : undefined);
+	if (!uid) return;
+	const planned = prices ? planFromSubscription(subscription, prices) : subscription.metadata?.plan;
+	if (planned === "byom" || planned === "included") {
+		const before = await accounts.get(uid);
+		if (before.plan !== planned) {
 			await accounts.setPlan(uid, planned);
-			if (before.plan !== planned) await hooks?.onUpgrade?.(uid, planned);
-		}
-		await rememberTesterCoupon(accounts, uid, subscription);
-		if (prices) {
-			const snapshot = membershipFromSubscription(subscription, prices);
-			if (snapshot) await accounts.rememberMembership(uid, snapshot);
-			else if (subscription.status !== "active" && subscription.status !== "trialing") await accounts.rememberMembership(uid, null);
+			await hooks?.onUpgrade?.(uid, planned);
 		}
 	}
+	await rememberTesterCoupon(accounts, uid, subscription);
+	if (!prices) return;
+	const snapshot = membershipFromSubscription(subscription, prices);
+	if (snapshot) await accounts.rememberMembership(uid, snapshot);
+	else if (subscription.status !== "active" && subscription.status !== "trialing") await accounts.rememberMembership(uid, null);
 }
 
 const TESTER_COUPON = "GROUNDWORKTESTER";
@@ -508,15 +555,22 @@ export async function syncStripeMembership(
 		return;
 	}
 	let recognized: "byom" | "included" | null = null;
+	let snapshot: StoredMembership | null = null;
 	let unknown = false;
 	try {
 		for (const status of ["active", "trialing", "past_due"] as const) {
 			const page = await stripe.subscriptions.list({ customer: customerId, status, limit: 10 });
 			for (const subscription of page.data) {
-				const plan = planFromSubscription({ ...subscription, status: subscription.status ?? status }, prices);
-				if (plan === "included") recognized = "included";
-				else if (plan === "byom" && recognized !== "included") recognized = "byom";
-				else if (plan === "unknown") unknown = true;
+				const shaped = { ...subscription, status: subscription.status ?? status };
+				const plan = planFromSubscription(shaped, prices);
+				const next = membershipFromSubscription(shaped, prices);
+				if (plan === "included") {
+					recognized = "included";
+					if (next?.plan === "included" && next.amountUsd !== null) snapshot = next;
+				} else if (plan === "byom" && recognized !== "included") {
+					recognized = "byom";
+					if (next?.plan === "byom" && next.amountUsd !== null) snapshot = next;
+				} else if (plan === "unknown") unknown = true;
 			}
 		}
 	} catch (err) {
@@ -527,6 +581,10 @@ export async function syncStripeMembership(
 	}
 	if (recognized) {
 		if (recognized !== current.plan) await accounts.setPlan(uid, recognized);
+		if (snapshot?.plan === recognized) {
+			await accounts.rememberMembership(uid, snapshot);
+			if (snapshot.couponCode) await accounts.markCoupon(uid, snapshot.couponCode);
+		}
 		return;
 	}
 	if (!unknown && isPaid(current.plan)) await accounts.setPlan(uid, "free");
