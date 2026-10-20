@@ -35,9 +35,16 @@ export function serializeAccount(record: AccountRecord): Record<string, unknown>
 	if (record.obsidianConnectedAt) out.obsidianConnectedAt = record.obsidianConnectedAt;
 	if (record.createdAt) out.createdAt = record.createdAt;
 	if (record.couponCode) out.couponCode = record.couponCode;
-	if (record.membership) out.membership = record.membership;
+	if (record.membership) out.membership = storedMembership(record.membership);
 	if (record.attribution) out.attribution = record.attribution;
 	return out;
+}
+
+/** Firestore rejects `undefined`. A paying subscription has no coupon field at all. */
+function storedMembership(membership: StoredMembership): StoredMembership {
+	const stored: StoredMembership = { status: membership.status, plan: membership.plan, amountUsd: membership.amountUsd };
+	if (membership.couponCode) stored.couponCode = membership.couponCode;
+	return stored;
 }
 
 /** Accept a stored account. A missing or unreadable plan stays unset so the picker can show. */
