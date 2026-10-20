@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { messagesForAnthropic } from "../account/anthropic-messages";
+import { withStablePrefixCache } from "../account/history-budget";
 import type { ContentBlock, Provider, ProviderRequest, ProviderResponse } from "./types";
 
 export interface AnthropicOptions {
@@ -38,7 +39,7 @@ export class AnthropicProvider implements Provider {
 				model: this.opts.model,
 				max_tokens: this.opts.maxTokens ?? 8192,
 				system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
-				messages: messagesForAnthropic(req.messages) as unknown as Anthropic.MessageParam[],
+				messages: withStablePrefixCache(messagesForAnthropic(req.messages)) as unknown as Anthropic.MessageParam[],
 				tools,
 			},
 			{ signal: req.signal },
