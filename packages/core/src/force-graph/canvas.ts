@@ -113,8 +113,12 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 	let wheelX = width / 2;
 	let wheelY = height / 2;
 	let raf = 0;
+	let loopOn = false;
+	let onScreen = true;
 	let alive = true;
 	let layoutFitted = false;
+	/** Assigned once the loop helpers exist. Theme and input call this. */
+	let requestFrame = () => {};
 	let fpsFrames = 0;
 	let fpsLast = performance.now();
 	let fpsValue = 60;
@@ -128,6 +132,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 	const refreshTheme = () => {
 		theme = readGraphTheme(host);
 		applyTipTheme();
+		requestFrame();
 	};
 	applyTipTheme();
 	host.addEventListener("groundwork-graph-theme", refreshTheme);
@@ -453,8 +458,32 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		ctx.restore();
 	};
 
+	/** True while the force sim, a drag, or a camera ease still has work to do. */
+	const simHot = () => layoutMode === "force" && nodes.length > 0 && (sim.alpha > 0.012 || dragged != null);
+
+	const moving = () =>
+		dragged != null ||
+		panning ||
+		Math.abs(panVx) > 0.2 ||
+		Math.abs(panVy) > 0.2 ||
+		Math.abs(wheelLog) >= WHEEL_ZOOM_EPSILON ||
+		simHot() ||
+		(!layoutFitted && options.fit !== false);
+
+	const stopLoop = () => {
+		loopOn = false;
+		if (raf) {
+			window.cancelAnimationFrame(raf);
+			raf = 0;
+		}
+	};
+
 	const tick = () => {
-		if (!alive) return;
+		raf = 0;
+		if (!alive || !onScreen || !host.isConnected) {
+			stopLoop();
+			return;
+		}
 		const now = performance.now();
 		fpsFrames += 1;
 		if (now - fpsLast >= 1000) {
@@ -480,16 +509,29 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			wheelLog = 0;
 		}
 
-		const settling = layoutMode === "force" && (sim.alpha > 0.012 || dragged != null);
-		if (nodes.length && settling) {
+		if (simHot()) {
 			simulationTick(nodes, links, sim, { width, height, dragId: dragged });
 		} else if (!layoutFitted && options.fit !== false && (layoutMode === "layered" || sim.alpha < 0.025)) {
 			fit();
 		}
 
 		draw();
+		if (alive && onScreen && host.isConnected && moving()) raf = window.requestAnimationFrame(tick);
+		else loopOn = false;
+	};
+
+	/** Start the loop when something is in motion. Otherwise paint once and stop. */
+	const wake = () => {
+		if (!alive || !onScreen || !host.isConnected) return;
+		if (loopOn) return;
+		if (!moving()) {
+			draw();
+			return;
+		}
+		loopOn = true;
 		raf = window.requestAnimationFrame(tick);
 	};
+	requestFrame = wake;
 
 	const relayout = () => {
 		invalidateNeighbors();
@@ -510,15 +552,16 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		nodes = next.nodes.map(cloneNode);
 		links = next.links.map((link) => ({ ...link }));
 		relayout();
+		wake();
 	};
 
 	resize();
 	relayout();
-	raf = window.requestAnimationFrame(tick);
 
 	const ro = new ResizeObserver(() => {
 		resize();
-		if (options.fit !== false) window.requestAnimationFrame(() => fit());
+		if (options.fit !== false) fit();
+		wake();
 	});
 	ro.observe(host);
 
@@ -538,6 +581,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
 		wheelLog += conceptMapWheelZoom(delta, e.deltaMode, rect.height);
 		wheelLog = Math.max(-1.2, Math.min(1.2, wheelLog));
+		wake();
 	};
 
 	const zoomBy = (factor: number, cx: number, cy: number) => {
@@ -553,6 +597,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 	const zoomByNow = (factor: number, cx: number, cy: number) => {
 		wheelLog = 0;
 		zoomBy(factor, cx, cy);
+		wake();
 	};
 
 	const setHover = (id: string | null) => {
@@ -569,6 +614,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			} else tip.textContent = "";
 			tip.hidden = false;
 		} else tip.hidden = true;
+		wake();
 	};
 
 	const activateWheel = () => {
@@ -601,6 +647,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			canvas.setPointerCapture(e.pointerId);
 			host.classList.add("is-panning");
 		}
+		wake();
 	};
 
 	const onPointerMove = (e: PointerEvent) => {
@@ -621,6 +668,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 				node.vy = 0;
 				if (layoutMode === "force") sim.alpha = Math.max(sim.alpha, 0.5);
 			}
+			wake();
 			return;
 		}
 		if (panning) {
@@ -628,6 +676,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 			camera.ty += dy;
 			panVx = (dx / dt) * 14;
 			panVy = (dy / dt) * 14;
+			wake();
 			return;
 		}
 		setHover(pick(e.clientX, e.clientY));
@@ -645,6 +694,7 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		panning = false;
 		host.classList.remove("is-dragging-node", "is-panning");
 		if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+		wake();
 	};
 
 	const deactivateWheel = (e: PointerEvent | KeyboardEvent) => {
@@ -669,31 +719,54 @@ export function mountForceGraph(host: HTMLElement, data: ForceGraphData, options
 		document.addEventListener("keydown", deactivateWheel, true);
 	}
 
+	let visibility: IntersectionObserver | null = null;
+	if (typeof IntersectionObserver === "function") {
+		visibility = new IntersectionObserver((entries) => {
+			const latest = entries[entries.length - 1];
+			onScreen = !!latest?.isIntersecting;
+			if (!onScreen) stopLoop();
+			else wake();
+		});
+		visibility.observe(host);
+	}
+
+	const dispose = () => {
+		if (!alive) return;
+		alive = false;
+		onScreen = false;
+		stopLoop();
+		window.removeEventListener("pagehide", dispose);
+		visibility?.disconnect();
+		themeObserver.disconnect();
+		host.removeEventListener("groundwork-graph-theme", refreshTheme);
+		ro.disconnect();
+		canvas.removeEventListener("wheel", onWheel);
+		canvas.removeEventListener("pointerdown", onPointerDown);
+		canvas.removeEventListener("pointermove", onPointerMove);
+		canvas.removeEventListener("pointerup", endPointer);
+		canvas.removeEventListener("pointercancel", endPointer);
+		if (wheelMode === "when-active") {
+			document.removeEventListener("pointerdown", deactivateWheel, true);
+			document.removeEventListener("keydown", deactivateWheel, true);
+		}
+		host.classList.remove("is-active");
+		host.closest(".gw-graph")?.classList.remove("is-active");
+		host.replaceChildren();
+	};
+
+	window.addEventListener("pagehide", dispose);
+	wake();
+
 	return {
-		fit,
+		fit: () => {
+			fit();
+			wake();
+		},
 		zoomBy: zoomByNow,
 		setData,
 		getFps: () => fpsValue,
 		getScale: () => camera.scale,
-		dispose: () => {
-			alive = false;
-			window.cancelAnimationFrame(raf);
-			themeObserver.disconnect();
-			host.removeEventListener("groundwork-graph-theme", refreshTheme);
-			ro.disconnect();
-			canvas.removeEventListener("wheel", onWheel);
-			canvas.removeEventListener("pointerdown", onPointerDown);
-			canvas.removeEventListener("pointermove", onPointerMove);
-			canvas.removeEventListener("pointerup", endPointer);
-			canvas.removeEventListener("pointercancel", endPointer);
-			if (wheelMode === "when-active") {
-				document.removeEventListener("pointerdown", deactivateWheel, true);
-				document.removeEventListener("keydown", deactivateWheel, true);
-			}
-			host.classList.remove("is-active");
-			host.closest(".gw-graph")?.classList.remove("is-active");
-			host.replaceChildren();
-		},
+		dispose,
 	};
 }
 

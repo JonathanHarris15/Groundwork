@@ -200,6 +200,124 @@ describe("force graph", () => {
 		handle.dispose();
 		pane.remove();
 	});
+
+	it("stops scheduling frames once the map settles, and interaction starts them again", () => {
+		const pending = new Map<number, FrameRequestCallback>();
+		let seq = 0;
+		const originalFrame = window.requestAnimationFrame;
+		const originalCancel = window.cancelAnimationFrame;
+		window.requestAnimationFrame = (cb: FrameRequestCallback) => {
+			const id = ++seq;
+			pending.set(id, cb);
+			return id;
+		};
+		window.cancelAnimationFrame = (id: number) => {
+			pending.delete(id);
+		};
+		const io = {
+			notify(_visible: boolean, _target: Element) {},
+		};
+		const OriginalIO = globalThis.IntersectionObserver;
+		class RecordingIO {
+			constructor(cb: IntersectionObserverCallback) {
+				io.notify = (visible, target) => {
+					const entry = { isIntersecting: visible, target } as unknown as IntersectionObserverEntry;
+					cb([entry], this as unknown as IntersectionObserver);
+				};
+			}
+			observe() {}
+			unobserve() {}
+			disconnect() {}
+			takeRecords(): IntersectionObserverEntry[] {
+				return [];
+			}
+		}
+		globalThis.IntersectionObserver = RecordingIO as unknown as typeof IntersectionObserver;
+
+		const flush = () => {
+			const batch = [...pending.values()];
+			pending.clear();
+			for (const cb of batch) cb(performance.now());
+			return batch.length;
+		};
+		const mount = (layout: "layered" | "force") => {
+			const host = document.createElement("div");
+			document.body.appendChild(host);
+			Object.defineProperty(host, "clientWidth", { value: 640, configurable: true });
+			Object.defineProperty(host, "clientHeight", { value: 360, configurable: true });
+			host.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 640, bottom: 360, width: 640, height: 360, toJSON() {} });
+			const handle = mountForceGraph(
+				host,
+				{
+					nodes: [{ id: "a", title: "Prior", x: 0, y: 0, vx: 0, vy: 0, radius: 8, color: "#000", cluster: "x", status: "solid", tone: "solid" }],
+					links: [],
+					legend: [],
+					layout,
+				},
+				{ fit: true },
+			);
+			const canvas = host.querySelector("canvas");
+			if (!canvas) throw new Error("missing canvas");
+			canvas.getBoundingClientRect = host.getBoundingClientRect;
+			canvas.setPointerCapture = () => undefined;
+			canvas.releasePointerCapture = () => undefined;
+			canvas.hasPointerCapture = () => false;
+			return { host, canvas, handle };
+		};
+
+		const maps = [mount("layered"), mount("layered"), mount("layered")];
+		try {
+			let layeredFrames = 0;
+			for (let i = 0; i < 10 && pending.size; i++) layeredFrames += flush();
+			expect(layeredFrames).toBeGreaterThan(0);
+			expect(layeredFrames).toBeLessThan(8);
+			expect(pending.size).toBe(0);
+			expect(flush()).toBe(0);
+
+			const moving = mount("force");
+			maps.push(moving);
+			let forceFrames = 0;
+			for (let i = 0; i < 800 && pending.size; i++) forceFrames += flush();
+			expect(forceFrames).toBeGreaterThan(20);
+			expect(forceFrames).toBeLessThan(500);
+			expect(pending.size).toBe(0);
+			expect(flush()).toBe(0);
+
+			moving.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, bubbles: true, cancelable: true }));
+			expect(pending.size).toBe(1);
+			let wheelFrames = 0;
+			for (let i = 0; i < 80 && pending.size; i++) wheelFrames += flush();
+			expect(wheelFrames).toBeGreaterThan(0);
+			expect(pending.size).toBe(0);
+
+			moving.handle.setData({
+				nodes: [{ id: "a", title: "Prior", x: 0, y: 0, vx: 0, vy: 0, radius: 8, color: "#000", cluster: "x", status: "solid", tone: "solid" }],
+				links: [],
+				legend: [],
+				layout: "force",
+			});
+			expect(pending.size).toBe(1);
+			io.notify(false, moving.host);
+			expect(pending.size).toBe(0);
+			expect(flush()).toBe(0);
+			io.notify(true, moving.host);
+			expect(pending.size).toBe(1);
+
+			window.dispatchEvent(new Event("pagehide"));
+			expect(moving.host.querySelector("canvas")).toBeNull();
+			expect(pending.size).toBe(0);
+			moving.handle.dispose();
+		} finally {
+			for (const map of maps) {
+				map.handle.dispose();
+				map.host.remove();
+			}
+			window.requestAnimationFrame = originalFrame;
+			window.cancelAnimationFrame = originalCancel;
+			if (OriginalIO) globalThis.IntersectionObserver = OriginalIO;
+			else delete (globalThis as { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver;
+		}
+	});
 });
 
 afterEach(() => {

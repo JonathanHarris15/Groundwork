@@ -1,4 +1,5 @@
 import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthropic, normalizeAnthropicMessages } from "../account/anthropic-messages";
+import { compactTutorHistory } from "../account/history-budget";
 import { holdsFixturePrefix, isGarbageReply, LOST_REPLY, scrubLearnerText } from "../learner-text";
 import type { FolderAccess } from "../access";
 import { dialogueFromMessages, studyToolBlock, visibleAsk } from "../intent";
@@ -200,7 +201,7 @@ export class AgentSession implements TutorSession {
 	}
 
 	private healStored(): void {
-		const healed = normalizeAnthropicMessages(this.messages);
+		const healed = compactTutorHistory(normalizeAnthropicMessages(this.messages));
 		this.messages.splice(0, this.messages.length, ...healed);
 	}
 

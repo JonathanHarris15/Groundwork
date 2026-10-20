@@ -17,7 +17,8 @@
  */
 
 import type { ContentBlock, ProviderTool, ChatMessage } from "../agent/types";
-import { messagesForAnthropic, plainTutorError, TUTOR_SEND_RETRY } from "./anthropic-messages";
+import { messagesForAnthropic, normalizeAnthropicMessages, plainTutorError, TUTOR_SEND_RETRY } from "./anthropic-messages";
+import { compactTutorHistory, withStablePrefixCache } from "./history-budget";
 import { parseToolInput } from "./anthropic-stream";
 import { USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "./plans";
 import { type AccountView, type TutorChoice, type TutorWeight } from "./usage";
@@ -256,7 +257,8 @@ export function buildUpstream(
 		url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 		headers["x-goog-api-key"] = apiKey;
 	}
-	const body = kind === "anthropic" ? anthropicBody(call, model, stream) : kind === "openai" ? openaiBody(call, model) : googleBody(call);
+	const cachePrefix = provider === "anthropic" || /claude/i.test(model);
+	const body = kind === "anthropic" ? anthropicBody(call, model, stream, cachePrefix) : kind === "openai" ? openaiBody(call, model) : googleBody(call);
 	return { url, headers, body, kind };
 }
 
@@ -297,20 +299,27 @@ export function providerNames(): UserKeyProvider[] {
 	return [...USER_KEY_PROVIDERS];
 }
 
-function anthropicBody(call: TutorCall, model: string, stream = false): unknown {
+function anthropicBody(call: TutorCall, model: string, stream = false, cachePrefix = false): unknown {
+	const messages = messagesForAnthropic(call.messages);
+	const tools = call.tools.map((tool, index) => ({
+		name: tool.name,
+		description: tool.description,
+		input_schema: tool.input_schema,
+		...(cachePrefix && index === call.tools.length - 1 ? { cache_control: { type: "ephemeral" as const } } : {}),
+	}));
 	return {
 		model,
 		max_tokens: call.maxTokens,
-		system: call.system,
-		messages: messagesForAnthropic(call.messages),
-		tools: call.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.input_schema })),
+		system: cachePrefix ? [{ type: "text", text: call.system, cache_control: { type: "ephemeral" as const } }] : call.system,
+		messages: cachePrefix ? withStablePrefixCache(messages) : messages,
+		tools,
 		...(stream ? { stream: true } : {}),
 	};
 }
 
 function openaiBody(call: TutorCall, model: string): unknown {
 	const messages: unknown[] = [{ role: "system", content: call.system }];
-	for (const message of call.messages) messages.push(...openaiTurns(message));
+	for (const message of budgeted(call.messages)) messages.push(...openaiTurns(message));
 	const body: Record<string, unknown> = { model, max_tokens: call.maxTokens, messages };
 	if (call.tools.length) {
 		body.tools = call.tools.map((tool) => ({
@@ -348,10 +357,14 @@ function openaiTurns(message: ChatMessage): unknown[] {
 	return out;
 }
 
+function budgeted(messages: ChatMessage[]): ChatMessage[] {
+	return compactTutorHistory(normalizeAnthropicMessages(messages));
+}
+
 function googleBody(call: TutorCall): unknown {
 	const names = new Map<string, string>();
 	const contents: unknown[] = [];
-	for (const message of call.messages) {
+	for (const message of budgeted(call.messages)) {
 		const role = message.role === "assistant" ? "model" : "user";
 		const parts: unknown[] = [];
 		const blocks = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content;

@@ -135,7 +135,7 @@ describe("account server", () => {
 	it("serves the account site and keeps paid plans on Stripe", async () => {
 		const site = readSite("/");
 		expect(site?.type).toContain("text/html");
-		expect(site?.body).toContain('src="/force-graph.js?v=4"');
+		expect(site?.body).toContain('src="/force-graph.js?v=5"');
 		expect(site?.body).toContain('src="/app.js?v=26"');
 		expect(site?.body).toContain('src="/setup.js?v=2"');
 		expect(site?.body).toContain('href="/styles.css?v=21"');
