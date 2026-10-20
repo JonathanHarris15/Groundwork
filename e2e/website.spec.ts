@@ -30,7 +30,7 @@ async function seedLargeAccount(request: APIRequestContext) {
 	});
 }
 
-const publicPages = ["/", "/pricing", "/practice-tests", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms", "/changelog"];
+const publicPages = ["/", "/pricing", "/byom", "/practice-tests", "/exam-prep", "/concept-map", "/quizzes-flashcards", "/goals", "/get-started", "/privacy", "/terms", "/changelog"];
 
 test.beforeEach(async ({ page }) => {
 	await page.addInitScript(() => localStorage.setItem("gw-consent-hide", "1"));

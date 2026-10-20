@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const pages = [
 	"/",
 	"/pricing",
+	"/byom",
 	"/practice-tests",
 	"/exam-prep",
 	"/concept-map",
@@ -16,7 +17,7 @@ const pages = [
 	"/admin/usage",
 ];
 
-const foldCtas = ["/", "/practice-tests", "/exam-prep"];
+const foldCtas = ["/", "/byom", "/practice-tests", "/exam-prep"];
 
 test.beforeEach(async ({ page }, testInfo) => {
 	test.skip(testInfo.project.name !== "chromium", "Phone layout is measured once, at a set viewport");

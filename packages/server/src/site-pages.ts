@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { PLANS, USER_KEY_PROVIDERS, type PlanId } from "../../core/src/account/plans.ts";
+import { PLANS, USER_KEY_PROVIDERS, type PlanId, type UserKeyProvider } from "../../core/src/account/plans.ts";
+import { CLAUDE_SETUP, PROVIDER_LABEL } from "../../core/src/account/tutor.ts";
 import { CONTACT_EMAIL_DEFAULT } from "./tracking";
 
 const ORIGIN = "https://groundworklearn.com";
@@ -82,8 +83,8 @@ export function siteNav(current: string, signHref = "/#signin"): string {
 	return `<div class="bar-end"><span class="bar-avatar" hidden></span><nav class="bar-nav" aria-label="Site">${wide}<a class="nav-wide" href="/admin/usage" data-admin-link hidden>Admin</a><details class="nav-more"><summary>Menu</summary><div class="nav-menu">${menu}<a href="/admin/usage" data-admin-link hidden>Admin</a><a class="nav-session" data-sign-in href="${signHref}">Sign in</a><button class="nav-session" data-sign-out type="button" hidden>Sign out</button></div></details><a class="sign-link" href="${signHref}">Sign in</a></nav></div>`;
 }
 
-function nav(current: string): string {
-	return siteNav(current);
+function nav(current: string, signHref?: string): string {
+	return siteNav(current, signHref);
 }
 
 function footer(): string {
@@ -106,7 +107,7 @@ function footer(): string {
 	</footer>`;
 }
 
-function page(spec: { path: string; title: string; description: string; main: string; map?: boolean; noindex?: boolean; wide?: boolean; scripts?: string; jsonLd?: string }): string {
+function page(spec: { path: string; title: string; description: string; main: string; map?: boolean; noindex?: boolean; wide?: boolean; scripts?: string; jsonLd?: string; signHref?: string; kind?: string }): string {
 	const url = `${ORIGIN}${spec.path}`;
 	const mapScript = spec.map
 		? `<script type="module" src="/force-graph.js?v=4"></script>
@@ -139,7 +140,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
 		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
-		<link rel="stylesheet" href="/styles.css?v=21" />
+		<link rel="stylesheet" href="/styles.css?v=22" />
 		${spec.jsonLd ?? ""}
 		<script src="/tracking.js?v=9"></script>
 	</head>
@@ -148,9 +149,9 @@ function page(spec: { path: string; title: string; description: string; main: st
 			<a class="skip" href="#content">Skip to content</a>
 			<header class="bar">
 				<a class="logo" href="/" aria-label="Groundwork home">${LOGO}</a>
-				${nav(spec.path)}
+				${nav(spec.path, spec.signHref)}
 			</header>
-			<main id="content" class="mkt-main${spec.wide ? " usage-main" : ""}">
+			<main id="content" class="mkt-main${spec.wide ? " usage-main" : ""}${spec.kind ? ` ${spec.kind}` : ""}">
 				${spec.main}
 			</main>
 			${footer()}
@@ -513,6 +514,7 @@ Groundwork runs on a Windows, Mac, or Linux computer. It does not run on a phone
 
 - [Home](${ORIGIN}/)
 - [Pricing](${ORIGIN}/pricing)
+- [Bring your own model](${ORIGIN}/byom)
 - [Get started](${ORIGIN}/get-started)
 - [Practice tests](${ORIGIN}/practice-tests)
 - [Exam prep](${ORIGIN}/exam-prep)
@@ -524,6 +526,120 @@ Groundwork runs on a Windows, Mac, or Linux computer. It does not run on a phone
 - [Terms](${ORIGIN}/terms)
 - [Listed in Obsidian’s community plugins](https://community.obsidian.md/plugins/groundwork)
 `;
+}
+
+const BYOM_SIGN_UP = "/?plan=byom#signin";
+
+/** Same providers a learner can paste, in the order this landing page names them. */
+const BYOM_KEY_ORDER: UserKeyProvider[] = ["anthropic", "openrouter", "openai", "google", "xai"];
+
+function byomKeyList(): string {
+	const missing = USER_KEY_PROVIDERS.filter((id) => !BYOM_KEY_ORDER.includes(id));
+	if (missing.length || BYOM_KEY_ORDER.length !== USER_KEY_PROVIDERS.length) throw new Error(`Name every provider key: ${missing.join(", ")}`);
+	const labels = BYOM_KEY_ORDER.map((id) => PROVIDER_LABEL[id]);
+	const last = labels.at(-1) ?? "";
+	return `${labels.slice(0, -1).join(", ")}, or ${last}`;
+}
+
+function escapeHtml(value: string): string {
+	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function installCommands(detail: string): { mac: string; windows: string } {
+	const match = /^In a terminal, run (.+)\. On Windows PowerShell: (.+)$/.exec(detail);
+	const mac = match?.[1];
+	const windows = match?.[2];
+	if (!mac || !windows) throw new Error("CLAUDE_SETUP install step changed.");
+	return { mac, windows };
+}
+
+function commandHtml(command: string): string {
+	return `<pre class="cmd" translate="no"><code>${escapeHtml(command)}</code></pre>`;
+}
+
+function signInHtml(detail: string): string {
+	for (const token of ["claude", "/login"]) {
+		if (!detail.includes(token)) throw new Error(`CLAUDE_SETUP sign-in step is missing ${token}.`);
+	}
+	let html = escapeHtml(detail);
+	for (const token of ["/login", "claude"]) html = html.split(escapeHtml(token)).join(`<code translate="no">${escapeHtml(token)}</code>`);
+	return html;
+}
+
+function byomFaq(): FaqItem[] {
+	if (PLANS.byom.hostedCreditUsd !== 0 || !PLANS.byom.ownModel) throw new Error("BYOM landing copy no longer matches the plan.");
+	return [
+		{
+			q: "Does usage count against my Claude plan?",
+			a: "Yes. Tutor turns on your Claude subscription count against that plan’s limits.",
+		},
+		{
+			q: "Does Groundwork see my Claude login?",
+			a: "No. You sign in through Anthropic’s own login, on your computer. Groundwork never sees or stores that login.",
+		},
+		{
+			q: "Is Groundwork affiliated with Anthropic?",
+			a: "No. Groundwork is not affiliated with or endorsed by Anthropic.",
+		},
+		{
+			q: "Does Bring your own model include hosted credit?",
+			a: "No. Bring your own model includes no hosted credit.",
+		},
+		{
+			q: "Who can use Groundwork?",
+			a: "People 18 and older. Groundwork isn’t for anyone under 18.",
+		},
+	];
+}
+
+function byomSteps(): string {
+	const [install, signIn, check] = CLAUDE_SETUP;
+	if (!install || !signIn || !check || CLAUDE_SETUP.length !== 3) throw new Error("CLAUDE_SETUP no longer has three steps.");
+	const commands = installCommands(install.detail);
+	return `<ol class="setup-steps">
+			<li>
+				<h2>${escapeHtml(install.title)}</h2>
+				<p>In a terminal.</p>
+				<p class="cmd-label">Mac and Linux</p>
+				${commandHtml(commands.mac)}
+				<p class="cmd-label">Windows PowerShell</p>
+				${commandHtml(commands.windows)}
+			</li>
+			<li>
+				<h2>${escapeHtml(signIn.title)}</h2>
+				<p>${signInHtml(signIn.detail)}</p>
+			</li>
+			<li>
+				<h2>${escapeHtml(check.title)}</h2>
+				<p>${escapeHtml(check.detail)}</p>
+			</li>
+		</ol>
+		<p class="req">Requires Obsidian desktop</p>`;
+}
+
+function byomPage(): string {
+	const price = PLANS.byom.priceUsdPerMonth;
+	const faq = byomFaq();
+	return page({
+		path: "/byom",
+		kind: "byom",
+		signHref: BYOM_SIGN_UP,
+		title: "Use the Claude subscription you already have | Groundwork",
+		description: `Groundwork for $${price}/mo. Connect the Claude subscription on your computer, or paste a provider key. Requires Obsidian desktop. 18 and older.`,
+		jsonLd: jsonLdScript([faqNode(faq)]),
+		main: `
+			<h1>Use the Claude subscription you already have</h1>
+			<p class="mkt-sub">Groundwork for $${price}/mo</p>
+			${cta(BYOM_SIGN_UP, "Sign up")}
+			${byomSteps()}
+			${section("Or paste an API key", [`Paste a key from ${byomKeyList()}. That provider bills you per token.`])}
+			<section class="mkt-section">
+				<h2>Questions</h2>
+				${faqHtml(faq)}
+			</section>
+			${cta(BYOM_SIGN_UP, "Sign up")}
+		`,
+	});
 }
 
 function pricingPage(): string {
@@ -548,6 +664,7 @@ function pricingPage(): string {
 					<h2>Bring your own model</h2>
 					<p class="price">$6<span>/month</span></p>
 					<p>Use a model you already pay for. Connect the Claude subscription on your computer, or paste a key from OpenRouter, Anthropic, Google, xAI, or OpenAI. Heavy uses that model and key. Flashcards are included. Model use on that subscription or key is billed by the provider, not by Groundwork. The $6 covers Groundwork.</p>
+					<a class="hero-quiet" href="/byom">Use the Claude subscription you already have</a>
 					<a class="cta" href="/?plan=byom#signin">Choose $6${ARROW}</a>
 				</li>
 				<li class="plan-card plan-card-recommended">
@@ -795,6 +912,7 @@ function termsPage(): string {
 
 const PAGES: Array<{ path: string; file: string; html: () => string }> = [
 	{ path: "/pricing", file: "pricing/index.html", html: pricingPage },
+	{ path: "/byom", file: "byom/index.html", html: byomPage },
 	{ path: "/practice-tests", file: "practice-tests/index.html", html: practicePage },
 	{ path: "/exam-prep", file: "exam-prep/index.html", html: examPage },
 	{ path: "/concept-map", file: "concept-map/index.html", html: conceptPage },

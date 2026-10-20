@@ -68,6 +68,12 @@ The top of `/admin/usage` is two count cards, Users and Paid users, above the fr
 
 `/get-started` and the empty account page share one checklist, mounted by `setup.js` into `[data-setup]`. Three steps, in order: Get Obsidian, Add Groundwork, Connect your account. The detected desktop OS gets the download button. The other two systems are text links. A phone (by user agent, not by viewport width) sees “Groundwork runs on your computer” with copy, share, and a QR code, and the three steps stay underneath. Done is the word “Done”, not a color alone. The connect link is `obsidian://groundwork?code=…`. It does not carry a refresh token.
 
+## BYOM landing
+
+`/byom` is the ad page for Bring your own model. It uses the same marketing shell as the other site pages. The price line reads `PLANS.byom.priceUsdPerMonth` as `$6/mo`. The primary button and the header Sign in go to `/?plan=byom#signin`, the same handoff as Choose $6 on the pricing card. The pricing card links here.
+
+Setup commands from `CLAUDE_SETUP` sit in `.cmd` blocks. On a phone the block is the full width of the column and the command wraps, so the page does not scroll sideways. The sign-up button is full width under 800px and shrinks to its label on a wider screen. The page does not use Claude or Anthropic logos.
+
 ## Pricing page
 
 The Groundwork plan ($20) is the recommended card: an accent border in the logo blue (`#45A9F0`) and a “Recommended” badge. The badge says Recommended. It does not say Most popular.

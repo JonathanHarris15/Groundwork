@@ -1771,8 +1771,37 @@ button.nav-session {
 .setup-steps li { margin-top: 28px; }
 .setup-steps li::marker { font-size: 22px; font-weight: 500; color: #f7f7f5; }
 .setup-steps h2 { margin: 0 0 8px; font-size: 22px; font-weight: 500; }
+.byom .cta-row .cta { width: 100%; justify-content: center; box-sizing: border-box; }
+.byom .cmd-label { margin: 14px 0 0; color: #aeb3bc; font-size: 15px; }
+.byom .cmd {
+	display: block;
+	margin: 8px 0 0;
+	max-width: 100%;
+	padding: 12px 14px;
+	border-radius: 12px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: #0c0e12;
+	color: #f7f7f5;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 14px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.byom .cmd code {
+	display: block;
+	font: inherit;
+	white-space: inherit;
+	overflow-wrap: inherit;
+}
+.byom p code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 0.92em;
+}
+.byom .setup-steps + .req { margin: 18px 0 0; }
 @container (min-width: 801px) {
 	.plan-card h2 { min-height: 2.6em; }
+	.byom .cta-row .cta { width: auto; }
 }
 @container (max-width: 800px) {
 	.plan-cards { grid-template-columns: 1fr; }
