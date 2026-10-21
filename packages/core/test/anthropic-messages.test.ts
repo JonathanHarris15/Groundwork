@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { messagesForAnthropic, normalizeAnthropicMessages, plainTutorError, TUTOR_SEND_RETRY } from "../src/account/anthropic-messages";
+import { invalidAnthropicRequest, messagesForAnthropic, normalizeAnthropicMessages, plainTutorError, TUTOR_SEND_RETRY } from "../src/account/anthropic-messages";
 import { buildUpstream, upstreamErrorMessage } from "../src/account/tutor";
 import { AgentSession } from "../src/agent/loop";
 import type { AgentEvent, ChatMessage, ContentBlock, Provider } from "../src/agent/types";
@@ -132,6 +132,33 @@ describe("Anthropic message history", () => {
 		expect(banner).not.toMatch(/Invalid Anthropic|sk-ant-secret|invalid_request/);
 		expect(plainTutorError("messages.1.content.0.text: text content blocks must be non-empty")).toBe(TUTOR_SEND_RETRY);
 		expect(plainTutorError("The model provider returned nothing.")).toBe("The model provider returned nothing.");
+	});
+
+	it("names a provider credit failure instead of the generic retry", () => {
+		const heavy = upstreamErrorMessage(
+			{
+				error: {
+					message:
+						"This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 213. To increase, visit https://openrouter.ai/settings/credits and add more credits",
+				},
+			},
+			["sk-or-secret"],
+		);
+		const light = upstreamErrorMessage(
+			{
+				error: {
+					message: "Prompt tokens limit exceeded: 15587 > 2563. To increase, visit https://openrouter.ai/settings/credits and add more credits",
+				},
+			},
+			["sk-or-secret"],
+		);
+		expect(heavy).toBe("The model provider is out of credits.");
+		expect(light).toBe("The model provider is out of credits.");
+		expect(heavy).not.toBe(TUTOR_SEND_RETRY);
+		expect(invalidAnthropicRequest(heavy)).toBe(false);
+		expect(plainTutorError("Your credit balance is too low to access the Anthropic API.")).toBe("The model provider is out of credits.");
+		expect(plainTutorError("invalid x-api-key")).toBe("Provider key rejected.");
+		expect(`${heavy} ${light}`).not.toMatch(/openrouter\.ai|sk-or-secret|\$\d/);
 	});
 });
 

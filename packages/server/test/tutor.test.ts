@@ -164,6 +164,35 @@ describe("tutor API", () => {
 		expect(calls).toHaveLength(0);
 	});
 
+	it("says when the hosted provider is out of credits", async () => {
+		const { fetchImpl, calls } = capture(
+			{
+				error: {
+					message: "Prompt tokens limit exceeded: 15587 > 2563. To increase, visit https://openrouter.ai/settings/credits and add more credits",
+					type: "billing_error",
+				},
+			},
+			402,
+		);
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "included");
+		await server.accounts.setTutorWeight("local", "heavy");
+		const result = await route("POST", "/v1/tutor/complete", { ...turn, stream: true }, server);
+		expect(result.status).toBe(502);
+		expect(result.json).toEqual({ error: "The model provider is out of credits." });
+		expect(JSON.stringify(result.json)).not.toMatch(/That didn't go through|openrouter|15587|\$\d|sk-or-groundwork/);
+		expect(calls).toHaveLength(1);
+
+		const refused = capture({ error: { message: "invalid x-api-key" } }, 401);
+		const byom = deps({ fetchImpl: refused.fetchImpl });
+		await byom.accounts.setPlan("local", "byom");
+		await byom.secrets.save("local", "anthropic", "sk-ant-user");
+		await route("POST", "/v1/tutor/setup", { via: "key", provider: "anthropic" }, byom);
+		const keyResult = await route("POST", "/v1/tutor/complete", { ...turn, stream: true }, byom);
+		expect(keyResult.status).toBe(502);
+		expect(keyResult.json).toEqual({ error: "Provider key rejected." });
+	});
+
 	it("strips a provider key out of an upstream error", async () => {
 		const { fetchImpl } = capture({ error: { message: "bad key sk-ant-user" } }, 401);
 		const server = deps({ fetchImpl });
