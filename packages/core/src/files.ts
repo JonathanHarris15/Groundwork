@@ -1,6 +1,8 @@
 import { cleanFolderList, pathInsideAny } from "./access";
 import type { ChatMessage, ContentBlock } from "./agent/types";
+import { fitTutorImage } from "./image-fit";
 import type { VaultIO } from "./io";
+import { prepareInlinePdf } from "./pdf-inline";
 import { asUnknown } from "./unknown";
 
 /** Where attachments and the learner's reference material live. */
@@ -28,6 +30,8 @@ export interface VaultFile {
 	/** Why the contents weren't loaded, e.g. too large or an unreadable type. */
 	skipped?: string;
 	tooLarge?: boolean;
+	/** A PDF was shortened to the leading pages that fit in one tutor request. */
+	note?: string;
 }
 
 export function extensionOf(path: string): string {
@@ -60,12 +64,17 @@ export async function loadVaultFile(io: VaultIO, path: string): Promise<VaultFil
 		if (kind === "other") {
 			return { ...base, size: 0, skipped: `.${extensionOf(path) || "?"} files can't be read. Export it as PDF, an image, or text.` };
 		}
-		const bytes = await io.readBinary(path);
-		const limit = kind === "image" ? LIMITS.image : LIMITS.pdf;
-		if (bytes.byteLength > limit) {
-			return { ...base, size: bytes.byteLength, skipped: `It is ${mb(bytes.byteLength)}, over the ${mb(limit)} limit for ${kind === "image" ? "images" : "PDFs"}.`, tooLarge: true };
+		const bytes = new Uint8Array(await io.readBinary(path));
+		if (kind === "image") {
+			const fitted = fitTutorImage(bytes, mediaType);
+			if (fitted.bytes.byteLength > LIMITS.image) {
+				return { ...base, size: bytes.byteLength, skipped: `It is ${mb(bytes.byteLength)}, over the ${mb(LIMITS.image)} limit for images.`, tooLarge: true };
+			}
+			return { ...base, mediaType: fitted.mediaType, size: fitted.bytes.byteLength, data: toBase64(fitted.bytes) };
 		}
-		return { ...base, size: bytes.byteLength, data: toBase64(bytes) };
+		const prepared = await prepareInlinePdf(bytes, path);
+		if (!prepared.ok) return { ...base, size: bytes.byteLength, skipped: prepared.note, tooLarge: true };
+		return { ...base, size: prepared.bytes.byteLength, data: toBase64(prepared.bytes), ...(prepared.note ? { note: prepared.note } : {}) };
 	} catch (err) {
 		return { ...base, size: 0, skipped: `Couldn't read it (${err instanceof Error ? err.message : String(err)}).` };
 	}
@@ -77,7 +86,11 @@ export function fileBlocks(f: VaultFile): ContentBlock[] {
 	if (f.kind === "text") return [{ type: "text", text: fileText(f) }];
 	const label: ContentBlock = { type: "text", text: `File: ${f.path}` };
 	if (f.kind === "image") return [label, { type: "image", source: { type: "base64", media_type: f.mediaType, data: f.data } }];
-	return [label, { type: "document", source: { type: "base64", media_type: f.mediaType, data: f.data }, title: basename(f.path) }];
+	if (!f.data) return [{ type: "text", text: f.note || f.text || `File ${f.path} was not inlined.` }];
+	const blocks: ContentBlock[] = [];
+	if (f.note) blocks.push({ type: "text", text: f.note });
+	blocks.push(label, { type: "document", source: { type: "base64", media_type: f.mediaType, data: f.data }, title: basename(f.path) });
+	return blocks;
 }
 
 export function fileText(f: VaultFile): string {

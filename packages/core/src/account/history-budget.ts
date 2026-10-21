@@ -1,8 +1,10 @@
 /**
- * A long tutor session used to resend every vault read on every later turn.
- * Once the model has answered past a read, the bytes are replaced with a
- * short reference it can open again with read_vault_file. The turn still in
- * progress keeps its full tool payloads. Older tool text is capped.
+ * A long tutor session used to resend every vault read, and every file the
+ * learner had attached, on every later turn. Once the model has answered
+ * past that turn, the bytes are replaced with a short reference it can open
+ * again with read_vault_file. The turn still in progress keeps its files,
+ * up to TUTOR_INLINE_MEDIA_CHARS. Past that, older decks are named and left
+ * in the vault. Older tool text is capped.
  *
  * Compaction is idempotent: a second pass does not rewrite a stub, so the
  * prefix stays stable for prompt caching.
@@ -13,6 +15,11 @@ import { asRecord } from "../unknown";
 
 /** Old tool results longer than this are cut. The active turn is left whole. */
 export const OLD_TOOL_CHAR_CAP = 1_600;
+/**
+ * Base64 characters of images and PDFs kept on the wire. One fitted screenshot
+ * and a trimmed lecture deck fit. Further decks are a path, not the file.
+ */
+export const TUTOR_INLINE_MEDIA_CHARS = 16_000_000;
 
 const ALREADY_READ = "[Already read ";
 const TRIMMED_MARK = "[Older tool output trimmed";
@@ -91,23 +98,93 @@ function pathFromInput(input: unknown): string {
 
 function compactMessage(message: ChatMessage, names: Map<string, { name: string; path: string }>): ChatMessage {
 	if (typeof message.content === "string") return message;
-	const toolMessage = message.content.some((block) => block.type === "tool_result");
 	const next: ContentBlock[] = [];
-	let notedMedia = false;
-	for (const block of message.content) {
+	for (let index = 0; index < message.content.length; index++) {
+		const block = message.content[index];
+		if (!block) continue;
 		if (block.type === "tool_result") {
 			next.push(compactResult(block, names));
 			continue;
 		}
-		if (toolMessage && (block.type === "document" || block.type === "image")) {
-			if (!notedMedia) next.push({ type: "text", text: mediaStub(block) });
-			notedMedia = true;
+		if (block.type === "document" || block.type === "image") {
+			next.push({ type: "text", text: mediaStub(block, neighborPath(message.content, index)) });
 			continue;
 		}
 		next.push(block);
 	}
 	if (!next.length) return message;
 	return { role: message.role, content: next };
+}
+
+/**
+ * The active turn still carries the screenshot and the deck just opened.
+ * If those files together would blow the tutor POST, keep the latest image
+ * and name the rest. Oldest documents go first.
+ */
+export function capInlineMedia(messages: ChatMessage[], budget = TUTOR_INLINE_MEDIA_CHARS): ChatMessage[] {
+	const refs: Array<{ message: number; block: number; kind: "image" | "document"; chars: number; title: string }> = [];
+	messages.forEach((message, messageIndex) => {
+		const content = message.content;
+		if (!Array.isArray(content)) return;
+		content.forEach((block, blockIndex) => {
+			if (block.type !== "image" && block.type !== "document") return;
+			const data = mediaData(block);
+			if (!data) return;
+			refs.push({ message: messageIndex, block: blockIndex, kind: block.type, chars: data.length, title: titleOf(block) || neighborPath(content, blockIndex) });
+		});
+	});
+	const total = refs.reduce((sum, ref) => sum + ref.chars, 0);
+	if (total <= budget) return messages;
+	const protectedImage = [...refs].reverse().find((ref) => ref.kind === "image");
+	const drop = new Set<string>();
+	let over = total - budget;
+	const ordered = [...refs.filter((ref) => ref.kind === "document"), ...refs.filter((ref) => ref.kind === "image" && ref !== protectedImage)];
+	for (const ref of ordered) {
+		if (over <= 0) break;
+		drop.add(`${ref.message}:${ref.block}`);
+		over -= ref.chars;
+	}
+	if (!drop.size) return messages;
+	return messages.map((message, messageIndex) => {
+		if (!Array.isArray(message.content)) return message;
+		const next: ContentBlock[] = [];
+		message.content.forEach((block, blockIndex) => {
+			if (!drop.has(`${messageIndex}:${blockIndex}`)) {
+				next.push(block);
+				return;
+			}
+			const ref = refs.find((item) => item.message === messageIndex && item.block === blockIndex);
+			next.push({ type: "text", text: droppedMediaStub(ref?.title || "that file") });
+		});
+		return next.length ? { role: message.role, content: next } : message;
+	});
+}
+
+function droppedMediaStub(title: string): string {
+	return `[${title} was left out of this request so the upload stays within the limit. Call read_vault_file on that path if you need it.]`;
+}
+
+function titleOf(block: ContentBlock): string {
+	return "title" in block && typeof block.title === "string" ? block.title.trim() : "";
+}
+
+function mediaData(block: ContentBlock): string {
+	const source = "source" in block ? block.source : undefined;
+	if (!source || typeof source !== "object") return "";
+	const data = (source as { data?: unknown }).data;
+	return typeof data === "string" ? data : "";
+}
+
+function neighborPath(blocks: ContentBlock[], index: number): string {
+	const own = titleOf(blocks[index] ?? { type: "text" });
+	if (own) return own;
+	for (let i = index - 1; i >= 0 && i >= index - 2; i--) {
+		const block = blocks[i];
+		if (block?.type !== "text" || typeof block.text !== "string") continue;
+		const match = block.text.match(/^File:\s*(.+)$/);
+		if (match?.[1]) return match[1].trim();
+	}
+	return "";
 }
 
 function compactResult(block: ContentBlock, names: Map<string, { name: string; path: string }>): ContentBlock {
@@ -129,8 +206,8 @@ function readStub(path: string, chars: number): string {
 	return `${ALREADY_READ}${path}${size}. Call read_vault_file on that path if you need it again.]`;
 }
 
-function mediaStub(block: ContentBlock): string {
-	const title = "title" in block && typeof block.title === "string" && block.title.trim() ? block.title.trim() : "that file";
+function mediaStub(block: ContentBlock, path = ""): string {
+	const title = path || ("title" in block && typeof block.title === "string" && block.title.trim() ? block.title.trim() : "that file");
 	return `${ALREADY_READ}${title}. Call read_vault_file on that path if you need it again.]`;
 }
 

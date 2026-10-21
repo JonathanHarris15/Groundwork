@@ -1,5 +1,6 @@
 import { usageFeatureFromThread } from "../account/usage-feature";
 import { httpClient, type HttpClient, type HttpInit, type HttpResponse } from "../http";
+import { JSON_BODY_LIMIT_BYTES, uploadTooLargeError } from "../upload-limit";
 import { asRecord } from "../unknown";
 import { pushTutorSse, type TutorWireEvent } from "./tutor-events";
 import type { Provider, ProviderRequest, ProviderResponse } from "./types";
@@ -36,23 +37,40 @@ export class GroundworkProvider implements Provider {
 		const token = await this.opts.token();
 		if (!token) throw new Error("Sign in on the Groundwork website, then choose Connect Groundwork.");
 		const fetchImpl = this.opts.fetchImpl ?? ((url, init) => streamingHttp(url, init, httpClient()));
+		const body = tutorWireBody({
+			system: req.system,
+			messages: req.messages,
+			tools: req.tools,
+			maxTokens: this.opts.maxTokens,
+			feature: usageFeatureFromThread(req.messages),
+		});
+		if (byteSize(body) > JSON_BODY_LIMIT_BYTES) throw new TutorHttpError(uploadTooLargeError(), 413);
 		const res = await fetchImpl(`${this.opts.origin.replace(/\/+$/, "")}/v1/tutor/complete`, {
 			method: "POST",
 			headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${token}` },
-			body: JSON.stringify({
-				system: req.system,
-				messages: req.messages,
-				tools: req.tools,
-				maxTokens: this.opts.maxTokens,
-				feature: usageFeatureFromThread(req.messages),
-				stream: true,
-			}),
+			body,
 			signal: req.signal,
 		});
 		const type = res.headers.get("content-type") ?? "";
 		if (type.includes("text/event-stream")) return readTutorStream(res, req.onText);
 		return readTutorJson(res, req.onText);
 	}
+}
+
+/** The JSON the plugin posts to /v1/tutor/complete. */
+export function tutorWireBody(input: Pick<ProviderRequest, "system" | "messages" | "tools"> & { maxTokens?: number; feature?: string }): string {
+	return JSON.stringify({
+		system: input.system,
+		messages: input.messages,
+		tools: input.tools,
+		maxTokens: input.maxTokens,
+		feature: input.feature,
+		stream: true,
+	});
+}
+
+function byteSize(text: string): number {
+	return typeof Buffer !== "undefined" ? Buffer.byteLength(text) : new TextEncoder().encode(text).byteLength;
 }
 
 /** Prefer a streaming fetch. Fall back only when the connection itself fails, so a 4xx is not sent twice. */
