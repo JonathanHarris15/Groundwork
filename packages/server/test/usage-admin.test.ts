@@ -342,4 +342,69 @@ describe("admin usage gate", () => {
 		expect(promotionCodesFrom({ discounts: [{ promotion_code: { code: "GROUNDWORKTESTER" } }] })).toContain("GROUNDWORKTESTER");
 		expect(promotionCodesFrom({ discounts: [{ coupon: { percent_off: 100 } }] })).toEqual([]);
 	});
+
+	it("shows the OpenRouter balance to an admin and flags it under $3", async () => {
+		const seen: string[] = [];
+		const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+			seen.push(String(url));
+			expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sk-or-groundwork");
+			return new Response(JSON.stringify({ data: { total_credits: 10, total_usage: 10.19 } }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}) as typeof fetch;
+		const low = deps({ auth, usage: new UsageDirectory(new MemoryUsageStore()), openRouterKey: "sk-or-groundwork", fetchImpl });
+		const page = await route("GET", "/api/admin/usage", null, low, "Bearer admin");
+		expect(page.status).toBe(200);
+		expect(seen).toEqual(["https://openrouter.ai/api/v1/credits"]);
+		const body = page.json as { html?: string; openRouter?: { remainingUsd: number; low: boolean } };
+		expect(body.openRouter).toEqual({ remainingUsd: expect.closeTo(-0.19, 8), low: true });
+		expect(body.html).toContain('id="openrouter-balance"');
+		expect(body.html).toContain("usage-warn");
+		expect(body.html).toContain("OpenRouter balance is -$0.19, under $3.");
+		expect(JSON.stringify(page.json)).not.toContain("sk-or-groundwork");
+		const csv = await route("GET", "/api/admin/usage.csv", null, low, "Bearer admin");
+		expect(csv.text).toContain("openrouter_low,yes");
+		const account = await route("GET", "/v1/account", null, low, "Bearer admin");
+		expect(JSON.stringify(account.json)).not.toMatch(/openRouter|remainingUsd/);
+
+		let calls = 0;
+		const hidden = deps({
+			auth,
+			usage: new UsageDirectory(new MemoryUsageStore()),
+			openRouterKey: "sk-or-groundwork",
+			fetchImpl: (async () => {
+				calls += 1;
+				return new Response("{}", { status: 200 });
+			}) as typeof fetch,
+		});
+		const stranger = await route("GET", "/api/admin/usage", null, hidden, "Bearer ada");
+		expect(stranger.status).toBe(404);
+		expect(calls).toBe(0);
+		expect(JSON.stringify(stranger.json)).not.toContain("OpenRouter");
+
+		const exactFetch = (async () =>
+			new Response(JSON.stringify({ data: { total_credits: 10, total_usage: 7 } }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			})) as typeof fetch;
+		const exact = deps({ auth, usage: new UsageDirectory(new MemoryUsageStore()), openRouterKey: "sk-or-groundwork", fetchImpl: exactFetch });
+		const atLine = await route("GET", "/api/admin/usage", null, exact, "Bearer admin");
+		const atBody = atLine.json as { html?: string; openRouter?: { low: boolean; remainingUsd: number } };
+		expect(atBody.openRouter).toEqual({ remainingUsd: 3, low: false });
+		expect(atBody.html).toContain("OpenRouter balance $3.00 remaining.");
+		expect(atBody.html).not.toContain("under $3");
+
+		const failed = deps({
+			auth,
+			usage: new UsageDirectory(new MemoryUsageStore()),
+			openRouterKey: "sk-or-groundwork",
+			fetchImpl: (async () => new Response("no", { status: 401 })) as typeof fetch,
+		});
+		const down = await route("GET", "/api/admin/usage", null, failed, "Bearer admin");
+		const downBody = down.json as { html?: string; openRouter?: { error?: string } };
+		expect(downBody.openRouter).toEqual({ error: "OpenRouter balance could not be read." });
+		expect(downBody.html).toContain("OpenRouter balance could not be read.");
+		expect(down.status).toBe(200);
+	});
 });
