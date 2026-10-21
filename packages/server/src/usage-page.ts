@@ -1,5 +1,9 @@
 import { USAGE_FEATURE_LABEL, type UsageReport } from "@groundwork/core";
+import { formatUsd, type OpenRouterBalance } from "./openrouter-credits";
 import { type SetupFunnelCounts } from "./setup-funnel";
+
+/** What the admin page can say about the OpenRouter wallet. No key material. */
+export type OpenRouterBalanceView = { ok: true; balance: OpenRouterBalance } | { ok: false; message: string };
 
 const FUNNEL_LABEL: Record<keyof SetupFunnelCounts, string> = {
 	signup: "Signed up",
@@ -26,10 +30,11 @@ export function setupFunnelSection(counts: SetupFunnelCounts): string {
 }
 
 /** Dashboard markup for an allowlisted admin. The page shell stays empty until this is returned. */
-export function usageDash(report: UsageReport, funnel?: SetupFunnelCounts | null): string {
+export function usageDash(report: UsageReport, funnel?: SetupFunnelCounts | null, openRouter?: OpenRouterBalanceView): string {
 	const proposed = proposedLabel(report);
 	const conversion = report.upgrades.clickers ? report.upgrades.convertedClickers / report.upgrades.clickers : null;
-	return `${accountHead(report)}
+	return `${openRouterSection(openRouter)}
+					${accountHead(report)}
 					${funnel ? setupFunnelSection(funnel) : ""}
 					<h1>Free plan usage</h1>
 					<p class="usage-actions"><button class="btn btn-line" type="button" id="download-csv">Download CSV</button></p>
@@ -125,11 +130,19 @@ export function usageDash(report: UsageReport, funnel?: SetupFunnelCounts | null
 					</section>`;
 }
 
-export function usageCsv(report: UsageReport): string {
+export function usageCsv(report: UsageReport, openRouter?: OpenRouterBalanceView): string {
 	const lines: string[] = [];
 	const push = (cells: Array<string | number | null>) => lines.push(cells.map(csvCell).join(","));
 	push(["section", "usage"]);
 	push(["generated_at", report.generatedAt]);
+	if (openRouter?.ok) {
+		push(["openrouter_remaining_usd", openRouter.balance.remainingUsd]);
+		push(["openrouter_low", openRouter.balance.low ? "yes" : "no"]);
+	} else if (openRouter) {
+		push(["openrouter_remaining_usd", ""]);
+		push(["openrouter_low", ""]);
+		push(["openrouter_balance", openRouter.message]);
+	}
 	push(["users", report.census.users]);
 	push(["free", report.census.free]);
 	push(["no_plan", report.census.noPlan]);
@@ -281,6 +294,20 @@ function rateCell(rate: { eligible: number; returned: number; rate: number | nul
 function share(count: number, ratio: number | null): string {
 	if (ratio == null) return "—";
 	return `${count} (${pct(ratio * 100)})`;
+}
+
+function openRouterSection(openRouter: OpenRouterBalanceView | undefined): string {
+	if (!openRouter) return "";
+	const text = openRouter.ok
+		? openRouter.balance.low
+			? `OpenRouter balance is ${formatUsd(openRouter.balance.remainingUsd)}, under $3.`
+			: `OpenRouter balance ${formatUsd(openRouter.balance.remainingUsd)} remaining.`
+		: openRouter.message;
+	const klass = !openRouter.ok || openRouter.balance.low ? "usage-warn" : "lede";
+	return `<section class="usage-section" aria-labelledby="openrouter-balance-title">
+						<h2 id="openrouter-balance-title">OpenRouter</h2>
+						<p class="${klass}" role="status" id="openrouter-balance">${esc(text)}</p>
+					</section>`;
 }
 
 function accountHead(report: UsageReport): string {

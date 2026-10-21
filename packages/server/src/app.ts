@@ -11,7 +11,8 @@ import { allowCheckoutAmount } from "./public-limit";
 import { platformFetch, type FetchLike } from "./platform-fetch";
 import { webConfig } from "./web-config";
 import { isUsageAdmin } from "./admin-access";
-import { usageDash, usageCsv } from "./usage-page";
+import { readOpenRouterBalance } from "./openrouter-credits";
+import { usageDash, usageCsv, type OpenRouterBalanceView } from "./usage-page";
 import type { UsageDirectory } from "./usage";
 import type { ConnectCodeDirectory } from "./connect-codes";
 import type { SetupFunnel } from "./setup-funnel";
@@ -350,11 +351,28 @@ async function adminUsage(path: string, deps: ServerDeps, authorization: string 
 	const authUsers = deps.auth.listUsers ? await deps.auth.listUsers() : undefined;
 	const report = await usage.report(deps.accounts, new Date(), authUsers);
 	const funnel = deps.setupFunnel ? await deps.setupFunnel.counts() : null;
+	const openRouter = await openRouterBalanceView(deps);
 	const headers = { "cache-control": "private, no-store" };
 	if (path === "/api/admin/usage.csv") {
-		return { status: 200, json: { ok: true }, text: usageCsv(report), type: "text/csv; charset=utf-8", headers: { ...headers, "content-disposition": "attachment; filename=\"groundwork-usage.csv\"" } };
+		return { status: 200, json: { ok: true }, text: usageCsv(report, openRouter), type: "text/csv; charset=utf-8", headers: { ...headers, "content-disposition": "attachment; filename=\"groundwork-usage.csv\"" } };
 	}
-	return { status: 200, json: { ...report, html: usageDash(report, funnel) }, headers };
+	return { status: 200, json: { ...report, openRouter: publicOpenRouter(openRouter), html: usageDash(report, funnel, openRouter) }, headers };
+}
+
+async function openRouterBalanceView(deps: ServerDeps): Promise<OpenRouterBalanceView> {
+	const apiKey = deps.openRouterKey?.trim();
+	if (!apiKey) return { ok: false, message: "OpenRouter key is not set, so the balance could not be read." };
+	try {
+		const balance = await readOpenRouterBalance(apiKey, deps.fetchImpl ?? platformFetch);
+		return { ok: true, balance };
+	} catch {
+		console.error("Could not read the OpenRouter balance.");
+		return { ok: false, message: "OpenRouter balance could not be read." };
+	}
+}
+
+function publicOpenRouter(view: OpenRouterBalanceView): { remainingUsd: number; low: boolean } | { error: string } {
+	return view.ok ? { remainingUsd: view.balance.remainingUsd, low: view.balance.low } : { error: view.message };
 }
 
 function notFoundJson(): RouteResult {

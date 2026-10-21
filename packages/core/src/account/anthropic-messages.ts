@@ -21,10 +21,12 @@ export const TUTOR_SEND_RETRY = "That didn't go through. Try again.";
 export function plainTutorError(text: string): string {
 	const raw = text.replace(/\s+/g, " ").trim();
 	if (!raw || raw === TUTOR_SEND_RETRY) return TUTOR_SEND_RETRY;
-	if (/rate limit|usage limit|overloaded|too many requests/i.test(raw)) return "The model is busy. Wait a moment and try again.";
-	if (/api key|authentication|unauthorized|credit balance|invalid x-api-key/i.test(raw)) {
-		return "The model key was refused. Check the key on the website, then try again.";
+	if (/tutor budget is used up/i.test(raw)) return "Out of hosted credit.";
+	if (/credit balance|more credits|out of credits|prompt tokens limit exceeded|can only afford|payment required|insufficient credits|billing_error/i.test(raw)) {
+		return "The model provider is out of credits.";
 	}
+	if (/rate limit|usage limit|overloaded|too many requests/i.test(raw)) return "The model is busy. Wait a moment and try again.";
+	if (/api key|authentication|unauthorized|invalid x-api-key/i.test(raw)) return "Provider key rejected.";
 	if (/^[A-Za-z][^.!?]{0,160}[.!?]?$/.test(raw) && !/\b(api|anthropic|invalid_|messages\.|tool_use|tool_result|request_id)\b/i.test(raw)) return raw;
 	return TUTOR_SEND_RETRY;
 }
