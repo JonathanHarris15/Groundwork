@@ -225,6 +225,7 @@ export function fileAccessGuidance(access?: FolderAccess, mode: "tutor" | "read"
 		"A survey of text notes uses `survey_documents`. It reads text up to a size budget and does not read a PDF. Do not summarize from names alone.",
 		"When they want a folder of course files, from the start of a class through a midterm: call `list_vault_files`, then `read_vault_file` on each PDF, slide, and note. Name concepts from what those files say, then `set_goal` with those concepts and the file paths in `sources`. Do not use `survey_documents` or `show_figure` to read a PDF.",
 		"An `<exam_plan>` block means they asked to study from those files. Treat it as the starting syllabus: refine, `set_goal`, teach. Put a file on the goal (`sources`) or the exam plan. Do not write the file into a concept.",
+		"A `<bulk_goal>` block means those documents were already read in parallel and saved as one goal. The concept map is on the account. Do not call `set_goal` or `ingest_exam_materials` again. Call `quiz` on the frontier concept in this same turn. The card is the question.",
 	];
 	if (mode === "tutor") {
 		lines.push(

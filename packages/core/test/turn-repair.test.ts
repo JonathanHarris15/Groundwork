@@ -22,6 +22,25 @@ describe("announced questions", () => {
 		for (const text of plain) expect(announcesQuestion(text), text).toBe(false);
 	});
 
+	it("quizzes a bulk goal that is already saved, and does not ask for a second goal", () => {
+		const note = repairNote({
+			userText: "<bulk_goal>\nFrontier: Limit.\n</bulk_goal>\nHelp me learn all of these lectures",
+			assistantText: "The map is ready.",
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(note).toContain("Call quiz");
+		expect(note).not.toContain("Call set_goal");
+		expect(
+			repairNote({
+				userText: "<bulk_goal>\nFrontier: Limit.\n</bulk_goal>\nHelp me learn all of these lectures",
+				assistantText: "Here is the first check.",
+				calledQuestion: true,
+				calledGoal: false,
+			}),
+		).toBeNull();
+	});
+
 	it("asks for a card once, and stays quiet once a card or a goal already ran", () => {
 		const note = repairNote({
 			userText: "I want to be able to do the homework",

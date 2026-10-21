@@ -161,6 +161,8 @@ export interface GoalInput {
 	examPlan?: string;
 	/** Vault paths of the files this goal draws on. Allowed here, never on a concept. */
 	sources?: string[];
+	/** Where each concept was read. Written on the goal note, never on a concept. */
+	traces?: Array<{ title: string; path: string; locator: string }>;
 }
 
 /** The one next thing worth studying. */
@@ -633,6 +635,14 @@ export class KnowledgeStore {
 		if (input.objective) body = setSection(body, "Objective", demoteHeadings(input.objective), generated);
 		if (input.why) body = setSection(body, "Why", demoteHeadings(input.why), generated);
 		if (input.approach) body = setSection(body, "Approach", demoteHeadings(input.approach), generated);
+		if (input.traces?.length) {
+			const lines = input.traces.map((trace) => {
+				const title = trace.title.replace(/[[\]]/g, "").trim();
+				const where = `${trace.path} (${trace.locator})`.replace(/\s+/g, " ").trim();
+				return `- [[${title}]] — ${where}`;
+			});
+			body = setSection(body, "Traces", lines.join("\n"), ["Targets", "Built", "Dependency map"]);
+		}
 		const created = existing?.created ?? (typeof prior.frontmatter.created === "string" ? prior.frontmatter.created : undefined) ?? this.now().toISOString().slice(0, 10);
 		const due = parseIsoDate(input.due) ?? existing?.due ?? parseIsoDate(prior.frontmatter.due) ?? defaultDue(created.slice(0, 10));
 		const fm: Record<string, unknown> = {

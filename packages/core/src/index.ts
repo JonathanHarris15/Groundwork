@@ -10,6 +10,7 @@ export * from "./upload-limit";
 export * from "./survey";
 export * from "./flashcards";
 export * from "./exam";
+export * from "./bulk-import";
 export * from "./concept-title";
 export * from "./markdown";
 export * from "./tutor-markdown";

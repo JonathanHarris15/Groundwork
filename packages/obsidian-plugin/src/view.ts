@@ -32,11 +32,15 @@ import {
 	goalChoiceLabel,
 	workingGoalNote,
 	demoteHeadings,
+	bulkGoalNote,
 	examPrepInstruction,
 	familiarityLabel,
 	fileKind,
 	letter,
 	loadVaultFile,
+	materialFromVaultFile,
+	readingLabel,
+	requestBulkGoal,
 	normalizeTutorMarkdown,
 	scrubLearnerText,
 	figureIsVisible,
@@ -48,6 +52,7 @@ import {
 	FREE_FLASHCARD_REPLY,
 	HEAVY_REQUIRES_UPGRADE,
 	practiceTestRequest,
+	shouldBulkImport,
 	shouldStartExamPrep,
 	pathInsideAny,
 	removeFlashcardMirrors,
@@ -695,20 +700,35 @@ export class ChatView extends ItemView implements ToolUI {
 		this.setBusy(true);
 		this.abort = new AbortController();
 		try {
-			const files = await Promise.all(attachments.map((p) => loadVaultFile(this.plugin.store.context, p)));
 			let toSend = text;
-			if (attachments.length && shouldStartExamPrep(attachments.map(basename), text)) {
-				const ingested = await this.plugin.store.ingestExamMaterials({
-					files: attachments,
-					userText: text,
-					why: text || undefined,
-					createGoal: true,
-				});
-				if (ingested.goal && !(await this.plugin.store.workingGoal())) {
-					await this.plugin.store.setWorkingGoal(ingested.goal.goal.title);
-					await this.refreshGoalSelect();
+			let files: Awaited<ReturnType<typeof loadVaultFile>>[] = [];
+			let includeFiles = true;
+			const bulk = shouldBulkImport(attachments, text);
+			if (bulk && this.plugin.runtime().runtime === "proxy") {
+				const imported = await this.importBulkDocuments(attachments, text);
+				if (imported) {
+					toSend = [imported, text].filter(Boolean).join("\n\n");
+					includeFiles = false;
 				}
-				toSend = [examPrepInstruction(ingested.blueprint), text].filter(Boolean).join("\n\n");
+			}
+			if (includeFiles && bulk) {
+				includeFiles = false;
+				toSend = [vaultPathNote(attachments), toSend].filter(Boolean).join("\n\n");
+			} else if (includeFiles) {
+				files = await Promise.all(attachments.map((p) => loadVaultFile(this.plugin.store.context, p)));
+				if (attachments.length && shouldStartExamPrep(attachments.map(basename), text)) {
+					const ingested = await this.plugin.store.ingestExamMaterials({
+						files: attachments,
+						userText: text,
+						why: text || undefined,
+						createGoal: true,
+					});
+					if (ingested.goal && !(await this.plugin.store.workingGoal())) {
+						await this.plugin.store.setWorkingGoal(ingested.goal.goal.title);
+						await this.refreshGoalSelect();
+					}
+					toSend = [examPrepInstruction(ingested.blueprint), text].filter(Boolean).join("\n\n");
+				}
 			}
 			toSend = [workingGoalNote(await this.plugin.store.workingGoal()), toSend].filter(Boolean).join("\n\n");
 			const notes = this.marginNotes();
@@ -722,6 +742,7 @@ export class ChatView extends ItemView implements ToolUI {
 				profile: await this.plugin.store.profile(),
 				tutorContext: await this.plugin.store.tutorContext(),
 				attached: files,
+				includeFiles,
 				io: this.plugin.store.context,
 				signal: this.abort.signal,
 			});
@@ -770,6 +791,78 @@ export class ChatView extends ItemView implements ToolUI {
 				await this.persist();
 			}
 		}
+	}
+
+	/**
+	 * Read a stack of documents on the server, then save one goal.
+	 * Returns the note the tutor should see, or null when this device should read the files itself.
+	 */
+	private async importBulkDocuments(paths: string[], userText: string): Promise<string | null> {
+		const token = await this.plugin.tutorAccessToken();
+		if (!token) return null;
+		const payloads = [];
+		for (const path of paths) {
+			const material = await materialFromVaultFile(this.plugin.store.context, path);
+			payloads.push({ path, name: material.name, text: material.text });
+		}
+		const readable = payloads.filter((file) => file.text.trim().length >= 40);
+		if (!shouldBulkImport(readable.map((file) => file.path), userText)) return null;
+		this.showImportStatus(readingLabel(0, readable.length));
+		try {
+			const result = await requestBulkGoal({
+				origin: accountOrigin(),
+				token,
+				files: readable,
+				userText,
+				fetchImpl: (url, init) => this.plugin.groundworkFetch(url, init),
+				onProgress: (event) => this.showImportStatus(event.label),
+				signal: this.abort?.signal,
+			});
+			const report = await this.plugin.store.setGoal(result.goal, { judgments: "off" });
+			await this.plugin.store.setWorkingGoal(report.goal.title);
+			await this.refreshGoalSelect();
+			void this.plugin.refreshTutorRoute();
+			const titleOf = (id: string) => report.nodes.find((node) => node.id === id)?.title ?? id;
+			const targets = report.goal.targets.map(titleOf);
+			const frontier = report.analysis.frontier[0]?.title ?? targets[0] ?? "";
+			this.finishImportStatus(`One goal from ${readable.length} documents`);
+			return bulkGoalNote({ title: report.goal.title, concepts: result.concepts, targets, frontier });
+		} catch (err) {
+			this.clearImportStatus();
+			if (this.abort?.signal.aborted) throw err;
+			new Notice(err instanceof Error ? err.message : "Could not build one goal from these documents.");
+			return null;
+		}
+	}
+
+	private importChip: HTMLElement | null = null;
+
+	private showImportStatus(label: string): void {
+		if (!this.importChip) {
+			this.importChip = this.uiMessagesEl.createDiv({ cls: "gw-tool is-running" });
+			setIcon(this.importChip.createSpan({ cls: "gw-tool-icon" }), "loader");
+			this.importChip.createSpan({ cls: "gw-tool-label" });
+			this.keepThinkingLast();
+		}
+		const labelEl = this.importChip.querySelector(".gw-tool-label");
+		if (labelEl) labelEl.textContent = label;
+		this.scrollToBottom();
+	}
+
+	private finishImportStatus(summary: string): void {
+		const chip = this.importChip;
+		this.importChip = null;
+		if (!chip) return;
+		chip.removeClass("is-running");
+		chip.empty();
+		setIcon(chip.createSpan({ cls: "gw-tool-icon" }), "git-fork");
+		chip.createSpan({ text: summary });
+		this.record.items.push({ kind: "tool", name: "bulk_import", summary });
+	}
+
+	private clearImportStatus(): void {
+		this.importChip?.remove();
+		this.importChip = null;
 	}
 
 	/** Continue after a restored answer without putting that handoff in the transcript. */
@@ -3546,6 +3639,10 @@ export class ChatView extends ItemView implements ToolUI {
 		const ageHours = (Date.now() - Date.parse(last.updated)) / 3_600_000;
 		return ageHours < 12 ? last : null;
 	}
+}
+
+function vaultPathNote(paths: string[]): string {
+	return ["These documents are in the vault. Read each one with read_vault_file. They were not inlined in this message.", ...paths.map((path) => `- ${path}`)].join("\n");
 }
 
 function iconFor(name: string): string {
