@@ -21,6 +21,7 @@ import { ConnectCodeDirectory } from "./connect-codes";
 import { FileConnectCodeStore, FirestoreConnectCodeStore } from "./connect-code-store";
 import { FileSetupFunnel, FirestoreSetupFunnel } from "./setup-funnel";
 import { emptyDownloadCache } from "./obsidian-downloads";
+import { jsonBodyError, readRawBody } from "./json-body";
 
 const { port, host } = listenTarget();
 const auth = loadAuth();
@@ -108,17 +109,17 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 		send(res, result, true);
 		return;
 	}
-	const chunks: Buffer[] = [];
-	for await (const chunk of req) chunks.push(chunk as Buffer);
-	const raw = Buffer.concat(chunks).toString("utf8");
+	const buf = await readRawBody(req);
+	const raw = buf.toString("utf8");
 	if (url.pathname === "/v1/stripe/webhook") {
 		const result = await route(verb, url.pathname, null, deps, undefined, { origin, rawBody: raw, stripeSignature: header(req, "stripe-signature") });
 		send(res, result);
 		return;
 	}
 	let body: unknown = null;
-	if (raw.length > 12_000_000) {
-		send(res, { status: 413, json: { error: "That upload is too large." } });
+	const tooBig = jsonBodyError(buf.byteLength);
+	if (tooBig) {
+		send(res, { status: tooBig.status, json: { error: tooBig.error } });
 		return;
 	}
 	if (raw) {

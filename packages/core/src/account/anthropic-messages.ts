@@ -13,7 +13,8 @@
  */
 
 import type { ChatMessage, ContentBlock } from "../agent/types";
-import { compactTutorHistory } from "./history-budget";
+import { capInlineMedia, compactTutorHistory } from "./history-budget";
+import { fitTutorMessageImages } from "../image-fit";
 
 export const TUTOR_SEND_RETRY = "That didn't go through. Try again.";
 
@@ -41,7 +42,7 @@ export function normalizeAnthropicMessages(messages: ChatMessage[]): ChatMessage
 
 /** The body of one Messages API call. A thread that still ends on the assistant gets a user turn. */
 export function messagesForAnthropic(messages: ChatMessage[]): ChatMessage[] {
-	const healed = compactTutorHistory(normalizeAnthropicMessages(messages));
+	const healed = capInlineMedia(fitTutorMessageImages(compactTutorHistory(normalizeAnthropicMessages(messages))));
 	if (!healed.length || healed[healed.length - 1]?.role === "assistant") return [...healed, { role: "user", content: "Continue." }];
 	return healed;
 }
