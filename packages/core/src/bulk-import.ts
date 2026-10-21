@@ -13,9 +13,14 @@
  * not by the hosted allowance. A Claude subscription never reaches this
  * server path: the plugin asks the tutor to open each file with
  * `read_vault_file` instead.
+ *
+ * The plugin saves the stack as a job, then asks for one shard at a time.
+ * The website proxy closes a request at about 60 seconds. A job step is one
+ * model call, and the plugin asks again until the goal is stored.
  */
 
 import { directSourceReference, sourceBoundConceptReason } from "./concept-title";
+import { cancelLater, later } from "./timers";
 import { findCycle } from "./graph";
 import type { HttpClient, HttpResponse } from "./http";
 import { classifyLearnerAsk, visibleAsk } from "./intent";
@@ -855,7 +860,18 @@ function parseConceptList(value: unknown): ExtractedConcept[] {
 	return concepts;
 }
 
-/** Plugin call. One request when the text fits; otherwise shard requests, then one merge. */
+/** How long the plugin keeps asking before it gives up on a job. */
+const BULK_JOB_DEADLINE_MS = 15 * 60 * 1000;
+const BULK_JOB_MAX_STEPS = 240;
+const BULK_JOB_WAIT_MS = 750;
+const BULK_JOB_RETRY_MS = 1000;
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+/**
+ * Plugin call. The documents go up once. Later requests only carry the job id,
+ * and each one runs a single shard or the merge. A proxy timeout is retried;
+ * the server keeps the finished shard.
+ */
 export async function requestBulkGoal(input: {
 	origin: string;
 	token: string;
@@ -867,94 +883,143 @@ export async function requestBulkGoal(input: {
 	signal?: AbortSignal;
 }): Promise<BulkImportResult> {
 	const files = filesForWire(input.files);
-	const batches = packBulkRequests(files);
-	if (batches.length <= 1) {
-		return postBulk(input, { phase: "import", userText: input.userText, title: input.title, files, concepts: [], documents: files.map((file) => file.path), stream: true });
-	}
-	const concepts: ExtractedConcept[] = [];
-	let done = 0;
-	input.onProgress?.(readingProgress(0, files.length));
-	await mapPool(batches, BULK_PARALLELISM, async (batch) => {
-		const part = await postExtract(input, {
-			phase: "extract",
-			userText: input.userText,
-			files: batch,
-			concepts: [],
-			documents: batch.map((file) => file.path),
-			stream: false,
-		});
-		concepts.push(...part);
-		done += batch.length;
-		input.onProgress?.(readingProgress(Math.min(done, files.length), files.length));
-	});
-	input.onProgress?.(buildingProgress(files.length));
-	return postBulk(input, {
-		phase: "merge",
-		userText: input.userText,
-		title: input.title,
-		files: [],
-		concepts,
-		documents: files.map((file) => file.path),
-		stream: false,
-	});
+	const started = Date.now();
+	const created = await postJob(input, { job: true, userText: input.userText, title: input.title, files }, 3);
+	const jobId = isRecord(created) && typeof created.jobId === "string" ? created.jobId : "";
+	if (!/^[a-f0-9]{32}$/.test(jobId)) throw new BulkImportError("The bulk import did not start.");
+	noteProgress(created, input.onProgress);
+	const state: { done: BulkImportResult | null; error: BulkImportError | null; steps: number } = { done: null, error: null, steps: 0 };
+	const workers = Array.from({ length: BULK_PARALLELISM }, () => pollJob(input, jobId, started, state));
+	await Promise.all(workers);
+	if (state.error) throw state.error;
+	if (!state.done) throw new BulkImportError("The bulk import did not return a goal.");
+	return state.done;
 }
 
-async function postExtract(
-	input: { origin: string; token: string; fetchImpl: HttpClient; signal?: AbortSignal },
-	body: BulkRequest,
-): Promise<ExtractedConcept[]> {
-	const payload = JSON.stringify(body);
-	if (byteSize(payload) > JSON_BODY_LIMIT_BYTES) throw new BulkImportError(uploadTooLargeError(), 413);
-	const res = await input.fetchImpl(`${input.origin.replace(/\/+$/, "")}/v1/tutor/bulk-import`, {
-		method: "POST",
-		headers: { "content-type": "application/json", accept: "application/json", authorization: `Bearer ${input.token}` },
-		body: payload,
-		signal: input.signal,
-	});
-	const text = await res.text();
-	let parsed: unknown = null;
-	if (text) {
+async function pollJob(
+	input: { origin: string; token: string; fetchImpl: HttpClient; onProgress?: (event: BulkProgress) => void; signal?: AbortSignal },
+	jobId: string,
+	started: number,
+	state: { done: BulkImportResult | null; error: BulkImportError | null; steps: number },
+): Promise<void> {
+	while (!state.done && !state.error) {
+		if (input.signal?.aborted) {
+			state.error = new BulkImportError("Cancelled.", 499);
+			return;
+		}
+		if (Date.now() - started > BULK_JOB_DEADLINE_MS || state.steps >= BULK_JOB_MAX_STEPS) {
+			state.error = new BulkImportError("The bulk import took too long.", 504);
+			return;
+		}
+		state.steps += 1;
+		let status = 0;
+		let body: unknown = null;
 		try {
-			parsed = JSON.parse(text);
-		} catch {
-			parsed = { error: text };
+			const posted = await postJobOnce(input, { jobId, step: true });
+			status = posted.status;
+			body = posted.body;
+		} catch (err) {
+			if (input.signal?.aborted || (err instanceof BulkImportError && err.status === 499)) {
+				state.error = new BulkImportError("Cancelled.", 499);
+				return;
+			}
+			if (err instanceof BulkImportError && !RETRYABLE_STATUS.has(err.status)) {
+				state.error = err;
+				return;
+			}
+			try {
+				await pause(BULK_JOB_RETRY_MS, input.signal);
+			} catch (pauseErr) {
+				state.error = pauseErr instanceof BulkImportError ? pauseErr : new BulkImportError("Cancelled.", 499);
+				return;
+			}
+			continue;
+		}
+		if (state.done || state.error) return;
+		if (status < 200 || status >= 300) {
+			if (RETRYABLE_STATUS.has(status)) {
+				try {
+					await pause(BULK_JOB_RETRY_MS, input.signal);
+				} catch (pauseErr) {
+					state.error = pauseErr instanceof BulkImportError ? pauseErr : new BulkImportError("Cancelled.", 499);
+					return;
+				}
+				continue;
+			}
+			state.error = new BulkImportError(errorMessage(body), status);
+			return;
+		}
+		if (!isRecord(body)) {
+			state.error = new BulkImportError("The bulk import did not finish.");
+			return;
+		}
+		noteProgress(body, input.onProgress);
+		if (body.status === "error") {
+			state.error = new BulkImportError(typeof body.error === "string" ? body.error : "The bulk import did not finish.", 422);
+			return;
+		}
+		if (body.status === "done") {
+			const result = resultFrom(body);
+			if (!result) {
+				state.error = new BulkImportError("The bulk import did not return a goal.");
+				return;
+			}
+			state.done = result;
+			return;
+		}
+		if (body.status === "wait") {
+			try {
+				await pause(BULK_JOB_WAIT_MS, input.signal);
+			} catch (pauseErr) {
+				state.error = pauseErr instanceof BulkImportError ? pauseErr : new BulkImportError("Cancelled.", 499);
+				return;
+			}
 		}
 	}
-	if (!res.ok) {
-		const message = parsed && typeof parsed === "object" && typeof (parsed as { error?: unknown }).error === "string" ? (parsed as { error: string }).error : "The bulk import did not finish.";
-		throw new BulkImportError(message, res.status);
+}
+
+async function postJob(
+	input: { origin: string; token: string; fetchImpl: HttpClient; signal?: AbortSignal },
+	payload: unknown,
+	attempts: number,
+): Promise<unknown> {
+	let last: BulkImportError | null = null;
+	for (let attempt = 0; attempt < attempts; attempt++) {
+		try {
+			const posted = await postJobOnce(input, payload);
+			if (posted.status >= 200 && posted.status < 300) return posted.body;
+			last = new BulkImportError(errorMessage(posted.body), posted.status);
+			if (!RETRYABLE_STATUS.has(posted.status) || attempt === attempts - 1) throw last;
+		} catch (err) {
+			if (input.signal?.aborted) throw new BulkImportError("Cancelled.", 499);
+			if (err instanceof BulkImportError && err.status === 499) throw err;
+			if (err instanceof BulkImportError && !RETRYABLE_STATUS.has(err.status)) throw err;
+			last = err instanceof BulkImportError ? err : new BulkImportError(err instanceof Error ? err.message : "The bulk import did not finish.", 502);
+			if (attempt === attempts - 1) throw last;
+		}
+		await pause(BULK_JOB_RETRY_MS, input.signal);
 	}
-	return conceptsFromExtract(parsed);
+	throw last ?? new BulkImportError("The bulk import did not start.");
 }
 
-async function postBulk(
-	input: {
-		origin: string;
-		token: string;
-		fetchImpl: HttpClient;
-		onProgress?: (event: BulkProgress) => void;
-		signal?: AbortSignal;
-	},
-	body: BulkRequest,
-): Promise<BulkImportResult> {
-	const payload = JSON.stringify(body);
-	if (byteSize(payload) > JSON_BODY_LIMIT_BYTES) throw new BulkImportError(uploadTooLargeError(), 413);
-	const res = await input.fetchImpl(`${input.origin.replace(/\/+$/, "")}/v1/tutor/bulk-import`, {
-		method: "POST",
-		headers: { "content-type": "application/json", accept: "text/event-stream, application/json", authorization: `Bearer ${input.token}` },
-		body: payload,
-		signal: input.signal,
-	});
-	return readBulkResponse(res, input.onProgress);
-}
-
-function byteSize(text: string): number {
-	return typeof Buffer !== "undefined" ? Buffer.byteLength(text) : new TextEncoder().encode(text).byteLength;
-}
-
-async function readBulkResponse(res: HttpResponse, onProgress?: (event: BulkProgress) => void): Promise<BulkImportResult> {
-	const type = res.headers.get("content-type") ?? "";
-	if (type.includes("text/event-stream")) return readBulkStream(res, onProgress);
+async function postJobOnce(
+	input: { origin: string; token: string; fetchImpl: HttpClient; signal?: AbortSignal },
+	payload: unknown,
+): Promise<{ status: number; body: unknown }> {
+	const raw = JSON.stringify(payload);
+	if (byteSize(raw) > JSON_BODY_LIMIT_BYTES) throw new BulkImportError(uploadTooLargeError(), 413);
+	let res: HttpResponse;
+	try {
+		res = await input.fetchImpl(`${input.origin.replace(/\/+$/, "")}/v1/tutor/bulk-import`, {
+			method: "POST",
+			headers: { "content-type": "application/json", accept: "application/json", authorization: `Bearer ${input.token}` },
+			body: raw,
+			signal: input.signal,
+		});
+	} catch (err) {
+		if (input.signal?.aborted) throw new BulkImportError("Cancelled.", 499);
+		throw new BulkImportError(err instanceof Error ? err.message : "The bulk import did not finish.", 502);
+	}
 	const text = await res.text();
 	let body: unknown = null;
 	if (text) {
@@ -964,57 +1029,44 @@ async function readBulkResponse(res: HttpResponse, onProgress?: (event: BulkProg
 			body = { error: text };
 		}
 	}
-	if (!res.ok) {
-		const message = body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string" ? (body as { error: string }).error : "The bulk import did not finish.";
-		throw new BulkImportError(message, res.status);
-	}
-	const result = resultFrom(body);
-	if (!result) throw new BulkImportError("The bulk import did not return a goal.");
-	return result;
+	return { status: res.status, body };
 }
 
-async function readBulkStream(res: HttpResponse, onProgress?: (event: BulkProgress) => void): Promise<BulkImportResult> {
-	let buffer = "";
-	const found: { done: BulkImportResult | null; failed: { error: string; status?: number } | null } = { done: null, failed: null };
-	const take = (chunk: string) => {
-		const combined = buffer + chunk;
-		const parts = combined.split("\n\n");
-		buffer = parts.pop() ?? "";
-		for (const part of parts) {
-			const data = part
-				.split("\n")
-				.map((line) => line.trim())
-				.filter((line) => line.startsWith("data:"))
-				.map((line) => line.slice(5).trim())
-				.join("\n");
-			if (!data) continue;
-			try {
-				const event = JSON.parse(data) as BulkWireEvent;
-				if (event.type === "progress") onProgress?.(event);
-				else if (event.type === "done") found.done = resultFrom(event);
-				else if (event.type === "error") found.failed = { error: event.error, status: event.status };
-			} catch {
-				// A bad event is skipped. The buffer keeps a partial frame.
-			}
-		}
-	};
-	if (res.body) {
-		const reader = res.body.getReader();
-		const decoder = new TextDecoder();
-		while (true) {
-			const next = await reader.read();
-			if (next.value) take(decoder.decode(next.value, { stream: !next.done }));
-			if (next.done) break;
-		}
-		take(decoder.decode());
-	} else {
-		take(await res.text());
-	}
-	if (buffer.trim()) take("\n\n");
-	if (found.failed) throw new BulkImportError(found.failed.error || "The bulk import did not finish.", found.failed.status ?? res.status);
-	if (!res.ok && !found.done) throw new BulkImportError("The bulk import did not finish.", res.status);
-	if (!found.done) throw new BulkImportError("The bulk import did not return a goal.");
-	return found.done;
+function noteProgress(body: unknown, onProgress?: (event: BulkProgress) => void): void {
+	if (!onProgress || !isRecord(body)) return;
+	const event = progressFrom(body.event);
+	if (event) onProgress(event);
+}
+
+function progressFrom(value: unknown): BulkProgress | null {
+	if (!isRecord(value)) return null;
+	if (value.phase !== "reading" && value.phase !== "building") return null;
+	if (typeof value.label !== "string" || typeof value.done !== "number" || typeof value.total !== "number") return null;
+	return { phase: value.phase, done: value.done, total: value.total, label: value.label };
+}
+
+function errorMessage(body: unknown): string {
+	if (isRecord(body) && typeof body.error === "string" && body.error.trim()) return body.error;
+	return "The bulk import did not finish.";
+}
+
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+	if (signal?.aborted) return Promise.reject(new BulkImportError("Cancelled.", 499));
+	return new Promise((resolve, reject) => {
+		const timer = later(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			cancelLater(timer);
+			reject(new BulkImportError("Cancelled.", 499));
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+function byteSize(text: string): number {
+	return typeof Buffer !== "undefined" ? Buffer.byteLength(text) : new TextEncoder().encode(text).byteLength;
 }
 
 function resultFrom(value: unknown): BulkImportResult | null {
@@ -1038,10 +1090,4 @@ function resultFrom(value: unknown): BulkImportResult | null {
 		notes: Array.isArray(raw.notes) ? raw.notes.filter((item): item is string => typeof item === "string") : [],
 		...(typeof raw.budgetUsed === "number" ? { budgetUsed: raw.budgetUsed } : {}),
 	};
-}
-
-/** Extract phase returns concepts, not a goal. The multi-request client reads them here. */
-export function conceptsFromExtract(value: unknown): ExtractedConcept[] {
-	if (!value || typeof value !== "object") return [];
-	return parseConceptList((value as { concepts?: unknown }).concepts);
 }

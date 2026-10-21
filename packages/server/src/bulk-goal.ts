@@ -1,7 +1,9 @@
 import {
 	buildUpstream,
+	buildingProgress,
 	bulkEventLine,
 	BulkImportError,
+	BULK_RETRIES,
 	extractBulkFiles,
 	HEAVY_REQUIRES_UPGRADE,
 	HEAVY_UPGRADE_ERROR,
@@ -10,6 +12,7 @@ import {
 	mergeBulkConcepts,
 	parseBulkRequest,
 	presentAccount,
+	readingLabel,
 	readUpstream,
 	runBulkImport,
 	tutorDecision,
@@ -18,6 +21,7 @@ import {
 	type BulkModel,
 	type TutorCall,
 } from "@groundwork/core";
+import { bulkJobProgress, type BulkJobRecord, type BulkJobStore } from "./bulk-job";
 import type { TutorCallContext, TutorHttpResult } from "./tutor";
 
 /**
@@ -26,34 +30,14 @@ import type { TutorCallContext, TutorHttpResult } from "./tutor";
  * allowance. A saved key is sent to that provider and is not metered here.
  * The Claude subscription has no server key, so this route refuses it.
  */
-export async function importBulkGoal(ctx: TutorCallContext, body: unknown): Promise<TutorHttpResult> {
+export async function importBulkGoal(ctx: TutorCallContext, body: unknown, jobs: BulkJobStore, uid: string): Promise<TutorHttpResult> {
+	if (isRecord(body) && body.step === true) return stepBulkJob(ctx, body, jobs, uid);
+	if (isRecord(body) && body.job === true) return createBulkJob(ctx, body, jobs, uid);
 	const parsed = parseBulkRequest(body);
 	if ("error" in parsed) return { status: 400, json: { error: parsed.error } };
-	const decision = tutorDecision(ctx.view, ctx.choice, ctx.saved);
-	if (decision.action === "blocked") return { status: decision.status, json: { error: decision.error } };
-	if (decision.action === "claude") {
-		return {
-			status: 409,
-			json: { error: "This account uses the Claude subscription on this computer. Bulk import runs through Groundwork's model or a saved key." },
-		};
-	}
-	if (ctx.view.plan === "free" && decision.action === "hosted" && decision.weight === "heavy") {
-		return { status: 402, json: { error: HEAVY_UPGRADE_ERROR, code: HEAVY_REQUIRES_UPGRADE } };
-	}
-
-	const stub = process.env.GROUNDWORK_TUTOR_STUB === "1";
-	let apiKey = "";
-	if (!stub) {
-		const rawKey = decision.key === "groundwork" ? ctx.openRouterKey : await ctx.userKey(decision.provider);
-		apiKey = rawKey?.trim() ?? "";
-		if (!apiKey) {
-			if (decision.key === "groundwork") return { status: 503, json: { error: "OPENROUTER_API_KEY is not set on the Groundwork server." } };
-			return { status: 409, json: { error: "Paste a provider key on the website, or switch the tutor to your Claude subscription." } };
-		}
-	}
-
-	const ready = decision;
-	const modelFor = (signal?: AbortSignal) => (stub ? heuristicBulkModel() : chargingModel(ctx, ready, apiKey, signal));
+	const ready = await readyModel(ctx);
+	if ("error" in ready) return ready.error;
+	const modelFor = ready.model;
 
 	if (parsed.stream && parsed.phase === "import") {
 		return {
@@ -103,6 +87,125 @@ export async function importBulkGoal(ctx: TutorCallContext, body: unknown): Prom
 		const error = err instanceof Error ? err.message : "The bulk import did not finish.";
 		return { status, json: { error } };
 	}
+}
+
+/**
+ * The plugin posts the documents once, then asks for one shard at a time.
+ * Each step is one model call, short enough for the website proxy.
+ * The job stays in Firestore, so a dropped request does not drop the work.
+ */
+async function createBulkJob(ctx: TutorCallContext, body: unknown, jobs: BulkJobStore, uid: string): Promise<TutorHttpResult> {
+	const parsed = parseBulkRequest(body);
+	if ("error" in parsed) return { status: 400, json: { error: parsed.error } };
+	const ready = await readyModel(ctx);
+	if ("error" in ready) return ready.error;
+	const job = await jobs.create({ uid, userText: parsed.userText, title: parsed.title, files: parsed.files });
+	return { status: 200, json: { jobId: job.id, status: "open", event: bulkJobProgress(job) } };
+}
+
+async function stepBulkJob(ctx: TutorCallContext, body: Record<string, unknown>, jobs: BulkJobStore, uid: string): Promise<TutorHttpResult> {
+	const jobId = typeof body.jobId === "string" ? body.jobId : "";
+	if (!/^[a-f0-9]{32}$/.test(jobId)) return { status: 400, json: { error: "Send the bulk import id." } };
+	const ready = await readyModel(ctx);
+	if ("error" in ready) return ready.error;
+	const claimed = await jobs.claim(jobId, uid, Date.now());
+	if (!claimed) return { status: 404, json: { error: "No bulk import with that id." } };
+	const { job, claim } = claimed;
+	if (claim.kind === "wait") return { status: 200, json: { status: "wait", event: bulkJobProgress(job) } };
+	if (claim.kind === "error") return { status: 200, json: { status: "error", error: claim.error } };
+	if (claim.kind === "done") {
+		if (!job.result) return { status: 200, json: { status: "error", error: "The bulk import did not return a goal." } };
+		return doneJson(job.result, ctx, job);
+	}
+	const model = ready.model();
+	if (claim.kind === "shard") return runShard(jobs, jobId, job, claim.index, claim.claimId, model);
+	return runMerge(jobs, jobId, job, claim.claimId, model, ctx);
+}
+
+async function runShard(jobs: BulkJobStore, jobId: string, job: BulkJobRecord, index: number, claimId: number, model: BulkModel): Promise<TutorHttpResult> {
+	const shard = job.shards[index];
+	if (!shard) return { status: 200, json: { status: "error", error: "The bulk import did not finish." } };
+	try {
+		const files = await jobs.files(jobId, shard.fileIndexes);
+		const extracted = await extractBulkFiles({ files, userText: job.userText, model, concurrency: 1, retries: BULK_RETRIES });
+		const updated = await jobs.finishShard(jobId, index, claimId, extracted.concepts, extracted.usage);
+		return { status: 200, json: { status: "open", event: bulkJobProgress(updated ?? job) } };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "The bulk import did not finish.";
+		await jobs.failShard(jobId, index, claimId, message);
+		return { status: 200, json: { status: "error", error: message } };
+	}
+}
+
+async function runMerge(jobs: BulkJobStore, jobId: string, job: BulkJobRecord, claimId: number, model: BulkModel, ctx: TutorCallContext): Promise<TutorHttpResult> {
+	try {
+		const usage = { input: 0, output: 0 };
+		for (const shard of job.shards) {
+			usage.input += shard.usage.input;
+			usage.output += shard.usage.output;
+		}
+		let done = 0;
+		const progress = job.shards.map((shard) => {
+			done += shard.fileIndexes.length;
+			return readingLabel(done, job.paths.length);
+		});
+		progress.push(buildingProgress(job.paths.length).label);
+		const result = await mergeBulkConcepts({
+			concepts: job.shards.flatMap((shard) => shard.concepts),
+			documents: job.paths,
+			userText: job.userText,
+			title: job.title,
+			model,
+			usage,
+			shards: job.shards.length,
+			progress,
+			started: job.startedAt || Date.now(),
+		});
+		const updated = await jobs.finishMerge(jobId, claimId, result);
+		return doneJson(updated?.result ?? result, ctx, updated ?? job);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "The bulk import did not finish.";
+		await jobs.failMerge(jobId, claimId, message);
+		return { status: 200, json: { status: "error", error: message } };
+	}
+}
+
+function doneJson(result: BulkImportResult, ctx: TutorCallContext, job: BulkJobRecord): TutorHttpResult {
+	return { status: 200, json: { ...publicResult(result, ctx), status: "done", event: buildingProgress(job.paths.length) } };
+}
+
+type ReadyModel = { model: (signal?: AbortSignal) => BulkModel } | { error: TutorHttpResult };
+
+async function readyModel(ctx: TutorCallContext): Promise<ReadyModel> {
+	const decision = tutorDecision(ctx.view, ctx.choice, ctx.saved);
+	if (decision.action === "blocked") return { error: { status: decision.status, json: { error: decision.error } } };
+	if (decision.action === "claude") {
+		return {
+			error: {
+				status: 409,
+				json: { error: "This account uses the Claude subscription on this computer. Bulk import runs through Groundwork's model or a saved key." },
+			},
+		};
+	}
+	if (ctx.view.plan === "free" && decision.action === "hosted" && decision.weight === "heavy") {
+		return { error: { status: 402, json: { error: HEAVY_UPGRADE_ERROR, code: HEAVY_REQUIRES_UPGRADE } } };
+	}
+	const stub = process.env.GROUNDWORK_TUTOR_STUB === "1";
+	let apiKey = "";
+	if (!stub) {
+		const rawKey = decision.key === "groundwork" ? ctx.openRouterKey : await ctx.userKey(decision.provider);
+		apiKey = rawKey?.trim() ?? "";
+		if (!apiKey) {
+			if (decision.key === "groundwork") return { error: { status: 503, json: { error: "OPENROUTER_API_KEY is not set on the Groundwork server." } } };
+			return { error: { status: 409, json: { error: "Paste a provider key on the website, or switch the tutor to your Claude subscription." } } };
+		}
+	}
+	const settled = decision;
+	return { model: (signal?: AbortSignal) => (stub ? heuristicBulkModel() : chargingModel(ctx, settled, apiKey, signal)) };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function publicResult(result: BulkImportResult, ctx: TutorCallContext): BulkImportResult {

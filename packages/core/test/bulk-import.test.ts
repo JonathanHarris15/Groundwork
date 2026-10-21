@@ -41,6 +41,19 @@ function scriptedModel(delayMs = 0): BulkModel & { maxInFlight: number; calls: n
 	return model;
 }
 
+function jsonReply(payload: unknown, status = 200) {
+	return {
+		ok: status >= 200 && status < 300,
+		status,
+		statusText: status === 200 ? "OK" : "Error",
+		headers: { get: () => "application/json" },
+		text: async () => JSON.stringify(payload),
+		json: async () => payload,
+		arrayBuffer: async () => new ArrayBuffer(0),
+		body: null,
+	};
+}
+
 describe("bulk import", () => {
 	it("starts a bulk read only for a study ask over a stack of documents", () => {
 		const paths = Array.from({ length: 9 }, (_, i) => `resources/lecture-${i}.md`);
@@ -182,58 +195,66 @@ describe("bulk import", () => {
 		expect(boom).toBe(false);
 	});
 
-	it("splits a large stack so no request carries the whole bulk", async () => {
+	it("polls a job so a long stack is not one hosted request", async () => {
 		const files = [1, 2, 3, 4, 5, 6].map((n) => ({
 			path: `resources/lecture-${n}.md`,
 			name: `lecture-${n}.md`,
 			text: `# Lecture ${n}\n${"x".repeat(90_000)}`,
 		}));
 		const wire = files.map((file) => ({ ...file, text: file.text.slice(0, 80_000) }));
-		const batches = packBulkRequests(wire);
-		expect(batches.length).toBeGreaterThan(1);
-		const bodies: string[] = [];
+		expect(packBulkRequests(wire).length).toBeGreaterThan(1);
+		const bodies: Array<Record<string, unknown>> = [];
 		const labels: string[] = [];
+		let failed = false;
+		let steps = 0;
+		const jobId = "ab".repeat(16);
+		const goal = {
+			status: "done",
+			event: { phase: "building", done: 6, total: 6, label: "Building one plan" },
+			goal: { title: "Learn these materials", nodes: [{ title: "Limit", prerequisites: [] }], sources: files.map((file) => file.path), traces: [] },
+			concepts: 1,
+			edges: 0,
+			shards: 4,
+			documents: 6,
+			usage: { input: 1, output: 1 },
+			elapsedMs: 1,
+			progress: [],
+			notes: [],
+		};
 		const result = await requestBulkGoal({
 			origin: "https://groundwork.test",
 			token: "token",
 			files,
 			userText: BULK_ASK,
 			fetchImpl: async (_url, init) => {
-				const body = init?.body ?? "";
-				bodies.push(body);
-				expect(Buffer.byteLength(body)).toBeLessThan(JSON_BODY_LIMIT_BYTES);
-				const parsed = JSON.parse(body) as { phase: string; files: Array<{ path: string; text: string }>; concepts: unknown[] };
-				const text = parsed.files.reduce((sum, file) => sum + file.text.length, 0);
-				expect(text).toBeLessThanOrEqual(400_000);
-				for (const file of parsed.files) expect(file.text.length).toBeLessThanOrEqual(80_000);
-				const payload =
-					parsed.phase === "merge"
-						? {
-								goal: { title: "Learn these materials", nodes: [{ title: "Limit", prerequisites: [] }], sources: files.map((file) => file.path), traces: [] },
-								concepts: parsed.concepts.length,
-								edges: 0,
-								shards: batches.length,
-								documents: files.length,
-								usage: { input: 1, output: 1 },
-								elapsedMs: 1,
-								progress: [],
-								notes: [],
-							}
-						: { concepts: [{ title: "Limit", prerequisites: [], sources: [{ path: parsed.files[0]?.path ?? "", locator: "heading" }] }] };
-				return {
-					ok: true,
-					status: 200,
-					statusText: "OK",
-					headers: { get: () => "application/json" },
-					text: async () => JSON.stringify(payload),
-					json: async () => payload,
-					arrayBuffer: async () => new ArrayBuffer(0),
-					body: null,
-				};
+				const raw = init?.body ?? "";
+				expect(Buffer.byteLength(raw)).toBeLessThan(JSON_BODY_LIMIT_BYTES);
+				const parsed = JSON.parse(raw) as Record<string, unknown>;
+				bodies.push(parsed);
+				if (parsed.job === true) {
+					const sent = parsed.files as Array<{ text: string }>;
+					expect(sent).toHaveLength(6);
+					for (const file of sent) expect(file.text.length).toBeLessThanOrEqual(80_000);
+					return jsonReply({ jobId, status: "open", event: { phase: "reading", done: 0, total: 6, label: "Reading 6 documents... 0/6" } });
+				}
+				expect(parsed.step).toBe(true);
+				expect(parsed.jobId).toBe(jobId);
+				expect(raw.includes("x".repeat(1000))).toBe(false);
+				if (!failed) {
+					failed = true;
+					return jsonReply({ error: "The website timed out." }, 502);
+				}
+				steps += 1;
+				if (steps < 3) {
+					return jsonReply({ status: "open", event: { phase: "reading", done: steps * 2, total: 6, label: `Reading 6 documents... ${steps * 2}/6` } });
+				}
+				if (steps === 3) return jsonReply({ status: "wait", event: { phase: "building", done: 6, total: 6, label: "Building one plan" } });
+				return jsonReply(goal);
 			},
 			onProgress: (event) => labels.push(event.label),
 		});
-		expect(bodies.length).toBe(batches.length + 1);
+		expect(bodies.some((body) => body.job === true)).toBe(true);
+		expect(bodies.filter((body) => body.step === true).length).toBeGreaterThan(1);
 		expect(labels.some((label) => label.startsWith("Reading 6 documents"))).toBe(true);
 		expect(labels).toContain("Building one plan");
 		expect(result.documents).toBe(6);

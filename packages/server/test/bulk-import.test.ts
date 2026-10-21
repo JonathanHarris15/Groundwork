@@ -4,6 +4,7 @@ import { findCycle, hostedCostUsd, KnowledgeStore, MemoryVaultIO } from "@ground
 import { AccountDirectory } from "../src/accounts";
 import { route, type ServerDeps } from "../src/app";
 import type { Auth } from "../src/auth";
+import { MemoryBulkJobStore } from "../src/bulk-job";
 import type { Billing } from "../src/billing";
 import { MemoryDirectory } from "../src/memory";
 import { SecretDirectory } from "../src/secrets";
@@ -212,12 +213,106 @@ describe("bulk import route", () => {
 		await claude.accounts.setPlan("local", "byom");
 		const refused = await route("POST", "/v1/tutor/bulk-import", { userText: BULK_ASK, files: nineDeckFiles() }, claude);
 		expect(refused.status).toBe(409);
+		const refusedJob = await route("POST", "/v1/tutor/bulk-import", { job: true, userText: BULK_ASK, files: nineDeckFiles() }, claude);
+		expect(refusedJob.status).toBe(409);
 		expect(upstream.calls()).toBe(0);
 
 		const missing = deps({ fetchImpl: upstream.fetchImpl });
 		await missing.accounts.setPlan("local", "free");
 		const blocked = await route("POST", "/v1/tutor/bulk-import", { userText: BULK_ASK, files: nineDeckFiles() }, missing);
 		expect(blocked.status).toBe(503);
+		const blockedJob = await route("POST", "/v1/tutor/bulk-import", { job: true, userText: BULK_ASK, files: nineDeckFiles() }, missing);
+		expect(blockedJob.status).toBe(503);
 		expect(upstream.calls()).toBe(0);
+	});
+
+	it("runs one model call per step so a long import survives a short proxy", async () => {
+		const upstream = provider();
+		const jobs = new MemoryBulkJobStore();
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl: upstream.fetchImpl, bulkJobs: jobs });
+		await server.accounts.setPlan("local", "free");
+		const created = await route("POST", "/v1/tutor/bulk-import", { job: true, userText: BULK_ASK, files: nineDeckFiles() }, server);
+		expect(created.status).toBe(200);
+		expect(upstream.calls()).toBe(0);
+		const createdBody = created.json as { jobId?: string; status?: string; event?: { label?: string } };
+		expect(createdBody.status).toBe("open");
+		expect(createdBody.jobId).toMatch(/^[a-f0-9]{32}$/);
+		const jobId = createdBody.jobId ?? "";
+
+		const other: Auth = {
+			firebase: false,
+			async uid() {
+				return { uid: "other", email: "bea@example.com", name: "Bea" };
+			},
+			async revokeRefreshTokens() {},
+		};
+		const stranger = deps({ auth: other, openRouterKey: "sk-or-groundwork", fetchImpl: upstream.fetchImpl, bulkJobs: jobs });
+		const hidden = await route("POST", "/v1/tutor/bulk-import", { jobId, step: true }, stranger);
+		expect(hidden.status).toBe(404);
+		expect(upstream.calls()).toBe(0);
+		const malformed = await route("POST", "/v1/tutor/bulk-import", { jobId: "nope", step: true }, server);
+		expect(malformed.status).toBe(400);
+
+		const labels: string[] = [];
+		let done: Record<string, unknown> | null = null;
+		for (let i = 0; i < 12; i++) {
+			const before = upstream.calls();
+			const step = await route("POST", "/v1/tutor/bulk-import", { jobId, step: true }, server);
+			expect(step.status).toBe(200);
+			const body = step.json as Record<string, unknown>;
+			expect(JSON.stringify(body)).not.toContain("sk-or-groundwork");
+			if (body.status === "wait") {
+				expect(upstream.calls()).toBe(before);
+				continue;
+			}
+			expect(upstream.calls()).toBe(before + 1);
+			const event = body.event as { label?: string } | undefined;
+			if (event?.label) labels.push(event.label);
+			if (body.status === "done") {
+				done = body;
+				break;
+			}
+			expect(body.status).toBe("open");
+		}
+		expect(labels).toContain("Reading 9 documents... 4/9");
+		expect(labels).toContain("Building one plan");
+		expect(done?.documents).toBe(9);
+		expect(done?.concepts).toBeGreaterThan(10);
+		expect(done?.edges).toBeGreaterThan(10);
+		expect(upstream.calls()).toBe(6);
+
+		const goal = done?.goal as {
+			title: string;
+			nodes: Array<{ title: string; prerequisites?: string[] }>;
+			sources: string[];
+			traces: Array<{ title: string; path: string; locator: string }>;
+		};
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		const report = await store.setGoal(goal, { judgments: "off" });
+		const edges = new Map(report.nodes.map((node) => [node.id, node.prerequisites]));
+		expect(findCycle(edges)).toBeNull();
+		expect(goal.sources).toHaveLength(9);
+		const perCall = hostedCostUsd({ input: 1000, output: 200 }, "light");
+		const account = await server.accounts.get("local");
+		expect(account?.spentUsd).toBeCloseTo(upstream.calls() * perCall, 4);
+		expect(JSON.stringify(done)).not.toMatch(/hostedCredit|creditUsd|remainingUsd|\$\d/);
+
+		const again = await route("POST", "/v1/tutor/bulk-import", { jobId, step: true }, server);
+		expect(again.status).toBe(200);
+		expect((again.json as { status?: string }).status).toBe("done");
+		expect(upstream.calls()).toBe(6);
+	});
+
+	it("keeps three shard reads in flight while the plugin asks", async () => {
+		const upstream = provider({ delayMs: 40 });
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl: upstream.fetchImpl });
+		await server.accounts.setPlan("local", "free");
+		const created = await route("POST", "/v1/tutor/bulk-import", { job: true, userText: BULK_ASK, files: nineDeckFiles() }, server);
+		const jobId = (created.json as { jobId: string }).jobId;
+		await Promise.all([0, 1, 2].map(() => route("POST", "/v1/tutor/bulk-import", { jobId, step: true }, server)));
+		expect(upstream.maxInFlight()).toBeGreaterThan(1);
+		expect(upstream.maxInFlight()).toBeLessThanOrEqual(3);
+		expect(upstream.calls()).toBe(3);
 	});
 });
