@@ -137,6 +137,34 @@ describe("bulk import", () => {
 		);
 	});
 
+	it("keeps a concept for each taught idea when the model only returns an outline", async () => {
+		const decks = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India"];
+		const ideas = ["Limit", "Slope", "Series", "Vector", "Matrix", "Sample"];
+		const files = decks.map((deck, index) => {
+			const sections = ideas.map((idea, section) => {
+				const title = `${deck} ${idea}`;
+				const prior = section === 0 ? "" : `${deck} ${ideas[section - 1]}`;
+				return `# ${title}\nA quiz can ask this on its own.\nlocator: section ${section + 1}\n${prior ? `prerequisites: ${prior}\n` : ""}`;
+			});
+			return { path: `resources/lecture-${index + 1}.md`, name: `lecture-${index + 1}.md`, text: sections.join("\n") };
+		});
+		const model: BulkModel = {
+			async complete(req) {
+				if (req.phase === "merge") return { text: JSON.stringify({ renames: [] }), usage: { input: 10, output: 10 } };
+				const concepts = files.flatMap((file, index) =>
+					req.user.includes(file.path) ? [{ title: `${decks[index]} Limit`, prerequisites: [], sources: [{ path: file.path, locator: "section 1" }] }] : [],
+				);
+				return { text: JSON.stringify({ concepts }), usage: { input: 10, output: 10 } };
+			},
+		};
+		const result = await runBulkImport({ files, userText: BULK_ASK, model });
+		expect(result.concepts).toBe(54);
+		expect(result.concepts).toBeGreaterThan(files.length * 4);
+		expect(result.edges).toBe(45);
+		const edges = new Map(result.goal.nodes.map((node) => [slugify(node.title), (node.prerequisites ?? []).map((title) => slugify(title))]));
+		expect(findCycle(edges)).toBeNull();
+	});
+
 	it("retries a shard that fails once", async () => {
 		let boom = true;
 		const model: BulkModel = {

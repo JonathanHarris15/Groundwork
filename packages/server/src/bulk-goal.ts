@@ -149,7 +149,7 @@ function chargingModel(
 				system: req.system,
 				messages: [{ role: "user", content: req.user }],
 				tools: [],
-				maxTokens: 4096,
+				maxTokens: 8192,
 			};
 			const upstream = buildUpstream(decision, apiKey, call, false);
 			let response: Response;

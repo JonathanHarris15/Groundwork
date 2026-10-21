@@ -197,11 +197,12 @@ export function buildingProgress(total: number): BulkProgress {
 
 const EXTRACT_SYSTEM = [
 	"You extract concepts from course documents for one learning goal.",
-	'Return JSON only, no markdown: {"concepts":[{"title":"Limit","summary":"The value a function approaches.","prerequisites":[],"requiredLevel":2,"sources":[{"path":"resources/lecture-1.md","locator":"slide 2"}]}]}',
-	"A concept is a reusable idea, such as Limit or Chain rule. Never name a file, a lecture, a homework, or a slide deck as a concept.",
+	'Return JSON only, no markdown: {"concepts":[{"title":"Limit","summary":"The value a function approaches.","prerequisites":[],"requiredLevel":2,"sources":[{"path":"resources/lecture-1.md","locator":"slide 2"}]},{"title":"One-sided limit","summary":"A limit from the left or the right.","prerequisites":["Limit"],"requiredLevel":2,"sources":[{"path":"resources/lecture-1.md","locator":"slide 4"}]}]}',
+	"A concept is one idea a quiz can ask about. Limit and One-sided limit are two concepts. A lecture, a chapter, or a slide deck is not a concept.",
+	"Read the whole document. Emit one concept for each distinct idea it teaches. The list grows with the document: a lecture with many ideas is many concepts, not one outline entry.",
 	"prerequisites are the direct earlier ideas, by the titles you used.",
 	"Every concept needs a source path copied from a document tag and a locator (slide, page, or section).",
-	"Do not invent concepts that these documents do not teach.",
+	"Do not invent concepts that these documents do not teach. Do not stop after the first few ideas.",
 ].join("\n");
 
 const MERGE_SYSTEM = [
@@ -294,7 +295,8 @@ async function readShard(
 			const completion = await model.complete({ system: EXTRACT_SYSTEM, user: shardPrompt(shard, userText), phase: "extract" });
 			addUsage(usage, completion.usage);
 			const concepts = parseExtract(completion.text);
-			return concepts.map((concept) => snapConcept(concept, shard)).filter((concept): concept is ExtractedConcept => !!concept);
+			const snapped = concepts.map((concept) => snapConcept(concept, shard)).filter((concept): concept is ExtractedConcept => !!concept);
+			return withDocumentIdeas(snapped, shard);
 		}, retries, signal);
 	} catch (err) {
 		if (err instanceof BulkImportError && err.status < 500) throw err;
@@ -351,7 +353,12 @@ function shardPrompt(files: BulkFile[], userText: string): string {
 	const docs = files
 		.map((file) => `<file path="${file.path.replace(/"/g, "")}">\n${file.text.slice(0, BULK_SHARD_MAX_CHARS)}\n</file>`)
 		.join("\n\n");
-	return `The learner asked: ${ask}\n\n${docs}`;
+	return [
+		`The learner asked: ${ask}`,
+		"List every quiz-sized idea in these documents. Two different ideas stay two concepts. Do not collapse a document into a single title.",
+		"",
+		docs,
+	].join("\n");
 }
 
 function mergeView(concept: ExtractedConcept): { title: string; prerequisites: string[]; sources: string[] } {
@@ -745,6 +752,16 @@ export function heuristicBulkModel(): BulkModel {
 			return { text: JSON.stringify({ concepts: conceptsFromHeadings(input.user) }), usage: { input: 0, output: 0 } };
 		},
 	};
+}
+
+const GENERIC_HEADING =
+	/^(introduction|overview|agenda|outline|summary|review|questions|objectives|learning objectives|today|recap|announcements|references|further reading|thank you|welcome|housekeeping)$/i;
+
+/** Headings the model skipped still count. A short model outline cannot hide the rest of a lecture. */
+function withDocumentIdeas(fromModel: ExtractedConcept[], shard: BulkFile[]): ExtractedConcept[] {
+	const fromDoc = conceptsFromHeadings(shardPrompt(shard, ""));
+	const extra = fromDoc.filter((heading) => !GENERIC_HEADING.test(heading.title) && !fromModel.some((concept) => sameConcept(concept.title, heading.title)));
+	return [...fromModel, ...extra];
 }
 
 function conceptsFromHeadings(user: string): ExtractedConcept[] {
