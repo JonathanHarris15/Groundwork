@@ -4,6 +4,7 @@ import type { Auth } from "./auth";
 import type { Billing } from "./billing";
 import { MemoryConflict, type MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
+import { importBulkGoal } from "./bulk-goal";
 import { completeTutor, describeTutor, openTutorStream, type TutorCallContext } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
 import { attributionFromHeader, cleanGaClientId, cleanGaSessionId, cleanGclid } from "./tracking";
@@ -212,6 +213,23 @@ export async function route(method: string, path: string, body: unknown, deps: S
 				console.error("Could not record an upgrade prompt.", err);
 			}
 			return { status: 200, json: { ok: true } };
+		}
+		if (method === "POST" && path === "/v1/tutor/bulk-import") {
+			const tutorCtx: TutorCallContext = {
+				view,
+				choice: await deps.accounts.choice(uid),
+				saved: await deps.secrets.saved(uid),
+				userKey: (provider) => deps.secrets.get(uid, provider),
+				openRouterKey: deps.openRouterKey,
+				fetchImpl: deps.fetchImpl ?? platformFetch,
+				charge: (cost) => deps.accounts.charge(uid, cost),
+				record: deps.usage
+					? async (entry) => {
+							await deps.usage?.record(uid, { ...entry, plan: view.plan ?? "none", calls: 1 });
+						}
+					: undefined,
+			};
+			return importBulkGoal(tutorCtx, body);
 		}
 		if (method === "POST" && path === "/v1/tutor/complete") {
 			const tutorCtx: TutorCallContext = {

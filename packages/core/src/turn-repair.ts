@@ -94,6 +94,7 @@ export function repairNote(input: {
 	calledFigure?: boolean;
 }): string | null {
 	const objective = statesLearningObjective(visibleAsk(input.userText));
+	const bulk = /<bulk_goal\b/.test(input.userText);
 	const invented = inventsAppBehavior(input.assistantText);
 	const gated = objective && asksToConfirmStudy(input.assistantText);
 	const spoken = stripStudyOffer(input.assistantText);
@@ -103,14 +104,18 @@ export function repairNote(input: {
 			"You invented a rule about how the app works. There is no confirmation step and nothing to unlock. Do not explain the app. If a card or goal did not appear, call the tool again. If it still fails, say it did not load.",
 		);
 	}
-	if (!input.calledQuestion && awaitsChatAnswer(spoken)) {
+	if (bulk && !input.calledQuestion) {
+		lines.push(
+			"The goal is already saved. Call quiz on the frontier concept named in the bulk_goal block. The card is the question. Do not call set_goal again.",
+		);
+	} else if (!input.calledQuestion && awaitsChatAnswer(spoken)) {
 		lines.push(freeResponseRepair(spoken));
 	} else if (!input.calledQuestion && (announcesQuestion(spoken) || gated || objective)) {
 		lines.push(
 			"Call quiz for a graded question, or ask_user when there is no right answer. The card is the question. Do not ask permission first, and do not describe the card in prose.",
 		);
 	}
-	if (!input.calledGoal && objective) {
+	if (!input.calledGoal && objective && !bulk) {
 		lines.push(
 			"They stated an objective they are working toward. Call set_goal on this turn and start studying. A goal and a quiz go together. Do not ask whether to study or make a goal.",
 		);

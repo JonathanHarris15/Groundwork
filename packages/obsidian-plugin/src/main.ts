@@ -553,6 +553,15 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 
+	/** Bearer token for a Groundwork tutor call. Null when this device is signed out. */
+	async tutorAccessToken(): Promise<string | null> {
+		return this.accountAccessToken();
+	}
+
+	groundworkFetch(url: string, init: HttpInit = {}): Promise<HttpResponse> {
+		return streamingHttp(url, init, obsidianHttp);
+	}
+
 	/** ID token for the website after exchanging the stored refresh token. Local dev uses the stored token as-is. */
 	private async accountAccessToken(): Promise<string | null> {
 		const refresh = loadAccountToken(this.app);

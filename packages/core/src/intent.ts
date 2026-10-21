@@ -35,7 +35,7 @@ export const STUDY_TOOLS = new Set([
 	"ask_user",
 ]);
 
-const HIDDEN_BLOCK = /<(working_goal|exam_plan|margin_questions|hint_transcript|tutor_repair)>[\s\S]*?<\/\1>/gi;
+const HIDDEN_BLOCK = /<(working_goal|exam_plan|bulk_goal|margin_questions|hint_transcript|tutor_repair)>[\s\S]*?<\/\1>/gi;
 
 /** Learner text with the hidden notes the app prepends taken out, so those notes are not an ask. */
 export function visibleAsk(text: string): string {

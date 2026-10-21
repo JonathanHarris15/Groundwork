@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.14",
+		date: "2026-10-21",
+		body: "A stack of lecture and homework files becomes one goal. Groundwork reads them in parallel and builds a single concept map.",
+	},
+	{
 		version: "0.2.4",
 		date: "2026-10-12",
 		body: "If you say you already know a concept, Groundwork marks it known. The connect link from before 0.2.3 still works.",

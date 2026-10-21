@@ -229,6 +229,8 @@ export async function prepareTutorTurn(input: {
 	attached: VaultFile[];
 	io?: VaultIO;
 	signal?: AbortSignal;
+	/** When false, this turn does not open vault files. A bulk import already read them. */
+	includeFiles?: boolean;
 }): Promise<PreparedTutorTurn> {
 	const full = unselectedTurn(input);
 	if (!input.selector) return full;
@@ -236,8 +238,8 @@ export async function prepareTutorTurn(input: {
 		const parts = promptParts(input.extra, input.access);
 		const instructions = parts.filter((part) => !part.required).map(instructionPiece);
 		const learner = learnerPieces(input.profile, input.tutorContext);
-		const scanVault = !!input.io && turnNeedsVaultFiles(input.message, input.attached.length);
-		const files = scanVault ? await filePieces(input.io!, input.access?.readFolders ?? [], input.attached) : attachedPieces(input.attached);
+		const scanVault = input.includeFiles !== false && !!input.io && turnNeedsVaultFiles(input.message, input.attached.length);
+		const files = input.includeFiles === false ? [] : scanVault ? await filePieces(input.io!, input.access?.readFolders ?? [], input.attached) : attachedPieces(input.attached);
 		const optional = [...instructions, ...learner, ...files].slice(0, CONTEXT_MAX_PIECES);
 		if (!optional.length) return full;
 		if (files.length === 0 && input.profile.length + input.tutorContext.length < SELECTOR_PROFILE_CHARS) return full;
@@ -250,8 +252,8 @@ export async function prepareTutorTurn(input: {
 	}
 }
 
-function unselectedTurn(input: { extra?: string; access?: FolderAccess; attached: VaultFile[] }): PreparedTutorTurn {
-	return { system: buildSystemPrompt(input.extra, input.access), files: input.attached, note: "", selected: false };
+function unselectedTurn(input: { extra?: string; access?: FolderAccess; attached: VaultFile[]; includeFiles?: boolean }): PreparedTutorTurn {
+	return { system: buildSystemPrompt(input.extra, input.access), files: input.includeFiles === false ? [] : input.attached, note: "", selected: false };
 }
 
 function instructionPiece(part: PromptPart): ContextPiece {
