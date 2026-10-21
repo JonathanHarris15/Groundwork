@@ -261,18 +261,16 @@ describe("bulk import route", () => {
 			expect(step.status).toBe(200);
 			const body = step.json as Record<string, unknown>;
 			expect(JSON.stringify(body)).not.toContain("sk-or-groundwork");
-			if (body.status === "wait") {
-				expect(upstream.calls()).toBe(before);
-				continue;
-			}
-			expect(upstream.calls()).toBe(before + 1);
+			const delta = upstream.calls() - before;
+			if (body.status === "wait" || body.status === "done") expect(delta).toBe(0);
+			else expect(delta).toBe(1);
 			const event = body.event as { label?: string } | undefined;
 			if (event?.label) labels.push(event.label);
 			if (body.status === "done") {
 				done = body;
 				break;
 			}
-			expect(body.status).toBe("open");
+			if (body.status !== "wait") expect(body.status).toBe("open");
 		}
 		expect(labels).toContain("Reading 9 documents... 4/9");
 		expect(labels).toContain("Building one plan");
@@ -314,5 +312,49 @@ describe("bulk import route", () => {
 		expect(upstream.maxInFlight()).toBeGreaterThan(1);
 		expect(upstream.maxInFlight()).toBeLessThanOrEqual(3);
 		expect(upstream.calls()).toBe(3);
+	});
+
+	it("renames a large concept list a few titles at a time", async () => {
+		const batches: number[] = [];
+		const fetchImpl = (async (_url: string, init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			const system = systemText(body);
+			const user = userText(body);
+			if (system.includes("reconcile")) {
+				const parsed = JSON.parse(user) as { concepts?: unknown[] };
+				batches.push(Array.isArray(parsed.concepts) ? parsed.concepts.length : 0);
+			}
+			const reply = scriptedBulkReply(system, user);
+			return new Response(
+				JSON.stringify({
+					content: [{ type: "text", text: reply.text }],
+					stop_reason: "end_turn",
+					usage: { input_tokens: reply.usage.input, output_tokens: reply.usage.output },
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		}) as typeof fetch;
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "free");
+		const files = [1, 2, 3].map((file) => ({
+			path: `resources/ideas-${file}.md`,
+			name: `ideas-${file}.md`,
+			text: Array.from({ length: 24 }, (_, index) => `# Quartz notion ${file}${String(index).padStart(2, "0")}`).join("\n"),
+		}));
+		const created = await route("POST", "/v1/tutor/bulk-import", { job: true, userText: BULK_ASK, files }, server);
+		const jobId = (created.json as { jobId: string }).jobId;
+		let done: Record<string, unknown> | null = null;
+		for (let i = 0; i < 20 && !done; i++) {
+			const step = await route("POST", "/v1/tutor/bulk-import", { jobId, step: true }, server);
+			const body = step.json as Record<string, unknown>;
+			expect(step.status).toBe(200);
+			if (body.status === "error") throw new Error(String(body.error));
+			if (body.status === "done") done = body;
+		}
+		expect(batches.length).toBeGreaterThan(1);
+		expect(Math.max(...batches)).toBeLessThanOrEqual(20);
+		expect(done?.concepts).toBeGreaterThan(60);
+		const goal = done?.goal as { nodes: Array<{ title: string; prerequisites?: string[] }> };
+		expect(findCycle(new Map(goal.nodes.map((node) => [node.title, node.prerequisites ?? []])))).toBeNull();
 	});
 });

@@ -4,6 +4,8 @@ import {
 	bulkEventLine,
 	BulkImportError,
 	BULK_RETRIES,
+	assembleMergedGoal,
+	dedupedMergeNodes,
 	extractBulkFiles,
 	HEAVY_REQUIRES_UPGRADE,
 	HEAVY_UPGRADE_ERROR,
@@ -11,6 +13,7 @@ import {
 	hostedCostUsd,
 	mergeBulkConcepts,
 	parseBulkRequest,
+	renameMergeBatch,
 	presentAccount,
 	readingLabel,
 	readUpstream,
@@ -119,7 +122,8 @@ async function stepBulkJob(ctx: TutorCallContext, body: Record<string, unknown>,
 	}
 	const model = ready.model();
 	if (claim.kind === "shard") return runShard(jobs, jobId, job, claim.index, claim.claimId, model);
-	return runMerge(jobs, jobId, job, claim.claimId, model, ctx);
+	if (claim.kind === "merge") return runMergeBatch(jobs, jobId, job, claim.claimId, claim.from, claim.to, model);
+	return runAssemble(jobs, jobId, job, claim.claimId, ctx);
 }
 
 async function runShard(jobs: BulkJobStore, jobId: string, job: BulkJobRecord, index: number, claimId: number, model: BulkModel): Promise<TutorHttpResult> {
@@ -137,9 +141,22 @@ async function runShard(jobs: BulkJobStore, jobId: string, job: BulkJobRecord, i
 	}
 }
 
-async function runMerge(jobs: BulkJobStore, jobId: string, job: BulkJobRecord, claimId: number, model: BulkModel, ctx: TutorCallContext): Promise<TutorHttpResult> {
+async function runMergeBatch(jobs: BulkJobStore, jobId: string, job: BulkJobRecord, claimId: number, from: number, to: number, model: BulkModel): Promise<TutorHttpResult> {
 	try {
-		const usage = { input: 0, output: 0 };
+		const nodes = dedupedMergeNodes(job.shards.flatMap((shard) => shard.concepts));
+		const batch = await renameMergeBatch(model, nodes.slice(from, to), nodes.slice(0, from).map((node) => node.title));
+		const updated = await jobs.finishMergeBatch(jobId, claimId, batch.renames, batch.usage);
+		return { status: 200, json: { status: "open", event: bulkJobProgress(updated ?? job) } };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "The bulk import did not finish.";
+		await jobs.failMerge(jobId, claimId, message);
+		return { status: 200, json: { status: "error", error: message } };
+	}
+}
+
+async function runAssemble(jobs: BulkJobStore, jobId: string, job: BulkJobRecord, claimId: number, ctx: TutorCallContext): Promise<TutorHttpResult> {
+	try {
+		const usage = { input: job.mergeUsage.input, output: job.mergeUsage.output };
 		for (const shard of job.shards) {
 			usage.input += shard.usage.input;
 			usage.output += shard.usage.output;
@@ -150,12 +167,12 @@ async function runMerge(jobs: BulkJobStore, jobId: string, job: BulkJobRecord, c
 			return readingLabel(done, job.paths.length);
 		});
 		progress.push(buildingProgress(job.paths.length).label);
-		const result = await mergeBulkConcepts({
-			concepts: job.shards.flatMap((shard) => shard.concepts),
+		const result = assembleMergedGoal({
+			nodes: dedupedMergeNodes(job.shards.flatMap((shard) => shard.concepts)),
+			renames: job.renames,
 			documents: job.paths,
 			userText: job.userText,
 			title: job.title,
-			model,
 			usage,
 			shards: job.shards.length,
 			progress,

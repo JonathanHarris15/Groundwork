@@ -41,6 +41,8 @@ export const BULK_REQUEST_MAX_CHARS = 400_000;
 export const BULK_PARALLELISM = 3;
 /** Extra attempts after a shard's first failure. */
 export const BULK_RETRIES = 2;
+/** Concept titles in one rename call. Small enough that the call finishes inside the website timeout. */
+export const BULK_MERGE_BATCH = 20;
 
 export const BUILDING_LABEL = "Building one plan";
 
@@ -213,7 +215,8 @@ const EXTRACT_SYSTEM = [
 const MERGE_SYSTEM = [
 	"You reconcile concept names taken from separate documents into one list.",
 	'Return JSON only, no markdown: {"renames":[{"from":"Limits","to":"Limit"}]}',
-	"Rename a title only when it is the same concept as another title in the list.",
+	"kept are titles already accepted. concepts are the only titles you may rename, against kept and against each other.",
+	"Rename a title only when it is the same concept as another title. Return at most one rename per concept.",
 	"Do not add concepts. Do not drop concepts.",
 ].join("\n");
 
@@ -322,22 +325,83 @@ export async function mergeBulkConcepts(input: {
 	progress?: string[];
 	started?: number;
 }): Promise<BulkImportResult> {
+	const usage = input.usage ?? { input: 0, output: 0 };
+	const nodes = dedupedMergeNodes(input.concepts);
+	const renames: Array<{ from: string; to: string }> = [];
+	let cursor = 0;
+	while (cursor < nodes.length) {
+		const range = mergeBatchRange(nodes.length, cursor);
+		if (!range) break;
+		const batch = await renameMergeBatch(input.model, nodes.slice(range.from, range.to), nodes.slice(0, range.from).map((node) => node.title), input.signal);
+		renames.push(...batch.renames);
+		addUsage(usage, batch.usage);
+		cursor = range.to;
+	}
+	return assembleMergedGoal({
+		nodes,
+		renames,
+		documents: input.documents,
+		userText: input.userText,
+		title: input.title,
+		usage,
+		shards: input.shards,
+		progress: input.progress,
+		started: input.started,
+	});
+}
+
+/** One stable list for every rename batch. The cursor walks this list. */
+export function dedupedMergeNodes(concepts: ExtractedConcept[]): ExtractedConcept[] {
+	return dedupeConcepts(concepts.map(cleanConcept).filter((concept): concept is ExtractedConcept => !!concept));
+}
+
+/** The next rename slice, or null when every title has been offered to the model. */
+export function mergeBatchRange(total: number, cursor: number, batch = BULK_MERGE_BATCH): { from: number; to: number } | null {
+	if (total <= 0 || cursor >= total) return null;
+	const from = Math.max(0, cursor);
+	return { from, to: Math.min(total, from + batch) };
+}
+
+/** One model call. A failure leaves this batch unnamed rather than holding the request open for a retry. */
+export async function renameMergeBatch(
+	model: BulkModel,
+	batch: ExtractedConcept[],
+	kept: string[],
+	signal?: AbortSignal,
+): Promise<{ renames: Array<{ from: string; to: string }>; usage: { input: number; output: number } }> {
+	if (!batch.length) return { renames: [], usage: { input: 0, output: 0 } };
+	if (signal?.aborted) throw new BulkImportError("Cancelled.", 499);
+	try {
+		const completion = await model.complete({
+			system: MERGE_SYSTEM,
+			user: JSON.stringify({ kept, concepts: batch.map(mergeView) }),
+			phase: "merge",
+		});
+		return { renames: parseRenames(completion.text), usage: completion.usage ?? { input: 0, output: 0 } };
+	} catch (err) {
+		if (signal?.aborted) throw new BulkImportError("Cancelled.", 499);
+		if (err instanceof BulkImportError && err.status === 499) throw err;
+		return { renames: [], usage: { input: 0, output: 0 } };
+	}
+}
+
+/** Code only. Applies the renames from every batch and checks the graph. */
+export function assembleMergedGoal(input: {
+	nodes: ExtractedConcept[];
+	renames: Array<{ from: string; to: string }>;
+	documents: string[];
+	userText: string;
+	title?: string;
+	usage?: { input: number; output: number };
+	shards?: number;
+	progress?: string[];
+	started?: number;
+}): BulkImportResult {
 	const started = input.started ?? Date.now();
 	const usage = input.usage ?? { input: 0, output: 0 };
 	const progress = input.progress ?? [];
-	if (!input.concepts.length) throw new BulkImportError("No concepts could be read from these documents.");
-	let nodes = dedupeConcepts(input.concepts.map(cleanConcept).filter((concept): concept is ExtractedConcept => !!concept));
-	const renames = await withRetry(async () => {
-		const completion = await input.model.complete({
-			system: MERGE_SYSTEM,
-			user: JSON.stringify({ concepts: nodes.map(mergeView) }),
-			phase: "merge",
-		});
-		addUsage(usage, completion.usage);
-		return parseRenames(completion.text);
-	}, 1, input.signal).catch(() => [] as Array<{ from: string; to: string }>);
-	nodes = dedupeConcepts(applyRenames(nodes, renames));
-	const repaired = repairGraph(nodes);
+	if (!input.nodes.length) throw new BulkImportError("No concepts could be read from these documents.");
+	const repaired = repairGraph(dedupeConcepts(applyRenames(input.nodes, input.renames)));
 	const goal = toGoalInput(repaired.nodes, input.documents, input.userText, input.title);
 	const edges = goal.nodes.reduce((sum, node) => sum + (node.prerequisites?.length ?? 0), 0);
 	return {

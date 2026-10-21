@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { type Firestore } from "firebase-admin/firestore";
 import {
 	buildingProgress,
+	dedupedMergeNodes,
+	mergeBatchRange,
 	planShards,
 	readingProgress,
 	type BulkFile,
@@ -18,6 +20,8 @@ import { openFirestore } from "./firestore";
  * Reclaiming sooner would run the same shard twice and charge it twice.
  */
 export const BULK_JOB_STALE_MS = 330_000;
+/** Abandoned document text is removed after this. A finished shard's text is removed immediately. */
+export const BULK_JOB_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface BulkShardRecord {
 	fileIndexes: number[];
@@ -39,6 +43,14 @@ export interface BulkJobRecord {
 	mergeStatus: "queued" | "running" | "done";
 	mergeClaimId: number;
 	mergeClaimedAt: number;
+	/** How far rename batches have walked the deduped concept list. */
+	mergeCursor: number;
+	mergeFrom: number;
+	mergeTo: number;
+	renames: Array<{ from: string; to: string }>;
+	mergeUsage: { input: number; output: number };
+	/** When the job and any leftover file text may be deleted. */
+	expiresAt: number;
 	status: "open" | "done" | "error";
 	error?: string;
 	result?: BulkImportResult;
@@ -46,7 +58,8 @@ export interface BulkJobRecord {
 
 export type BulkClaim =
 	| { kind: "shard"; index: number; claimId: number }
-	| { kind: "merge"; claimId: number }
+	| { kind: "merge"; claimId: number; from: number; to: number }
+	| { kind: "assemble"; claimId: number }
 	| { kind: "wait" }
 	| { kind: "done" }
 	| { kind: "error"; error: string };
@@ -68,6 +81,12 @@ export function newBulkJob(input: { id: string; uid: string; userText: string; t
 		mergeStatus: "queued",
 		mergeClaimId: 0,
 		mergeClaimedAt: 0,
+		mergeCursor: 0,
+		mergeFrom: 0,
+		mergeTo: 0,
+		renames: [],
+		mergeUsage: { input: 0, output: 0 },
+		expiresAt: Date.now() + BULK_JOB_TTL_MS,
 		status: "open",
 	};
 }
@@ -99,10 +118,15 @@ export function claimJob(job: BulkJobRecord, now: number, staleMs = BULK_JOB_STA
 		return { job: next, claim: { kind: "done" } };
 	}
 	if (next.mergeStatus === "queued" || stale(next.mergeClaimedAt, next.mergeStatus)) {
+		const total = dedupedMergeNodes(next.shards.flatMap((shard) => shard.concepts)).length;
+		const range = mergeBatchRange(total, next.mergeCursor);
 		next.mergeStatus = "running";
 		next.mergeClaimId += 1;
 		next.mergeClaimedAt = now;
-		return { job: next, claim: { kind: "merge", claimId: next.mergeClaimId } };
+		if (!range) return { job: next, claim: { kind: "assemble", claimId: next.mergeClaimId } };
+		next.mergeFrom = range.from;
+		next.mergeTo = range.to;
+		return { job: next, claim: { kind: "merge", claimId: next.mergeClaimId, from: range.from, to: range.to } };
 	}
 	return { job, claim: { kind: "wait" } };
 }
@@ -137,6 +161,28 @@ export function failOwnedMerge(job: BulkJobRecord, claimId: number, message: str
 	return failJob(job, message);
 }
 
+export function finishMergeBatch(
+	job: BulkJobRecord,
+	claimId: number,
+	renames: Array<{ from: string; to: string }>,
+	usage: { input: number; output: number } = { input: 0, output: 0 },
+): BulkJobRecord {
+	if (job.mergeClaimId !== claimId || job.status !== "open" || job.mergeStatus !== "running") return job;
+	const next = structuredClone(job);
+	const seen = new Set(next.renames.map((rename) => `${rename.from}\0${rename.to}`));
+	for (const rename of renames) {
+		if (!rename.from || !rename.to) continue;
+		const key = `${rename.from}\0${rename.to}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		next.renames.push({ from: rename.from, to: rename.to });
+	}
+	next.mergeCursor = Math.max(next.mergeCursor, next.mergeTo);
+	next.mergeUsage = { input: next.mergeUsage.input + usage.input, output: next.mergeUsage.output + usage.output };
+	next.mergeStatus = "queued";
+	return next;
+}
+
 export function finishMerge(job: BulkJobRecord, claimId: number, result: BulkImportResult): BulkJobRecord {
 	if (job.mergeClaimId !== claimId || job.status !== "open") return job;
 	const next = structuredClone(job);
@@ -168,9 +214,12 @@ export interface BulkJobStore {
 	claim(id: string, uid: string, now: number): Promise<ClaimedBulkJob | null>;
 	files(id: string, indexes: number[]): Promise<BulkFile[]>;
 	finishShard(id: string, index: number, claimId: number, concepts: ExtractedConcept[], usage: { input: number; output: number }): Promise<BulkJobRecord | null>;
+	finishMergeBatch(id: string, claimId: number, renames: Array<{ from: string; to: string }>, usage: { input: number; output: number }): Promise<BulkJobRecord | null>;
 	finishMerge(id: string, claimId: number, result: BulkImportResult): Promise<BulkJobRecord | null>;
 	failShard(id: string, index: number, claimId: number, message: string): Promise<void>;
 	failMerge(id: string, claimId: number, message: string): Promise<void>;
+	/** Delete jobs whose file text is past its time. Safe to call often. */
+	sweep(now: number): Promise<void>;
 }
 
 interface StoredJob {
@@ -192,9 +241,16 @@ export class MemoryBulkJobStore implements BulkJobStore {
 	}
 
 	async create(input: { uid: string; userText: string; title?: string; files: BulkFile[] }): Promise<BulkJobRecord> {
+		await this.sweep(Date.now());
 		const job = newBulkJob({ ...input, id: newJobId() });
 		this.jobs.set(job.id, { job, files: input.files.map((file) => ({ ...file })) });
 		return job;
+	}
+
+	async sweep(now: number): Promise<void> {
+		for (const [id, stored] of this.jobs) {
+			if (stored.job.expiresAt > 0 && stored.job.expiresAt <= now) this.jobs.delete(id);
+		}
 	}
 
 	async claim(id: string, uid: string, now: number): Promise<ClaimedBulkJob | null> {
@@ -210,14 +266,26 @@ export class MemoryBulkJobStore implements BulkJobStore {
 	async files(id: string, indexes: number[]): Promise<BulkFile[]> {
 		const stored = this.jobs.get(id);
 		if (!stored) return [];
-		return indexes.map((index) => stored.files[index]).filter((file): file is BulkFile => !!file);
+		return indexes.map((index) => stored.files[index]).filter((file): file is BulkFile => !!file && file.text.length > 0);
 	}
 
 	async finishShard(id: string, index: number, claimId: number, concepts: ExtractedConcept[], usage: { input: number; output: number }): Promise<BulkJobRecord | null> {
 		return this.lock(async () => {
 			const stored = this.jobs.get(id);
 			if (!stored) return null;
-			stored.job = finishShard(stored.job, index, claimId, concepts, usage);
+			const next = finishShard(stored.job, index, claimId, concepts, usage);
+			const shard = next.shards[index];
+			if (next !== stored.job && shard?.status === "done" && shard.claimId === claimId) this.dropFiles(stored, shard.fileIndexes);
+			stored.job = next;
+			return stored.job;
+		});
+	}
+
+	async finishMergeBatch(id: string, claimId: number, renames: Array<{ from: string; to: string }>, usage: { input: number; output: number }): Promise<BulkJobRecord | null> {
+		return this.lock(async () => {
+			const stored = this.jobs.get(id);
+			if (!stored) return null;
+			stored.job = finishMergeBatch(stored.job, claimId, renames, usage);
 			return stored.job;
 		});
 	}
@@ -226,7 +294,9 @@ export class MemoryBulkJobStore implements BulkJobStore {
 		return this.lock(async () => {
 			const stored = this.jobs.get(id);
 			if (!stored) return null;
-			stored.job = finishMerge(stored.job, claimId, result);
+			const next = finishMerge(stored.job, claimId, result);
+			if (next.status === "done" && next.mergeClaimId === claimId) this.dropFiles(stored);
+			stored.job = next;
 			return stored.job;
 		});
 	}
@@ -235,7 +305,9 @@ export class MemoryBulkJobStore implements BulkJobStore {
 		await this.lock(async () => {
 			const stored = this.jobs.get(id);
 			if (!stored) return;
-			stored.job = failOwnedShard(stored.job, index, claimId, message);
+			const next = failOwnedShard(stored.job, index, claimId, message);
+			if (next.status === "error") this.dropFiles(stored);
+			stored.job = next;
 		});
 	}
 
@@ -243,8 +315,21 @@ export class MemoryBulkJobStore implements BulkJobStore {
 		await this.lock(async () => {
 			const stored = this.jobs.get(id);
 			if (!stored) return;
-			stored.job = failOwnedMerge(stored.job, claimId, message);
+			const next = failOwnedMerge(stored.job, claimId, message);
+			if (next.status === "error") this.dropFiles(stored);
+			stored.job = next;
 		});
+	}
+
+	private dropFiles(stored: StoredJob, indexes?: number[]): void {
+		if (!indexes) {
+			stored.files = [];
+			return;
+		}
+		for (const index of indexes) {
+			const file = stored.files[index];
+			if (file) stored.files[index] = { ...file, text: "" };
+		}
 	}
 
 	private owned(id: string, uid: string): StoredJob | null {
@@ -261,6 +346,7 @@ export class FirestoreBulkJobStore implements BulkJobStore {
 	constructor(private readonly firestore: () => Firestore = openFirestore) {}
 
 	async create(input: { uid: string; userText: string; title?: string; files: BulkFile[] }): Promise<BulkJobRecord> {
+		await this.sweep(Date.now()).catch((err) => console.error("Could not expire old bulk imports.", err));
 		const job = newBulkJob({ ...input, id: newJobId() });
 		const db = this.firestore();
 		const batch = db.batch();
@@ -300,20 +386,51 @@ export class FirestoreBulkJobStore implements BulkJobStore {
 		return files;
 	}
 
+	async sweep(now: number): Promise<void> {
+		const snap = await this.firestore().collection(JOBS).where("expiresAt", "<=", now).limit(20).get();
+		for (const doc of snap.docs) {
+			const data = doc.data() as { expiresAt?: unknown };
+			if (typeof data.expiresAt !== "number" || data.expiresAt <= 0 || data.expiresAt > now) continue;
+			await this.deleteFileDocs(doc.id);
+			await doc.ref.delete();
+		}
+	}
+
 	async finishShard(id: string, index: number, claimId: number, concepts: ExtractedConcept[], usage: { input: number; output: number }): Promise<BulkJobRecord | null> {
-		return this.update(id, (job) => finishShard(job, index, claimId, concepts, usage));
+		const updated = await this.update(id, (job) => finishShard(job, index, claimId, concepts, usage));
+		const shard = updated?.shards[index];
+		if (shard?.status === "done" && shard.claimId === claimId) await this.deleteFileDocs(id, shard.fileIndexes).catch((err) => console.error("Could not delete bulk import text.", err));
+		return updated;
+	}
+
+	async finishMergeBatch(id: string, claimId: number, renames: Array<{ from: string; to: string }>, usage: { input: number; output: number }): Promise<BulkJobRecord | null> {
+		return this.update(id, (job) => finishMergeBatch(job, claimId, renames, usage));
 	}
 
 	async finishMerge(id: string, claimId: number, result: BulkImportResult): Promise<BulkJobRecord | null> {
-		return this.update(id, (job) => finishMerge(job, claimId, result));
+		const updated = await this.update(id, (job) => finishMerge(job, claimId, result));
+		if (updated?.status === "done" && updated.mergeClaimId === claimId) await this.deleteFileDocs(id).catch((err) => console.error("Could not delete bulk import text.", err));
+		return updated;
 	}
 
 	async failShard(id: string, index: number, claimId: number, message: string): Promise<void> {
-		await this.update(id, (job) => failOwnedShard(job, index, claimId, message));
+		const updated = await this.update(id, (job) => failOwnedShard(job, index, claimId, message));
+		if (updated?.status === "error") await this.deleteFileDocs(id).catch((err) => console.error("Could not delete bulk import text.", err));
 	}
 
 	async failMerge(id: string, claimId: number, message: string): Promise<void> {
-		await this.update(id, (job) => failOwnedMerge(job, claimId, message));
+		const updated = await this.update(id, (job) => failOwnedMerge(job, claimId, message));
+		if (updated?.status === "error") await this.deleteFileDocs(id).catch((err) => console.error("Could not delete bulk import text.", err));
+	}
+
+	private async deleteFileDocs(id: string, indexes?: number[]): Promise<void> {
+		const parent = this.firestore().collection(JOBS).doc(id).collection("files");
+		const refs = indexes ? indexes.map((index) => parent.doc(String(index))) : (await parent.listDocuments());
+		for (let start = 0; start < refs.length; start += 400) {
+			const batch = this.firestore().batch();
+			for (const ref of refs.slice(start, start + 400)) batch.delete(ref);
+			await batch.commit();
+		}
 	}
 
 	private async update(id: string, change: (job: BulkJobRecord) => BulkJobRecord): Promise<BulkJobRecord | null> {
@@ -327,6 +444,20 @@ export class FirestoreBulkJobStore implements BulkJobStore {
 			return next;
 		});
 	}
+}
+
+function renamesFrom(value: unknown): Array<{ from: string; to: string }> {
+	if (!Array.isArray(value)) return [];
+	const renames: Array<{ from: string; to: string }> = [];
+	for (const row of value) {
+		if (!row || typeof row !== "object") continue;
+		const from = (row as { from?: unknown }).from;
+		const to = (row as { to?: unknown }).to;
+		if (typeof from !== "string" || typeof to !== "string" || !from || !to) continue;
+		renames.push({ from, to });
+		if (renames.length >= 800) break;
+	}
+	return renames;
 }
 
 function usageFrom(value: unknown): { input: number; output: number } {
@@ -373,6 +504,12 @@ function jobFrom(value: unknown, id: string): BulkJobRecord | null {
 		mergeStatus,
 		mergeClaimId: typeof raw.mergeClaimId === "number" ? raw.mergeClaimId : 0,
 		mergeClaimedAt: typeof raw.mergeClaimedAt === "number" ? raw.mergeClaimedAt : 0,
+		mergeCursor: typeof raw.mergeCursor === "number" ? raw.mergeCursor : 0,
+		mergeFrom: typeof raw.mergeFrom === "number" ? raw.mergeFrom : 0,
+		mergeTo: typeof raw.mergeTo === "number" ? raw.mergeTo : 0,
+		renames: renamesFrom(raw.renames),
+		mergeUsage: usageFrom(raw.mergeUsage),
+		expiresAt: typeof raw.expiresAt === "number" ? raw.expiresAt : 0,
 		status,
 		...(typeof raw.error === "string" ? { error: raw.error } : {}),
 		...(raw.result ? { result: raw.result } : {}),
