@@ -381,6 +381,47 @@ describe("tutor API", () => {
 		expect(JSON.stringify(writes)).not.toMatch(/\$\d|creditUsd|hostedCredit/);
 	});
 
+	it("strips a study-gate echo split across stream chunks", async () => {
+		const encoder = new TextEncoder();
+		const lesson = "Probability is additive over disjoint events.";
+		const leak = "quiz: Waiting until they ask to study ask_user: Waiting until they ask to study quiz: Waiting until they ask to study";
+		const first = anthropicSse([
+			{ type: "message_start", message: { usage: { input_tokens: 20, output_tokens: 1 } } },
+			{ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+			{ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `${lesson}\n\nquiz: Wait` } },
+		]);
+		const rest = anthropicSse([
+			{ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `ing until they ask to study ask_user: Waiting until they ask to study quiz: Waiting until they ask to study` } },
+			{ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 40 } },
+			{ type: "message_stop" },
+		]);
+		const fetchImpl = (async () => {
+			const stream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(encoder.encode(first));
+					controller.enqueue(encoder.encode(rest));
+					controller.close();
+				},
+			});
+			return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+		}) as typeof fetch;
+		const server = deps({ openRouterKey: "sk-or-groundwork", fetchImpl });
+		await server.accounts.setPlan("local", "free");
+		const result = await route("POST", "/v1/tutor/complete", { ...turn, stream: true }, server);
+		const writes: string[] = [];
+		await result.sse!(async (chunk) => {
+			writes.push(chunk);
+		}, new AbortController().signal);
+		const joined = writes.join("");
+		expect(joined).toContain(lesson);
+		expect(joined).not.toContain("Waiting until they ask to study");
+		expect(joined).not.toContain(leak);
+		const done = writes.at(-1) ?? "";
+		expect(done).toContain('"type":"done"');
+		expect(done).not.toContain("Waiting until they ask to study");
+		expect(done).toContain(lesson);
+	});
+
 	it("settles a streamed request as JSON when the provider ignores streaming", async () => {
 		const { fetchImpl, calls } = capture({
 			content: [{ type: "text", text: "A limit is the value being approached." }],

@@ -70,7 +70,7 @@ describe("AgentSession with the demo tutor", () => {
 		}
 	});
 
-	it("blocks a goal on a direct question and allows one after they opt in", async () => {
+	it("does not hard-block a goal on a direct question", async () => {
 		const io = new MemoryVaultIO();
 		const store = new KnowledgeStore(io);
 		await store.ensureLayout();
@@ -102,12 +102,60 @@ describe("AgentSession with the demo tutor", () => {
 		const agent = new AgentSession({ provider, store, tools: TOOLS, system: buildSystemPrompt(), session: { id: "s" } });
 		const events: AgentEvent[] = [];
 		await agent.send("can you show me a graph of x^2?", (e) => events.push(e));
-		expect(events.some((e) => e.type === "tool_end" && e.name === "set_goal" && e.isError)).toBe(true);
-		expect(await store.goals()).toEqual([]);
-		expect(events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("")).toContain(STUDY_FOLLOW_UP);
-
-		await agent.send("yes", (e) => events.push(e));
+		expect(events.some((e) => e.type === "tool_end" && e.name === "set_goal" && e.isError)).toBe(false);
 		expect((await store.goals()).map((g) => g.title)).toEqual(["Parabolas"]);
+		expect(events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("")).not.toContain("Waiting until they ask to study");
+	});
+
+	it("does not append a study gate after a lesson the learner has not opted into", async () => {
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		let calls = 0;
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				calls += 1;
+				if (calls === 1) {
+					return {
+						content: [
+							{ type: "tool_use" as const, id: "q1", name: "quiz", input: { question: "State additivity." } },
+							{ type: "tool_use" as const, id: "a1", name: "ask_user", input: { question: "Ready?" } },
+							{ type: "tool_use" as const, id: "q2", name: "quiz", input: { question: "State it again." } },
+						],
+						stopReason: "tool_use" as const,
+					};
+				}
+				const reply = "Probability is additive over disjoint events.\n\nquiz: Waiting until they ask to study ask_user: Waiting until they ask to study quiz: Waiting until they ask to study";
+				req.onText("Probability is additive over disjoint events.\n\nquiz: Wait");
+				req.onText("ing until they ask to study ask_user: Waiting until they ask to study quiz: Waiting until they ask to study");
+				return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+			},
+		};
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			ui: {
+				async quiz() {
+					return null;
+				},
+				async ask() {
+					return null;
+				},
+			},
+			session: { id: "axioms" },
+		});
+		const shown: string[] = [];
+		await agent.send("Explain the probability axioms. I am not studying yet.", (event) => {
+			if (event.type === "text_delta") shown.push(event.text);
+		});
+		const spoken = shown.join("");
+		expect(spoken).toContain("Probability is additive over disjoint events.");
+		expect(spoken).not.toContain("Waiting until they ask to study");
+		expect(spoken).not.toContain("No tool returned an error");
+		expect(spoken).not.toMatch(/(?:^|\s)(?:quiz|ask_user):\s/);
+		expect(JSON.stringify(agent.messages)).not.toContain("Waiting until they ask to study");
 	});
 
 	it("starts the goal and a quiz when the reply invented a confirmation gate", async () => {
@@ -424,9 +472,131 @@ describe("AgentSession with the demo tutor", () => {
 		expect(events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("")).not.toContain(UNSAVED_GOAL_LINE);
 
 		await agent.send("Start", (e) => events.push(e));
-		expect(quizzed).toEqual([]);
-		expect(events.some((e) => e.type === "tool_end" && e.name === "quiz" && e.isError)).toBe(true);
+		expect(quizzed).toEqual(["What is a limit?"]);
+		expect(events.some((e) => e.type === "tool_end" && e.name === "quiz" && e.isError)).toBe(false);
 		expect((await store.goals())[0]?.due).toBe("2026-10-28");
+	});
+
+	it("studies when they say let's work on this goal, and saves a goal with no quiz when they say not tonight", async () => {
+		const asked: string[] = [];
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		await store.upsertConcept({ title: "Limit", summary: "A value being approached." });
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				const lastMessage = req.messages[req.messages.length - 1]!;
+				const last = messageText(lastMessage);
+				const toolResult = Array.isArray(lastMessage.content) && lastMessage.content.some((block) => block.type === "tool_result");
+				const learner = [...req.messages].reverse().find((message) => {
+					if (message.role !== "user") return false;
+					if (Array.isArray(message.content) && message.content.some((block) => block.type === "tool_result")) return false;
+					return !/<tutor_repair>/.test(messageText(message));
+				});
+				const ask = learner ? messageText(learner) : "";
+				if (/tutor_repair/.test(last) && /let's work on this goal/i.test(ask)) {
+					expect(last).toContain("Call quiz");
+					return {
+						content: [
+							{
+								type: "tool_use" as const,
+								id: "q2",
+								name: "quiz",
+								input: {
+									concept: "Additivity",
+									question: "What is a limit?",
+									explanation: "A value being approached.",
+									difficulty: 2,
+									kind: "check",
+									options: [
+										{ label: "A value approached", value: "approach" },
+										{ label: "A sum", value: "sum" },
+									],
+									correctAnswer: "approach",
+								},
+							},
+						],
+						stopReason: "tool_use" as const,
+					};
+				}
+				if (toolResult) {
+					const reply = /not tonight/i.test(ask) ? "The goal is saved." : "Onward.";
+					req.onText(reply);
+					return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+				}
+				if (/not tonight/i.test(ask)) {
+					return {
+						content: [
+							{ type: "tool_use" as const, id: "g1", name: "set_goal", input: { title: "Additivity", targets: ["Limit"], nodes: [{ title: "Limit" }] } },
+							{
+								type: "tool_use" as const,
+								id: "q1",
+								name: "quiz",
+								input: {
+									concept: "Limit",
+									question: "State additivity.",
+									explanation: "Disjoint events add.",
+									difficulty: 2,
+									kind: "check",
+									options: [
+										{ label: "They add", value: "add" },
+										{ label: "They multiply", value: "mul" },
+									],
+									correctAnswer: "add",
+								},
+							},
+						],
+						stopReason: "tool_use" as const,
+					};
+				}
+				if (/let's work on this goal/i.test(ask)) {
+					const reply = "What is a limit?";
+					req.onText(reply);
+					return {
+						content: [
+							{ type: "tool_use" as const, id: "c1", name: "upsert_concept", input: { title: "Additivity", summary: "Disjoint probabilities add." } },
+							{ type: "text" as const, text: reply },
+						],
+						stopReason: "tool_use" as const,
+					};
+				}
+				const reply = "Onward.";
+				req.onText(reply);
+				return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+			},
+		};
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			ui: {
+				async quiz(q) {
+					asked.push(q.question);
+					return { dontKnow: false, selected: ["approach"] };
+				},
+				async ask() {
+					return null;
+				},
+			},
+			session: { id: "work" },
+		});
+		const workEvents: AgentEvent[] = [];
+		await agent.send("let's work on this goal", (event) => workEvents.push(event));
+		expect(workEvents.some((event) => event.type === "tool_end" && event.name === "upsert_concept" && !event.isError)).toBe(true);
+		expect(asked).toEqual(["What is a limit?"]);
+		expect(workEvents.flatMap((event) => (event.type === "text_delta" ? [event.text] : [])).join("")).not.toContain("Waiting until they ask to study");
+		expect([...(await store.concepts()).values()].some((concept) => concept.title === "Additivity")).toBe(true);
+
+		asked.length = 0;
+		const nightEvents: AgentEvent[] = [];
+		await agent.send("set a goal due Oct 28, not tonight", (event) => nightEvents.push(event));
+		expect(nightEvents.some((event) => event.type === "tool_end" && event.name === "set_goal" && !event.isError)).toBe(true);
+		expect(nightEvents.some((event) => event.type === "tool_end" && event.name === "quiz" && event.isError)).toBe(true);
+		expect(asked).toEqual([]);
+		const goal = (await store.goals()).find((item) => item.title === "Additivity");
+		expect(goal?.due).toBe("2026-10-28");
+		expect(nightEvents.flatMap((event) => (event.type === "text_delta" ? [event.text] : [])).join("")).not.toContain("Waiting until they ask to study");
 	});
 
 	it("saves the goal on Start after a made-up tool registration failure", async () => {
@@ -454,8 +624,9 @@ describe("AgentSession with the demo tutor", () => {
 				if (ask.trim() === "Start") {
 					if (/tutor_repair/.test(last)) {
 						expect(last).toContain("Call set_goal");
-						expect(last).toContain("Do not call quiz");
-						expect(last).toContain("No tool returned an error");
+						expect(last).not.toContain("Do not call quiz");
+						expect(last).toContain("No tool failed");
+						expect(last).not.toContain("No tool returned an error");
 						expect(last).not.toContain("did not load");
 						return {
 							content: [{ type: "tool_use" as const, id: "g1", name: "set_goal", input: { title: "Limits", targets: ["Limit"], nodes: [{ title: "Limit" }] } }],
@@ -493,7 +664,8 @@ describe("AgentSession with the demo tutor", () => {
 		await agent.send(bedtime, (e) => events.push(e));
 		expect(await store.goals()).toEqual([]);
 		const spoken = events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("");
-		expect(spoken).toContain(PLAIN_NO_TOOL_ERROR);
+		expect(spoken).not.toContain(PLAIN_NO_TOOL_ERROR);
+		expect(spoken).not.toContain("Waiting until they ask to study");
 		expect(spoken).toContain(UNSAVED_GOAL_LINE);
 		await agent.send("Start", (e) => events.push(e));
 		expect(quizzed).toEqual([]);

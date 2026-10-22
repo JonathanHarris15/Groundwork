@@ -32,7 +32,7 @@ const FENCE_LINE = /^(```+|~~~+)/;
 
 export function normalizeTutorMarkdown(md: string): string {
 	if (!md) return md;
-	return normalizeParts(unescapeOverEscaped(md));
+	return liftQuotedDisplayMath(normalizeParts(stripMarkAroundMath(unescapeOverEscaped(md))));
 }
 
 function normalizeParts(md: string): string {
@@ -175,11 +175,11 @@ function normalizeFlow(text: string): string {
 	s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_, inner: string) => `$${inner.trim()}$`);
 	s = s.replace(/==([\s\S]+?)==/g, (_, inner: string) => unwrapHighlight(inner));
 	s = rewriteMathSpans(s, true, (inner) => {
-		const t = inner.trim();
+		const t = unwrapColorCommands(inner.trim());
 		return looksLikeProse(t) ? wrapLatexPhrases(t) : `$$\n${t}\n$$`;
 	});
 	s = rewriteMathSpans(s, false, (inner) => {
-		const t = inner.trim();
+		const t = unwrapColorCommands(inner.trim());
 		return looksLikeProse(t) ? wrapLatexPhrases(t) : `$${t}$`;
 	});
 	s = wrapLatexPhrases(s);
@@ -219,6 +219,159 @@ function unwrapHighlight(inner: string): string {
 	if (/\\[a-zA-Z]+/.test(t) && !looksLikeProse(t)) return `$${t}$`;
 	// Mixed highlight (prose + $math$): drop == so leftover $ cannot re-pair.
 	return inner;
+}
+
+/** `<mark>` around a formula is the same highlight as `==`, and it paints a box behind display math. */
+function stripMarkAroundMath(md: string): string {
+	return md.replace(/<mark>([\s\S]*?)<\/mark>/gi, (all, inner: string) => {
+		if (/\$|\\[a-zA-Z]+/.test(inner)) return unwrapHighlight(inner);
+		return all;
+	});
+}
+
+/**
+ * A color box around a formula (`\bbox`, `\colorbox`, `\fcolorbox`, `\hl`) is
+ * what makes one equation a solid highlighted rectangle. Keep the formula.
+ */
+function unwrapColorCommands(tex: string): string {
+	let out = "";
+	for (let i = 0; i < tex.length; ) {
+		const cmd = /^\\(bbox|colorbox|fcolorbox|hl)\b/.exec(tex.slice(i));
+		if (!cmd) {
+			out += tex[i];
+			i += 1;
+			continue;
+		}
+		let j = i + cmd[0].length;
+		if (cmd[1] === "bbox") {
+			const opt = readDelimited(tex, j, "[", "]");
+			if (opt) j = opt.end;
+		}
+		const groups = cmd[1] === "colorbox" ? 2 : cmd[1] === "fcolorbox" ? 3 : 1;
+		let inner = "";
+		let ok = true;
+		for (let g = 0; g < groups; g++) {
+			const group = readDelimited(tex, j, "{", "}");
+			if (!group) {
+				ok = false;
+				break;
+			}
+			inner = group.body;
+			j = group.end;
+		}
+		if (!ok) {
+			out += tex[i];
+			i += 1;
+			continue;
+		}
+		out += unwrapColorCommands(inner);
+		i = j;
+	}
+	return out;
+}
+
+function readDelimited(s: string, i: number, open: string, close: string): { body: string; end: number } | null {
+	while (i < s.length && /\s/.test(s[i] ?? "")) i += 1;
+	if (s[i] !== open) return null;
+	let depth = 0;
+	for (let j = i; j < s.length; j++) {
+		if (s[j] === "\\") {
+			j += 1;
+			continue;
+		}
+		if (s[j] === open) depth += 1;
+		else if (s[j] === close) {
+			depth -= 1;
+			if (depth === 0) return { body: s.slice(i + 1, j), end: j + 1 };
+		}
+	}
+	return null;
+}
+
+/**
+ * Display math inside a callout sits on the callout's fill. Warning and
+ * question callouts are mustard, and the clipped MathJax assistive layer
+ * glows there. Lift `$$` blocks out of the quote. Inline math stays.
+ * A callout whose only body was that equation keeps its title as bold text.
+ */
+function liftQuotedDisplayMath(md: string): string {
+	const lines = md.split("\n");
+	const out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		if (!quoteDepth(lines[i] ?? "")) {
+			out.push(lines[i] ?? "");
+			i += 1;
+			continue;
+		}
+		const start = i;
+		while (i < lines.length && quoteDepth(lines[i] ?? "")) i += 1;
+		out.push(...liftQuoteRun(lines.slice(start, i)));
+	}
+	return dropEmptyCallouts(out.join("\n")).replace(/\n{3,}/g, "\n\n");
+}
+
+function liftQuoteRun(run: string[]): string[] {
+	const out: string[] = [];
+	let i = 0;
+	const pushMath = (block: string[]) => {
+		if (out.length && out[out.length - 1] !== "") out.push("");
+		out.push(...block);
+		out.push("");
+	};
+	while (i < run.length) {
+		const plain = unquote(run[i] ?? "");
+		if (plain.trim() === "$$") {
+			const block = ["$$"];
+			i += 1;
+			while (i < run.length) {
+				const inner = unquote(run[i] ?? "");
+				block.push(inner.trim() === "$$" ? "$$" : inner);
+				i += 1;
+				if (inner.trim() === "$$") break;
+			}
+			pushMath(block);
+			continue;
+		}
+		const oneLine = /^\$\$([\s\S]+)\$\$$/.exec(plain.trim());
+		if (oneLine) {
+			pushMath(["$$", oneLine[1].trim(), "$$"]);
+			i += 1;
+			continue;
+		}
+		out.push(run[i] ?? "");
+		i += 1;
+	}
+	while (out.length && out[out.length - 1] === "") out.pop();
+	return out;
+}
+
+function unquote(line: string): string {
+	return line.replace(QUOTE_PREFIX, "");
+}
+
+function dropEmptyCallouts(md: string): string {
+	const lines = md.split("\n");
+	const out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		if (!quoteDepth(lines[i] ?? "")) {
+			out.push(lines[i] ?? "");
+			i += 1;
+			continue;
+		}
+		const start = i;
+		while (i < lines.length && quoteDepth(lines[i] ?? "")) i += 1;
+		const run = lines.slice(start, i);
+		const body = run.map((line) => unquote(line).trim()).filter(Boolean);
+		if (body.length === 1 && /^\[![a-z]+\]/i.test(body[0] ?? "")) {
+			const title = (body[0] ?? "").replace(/^\[![a-z]+\]\s*/i, "").replace(/\*\*/g, "").trim();
+			if (title) out.push(`**${title}**`);
+			continue;
+		}
+		out.push(...run);
+	}
+	return out.join("\n");
 }
 
 function rewriteMathSpans(s: string, display: boolean, rewrite: (inner: string) => string): string {

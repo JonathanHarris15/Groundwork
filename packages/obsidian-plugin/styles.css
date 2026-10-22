@@ -3099,6 +3099,32 @@ body .gw-root button.gw-text-btn:hover {
 .gw-root .math-block {
 	max-width: 100%;
 	overflow-x: auto;
+	overflow-wrap: normal;
+	background: transparent;
+	box-shadow: none;
+	filter: none;
+	text-shadow: none;
+}
+.gw-root .markdown-rendered mark:has(.math-block),
+.gw-root .markdown-rendered mark:has(mjx-container[display="true"]) {
+	background: transparent;
+	color: inherit;
+}
+.gw-root .markdown-rendered .callout .math-block,
+.gw-root .markdown-rendered mark .math-block {
+	background: var(--background-primary);
+}
+.gw-root .markdown-rendered mjx-assistive-mml {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	border: 0;
 }
 
 /* Icon labels next to New session / Library / Settings crush the tab pill

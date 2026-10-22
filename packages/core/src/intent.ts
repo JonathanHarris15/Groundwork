@@ -1,6 +1,8 @@
 /**
- * What the learner asked for on this turn, and whether a goal, concept, or quiz is allowed.
- * The tutor answers by default. Study tools run only after an explicit opt-in.
+ * What the learner asked for on this turn.
+ * Studying is the default. The only hard hold is a quiz on a turn that
+ * explicitly says not yet ("not tonight", "going to bed"). It does not stick,
+ * and it never blocks a concept, a goal, or ask_user.
  */
 
 import type { ChatMessage, ContentBlock } from "./agent/types";
@@ -24,7 +26,7 @@ export interface DialogueTurn {
 	text: string;
 }
 
-/** Tools that create a goal or concept, or start quizzing. Refused until the learner opts in. */
+/** Tools a lesson may call. None of these wait for a second opt-in. */
 export const STUDY_TOOLS = new Set([
 	"set_goal",
 	"upsert_concept",
@@ -36,8 +38,8 @@ export const STUDY_TOOLS = new Set([
 	"ask_user",
 ]);
 
-/** A goal can be saved without a quiz. These still wait until they are studying now. */
-const QUIZ_TOOLS = new Set(["quiz", "ask_user", "practice_test", "record_evidence"]);
+/** A quiz can wait one turn. Concepts, goals, and ask_user never wait. */
+const QUIZ_HOLD = new Set(["quiz", "practice_test"]);
 
 const HIDDEN_BLOCK = /<(working_goal|exam_plan|bulk_goal|margin_questions|hint_transcript|tutor_repair)>[\s\S]*?<\/\1>/gi;
 
@@ -93,24 +95,45 @@ export function wantsQuizNow(text: string): boolean {
 	);
 }
 
-/** They will not quiz on this turn: not tonight, going to bed, or an explicit refusal. */
+/**
+ * They asked not to study on this message: not tonight, going to bed, or a
+ * direct refusal. A later message clears it by saying something else.
+ */
 export function declinesQuizNow(text: string): boolean {
 	const visible = visibleAsk(text);
-	if (!visible || wantsQuizNow(visible)) return false;
-	return refusesQuiz(visible) || /\bgoing to bed\b/i.test(visible) || (/\bnot tonight\b/i.test(visible) && /\b(?:quiz|quizzing|study|studying)\b/i.test(visible));
+	if (!visible || wantsQuizNow(visible) || wantsToStudyNow(visible)) return false;
+	return (
+		refusesQuiz(visible) ||
+		/\bgoing to bed\b/i.test(visible) ||
+		/\bnot tonight\b/i.test(visible) ||
+		/\bnot studying\b/i.test(visible) ||
+		/\b(?:won'?t|will not|not going to|don'?t|do not)\b[^.]{0,40}\b(?:study|studying)\b/i.test(visible)
+	);
 }
 
-/** A quiz stays off until a later message asks to study now. */
+/** True only when the latest thing they said asks not to study yet. */
 export function quizDeclined(turns: DialogueTurn[]): boolean {
-	let declined = false;
-	for (const turn of turns) {
-		if (turn.role !== "user") continue;
+	for (let i = turns.length - 1; i >= 0; i--) {
+		const turn = turns[i];
+		if (!turn || turn.role !== "user") continue;
 		const visible = visibleAsk(turn.text);
 		if (!visible) continue;
-		if (wantsQuizNow(visible)) declined = false;
-		else if (declinesQuizNow(visible)) declined = true;
+		return declinesQuizNow(visible);
 	}
-	return declined;
+	return false;
+}
+
+/** They want to work, study, learn, practice, or continue now. */
+export function wantsToStudyNow(text: string): boolean {
+	const visible = visibleAsk(text);
+	if (!visible || declinesQuizNowWithoutStudy(visible)) return false;
+	return (
+		wantsQuizNow(visible) ||
+		/\b(?:let's|lets)\s+(?:work|continue|go)\b/i.test(visible) ||
+		/\bwork on\b[^.]{0,40}\bgoal\b/i.test(visible) ||
+		/\bcontinue (?:studying|working|this|the goal)\b/i.test(visible) ||
+		/^(?:continue|keep going)$/i.test(visible.replace(/[.!]+$/g, "").trim())
+	);
 }
 
 /** The latest deadline they named, as YYYY-MM-DD. */
@@ -133,20 +156,11 @@ export function withLearnerDue(name: string, input: unknown, turns: DialogueTurn
 }
 
 export function studyToolBlock(name: string, dialogue: DialogueTurn[]): { text: string; isError: true; summary: string } | null {
-	if (!STUDY_TOOLS.has(name)) return null;
-	if (QUIZ_TOOLS.has(name) && quizDeclined(dialogue)) {
-		return {
-			isError: true,
-			summary: "Not quizzing now",
-			text: `Not now. ${name} did not run because they asked not to quiz on this turn. If they asked for a goal, call set_goal now and pass due as YYYY-MM-DD when they named a date. Do not call quiz. Do not tell them a confirmation, a setting, or the system blocked it. Do not ask again, and do not tell them to reply Start.`,
-		};
-	}
-	if (learnerOptedIntoStudy(dialogue)) return null;
-	if ((name === "set_goal" || name === "set_working_goal") && dialogue.some((turn) => turn.role === "user" && requestsGoal(turn.text))) return null;
+	if (!QUIZ_HOLD.has(name) || !quizDeclined(dialogue)) return null;
 	return {
 		isError: true,
-		summary: "Waiting until they ask to study",
-		text: `Not yet. ${name} did not run because this message did not ask to study. Answer what they asked. Do not tell them a confirmation, a setting, or the system blocked it. If you just finished a study guide or flashcards, you may ask once: "${STUDY_FOLLOW_UP}" That is an offer, not a gate. Then wait.`,
+		summary: "Not quizzing now",
+		text: `Not now. ${name} did not run because they asked not to study on this turn. If they asked for a goal, call set_goal now and pass due as YYYY-MM-DD when they named a date. Do not call quiz. Do not tell them a confirmation, a setting, or the system blocked it. Do not ask again, and do not tell them to reply Start.`,
 	};
 }
 
@@ -196,7 +210,18 @@ function isStrongStudy(text: string): boolean {
 }
 
 function isStudy(text: string): boolean {
-	return isStrongStudy(text) || /\blet'?s build\b/i.test(text) || statesLearningObjective(text);
+	return isStrongStudy(text) || wantsToStudyNow(text) || /\blet'?s build\b/i.test(text) || statesLearningObjective(text);
+}
+
+/** A pause phrase, before the study-now override, so the two checks cannot recurse. */
+function declinesQuizNowWithoutStudy(text: string): boolean {
+	return (
+		refusesQuiz(text) ||
+		/\bgoing to bed\b/i.test(text) ||
+		/\bnot tonight\b/i.test(text) ||
+		/\bnot studying\b/i.test(text) ||
+		/\b(?:won'?t|will not|not going to|don'?t|do not)\b[^.]{0,40}\b(?:study|studying)\b/i.test(text)
+	);
 }
 
 /**

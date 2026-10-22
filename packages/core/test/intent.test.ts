@@ -41,6 +41,8 @@ describe("classifyLearnerAsk", () => {
 			),
 		).toBe("study");
 		expect(classifyLearnerAsk("learn everything from the start of the class to the midterm using this folder")).toBe("study");
+		expect(classifyLearnerAsk("let's work on this goal")).toBe("study");
+		expect(classifyLearnerAsk("let's continue")).toBe("study");
 		expect(classifyLearnerAsk("I need to know all of the content from the start of my 427 class to the midterm. I want to be prepared.")).toBe("study");
 	});
 
@@ -53,8 +55,9 @@ describe("classifyLearnerAsk", () => {
 	it("offers a goal and a quiz together, and a yes to that offer opts in", () => {
 		expect(STUDY_FOLLOW_UP).toBe("Want me to set this up as a goal and quiz you on it?");
 		expect(STUDY_FOLLOW_UP).not.toMatch(/\bor\b/i);
-		expect(studyToolBlock("quiz", [{ role: "user", text: "what's the chain rule?" }])?.text).not.toMatch(/or make a goal/);
-		expect(studyToolBlock("quiz", [{ role: "user", text: "what's the chain rule?" }])?.text).toMatch(/Do not tell them/);
+		expect(studyToolBlock("quiz", [{ role: "user", text: "what's the chain rule?" }])).toBeNull();
+		expect(studyToolBlock("upsert_concept", [{ role: "user", text: "what's the chain rule?" }])).toBeNull();
+		expect(studyToolBlock("ask_user", [{ role: "user", text: "what's the chain rule?" }])).toBeNull();
 	});
 
 	it("treats yes-plus-a-due-date as a goal, and not tonight as no quiz", () => {
@@ -69,11 +72,23 @@ describe("classifyLearnerAsk", () => {
 		expect(studyToolBlock("set_working_goal", turns)).toBeNull();
 		expect(studyToolBlock("quiz", turns)?.isError).toBe(true);
 		expect(studyToolBlock("quiz", turns)?.text).toMatch(/set_goal/);
-		const later = [...turns, { role: "assistant" as const, text: "Reply Start" }, { role: "user" as const, text: "Start" }];
+		expect(studyToolBlock("upsert_concept", turns)).toBeNull();
+		expect(studyToolBlock("ask_user", turns)).toBeNull();
+		const later = [...turns, { role: "assistant" as const, text: "Goodnight." }, { role: "user" as const, text: "let's work on this goal" }];
 		expect(learnerOptedIntoStudy(later)).toBe(true);
 		expect(studyToolBlock("set_goal", later)).toBeNull();
-		expect(studyToolBlock("quiz", later)?.isError).toBe(true);
-		expect(studyToolBlock("quiz", [{ role: "user", text: "Start" }])?.isError).toBe(true);
+		expect(studyToolBlock("upsert_concept", later)).toBeNull();
+		expect(studyToolBlock("quiz", later)).toBeNull();
+		expect(studyToolBlock("quiz", [{ role: "user", text: "Start" }])).toBeNull();
+		const paused = [{ role: "user" as const, text: "set a goal due Oct 28, not tonight" }];
+		expect(studyToolBlock("set_goal", paused)).toBeNull();
+		expect(studyToolBlock("upsert_concept", paused)).toBeNull();
+		expect(studyToolBlock("ask_user", paused)).toBeNull();
+		expect(studyToolBlock("quiz", paused)?.isError).toBe(true);
+		expect(studyToolBlock("practice_test", paused)?.isError).toBe(true);
+		const answered = [...paused, { role: "assistant" as const, text: "Saved." }, { role: "user" as const, text: "the probabilities add" }];
+		expect(studyToolBlock("quiz", answered)).toBeNull();
+		expect(studyToolBlock("upsert_concept", answered)).toBeNull();
 	});
 
 	it("lets a yes after the follow-up opt in, and a bare yes does not", () => {
@@ -101,16 +116,18 @@ describe("classifyLearnerAsk", () => {
 		).toBe(true);
 	});
 
-	it("refuses a goal tool until they opt in, then allows the study flow", () => {
+	it("lets the model call study tools, and holds a quiz only when this message says not yet", () => {
 		const asking = [{ role: "user" as const, text: "can you show me a graph of x^2?" }];
-		expect(studyToolBlock("set_goal", asking)?.isError).toBe(true);
-		expect(studyToolBlock("quiz", asking)?.isError).toBe(true);
+		expect(studyToolBlock("set_goal", asking)).toBeNull();
+		expect(studyToolBlock("quiz", asking)).toBeNull();
+		expect(studyToolBlock("upsert_concept", asking)).toBeNull();
+		expect(studyToolBlock("ask_user", asking)).toBeNull();
 		expect(studyToolBlock("show_figure", asking)).toBeNull();
 		expect(studyToolBlock("save_flashcard", [{ role: "user", text: "make flashcards" }])).toBeNull();
 		expect(studyToolBlock("set_goal", [{ role: "user", text: "I have a Calc 1 final Dec 9, help me study" }])).toBeNull();
 		expect(studyToolBlock("practice_test", [{ role: "user", text: practiceTestRequest() }])).toBeNull();
 		expect(studyToolBlock("ingest_exam_materials", [{ role: "user", text: "help me study for the midterm" }])).toBeNull();
-		expect(studyToolBlock("set_goal", [{ role: "user", text: "summarize my documents" }])?.isError).toBe(true);
+		expect(studyToolBlock("set_goal", [{ role: "user", text: "summarize my documents" }])).toBeNull();
 		expect(studyToolBlock("survey_documents", [{ role: "user", text: "summarize my documents" }])).toBeNull();
 	});
 
@@ -157,7 +174,7 @@ describe("classifyLearnerAsk", () => {
 		const claiming = [{ role: "user" as const, text: "I already know the chain rule" }];
 		expect(classifyLearnerAsk(claiming[0]!.text)).toBe("answer");
 		expect(studyToolBlock("mark_known", claiming)).toBeNull();
-		expect(studyToolBlock("upsert_concept", claiming)?.isError).toBe(true);
-		expect(studyToolBlock("quiz", claiming)?.isError).toBe(true);
+		expect(studyToolBlock("upsert_concept", claiming)).toBeNull();
+		expect(studyToolBlock("quiz", claiming)).toBeNull();
 	});
 });

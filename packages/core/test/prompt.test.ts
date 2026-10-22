@@ -36,7 +36,8 @@ describe("teaching method", () => {
 		expect(method).toContain("Do not tell them to reply Start");
 		expect(method).toContain("## What you may say about the app");
 		expect(method).toContain("Never invent how Groundwork");
-		expect(method).toContain("No tool returned an error");
+		expect(method).toContain("If no tool failed");
+		expect(method).not.toContain("No tool returned an error");
 		expect(method).not.toContain("say it did not load");
 		expect(method).not.toContain("or make a goal");
 		expect(method).toContain("## A question they answer");

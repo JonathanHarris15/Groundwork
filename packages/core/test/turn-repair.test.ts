@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcesQuestion, asciiDiagram, claimsGoalSaved, inventsAppBehavior, needsUnsavedGoalCorrection, repairNote, UNSAVED_GOAL_LINE } from "../src/turn-repair";
+import { announcesQuestion, asciiDiagram, claimsGoalSaved, inventsAppBehavior, learnerFacingCorrection, needsUnsavedGoalCorrection, PLAIN_NO_TOOL_ERROR, repairNote, UNSAVED_GOAL_LINE } from "../src/turn-repair";
 
 describe("announced questions", () => {
 	const announced = [
@@ -80,7 +80,8 @@ describe("announced questions", () => {
 		expect(note).toContain("YYYY-MM-DD");
 		expect(note).toContain("Do not call quiz");
 		expect(note).toContain("Do not ask permission again");
-		expect(note).toContain("No tool returned an error");
+		expect(note).toContain("No tool failed");
+		expect(note).not.toContain("No tool returned an error");
 		expect(note).not.toContain("did not load");
 		expect(note).not.toContain("A goal and a quiz go together");
 		expect(
@@ -111,7 +112,8 @@ describe("announced questions", () => {
 		});
 		expect(pending).toContain("Call set_goal");
 		expect(pending).toContain("Do not call quiz");
-		expect(pending).toContain("No tool returned an error");
+		expect(pending).toContain("No tool failed");
+		expect(pending).not.toContain("No tool returned an error");
 		expect(pending).not.toContain("did not load");
 		const reported = repairNote({
 			userText: "Start",
@@ -125,6 +127,40 @@ describe("announced questions", () => {
 		expect(reported).toContain("set_goal: Could not write the goal file.");
 		expect(reported).not.toContain("No tool returned an error");
 		expect(needsUnsavedGoalCorrection({ userText: "Start", assistantText: quote, calledGoal: false, goalPending: true })).toBe(true);
+		const resumed = repairNote({
+			userText: "Start",
+			assistantText: quote,
+			calledQuestion: false,
+			calledGoal: false,
+			goalPending: true,
+		});
+		expect(resumed).toContain("Call set_goal");
+		expect(resumed).not.toContain("Do not call quiz");
+		const working = repairNote({
+			userText: "let's work on this goal",
+			assistantText: "What is a limit?",
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(working).toContain("Call quiz");
+		expect(working).not.toContain("Do not call quiz");
+		expect(
+			learnerFacingCorrection({
+				userText: "what's the chain rule?",
+				assistantText: "The tools did not load properly.",
+				calledGoal: false,
+				toolErrors: ["quiz: Waiting until they ask to study", "ask_user: Waiting until they ask to study", "quiz: Waiting until they ask to study"],
+			}),
+		).toBeNull();
+		expect(
+			learnerFacingCorrection({
+				userText: "what's the chain rule?",
+				assistantText: "The chain rule multiplies rates.",
+				calledGoal: false,
+				toolErrors: ["set_goal: Could not write the goal file."],
+			}),
+		).toBe("Could not write the goal file.");
+		expect(PLAIN_NO_TOOL_ERROR).toBe("No tool returned an error.");
 	});
 
 	it("repairs an invented confirmation gate into a goal and a quiz", () => {
@@ -138,7 +174,8 @@ describe("announced questions", () => {
 			calledQuestion: false,
 			calledGoal: false,
 		});
-		expect(note).toContain("No tool returned an error");
+		expect(note).toContain("No tool failed");
+		expect(note).not.toContain("No tool returned an error");
 		expect(note).not.toContain("did not load");
 		expect(note).toContain("Call quiz");
 		expect(note).toContain("Call set_goal");

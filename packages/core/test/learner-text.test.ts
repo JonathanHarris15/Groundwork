@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/agent/loop";
 import type { Provider } from "../src/agent/types";
 import { MemoryVaultIO } from "../src/io";
-import { holdsFixturePrefix, isGarbageReply, LOST_REPLY, scrubLearnerText } from "../src/learner-text";
+import { holdsFixturePrefix, isGarbageReply, isInternalToolReport, learnerToolError, LOST_REPLY, sanitizeTutorOutput, scrubLearnerText, TutorTextFilter } from "../src/learner-text";
 import { KnowledgeStore } from "../src/store";
 
 describe("learner-visible text", () => {
@@ -68,5 +68,34 @@ describe("learner-visible text", () => {
 			expect(shown.join(""), first || "empty").toBe("Bayes rule updates a probability with evidence.");
 			expect(JSON.stringify(agent.messages)).not.toContain("test_tutor_prevention");
 		}
+	});
+
+	it("strips study-gate lines and the old no-tool sentence", () => {
+		const leaked = "Axioms.\n\nquiz: Waiting until they ask to study ask_user: Waiting until they ask to study quiz: Waiting until they ask to study";
+		expect(sanitizeTutorOutput(leaked).trim()).toBe("Axioms.");
+		expect(scrubLearnerText(leaked).trim()).toBe("Axioms.");
+		expect(sanitizeTutorOutput("The chain rule. No tool returned an error.")).toBe("The chain rule.");
+		expect(sanitizeTutorOutput("set_goal: Could not write the goal file.")).toBe("Could not write the goal file.");
+		expect(sanitizeTutorOutput("The quiz: try this axiom.")).toBe("The quiz: try this axiom.");
+		expect(learnerToolError("quiz: Waiting until they ask to study")).toBeNull();
+		expect(learnerToolError("set_goal: Could not write the goal file.")).toBe("Could not write the goal file.");
+		expect(isInternalToolReport("Waiting until they ask to study", "Not yet. quiz did not run.")).toBe(true);
+		expect(isInternalToolReport("Could not write the goal file.", "Could not write the goal file.")).toBe(false);
+	});
+
+	it("holds a gate split across tokens and emits ordinary prose immediately", () => {
+		const filter = new TutorTextFilter();
+		expect(filter.push("A limit")).toBe("A limit");
+		const held = new TutorTextFilter();
+		expect(held.push("quiz: Wait")).toBe("");
+		expect(held.push("ing until they ask to study")).toBe("");
+		expect(held.flush()).toBe("");
+		const phrase = new TutorTextFilter();
+		expect(phrase.push("The chain rule. No tool ret")).toBe("The chain rule.");
+		expect(phrase.push("urned an error.")).toBe("");
+		expect(phrase.flush()).toBe("");
+		const word = new TutorTextFilter();
+		expect(word.push("The answer is No")).toBe("The answer is");
+		expect(word.flush()).toBe(" No");
 	});
 });

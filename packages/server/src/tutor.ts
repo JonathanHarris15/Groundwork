@@ -15,7 +15,9 @@ import {
 	tutorDecision,
 	tutorStatus,
 	upstreamErrorMessage,
+	sanitizeTutorOutput,
 	tutorEventLine,
+	TutorTextFilter,
 	usageFeatureFromClient,
 	type AccountView,
 	type ContentBlock,
@@ -202,7 +204,7 @@ async function settleTutor(ctx: TutorCallContext, body: unknown, ready: ReadyTut
 	return {
 		status: 200,
 		json: {
-			content: result.content,
+			content: sanitizeTutorContent(result.content),
 			stopReason: result.stopReason,
 			usage: result.usage,
 			budgetUsed: shown.budgetUsed,
@@ -229,11 +231,20 @@ async function pipeAnthropic(
 	if (signal.aborted) upstreamAbort.abort();
 	else signal.addEventListener("abort", onAbort, { once: true });
 	const parser = new AnthropicEventParser();
+	const spoken = new TutorTextFilter();
 	let result: UpstreamResult | null = null;
 	let failed: string | null = null;
+	const writeText = (text: string) => {
+		const clean = spoken.push(text);
+		if (clean && !signal.aborted) write(tutorEventLine({ type: "text", text: clean }));
+	};
+	const flushText = () => {
+		const clean = spoken.flush();
+		if (clean && !signal.aborted) write(tutorEventLine({ type: "text", text: clean }));
+	};
 	const take = (chunk: string) => {
 		for (const event of parser.push(chunk)) {
-			if (event.type === "text" && event.text) write(tutorEventLine({ type: "text", text: event.text }));
+			if (event.type === "text" && event.text) writeText(event.text);
 			else if (event.type === "error") failed = event.message;
 			else if (event.type === "done") result = event.result;
 		}
@@ -257,11 +268,12 @@ async function pipeAnthropic(
 	}
 	if (!result) {
 		for (const event of parser.finish()) {
-			if (event.type === "text" && event.text && !signal.aborted) write(tutorEventLine({ type: "text", text: event.text }));
+			if (event.type === "text" && event.text) writeText(event.text);
 			else if (event.type === "done") result = event.result;
 			else if (event.type === "error") failed = event.message;
 		}
 	}
+	flushText();
 	if (!result) {
 		if (!signal.aborted) write(tutorEventLine({ type: "error", error: upstreamErrorMessage({ error: failed || "The model provider returned nothing." }, [ready.apiKey]), status: 502 }));
 		return;
@@ -285,6 +297,14 @@ function freeHostedUpgrade(
 		return { status: 402, json: { error: HEAVY_UPGRADE_ERROR, code: HEAVY_REQUIRES_UPGRADE } };
 	}
 	return null;
+}
+
+function sanitizeTutorContent(content: ContentBlock[]): ContentBlock[] {
+	return content.map((block) => {
+		if (block.type !== "text" || typeof block.text !== "string") return block;
+		const text = sanitizeTutorOutput(block.text);
+		return text === block.text ? block : { ...block, text };
+	});
 }
 
 function featureOf(body: unknown): unknown {
