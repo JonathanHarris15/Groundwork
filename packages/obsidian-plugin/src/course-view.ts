@@ -27,24 +27,12 @@ export function courseSnippet(course: CourseView | null | undefined): CourseSnip
 
 export function appendCourseDetail(parent: HTMLElement, course: CourseSnippet | undefined): void {
 	if (!course) return;
-	const block = document.createElement("div");
-	block.className = "gw-concept-course";
+	const block = parent.createDiv({ cls: "gw-concept-course" });
 	if (course.conflict || course.preferred) {
-		const method = document.createElement("p");
-		method.className = "gw-course-method";
-		method.textContent = course.conflict ?? `Preferred method: ${course.preferred}`;
-		block.append(method);
+		block.createEl("p", { cls: "gw-course-method", text: course.conflict ?? `Preferred method: ${course.preferred}` });
 	}
 	if (course.quote) {
-		const quote = document.createElement("blockquote");
-		quote.className = "gw-course-quote";
-		quote.textContent = course.quote;
-		if (course.where) {
-			const cite = document.createElement("cite");
-			cite.textContent = course.where;
-			quote.append(cite);
-		}
-		block.append(quote);
+		const quote = block.createEl("blockquote", { cls: "gw-course-quote", text: course.quote });
+		if (course.where) quote.createEl("cite", { text: course.where });
 	}
-	parent.append(block);
 }

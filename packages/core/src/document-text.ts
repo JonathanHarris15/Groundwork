@@ -84,7 +84,7 @@ export function chunkLectureText(text: string, maxChars = LECTURE_CHUNK_CHARS): 
 /** Literal strings in an uncompressed PDF. Compressed streams need extractPdfPages. */
 export function extractPdfText(bytes: Uint8Array): string {
 	let raw = "";
-	for (let i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]!);
+	for (const byte of bytes) raw += String.fromCharCode(byte);
 	const chunks: string[] = [];
 	const re = /\((?:\\.|[^\\)])*\)/g;
 	let match: RegExpExecArray | null;

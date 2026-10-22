@@ -1491,7 +1491,7 @@ export class KnowledgeStore {
 				const text = excerpt.sourceText?.trim() || (await vaultFileText(this.context, path));
 				add({ path, name: path.split("/").pop() ?? path, text });
 			} else if (!path && excerpt.sourceText?.trim() && !docs.some((doc) => doc.text === excerpt.sourceText)) {
-				const name = (excerpt.provenance || "course").split(",")[0]!.trim() || "course";
+				const name = (excerpt.provenance || "course").split(",")[0]?.trim() || "course";
 				add({ path: name, name, text: excerpt.sourceText });
 			}
 		}

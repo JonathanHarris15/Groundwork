@@ -25,6 +25,22 @@ if (view && NodeRef && Doc) {
 	view.createEl = make;
 	view.createDiv = (opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => make("div", opts);
 	view.createSpan = (opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => make("span", opts);
+	const proto = globalThis.HTMLElement?.prototype as HTMLElement & {
+		createEl?: (tag: string, opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => HTMLElement;
+		createDiv?: (opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => HTMLElement;
+	};
+	if (proto && !proto.createEl) {
+		proto.createEl = function createEl(tag: string, opts?: { cls?: string; text?: string; attr?: Record<string, string> }) {
+			const el = make(tag, opts);
+			this.append(el);
+			return el;
+		};
+	}
+	if (proto && !proto.createDiv) {
+		proto.createDiv = function createDiv(opts?: { cls?: string; text?: string; attr?: Record<string, string> }) {
+			return this.createEl("div", opts);
+		};
+	}
 	view.createSvg = (tag: string) => view.document.createElementNS("http://www.w3.org/2000/svg", tag);
 	view.createFragment = () => view.document.createDocumentFragment();
 }

@@ -176,8 +176,10 @@ export function mergeCourseInputs(left?: CourseInput, right?: CourseInput): Cour
 	const conflicts = [left?.methodConflict, right?.methodConflict].filter((item): item is string => !!item?.trim());
 	let methodConflict = conflicts.join(" ");
 	let preferredMethod: string | undefined = preferred[0];
-	if (preferred.length > 1 && !methodsAgree(preferred[0]!, preferred[1]!)) {
-		methodConflict = methodConflict || conflictLine(preferred[0]!, preferred[1]!);
+	const first = preferred[0];
+	const second = preferred[1];
+	if (first && second && !methodsAgree(first, second)) {
+		methodConflict = methodConflict || conflictLine(first, second);
 		preferredMethod = undefined;
 		for (const item of preferred) if (!alternates.includes(item)) alternates.push(item);
 	} else if (preferred.length > 1) {
@@ -362,7 +364,8 @@ function mergeMethods(left: CourseMethod, right: CourseMethod): CourseMethod {
 		if (!unique.some((have) => methodsAgree(have, item))) unique.push(item);
 		else {
 			const index = unique.findIndex((have) => methodsAgree(have, item));
-			if (index >= 0 && item.length > unique[index]!.length) unique[index] = item;
+			const have = unique[index];
+			if (have && item.length > have.length) unique[index] = item;
 		}
 	}
 	const alternates = dedupeLines([...(left.alternates ?? []), ...(right.alternates ?? [])]);
@@ -372,7 +375,7 @@ function mergeMethods(left: CourseMethod, right: CourseMethod): CourseMethod {
 		for (const item of statements) if (!alternates.includes(item)) alternates.push(item);
 		return {
 			alternates,
-			conflict: conflicts[0] || (statements.length >= 2 ? conflictLine(statements[0]!, statements[1]!) : conflicts[0]),
+			conflict: conflicts[0] || (statements[0] && statements[1] ? conflictLine(statements[0], statements[1]) : conflicts[0]),
 		};
 	}
 	const chosen = unique[0];
@@ -414,10 +417,12 @@ function methodsFromDocs(title: string, docs: SourceDoc[], _excerpts: CourseExce
 		alternates.push(...scanned.alternates);
 	}
 	const uniquePreferred = dedupeLines(preferred);
-	if (uniquePreferred.length > 1 && !methodsAgree(uniquePreferred[0]!, uniquePreferred[1]!)) {
+	const firstPreferred = uniquePreferred[0];
+	const secondPreferred = uniquePreferred[1];
+	if (firstPreferred && secondPreferred && !methodsAgree(firstPreferred, secondPreferred)) {
 		return {
 			alternates: dedupeLines([...alternates, ...uniquePreferred]),
-			conflict: conflictLine(uniquePreferred[0]!, uniquePreferred[1]!),
+			conflict: conflictLine(firstPreferred, secondPreferred),
 		};
 	}
 	return { preferred: uniquePreferred[0], alternates: dedupeLines(alternates) };
