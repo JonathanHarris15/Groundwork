@@ -4,7 +4,8 @@
  * ASCII diagram where a figure should have been.
  */
 
-import { declinesQuizNow, requestsGoal, statesLearningObjective, visibleAsk } from "./intent";
+import type { ChatMessage } from "./agent/types";
+import { declinesQuizNow, dialogueFromMessages, requestsGoal, statesLearningObjective, visibleAsk } from "./intent";
 
 const QUESTION_TOOLS = new Set(["quiz", "ask_user", "practice_test"]);
 
@@ -25,8 +26,36 @@ export function inventsAppBehavior(text: string): boolean {
 		/\b(?:study|quiz) trigger\b/i.test(text) ||
 		/\b(?:reply|say|type)\s+["']?start["']?\b/i.test(text) ||
 		/\bdid(?:n't| not) (?:pop up|load|appear) because\b/i.test(text) ||
-		/\bunlock\b.{0,40}\b(?:features|quizzes|quiz|goal)\b/i.test(text)
+		/\bunlock\b.{0,40}\b(?:features|quizzes|quiz|goal)\b/i.test(text) ||
+		/\btools did not load\b/i.test(text) ||
+		/\bdid not load properly\b/i.test(text) ||
+		/\bregistering the actions\b/i.test(text) ||
+		/\bdatabase tools\b/i.test(text) ||
+		/\binitialize the database\b/i.test(text) ||
+		/\b(?:send|reply|say|type)\b[^.]{0,80}\bready to start\b/i.test(text)
 	);
+}
+
+/** What the learner sees when a reply invents a tool failure and no tool ran. */
+export const PLAIN_NO_TOOL_ERROR = "No tool returned an error.";
+
+/** A learner asked for a goal or named an objective in this transcript. */
+export function goalAsked(messages: ChatMessage[]): boolean {
+	return dialogueFromMessages(messages).some((turn) => turn.role === "user" && (requestsGoal(turn.text) || statesLearningObjective(turn.text)));
+}
+
+/** True when a set_goal result in this transcript was not an error. */
+export function setGoalSucceeded(messages: ChatMessage[]): boolean {
+	const ids = new Set<string>();
+	let ok = false;
+	for (const message of messages) {
+		if (!Array.isArray(message.content)) continue;
+		for (const block of message.content) {
+			if (block.type === "tool_use" && block.name === "set_goal" && block.id) ids.add(block.id);
+			if (block.type === "tool_result" && block.tool_use_id && ids.has(block.tool_use_id) && !block.is_error) ok = true;
+		}
+	}
+	return ok;
 }
 
 /** The reply says a goal was saved. Past tense, not the offer to set one up. */
@@ -41,11 +70,40 @@ export function claimsGoalSaved(text: string): boolean {
 
 export const UNSAVED_GOAL_LINE = "The goal is not saved yet.";
 
-/** The learner was told a goal exists, or they asked for one, and set_goal did not succeed. */
-export function needsUnsavedGoalCorrection(input: { userText: string; assistantText: string; calledGoal: boolean }): boolean {
-	if (input.calledGoal) return false;
-	if (input.assistantText.includes(UNSAVED_GOAL_LINE)) return false;
-	return claimsGoalSaved(input.assistantText) || requestsGoal(input.userText);
+export interface TurnCorrection {
+	userText: string;
+	assistantText: string;
+	calledGoal: boolean;
+	/** A goal was requested earlier and set_goal has not succeeded in this transcript. */
+	goalPending?: boolean;
+	/** Tool error lines from this turn, already phrased for the learner. */
+	toolErrors?: string[];
+	/** A tool was invoked this turn, including one that returned an error. */
+	toolsRan?: boolean;
+}
+
+/** The learner was told a goal exists, or they asked for one, and set_goal did not succeed. Also true when the reply invents a tool failure. */
+export function needsUnsavedGoalCorrection(input: TurnCorrection): boolean {
+	return learnerFacingCorrection(input) !== null;
+}
+
+/** Plain text appended when the reply claims a save, invents a tool failure, or hides a tool error. */
+export function learnerFacingCorrection(input: TurnCorrection): string | null {
+	const parts: string[] = [];
+	const errors = (input.toolErrors ?? []).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+	if (errors.length) {
+		for (const error of errors) {
+			if (!input.assistantText.includes(error)) parts.push(error);
+		}
+	} else if (inventsAppBehavior(input.assistantText) && !input.toolsRan && !input.calledGoal && !input.assistantText.includes(PLAIN_NO_TOOL_ERROR)) {
+		parts.push(PLAIN_NO_TOOL_ERROR);
+	}
+	const unsaved =
+		!input.calledGoal &&
+		!input.assistantText.includes(UNSAVED_GOAL_LINE) &&
+		(claimsGoalSaved(input.assistantText) || requestsGoal(input.userText) || !!input.goalPending);
+	if (unsaved) parts.push(UNSAVED_GOAL_LINE);
+	return parts.length ? parts.join(" ") : null;
 }
 
 /** They asked permission to study or to make a goal, instead of starting. */
@@ -115,20 +173,27 @@ export function repairNote(input: {
 	calledQuestion: boolean;
 	calledGoal: boolean;
 	calledFigure?: boolean;
+	goalPending?: boolean;
+	quizOff?: boolean;
+	toolErrors?: string[];
 }): string | null {
 	const user = visibleAsk(input.userText);
 	const objective = statesLearningObjective(user);
 	const goalRequest = requestsGoal(user);
-	const postpone = declinesQuizNow(user);
+	const postpone = declinesQuizNow(user) || !!input.quizOff;
 	const bulk = /<bulk_goal\b/.test(input.userText);
 	const invented = inventsAppBehavior(input.assistantText);
 	const claimed = claimsGoalSaved(input.assistantText);
 	const gated = objective && asksToConfirmStudy(input.assistantText);
 	const spoken = stripStudyOffer(input.assistantText);
+	const errors = (input.toolErrors ?? []).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
 	const lines: string[] = [];
 	if (invented) {
+		const cause = errors.length
+			? `The tool error was: ${errors.join(" ")} Repeat that error in one sentence and add no other cause.`
+			: "No tool returned an error. Say that, and do not invent a cause.";
 		lines.push(
-			"You invented a rule about how the app works. There is no confirmation step, no Start reply, and nothing that waits to finalize a goal. Do not explain the app. If a card or goal did not appear, call the tool again. If it still fails, say it did not load.",
+			`You invented a rule about how the app works. There is no confirmation step, no Start reply, nothing that waits to finalize a goal, and nothing that registers actions or initializes database tools. Do not explain the app. Do not say the tools failed to load. ${cause}`,
 		);
 	}
 	if ((goalRequest || objective) && asksToConfirmStudy(input.assistantText)) {
@@ -145,12 +210,12 @@ export function repairNote(input: {
 			"Call quiz for a graded question, or ask_user when there is no right answer. The card is the question. Do not ask permission first, and do not describe the card in prose.",
 		);
 	}
-	if (!input.calledGoal && !bulk && (goalRequest || claimed || objective)) {
+	if (!input.calledGoal && !bulk && (goalRequest || claimed || objective || input.goalPending)) {
 		if (postpone) {
 			lines.push(
 				"Call set_goal on this turn. Pass due as YYYY-MM-DD for the date they named. Do not call quiz. Do not ask permission again. Do not tell them the goal is saved until set_goal succeeds. Do not ask them to reply Start.",
 			);
-		} else if (!objective && !goalRequest) {
+		} else if (!objective && !goalRequest && !input.goalPending) {
 			lines.push("You said a goal was saved, but set_goal did not succeed. They did not ask for a goal. Tell them it is not saved. Do not call set_goal.");
 		} else {
 			lines.push(

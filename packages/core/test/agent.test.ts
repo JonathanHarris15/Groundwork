@@ -3,7 +3,7 @@ import { AgentSession } from "../src/agent/loop";
 import { DemoProvider } from "../src/agent/demo";
 import type { AgentEvent, ChatMessage, Provider } from "../src/agent/types";
 import { STUDY_FOLLOW_UP } from "../src/intent";
-import { UNSAVED_GOAL_LINE } from "../src/turn-repair";
+import { PLAIN_NO_TOOL_ERROR, UNSAVED_GOAL_LINE } from "../src/turn-repair";
 import { toBoard } from "../../obsidian-plugin/src/goal-board";
 import { MemoryVaultIO } from "../src/io";
 import type { TestReport } from "../src/practice";
@@ -427,6 +427,79 @@ describe("AgentSession with the demo tutor", () => {
 		expect(quizzed).toEqual([]);
 		expect(events.some((e) => e.type === "tool_end" && e.name === "quiz" && e.isError)).toBe(true);
 		expect((await store.goals())[0]?.due).toBe("2026-10-28");
+	});
+
+	it("saves the goal on Start after a made-up tool registration failure", async () => {
+		const bedtime = "Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight. I am going to bed";
+		const invention =
+			"It looks like the tools did not load properly due to an issue registering the actions. Since the system isn't letting me initialize the database tools right now, I have saved our full study plan in chat history. send I'm ready to start studying the slides";
+		const quizzed: string[] = [];
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				const last = messageText(req.messages[req.messages.length - 1]!);
+				const learner = [...req.messages].reverse().find((message) => {
+					if (message.role !== "user") return false;
+					if (Array.isArray(message.content) && message.content.some((block) => block.type === "tool_result")) return false;
+					return !/<tutor_repair>/.test(messageText(message));
+				});
+				const ask = learner ? messageText(learner) : "";
+				if (/"goal": "Limits"|Saved goal/.test(last)) {
+					const reply = "The goal is saved.";
+					req.onText(reply);
+					return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+				}
+				if (ask.trim() === "Start") {
+					if (/tutor_repair/.test(last)) {
+						expect(last).toContain("Call set_goal");
+						expect(last).toContain("Do not call quiz");
+						expect(last).toContain("No tool returned an error");
+						expect(last).not.toContain("did not load");
+						return {
+							content: [{ type: "tool_use" as const, id: "g1", name: "set_goal", input: { title: "Limits", targets: ["Limit"], nodes: [{ title: "Limit" }] } }],
+							stopReason: "tool_use" as const,
+						};
+					}
+					req.onText(invention);
+					return { content: [{ type: "text" as const, text: invention }], stopReason: "end_turn" as const };
+				}
+				req.onText(invention);
+				return { content: [{ type: "text" as const, text: invention }], stopReason: "end_turn" as const };
+			},
+		};
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			messages: [
+				{ role: "user", content: "put together a study guide for limits" },
+				{ role: "assistant", content: `Here is the guide.\n\n${STUDY_FOLLOW_UP}` },
+			],
+			ui: {
+				async quiz(q) {
+					quizzed.push(q.question);
+					return null;
+				},
+				async ask() {
+					return null;
+				},
+			},
+			session: { id: "hosted" },
+		});
+		const events: AgentEvent[] = [];
+		await agent.send(bedtime, (e) => events.push(e));
+		expect(await store.goals()).toEqual([]);
+		const spoken = events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("");
+		expect(spoken).toContain(PLAIN_NO_TOOL_ERROR);
+		expect(spoken).toContain(UNSAVED_GOAL_LINE);
+		await agent.send("Start", (e) => events.push(e));
+		expect(quizzed).toEqual([]);
+		expect((await store.goals()).map((goal) => goal.title)).toEqual(["Limits"]);
+		expect((await store.goals())[0]?.due).toBe("2026-10-28");
+		expect(events.some((e) => e.type === "tool_end" && e.name === "set_goal" && !e.isError)).toBe(true);
 	});
 
 	it("corrects a claimed goal when set_goal never succeeds", async () => {

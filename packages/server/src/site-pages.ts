@@ -353,7 +353,7 @@ const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
 		version: "0.2.16",
 		date: "2026-10-22",
-		body: "Saying yes to a goal saves it on that turn, including the due date, even when you are not quizzing tonight.",
+		body: "Saying yes to a goal saves it on that turn, including the due date, even when you are not quizzing tonight. A tool error is repeated as it happened.",
 	},
 	{
 		version: "0.2.15",
