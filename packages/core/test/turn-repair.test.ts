@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcesQuestion, asciiDiagram, inventsAppBehavior, repairNote } from "../src/turn-repair";
+import { announcesQuestion, asciiDiagram, claimsGoalSaved, inventsAppBehavior, needsUnsavedGoalCorrection, repairNote, UNSAVED_GOAL_LINE } from "../src/turn-repair";
 
 describe("announced questions", () => {
 	const announced = [
@@ -69,6 +69,64 @@ describe("announced questions", () => {
 		).toBeNull();
 	});
 
+	it("saves the goal and skips the quiz when they accept a goal and go to bed", () => {
+		const user = "Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight. I am going to bed";
+		const invented = "Goodnight. The first concept is Limit. I've set this up as a goal. The system waits for a ready to study/quiz trigger to finalize the goal. Reply Start when you want me to save it.";
+		expect(inventsAppBehavior(invented)).toBe(true);
+		expect(claimsGoalSaved(invented)).toBe(true);
+		expect(claimsGoalSaved("Want me to set this up as a goal and quiz you on it?")).toBe(false);
+		const note = repairNote({ userText: user, assistantText: invented, calledQuestion: false, calledGoal: false });
+		expect(note).toContain("Call set_goal");
+		expect(note).toContain("YYYY-MM-DD");
+		expect(note).toContain("Do not call quiz");
+		expect(note).toContain("Do not ask permission again");
+		expect(note).toContain("No tool returned an error");
+		expect(note).not.toContain("did not load");
+		expect(note).not.toContain("A goal and a quiz go together");
+		expect(
+			repairNote({
+				userText: user,
+				assistantText: "Goodnight.",
+				calledQuestion: false,
+				calledGoal: true,
+			}),
+		).toBeNull();
+		expect(needsUnsavedGoalCorrection({ userText: user, assistantText: invented, calledGoal: false })).toBe(true);
+		expect(needsUnsavedGoalCorrection({ userText: user, assistantText: invented, calledGoal: true })).toBe(false);
+		expect(UNSAVED_GOAL_LINE).toBe("The goal is not saved yet.");
+	});
+
+	it("treats a made-up tool registration failure as an invention and repeats a real tool error", () => {
+		const quote =
+			"It looks like the tools did not load properly due to an issue registering the actions. Since the system isn't letting me initialize the database tools right now, I have saved our full study plan in chat history. send I'm ready to start studying the slides";
+		expect(inventsAppBehavior(quote)).toBe(true);
+		expect(inventsAppBehavior("The chain rule multiplies rates.")).toBe(false);
+		const pending = repairNote({
+			userText: "Start",
+			assistantText: quote,
+			calledQuestion: false,
+			calledGoal: false,
+			goalPending: true,
+			quizOff: true,
+		});
+		expect(pending).toContain("Call set_goal");
+		expect(pending).toContain("Do not call quiz");
+		expect(pending).toContain("No tool returned an error");
+		expect(pending).not.toContain("did not load");
+		const reported = repairNote({
+			userText: "Start",
+			assistantText: quote,
+			calledQuestion: false,
+			calledGoal: false,
+			goalPending: true,
+			quizOff: true,
+			toolErrors: ["set_goal: Could not write the goal file."],
+		});
+		expect(reported).toContain("set_goal: Could not write the goal file.");
+		expect(reported).not.toContain("No tool returned an error");
+		expect(needsUnsavedGoalCorrection({ userText: "Start", assistantText: quote, calledGoal: false, goalPending: true })).toBe(true);
+	});
+
 	it("repairs an invented confirmation gate into a goal and a quiz", () => {
 		const apology =
 			"Ah! My apologies—the interactive quiz card didn't pop up because our system requires a formal confirmation step before it can initialize the goal tracker and start launching interactive quizzes. Do you want to study this or make a goal for it?";
@@ -80,7 +138,8 @@ describe("announced questions", () => {
 			calledQuestion: false,
 			calledGoal: false,
 		});
-		expect(note).toContain("did not load");
+		expect(note).toContain("No tool returned an error");
+		expect(note).not.toContain("did not load");
 		expect(note).toContain("Call quiz");
 		expect(note).toContain("Call set_goal");
 		expect(note).toContain("Do not ask whether to study or make a goal");

@@ -358,7 +358,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal. Only after they opt in to study, including when they state an objective (a homework, an exam, a skill, or that they want to be able to do something). Call it on that turn, and start a quiz in the same turn. Do not ask permission first. A goal and studying are one effort. A goal is its targets: concepts not yet built. The title may name a course, exam, or document. targets and nodes are reusable ideas, never a file. Pass sources for the vault files. nodes are the targets plus foundations, direct prerequisites only. due is YYYY-MM-DD; omit it and a new goal is due in 14 days. weights are percents. Concepts they already hold are stored as built. Returns open targets, built, the frontier, and a mermaid map.",
+			"Save a learning goal and pin it. Call it on the turn they ask for a goal, including when they name a due date and say they will not quiz yet. Do not wait for a quiz, a Start reply, or another confirmation. Start a quiz in the same turn only when they are studying now. Do not ask permission first. Do not say the goal is saved until this call succeeds. A goal is its targets: concepts not yet built. The title may name a course, exam, or document. targets and nodes are reusable ideas, never a file. Pass sources for the vault files. nodes are the targets plus foundations, direct prerequisites only. due is YYYY-MM-DD when they name a day, such as an exam date; omit it and a new goal is due in 14 days. weights are percents. Concepts they already hold are stored as built. Returns open targets, built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -409,6 +409,7 @@ export const TOOLS: ToolDef[] = [
 		},
 		async run(input: GoalInput, { store, ui }) {
 			const r = await store.setGoal(input);
+			if (r.goal.status === "active") await store.setWorkingGoal(r.goal.title);
 			ui?.focusGoal?.((await store.workingGoal())?.title ?? null);
 			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			return {
@@ -543,7 +544,7 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Do not ask in a Quick Check callout or leave a question for the chat. An open answer uses format free. When there are options, use choice. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again or say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. A free-response reference answer gets that same model check. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
+			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Do not ask in a Quick Check callout or leave a question for the chat. An open answer uses format free. When there are options, use choice. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again. If the tool returns an error, repeat that error. Do not say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. A free-response reference answer gets that same model check. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session, grader, keyVerifier, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };

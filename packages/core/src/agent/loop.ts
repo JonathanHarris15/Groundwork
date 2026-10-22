@@ -2,8 +2,8 @@ import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthro
 import { compactTutorHistory } from "../account/history-budget";
 import { holdsFixturePrefix, isGarbageReply, LOST_REPLY, scrubLearnerText } from "../learner-text";
 import type { FolderAccess } from "../access";
-import { dialogueFromMessages, studyToolBlock, visibleAsk } from "../intent";
-import { isQuestionTool, repairNote } from "../turn-repair";
+import { dialogueFromMessages, quizDeclined, studyToolBlock, visibleAsk, withLearnerDue } from "../intent";
+import { goalAsked, isQuestionTool, learnerFacingCorrection, repairNote, setGoalSucceeded } from "../turn-repair";
 import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
@@ -78,6 +78,8 @@ export class AgentSession implements TutorSession {
 		let calledQuestion = false;
 		let calledGoal = false;
 		let calledFigure = false;
+		let toolsRan = false;
+		const toolErrors: string[] = [];
 		for (let step = 0; step < maxSteps; step++) {
 			if (signal?.aborted) return;
 			const force = forcingAnswer(step, maxSteps);
@@ -107,10 +109,11 @@ export class AgentSession implements TutorSession {
 			this.messages.push({ role: "assistant", content: presentAssistant(res.content) });
 
 			if (!uses.length) {
-				if (!repaired && this.repairTurn(turnAt, calledQuestion, calledGoal, calledFigure)) {
+				if (!repaired && this.repairTurn(turnAt, calledQuestion, calledGoal, calledFigure, toolErrors)) {
 					repaired = true;
 					continue;
 				}
+				this.correctUnsavedGoal(onEvent, turnAt, calledGoal, toolsRan, toolErrors);
 				return;
 			}
 
@@ -142,7 +145,7 @@ export class AgentSession implements TutorSession {
 				} else {
 					try {
 						if (!tool) throw new Error(`Unknown tool ${use.name}`);
-						const r = await tool.run(toolArguments(use.input), {
+						const r = await tool.run(withLearnerDue(use.name, toolArguments(use.input), dialogue), {
 							store: this.opts.store,
 							ui: this.opts.ui,
 							session: this.opts.session,
@@ -168,6 +171,8 @@ export class AgentSession implements TutorSession {
 					const warning = research.warning(use.name, use.input);
 					if (warning && !isError) text += `\n\n${warning}`;
 				}
+				toolsRan = true;
+				if (isError) toolErrors.push(reportedToolError(use.name, summary, text));
 				if (!isError && isQuestionTool(use.name)) calledQuestion = true;
 				if (!isError && use.name === "set_goal") calledGoal = true;
 				if (!isError && use.name === "show_figure") calledFigure = true;
@@ -220,15 +225,40 @@ export class AgentSession implements TutorSession {
 		onEvent({ type: "continue_offer", text: unfinished.note });
 	}
 
-	/** One follow-up when the model announced a question, skipped a stated objective, or drew ASCII. */
-	private repairTurn(turnAt: number, calledQuestion: boolean, calledGoal: boolean, calledFigure: boolean): boolean {
+	/** A claim that the goal was saved, with no successful set_goal, is replaced with the truth. An invented tool failure is replaced with the tool's error, or with the fact that no tool ran. */
+	private correctUnsavedGoal(onEvent: (e: AgentEvent) => void, turnAt: number, calledGoal: boolean, toolsRan: boolean, toolErrors: string[]): void {
 		const user = this.messages[turnAt - 1];
+		const history = this.messages.slice(0, turnAt);
+		const assistantText = assistantTextSince(this.messages, turnAt);
+		const correction = learnerFacingCorrection({
+			userText: user ? messageText(user) : "",
+			assistantText,
+			calledGoal,
+			goalPending: goalAsked(history) && !setGoalSucceeded(history),
+			toolErrors,
+			toolsRan,
+		});
+		if (!correction) return;
+		const line = `\n\n${correction}`;
+		onEvent({ type: "text_delta", text: line });
+		const last = this.messages[this.messages.length - 1];
+		if (last?.role === "assistant" && Array.isArray(last.content)) last.content.push({ type: "text", text: line });
+		else this.messages.push({ role: "assistant", content: [{ type: "text", text: correction }] });
+	}
+
+	/** One follow-up when the model announced a question, skipped a stated objective, or drew ASCII. */
+	private repairTurn(turnAt: number, calledQuestion: boolean, calledGoal: boolean, calledFigure: boolean, toolErrors: string[]): boolean {
+		const user = this.messages[turnAt - 1];
+		const history = this.messages.slice(0, turnAt);
 		const note = repairNote({
 			userText: user ? messageText(user) : "",
 			assistantText: assistantTextSince(this.messages, turnAt),
 			calledQuestion,
 			calledGoal,
 			calledFigure,
+			goalPending: goalAsked(history) && !setGoalSucceeded(history),
+			quizOff: quizDeclined(dialogueFromMessages(history)),
+			toolErrors,
 		});
 		if (!note) return false;
 		this.messages.push({ role: "user", content: [{ type: "text", text: note }] });
@@ -318,6 +348,13 @@ function presentAssistant(content: ContentBlock[]): ContentBlock[] {
 		const text = scrubLearnerText(block.text);
 		return text === block.text ? block : { type: "text", text };
 	});
+}
+
+/** A tool failure in one line, named, without the note meant for the model. */
+function reportedToolError(name: string, summary: string | undefined, text: string): string {
+	const detail = (summary || text).replace(/\s+/g, " ").trim();
+	const clip = detail.length > 180 ? `${detail.slice(0, 180)}…` : detail;
+	return `${name}: ${clip}`;
 }
 
 export function errorMessage(err: unknown): string {

@@ -12,8 +12,8 @@ import type { SessionInfo, ToolContext, ToolDef, ToolResult, ToolUI } from "../t
 import type { AgentEvent, TutorSession, TutorTurnContext } from "../agent/types";
 import { plainTutorError } from "../account/anthropic-messages";
 import { errorMessage } from "../agent/loop";
-import { studyToolBlock, type DialogueTurn } from "../intent";
-import { isQuestionTool, repairNote } from "../turn-repair";
+import { quizDeclined, requestsGoal, statesLearningObjective, studyToolBlock, withLearnerDue, type DialogueTurn } from "../intent";
+import { isQuestionTool, learnerFacingCorrection, repairNote } from "../turn-repair";
 import { guiPathDirs, withGuiPath } from "./env";
 import { pdfLayout, type PdfLayout } from "./pdf-parts";
 
@@ -153,6 +153,9 @@ export class ClaudeCodeSession implements TutorSession {
 	private calledQuestion = false;
 	private calledGoal = false;
 	private calledFigure = false;
+	private goalSaved = false;
+	private toolsRan = false;
+	private toolErrors: string[] = [];
 	private turnUserText = "";
 	private turnContext: TutorTurnContext | null = null;
 	/** System text the live Claude Code process was started with. */
@@ -181,6 +184,8 @@ export class ClaudeCodeSession implements TutorSession {
 		this.calledQuestion = false;
 		this.calledGoal = false;
 		this.calledFigure = false;
+		this.toolsRan = false;
+		this.toolErrors = [];
 		this.turnUserText = text;
 		this.dialogue.push({ role: "user", text });
 		const onAbort = () => this.interrupt();
@@ -230,11 +235,36 @@ export class ClaudeCodeSession implements TutorSession {
 			calledQuestion: this.calledQuestion,
 			calledGoal: this.calledGoal,
 			calledFigure: this.calledFigure,
+			goalPending: this.goalPending(),
+			quizOff: quizDeclined(this.dialogue),
+			toolErrors: this.toolErrors,
 		});
 		if (!note) return false;
 		this.repaired = true;
 		this.input.push({ type: "user", message: { role: "user", content: note }, parent_tool_use_id: null });
 		return true;
+	}
+
+	/** A claim that the goal was saved, with no successful set_goal, is replaced with the truth. */
+	private goalPending(): boolean {
+		if (this.goalSaved) return false;
+		return this.dialogue.some((turn) => turn.role === "user" && (requestsGoal(turn.text) || statesLearningObjective(turn.text)));
+	}
+
+	private correctUnsavedGoal(): void {
+		const assistant = [...this.dialogue].reverse().find((turn) => turn.role === "assistant");
+		const correction = learnerFacingCorrection({
+			userText: this.turnUserText,
+			assistantText: assistant?.text ?? "",
+			calledGoal: this.calledGoal,
+			goalPending: this.goalPending(),
+			toolErrors: this.toolErrors,
+			toolsRan: this.toolsRan,
+		});
+		if (!correction) return;
+		const line = `\n\n${correction}`;
+		this.noteAssistant(line);
+		this.emit?.({ type: "text_delta", text: line });
 	}
 
 	private async turn(text: string, files: VaultFile[] | undefined, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
@@ -272,6 +302,7 @@ export class ClaudeCodeSession implements TutorSession {
 				}
 				if (!msg.is_error) this.history = undefined;
 				if (!msg.is_error && !signal?.aborted && this.pushRepair()) continue;
+				if (!msg.is_error && !signal?.aborted) this.correctUnsavedGoal();
 				return;
 			}
 			if (this.handle(msg, onEvent, streamed, external)) reported = true;
@@ -379,7 +410,7 @@ export class ClaudeCodeSession implements TutorSession {
 			try {
 				if (!tool) throw new Error(`Unknown tool ${name}`);
 				const blocked = studyToolBlock(name, this.dialogue);
-				result = blocked ?? (await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader, keyVerifier: this.opts.keyVerifier, profile: this.turnContext?.profile, tutorContext: this.turnContext?.tutorContext }));
+				result = blocked ?? (await tool.run(withLearnerDue(name, input, this.dialogue), { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader, keyVerifier: this.opts.keyVerifier, profile: this.turnContext?.profile, tutorContext: this.turnContext?.tutorContext }));
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}
@@ -388,8 +419,16 @@ export class ClaudeCodeSession implements TutorSession {
 			const pointed = [...pointers.keys()].map((f) => basename(f.path));
 			const content = mcpContent(result.text, result.files, (f): McpContent[] | undefined => (pointers.has(f) ? [{ type: "text", text: pointers.get(f)! }] : undefined));
 			const summary = pointed.length && pointed.length === result.files?.length ? `Found ${pointed.join(", ")}` : result.summary;
+			this.toolsRan = true;
+			if (result.isError) {
+				const detail = (summary || result.text).replace(/\s+/g, " ").trim();
+				this.toolErrors.push(`${name}: ${detail.length > 180 ? `${detail.slice(0, 180)}…` : detail}`);
+			}
 			if (!result.isError && isQuestionTool(name)) this.calledQuestion = true;
-			if (!result.isError && name === "set_goal") this.calledGoal = true;
+			if (!result.isError && name === "set_goal") {
+				this.calledGoal = true;
+				this.goalSaved = true;
+			}
 			if (!result.isError && name === "show_figure") this.calledFigure = true;
 			emit?.({ type: "tool_end", id, name, summary, isError: !!result.isError, text: result.text });
 			return { content, isError: !!result.isError };
