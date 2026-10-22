@@ -1,6 +1,6 @@
 import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthropic, normalizeAnthropicMessages } from "../account/anthropic-messages";
 import { compactTutorHistory } from "../account/history-budget";
-import { holdsFixturePrefix, isGarbageReply, LOST_REPLY, scrubLearnerText } from "../learner-text";
+import { holdsFixturePrefix, isGarbageReply, isInternalToolReport, LOST_REPLY, sanitizeTutorOutput, scrubLearnerText, TutorTextFilter } from "../learner-text";
 import type { FolderAccess } from "../access";
 import { dialogueFromMessages, quizDeclined, studyToolBlock, visibleAsk, withLearnerDue } from "../intent";
 import { goalAsked, isQuestionTool, learnerFacingCorrection, repairNote, setGoalSucceeded } from "../turn-repair";
@@ -172,7 +172,7 @@ export class AgentSession implements TutorSession {
 					if (warning && !isError) text += `\n\n${warning}`;
 				}
 				toolsRan = true;
-				if (isError) toolErrors.push(reportedToolError(use.name, summary, text));
+				if (isError && !isInternalToolReport(summary, text)) toolErrors.push(reportedToolError(use.name, summary, text));
 				if (!isError && isQuestionTool(use.name)) calledQuestion = true;
 				if (!isError && use.name === "set_goal") calledGoal = true;
 				if (!isError && use.name === "show_figure") calledFigure = true;
@@ -238,12 +238,13 @@ export class AgentSession implements TutorSession {
 			toolErrors,
 			toolsRan,
 		});
-		if (!correction) return;
-		const line = `\n\n${correction}`;
+		const clean = correction ? sanitizeTutorOutput(correction).trim() : "";
+		if (!clean) return;
+		const line = `\n\n${clean}`;
 		onEvent({ type: "text_delta", text: line });
 		const last = this.messages[this.messages.length - 1];
 		if (last?.role === "assistant" && Array.isArray(last.content)) last.content.push({ type: "text", text: line });
-		else this.messages.push({ role: "assistant", content: [{ type: "text", text: correction }] });
+		else this.messages.push({ role: "assistant", content: [{ type: "text", text: clean }] });
 	}
 
 	/** One follow-up when the model announced a question, skipped a stated objective, or drew ASCII. */
@@ -298,23 +299,25 @@ export class AgentSession implements TutorSession {
 
 const BLANK_REPLY = "<tutor_repair>\nThat reply was empty. Continue this turn: answer the learner, or call the tool that does the next step. Do not stop yet.\n</tutor_repair>";
 
-/** Holds a reply that is still only a test id, so the learner never sees it. */
+/** Holds a reply that is still only a test id, and strips gate text from the stream. */
 class HeldSpeech {
 	private held = "";
 	private live = false;
+	private readonly filter = new TutorTextFilter();
 
 	constructor(private readonly emit: (text: string) => void) {}
 
 	push(delta: string): void {
 		if (!delta) return;
 		if (this.live) {
-			this.emit(delta);
+			const text = this.filter.push(delta);
+			if (text) this.emit(text);
 			return;
 		}
 		this.held += delta;
 		if (holdsFixturePrefix(this.held)) return;
 		this.live = true;
-		const text = scrubLearnerText(this.held);
+		const text = this.filter.push(this.held);
 		this.held = "";
 		if (text) this.emit(text);
 	}
@@ -322,14 +325,20 @@ class HeldSpeech {
 	discard(): void {
 		this.held = "";
 		this.live = false;
+		this.filter.flush();
 	}
 
 	flush(): void {
-		if (this.live) return;
-		const text = scrubLearnerText(this.held);
-		this.held = "";
-		if (!text || isGarbageReply(text)) return;
-		this.emit(text);
+		if (!this.live) {
+			const text = scrubLearnerText(this.held);
+			this.held = "";
+			if (!text || isGarbageReply(text)) return;
+			const cleaned = this.filter.push(text) + this.filter.flush();
+			if (cleaned) this.emit(cleaned);
+			return;
+		}
+		const tail = this.filter.flush();
+		if (tail) this.emit(tail);
 	}
 }
 

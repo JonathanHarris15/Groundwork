@@ -105,9 +105,47 @@ describe("AgentSession with the demo tutor", () => {
 		expect(events.some((e) => e.type === "tool_end" && e.name === "set_goal" && e.isError)).toBe(true);
 		expect(await store.goals()).toEqual([]);
 		expect(events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("")).toContain(STUDY_FOLLOW_UP);
+		expect(events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("")).not.toContain("Waiting until they ask to study");
 
 		await agent.send("yes", (e) => events.push(e));
 		expect((await store.goals()).map((g) => g.title)).toEqual(["Parabolas"]);
+	});
+
+	it("does not append a study gate after a lesson the learner has not opted into", async () => {
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		let calls = 0;
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				calls += 1;
+				if (calls === 1) {
+					return {
+						content: [
+							{ type: "tool_use" as const, id: "q1", name: "quiz", input: { question: "State additivity." } },
+							{ type: "tool_use" as const, id: "a1", name: "ask_user", input: { question: "Ready?" } },
+							{ type: "tool_use" as const, id: "q2", name: "quiz", input: { question: "State it again." } },
+						],
+						stopReason: "tool_use" as const,
+					};
+				}
+				const reply = "Probability is additive over disjoint events.\n\nquiz: Waiting until they ask to study ask_user: Waiting until they ask to study quiz: Waiting until they ask to study";
+				req.onText("Probability is additive over disjoint events.\n\nquiz: Wait");
+				req.onText("ing until they ask to study ask_user: Waiting until they ask to study quiz: Waiting until they ask to study");
+				return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+			},
+		};
+		const agent = new AgentSession({ provider, store, tools: TOOLS, system: buildSystemPrompt(), session: { id: "axioms" } });
+		const shown: string[] = [];
+		await agent.send("Explain the probability axioms. I am not studying yet.", (event) => {
+			if (event.type === "text_delta") shown.push(event.text);
+		});
+		const spoken = shown.join("");
+		expect(spoken).toContain("Probability is additive over disjoint events.");
+		expect(spoken).not.toContain("Waiting until they ask to study");
+		expect(spoken).not.toContain("No tool returned an error");
+		expect(spoken).not.toMatch(/(?:^|\s)(?:quiz|ask_user):\s/);
+		expect(JSON.stringify(agent.messages)).not.toContain("Waiting until they ask to study");
 	});
 
 	it("starts the goal and a quiz when the reply invented a confirmation gate", async () => {
@@ -455,7 +493,8 @@ describe("AgentSession with the demo tutor", () => {
 					if (/tutor_repair/.test(last)) {
 						expect(last).toContain("Call set_goal");
 						expect(last).toContain("Do not call quiz");
-						expect(last).toContain("No tool returned an error");
+						expect(last).toContain("No tool failed");
+						expect(last).not.toContain("No tool returned an error");
 						expect(last).not.toContain("did not load");
 						return {
 							content: [{ type: "tool_use" as const, id: "g1", name: "set_goal", input: { title: "Limits", targets: ["Limit"], nodes: [{ title: "Limit" }] } }],
@@ -493,7 +532,8 @@ describe("AgentSession with the demo tutor", () => {
 		await agent.send(bedtime, (e) => events.push(e));
 		expect(await store.goals()).toEqual([]);
 		const spoken = events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("");
-		expect(spoken).toContain(PLAIN_NO_TOOL_ERROR);
+		expect(spoken).not.toContain(PLAIN_NO_TOOL_ERROR);
+		expect(spoken).not.toContain("Waiting until they ask to study");
 		expect(spoken).toContain(UNSAVED_GOAL_LINE);
 		await agent.send("Start", (e) => events.push(e));
 		expect(quizzed).toEqual([]);

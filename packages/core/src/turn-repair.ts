@@ -6,6 +6,7 @@
 
 import type { ChatMessage } from "./agent/types";
 import { declinesQuizNow, dialogueFromMessages, requestsGoal, statesLearningObjective, visibleAsk } from "./intent";
+import { learnerToolError } from "./learner-text";
 
 const QUESTION_TOOLS = new Set(["quiz", "ask_user", "practice_test"]);
 
@@ -36,7 +37,10 @@ export function inventsAppBehavior(text: string): boolean {
 	);
 }
 
-/** What the learner sees when a reply invents a tool failure and no tool ran. */
+/**
+ * The old sentence a repair used to speak when no tool had failed.
+ * It is internal. Learner-visible text must not contain it.
+ */
 export const PLAIN_NO_TOOL_ERROR = "No tool returned an error.";
 
 /** A learner asked for a goal or named an objective in this transcript. */
@@ -90,13 +94,9 @@ export function needsUnsavedGoalCorrection(input: TurnCorrection): boolean {
 /** Plain text appended when the reply claims a save, invents a tool failure, or hides a tool error. */
 export function learnerFacingCorrection(input: TurnCorrection): string | null {
 	const parts: string[] = [];
-	const errors = (input.toolErrors ?? []).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
-	if (errors.length) {
-		for (const error of errors) {
-			if (!input.assistantText.includes(error)) parts.push(error);
-		}
-	} else if (inventsAppBehavior(input.assistantText) && !input.toolsRan && !input.calledGoal && !input.assistantText.includes(PLAIN_NO_TOOL_ERROR)) {
-		parts.push(PLAIN_NO_TOOL_ERROR);
+	const errors = (input.toolErrors ?? []).map((line) => learnerToolError(line)).filter((line): line is string => !!line);
+	for (const error of errors) {
+		if (!input.assistantText.includes(error)) parts.push(error);
 	}
 	const unsaved =
 		!input.calledGoal &&
@@ -186,12 +186,12 @@ export function repairNote(input: {
 	const claimed = claimsGoalSaved(input.assistantText);
 	const gated = objective && asksToConfirmStudy(input.assistantText);
 	const spoken = stripStudyOffer(input.assistantText);
-	const errors = (input.toolErrors ?? []).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+	const errors = (input.toolErrors ?? []).map((line) => line.replace(/\s+/g, " ").trim()).filter((line) => learnerToolError(line));
 	const lines: string[] = [];
 	if (invented) {
 		const cause = errors.length
 			? `The tool error was: ${errors.join(" ")} Repeat that error in one sentence and add no other cause.`
-			: "No tool returned an error. Say that, and do not invent a cause.";
+			: "No tool failed. Do not invent a failure, and do not mention tools.";
 		lines.push(
 			`You invented a rule about how the app works. There is no confirmation step, no Start reply, nothing that waits to finalize a goal, and nothing that registers actions or initializes database tools. Do not explain the app. Do not say the tools failed to load. ${cause}`,
 		);

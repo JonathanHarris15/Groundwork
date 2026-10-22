@@ -13,6 +13,7 @@ import type { AgentEvent, TutorSession, TutorTurnContext } from "../agent/types"
 import { plainTutorError } from "../account/anthropic-messages";
 import { errorMessage } from "../agent/loop";
 import { quizDeclined, requestsGoal, statesLearningObjective, studyToolBlock, withLearnerDue, type DialogueTurn } from "../intent";
+import { isInternalToolReport, sanitizeTutorOutput } from "../learner-text";
 import { isQuestionTool, learnerFacingCorrection, repairNote } from "../turn-repair";
 import { guiPathDirs, withGuiPath } from "./env";
 import { pdfLayout, type PdfLayout } from "./pdf-parts";
@@ -261,8 +262,9 @@ export class ClaudeCodeSession implements TutorSession {
 			toolErrors: this.toolErrors,
 			toolsRan: this.toolsRan,
 		});
-		if (!correction) return;
-		const line = `\n\n${correction}`;
+		const clean = correction ? sanitizeTutorOutput(correction).trim() : "";
+		if (!clean) return;
+		const line = `\n\n${clean}`;
 		this.noteAssistant(line);
 		this.emit?.({ type: "text_delta", text: line });
 	}
@@ -420,7 +422,7 @@ export class ClaudeCodeSession implements TutorSession {
 			const content = mcpContent(result.text, result.files, (f): McpContent[] | undefined => (pointers.has(f) ? [{ type: "text", text: pointers.get(f)! }] : undefined));
 			const summary = pointed.length && pointed.length === result.files?.length ? `Found ${pointed.join(", ")}` : result.summary;
 			this.toolsRan = true;
-			if (result.isError) {
+			if (result.isError && !isInternalToolReport(summary, result.text)) {
 				const detail = (summary || result.text).replace(/\s+/g, " ").trim();
 				this.toolErrors.push(`${name}: ${detail.length > 180 ? `${detail.slice(0, 180)}…` : detail}`);
 			}
