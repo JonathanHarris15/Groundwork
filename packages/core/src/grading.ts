@@ -50,6 +50,7 @@ export function describeQuizOutcome(o: QuizOutcome): string {
 	);
 	lines.push(`Predicted chance on next d${Math.min(5, quiz.difficulty + 1)}: ${pct(predictCorrect(after, quiz.difficulty + 1))}.`);
 	if (o.judgmentNote) lines.push(o.judgmentNote);
+	if (quiz.courseNudge) lines.push(quiz.courseNudge);
 	if (o.guidance) lines.push("", o.guidance);
 	return lines.join("\n");
 }

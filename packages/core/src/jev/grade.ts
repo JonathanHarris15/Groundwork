@@ -14,6 +14,8 @@ export interface FreeResponseToGrade {
 	note?: string;
 	/** Hint chat, when one was open. Repeating only the hint is not full credit. */
 	hintTranscript?: string;
+	/** Preferred method and quotes. Another valid method is still correct. */
+	courseNote?: string;
 }
 
 /** Choice confidence below this sends the answer back to the tutor instead of recording a guess. */
@@ -52,7 +54,7 @@ export function freeResponseRequest(items: FreeResponseToGrade[]): {
 				item: payload,
 			},
 			criteria: {
-				correct: "Equivalent to the reference. Rearranged, unsimplified-but-right, or differently notated forms count. A purely careless slip in otherwise right work belongs here.",
+				correct: "Equivalent to the reference. Rearranged, unsimplified-but-right, or differently notated forms count. A purely careless slip in otherwise right work belongs here. A different valid method is still correct when the item names a preferred method.",
 				partial: "The key idea is right, but a conceptual piece is missing or wrong.",
 				incorrect: "The approach itself is wrong or missing.",
 			},
@@ -98,6 +100,7 @@ function itemPayload(item: FreeResponseToGrade): Record<string, string> {
 	if (item.rubric?.trim()) payload.rubric = item.rubric.trim();
 	if (item.note?.trim()) payload.note = item.note.trim();
 	if (item.hintTranscript?.trim()) payload.hint = item.hintTranscript.trim();
+	if (item.courseNote?.trim()) payload.course = item.courseNote.trim();
 	return payload;
 }
 
@@ -142,6 +145,7 @@ export function toGradeItem(quiz: PreparedQuiz, response: QuizResponse, hintTran
 		answer: response.text ?? "",
 		note: response.note,
 		hintTranscript,
+		courseNote: quiz.courseNudge,
 	};
 }
 

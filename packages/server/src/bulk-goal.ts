@@ -167,10 +167,18 @@ async function runAssemble(jobs: BulkJobStore, jobId: string, job: BulkJobRecord
 			return readingLabel(done, job.paths.length);
 		});
 		progress.push(buildingProgress(job.paths.length).label);
+		let files: Awaited<ReturnType<BulkJobStore["files"]>> = [];
+		try {
+			const indexes = [...new Set(job.shards.flatMap((shard) => shard.fileIndexes))];
+			files = await jobs.files(jobId, indexes);
+		} catch {
+			files = [];
+		}
 		const result = assembleMergedGoal({
 			nodes: dedupedMergeNodes(job.shards.flatMap((shard) => shard.concepts)),
 			renames: job.renames,
 			documents: job.paths,
+			files,
 			userText: job.userText,
 			title: job.title,
 			usage,

@@ -1,4 +1,8 @@
 import { directSourceReference, sourceBoundConceptReason } from "./concept-title";
+import { courseIsEmpty, groundCourse, type CourseInput, type SourceDoc } from "./course-grounding";
+import { extractPdfText } from "./document-text";
+
+export { extractPdfText };
 import { classifyLearnerAsk } from "./intent";
 import { basename, loadVaultFile, type VaultFile } from "./files";
 import { slugify } from "./markdown";
@@ -320,11 +324,14 @@ function abstractBlurb(text: string | undefined): string | undefined {
 }
 
 export function blueprintToGoalInput(plan: ExamBlueprint, materials: MaterialSource[], why?: string): GoalInput {
+	const docs = courseDocsFromMaterials(materials);
+	const imported = new Date().toISOString().slice(0, 10);
 	const nodes: GoalInput["nodes"] = plan.topics.map((t) => ({
 		title: t.title,
 		prerequisites: topicPrereqs(t, plan.topics, materials),
 		summary: abstractBlurb(t.ideas[0] ?? t.evidence[0]),
 		requiredLevel: t.requiredLevel,
+		...courseField(t.title, docs, imported),
 	}));
 	const topicTitles = new Set(plan.topics.map((t) => t.title));
 	const targets = (plan.mustKnow.length ? plan.mustKnow : plan.topics.map((t) => t.title)).filter((t) => topicTitles.has(t));
@@ -399,29 +406,25 @@ export function examPrepInstruction(plan: ExamBlueprint): string {
 		.join("\n");
 }
 
-/** Pull printable text out of simple (uncompressed) PDFs. Compressed PDFs stay for the model to read. */
-export function extractPdfText(bytes: Uint8Array): string {
-	let raw = "";
-	for (let i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]);
-	const chunks: string[] = [];
-	const re = /\((?:\\.|[^\\)])*\)/g;
-	let m: RegExpExecArray | null;
-	while ((m = re.exec(raw))) {
-		const s = unescapePdfString(m[0].slice(1, -1));
-		if (/[A-Za-z]{2,}/.test(s)) chunks.push(s);
-	}
-	return chunks.join(" ").replace(/\s+/g, " ").trim();
+function courseDocsFromMaterials(materials: MaterialSource[]): SourceDoc[] {
+	return materials
+		.filter((material) => material.text.trim())
+		.map((material) => ({ path: material.path || material.name, name: material.name, text: material.text }));
 }
 
-function unescapePdfString(s: string): string {
-	return s
-		.replace(/\\n/g, "\n")
-		.replace(/\\r/g, "\r")
-		.replace(/\\t/g, "\t")
-		.replace(/\\\(/g, "(")
-		.replace(/\\\)/g, ")")
-		.replace(/\\\\/g, "\\")
-		.replace(/\\(\d{1,3})/g, (_match: string, oct: string) => String.fromCharCode(Number.parseInt(oct, 8)));
+function courseField(title: string, docs: SourceDoc[], imported: string): { course?: CourseInput } {
+	const grounded = groundCourse(title, docs, undefined, imported);
+	if (courseIsEmpty(grounded.grounding)) return {};
+	const course: CourseInput = {
+		excerpts: grounded.grounding.excerpts.map((excerpt) => {
+			const doc = docs.find((item) => excerpt.provenance.startsWith((item.name || item.path).split("/").pop() ?? "\0"));
+			return { quote: excerpt.quote, provenance: excerpt.provenance, path: doc?.path, sourceText: doc?.text };
+		}),
+		...(grounded.grounding.method.preferred ? { preferredMethod: grounded.grounding.method.preferred } : {}),
+		...(grounded.grounding.method.alternates.length ? { alternates: grounded.grounding.method.alternates } : {}),
+		...(grounded.grounding.method.conflict ? { methodConflict: grounded.grounding.method.conflict } : {}),
+	};
+	return { course };
 }
 
 function bytesFromBase64(data: string): Uint8Array {

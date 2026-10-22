@@ -13,6 +13,7 @@ import {
 	type StudyMove,
 } from "@groundwork/core";
 import type { GoalReport, StudyStep } from "@groundwork/core";
+import { courseSnippet, type CourseSnippet } from "./course-view";
 
 export interface GoalConceptRow {
 	id: string;
@@ -26,6 +27,8 @@ export interface GoalConceptRow {
 	known: boolean;
 	/** What the row's button does. A solid concept is reviewed, never locked. */
 	action: StudyMove;
+	/** Professor's method and one verbatim quote. Absent when the concept has none. */
+	course?: CourseSnippet;
 }
 
 export interface GoalBoardView {
@@ -87,6 +90,7 @@ export function toBoard(
 			const tone = masteryTone(node.status, built.has(node.id));
 			const known = tone === "solid";
 			const isNext = node.id === nextNode?.id && !known;
+			const course = courseSnippet(node.course);
 			return {
 				id: node.id,
 				title: node.title,
@@ -97,6 +101,7 @@ export function toBoard(
 				next: isNext,
 				known,
 				action: studyMove(tone, isNext),
+				...(course ? { course } : {}),
 			};
 		})
 		.sort((a, b) => b.weight - a.weight || a.title.localeCompare(b.title));

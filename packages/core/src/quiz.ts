@@ -62,6 +62,10 @@ export interface PreparedQuiz {
 	multiSelect: boolean;
 	/** Set when a separate model check confirmed the key. Absent on a question that was not checked. */
 	keyCheck?: QuizKeyCheck;
+	/** Preferred method, alternates, and quotes. The key check and the grader see this. */
+	courseBrief?: string;
+	/** Told to the tutor after a grade: accept another valid method, then nudge. */
+	courseNudge?: string;
 }
 
 export interface QuizResponse {

@@ -9,6 +9,7 @@
  */
 
 import { choice, noul, score, type Questions } from "@typesafe-ai/sdk";
+import { mergeCourseInputs, type CourseInput } from "./course-grounding";
 import { findCycle } from "./graph";
 import {
 	decideAlignment,
@@ -116,6 +117,7 @@ interface NamedNode {
 	domain?: string;
 	requiredLevel?: number;
 	aliases?: string[];
+	course?: CourseInput;
 }
 
 /** Rewrite goal nodes onto existing concepts and keep only the prerequisite edges that survive a vote and a cycle check. */
@@ -171,6 +173,7 @@ async function refine(
 			domain: prev?.domain ?? node.domain,
 			requiredLevel,
 			aliases: [...new Set([...(prev?.aliases ?? []), ...(aliases.get(title) ?? [])])],
+			course: mergeCourseInputs(prev?.course, node.course),
 		});
 	}
 

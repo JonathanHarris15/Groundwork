@@ -28,7 +28,7 @@ describe("vault files", () => {
 		expect(Buffer.from(png.data!, "base64")).toEqual(Buffer.from(PNG));
 		expect(await loadVaultFile(io, "resources/Lecture 3.pdf")).toMatchObject({ kind: "pdf", mediaType: "application/pdf" });
 		expect(await loadVaultFile(io, "resources/problems.txt")).toMatchObject({ kind: "text", text: "1. Differentiate x^2." });
-		expect((await loadVaultFile(io, "resources/slides.pptx")).skipped).toMatch(/can't be read/);
+		expect((await loadVaultFile(io, "resources/slides.pptx")).skipped).toMatch(/Couldn't read the slides/);
 		expect((await loadVaultFile(io, "resources/missing.png")).skipped).toMatch(/Couldn't read/);
 	});
 

@@ -203,7 +203,7 @@ function compactResult(block: ContentBlock, names: Map<string, { name: string; p
 
 function readStub(path: string, chars: number): string {
 	const size = chars > 0 ? ` (${chars.toLocaleString("en-US")} characters)` : "";
-	return `${ALREADY_READ}${path}${size}. Call read_vault_file on that path if you need it again.]`;
+	return `${ALREADY_READ}${path}${size}. Call read_vault_file on that path if you need it again. Course quotes already copied onto a concept stay there; call get_concepts for them.]`;
 }
 
 function mediaStub(block: ContentBlock, path = ""): string {

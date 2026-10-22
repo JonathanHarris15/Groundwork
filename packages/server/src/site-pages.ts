@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.17",
+		date: "2026-10-22",
+		body: "A concept keeps a few verbatim quotes from your lectures and the method your professor prefers. Quizzes and teaching use that method. The quotes stay after you delete the file.",
+	},
+	{
 		version: "0.2.16",
 		date: "2026-10-22",
 		body: "Saying yes to a goal saves it on that turn, including the due date, even when you are not quizzing tonight. A tool error is repeated as it happened.",
