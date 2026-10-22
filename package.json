@@ -1,7 +1,7 @@
 {
   "name": "groundwork",
   "private": true,
-	"version": "0.2.18",
+	"version": "0.2.19",
   "description": "A learning agent that plans from first principles, calibrates what you know with quizzes, and remembers it on your Groundwork account.",
   "type": "module",
   "workspaces": [
@@ -25,9 +25,11 @@
   "engines": {
     "node": ">=20"
   },
-  "overrides": {
-    "uuid": "11.1.1"
-  },
+	"overrides": {
+		"uuid": "11.1.1",
+		"hono": "4.13.13",
+		"ip-address": "10.7.4"
+	},
   "devDependencies": {
     "@playwright/test": "^1.51.0",
     "@types/node": "^22.20.4",

@@ -3105,16 +3105,17 @@ body .gw-root button.gw-text-btn:hover {
 	filter: none;
 	text-shadow: none;
 }
-.gw-root .markdown-rendered mark:has(.math-block),
-.gw-root .markdown-rendered mark:has(mjx-container[display="true"]) {
+.gw-root .markdown-rendered mark.gw-mark-math {
 	background: transparent;
 	color: inherit;
 }
 .gw-root .markdown-rendered .callout .math-block,
-.gw-root .markdown-rendered mark .math-block {
+.gw-root .markdown-rendered mark.gw-mark-math .math-block {
 	background: var(--background-primary);
 }
-.gw-root .markdown-rendered mjx-assistive-mml {
+.gw-root .markdown-rendered .gw-math-assistive,
+.gw-root .markdown-rendered .MathJax > [unselectable="on"][display="block"],
+.gw-root .markdown-rendered [jax] > [unselectable="on"][display="block"] {
 	position: absolute;
 	top: 0;
 	left: 0;

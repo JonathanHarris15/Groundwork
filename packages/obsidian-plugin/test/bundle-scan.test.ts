@@ -13,11 +13,15 @@ describe("plugin bundle scan signals", () => {
 		expect(source).not.toMatch(/process\.env\.GROUNDWORK_API_URL/);
 	});
 
-	it("documents where dynamic code generation comes from", () => {
+	it("does not inject script elements at runtime", () => {
 		const source = readFileSync(bundle, "utf8");
-		const ajv = source.includes("validateFunctionCode");
-		const dynamic = source.includes("new Function");
-		expect(dynamic).toBe(true);
-		expect(ajv).toBe(true);
+		expect(source.split('createElement("script")').length - 1).toBe(0);
+		expect(source.split("createElement('script')").length - 1).toBe(0);
+	});
+
+	it("keeps dynamic code generation to ajv's schema compiler", () => {
+		const source = readFileSync(bundle, "utf8");
+		expect(source.match(/new Function/g)).toHaveLength(1);
+		expect(source).toContain("validateFunctionCode");
 	});
 });

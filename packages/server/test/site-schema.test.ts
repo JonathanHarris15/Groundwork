@@ -121,6 +121,10 @@ describe("site schema", () => {
 		expect(rows.find((row) => row.feature === "Heavy model")?.cells.byom).toBe("Your own model");
 		expect(pricing).toContain(`$${PLANS.byom.priceUsdPerMonth}/month`);
 		expect(pricing).toContain(`$${PLANS.included.priceUsdPerMonth}/month`);
+		expect(pricing).toContain('class="mkt-main pricing"');
+		const css = readFileSync(path.join(root, "packages/server/public/styles.css"), "utf8");
+		expect(css).not.toContain(":has(");
+		expect(css).toContain(".mkt-main.pricing { max-width: 980px; }");
 	});
 
 	it("ships llms.txt and a changelog of the tagged releases, and keeps llms.txt out of the sitemap", () => {
