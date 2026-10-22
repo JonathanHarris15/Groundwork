@@ -12,8 +12,8 @@ import type { SessionInfo, ToolContext, ToolDef, ToolResult, ToolUI } from "../t
 import type { AgentEvent, TutorSession, TutorTurnContext } from "../agent/types";
 import { plainTutorError } from "../account/anthropic-messages";
 import { errorMessage } from "../agent/loop";
-import { studyToolBlock, type DialogueTurn } from "../intent";
-import { isQuestionTool, repairNote } from "../turn-repair";
+import { studyToolBlock, withLearnerDue, type DialogueTurn } from "../intent";
+import { isQuestionTool, needsUnsavedGoalCorrection, repairNote, UNSAVED_GOAL_LINE } from "../turn-repair";
 import { guiPathDirs, withGuiPath } from "./env";
 import { pdfLayout, type PdfLayout } from "./pdf-parts";
 
@@ -237,6 +237,15 @@ export class ClaudeCodeSession implements TutorSession {
 		return true;
 	}
 
+	/** A claim that the goal was saved, with no successful set_goal, is replaced with the truth. */
+	private correctUnsavedGoal(): void {
+		const assistant = [...this.dialogue].reverse().find((turn) => turn.role === "assistant");
+		if (!needsUnsavedGoalCorrection({ userText: this.turnUserText, assistantText: assistant?.text ?? "", calledGoal: this.calledGoal })) return;
+		const line = `\n\n${UNSAVED_GOAL_LINE}`;
+		this.noteAssistant(line);
+		this.emit?.({ type: "text_delta", text: line });
+	}
+
 	private async turn(text: string, files: VaultFile[] | undefined, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
 		if (signal?.aborted) return;
 		const system = this.turnContext?.system ?? this.opts.system;
@@ -272,6 +281,7 @@ export class ClaudeCodeSession implements TutorSession {
 				}
 				if (!msg.is_error) this.history = undefined;
 				if (!msg.is_error && !signal?.aborted && this.pushRepair()) continue;
+				if (!msg.is_error && !signal?.aborted) this.correctUnsavedGoal();
 				return;
 			}
 			if (this.handle(msg, onEvent, streamed, external)) reported = true;
@@ -379,7 +389,7 @@ export class ClaudeCodeSession implements TutorSession {
 			try {
 				if (!tool) throw new Error(`Unknown tool ${name}`);
 				const blocked = studyToolBlock(name, this.dialogue);
-				result = blocked ?? (await tool.run(input, { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader, keyVerifier: this.opts.keyVerifier, profile: this.turnContext?.profile, tutorContext: this.turnContext?.tutorContext }));
+				result = blocked ?? (await tool.run(withLearnerDue(name, input, this.dialogue), { store: this.opts.store, ui: this.opts.ui, session: this.opts.session, signal: this.signal ?? extra.signal, access: this.opts.access, grader: this.opts.grader, keyVerifier: this.opts.keyVerifier, profile: this.turnContext?.profile, tutorContext: this.turnContext?.tutorContext }));
 			} catch (err) {
 				result = { text: `Error: ${errorMessage(err)}`, isError: true };
 			}

@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.16",
+		date: "2026-10-22",
+		body: "Saying yes to a goal saves it on that turn, including the due date, even when you are not quizzing tonight.",
+	},
+	{
 		version: "0.2.15",
 		date: "2026-10-21",
 		body: "A long stack of lectures still becomes one goal. Groundwork reads the documents a few at a time, so a large import finishes through the website.",

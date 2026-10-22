@@ -4,7 +4,7 @@
  * ASCII diagram where a figure should have been.
  */
 
-import { statesLearningObjective, visibleAsk } from "./intent";
+import { declinesQuizNow, requestsGoal, statesLearningObjective, visibleAsk } from "./intent";
 
 const QUESTION_TOOLS = new Set(["quiz", "ask_user", "practice_test"]);
 
@@ -16,13 +16,36 @@ export function isQuestionTool(name: string): boolean {
 export function inventsAppBehavior(text: string): boolean {
 	return (
 		/\b(?:our |the )?system requires\b/i.test(text) ||
+		/\b(?:our |the )?system waits\b/i.test(text) ||
 		/\bformal confirmation\b/i.test(text) ||
 		/\bofficial question\b/i.test(text) ||
 		/\bgoal tracker\b/i.test(text) ||
 		/\binitialize the goal\b/i.test(text) ||
+		/\bfinalize the goal\b/i.test(text) ||
+		/\b(?:study|quiz) trigger\b/i.test(text) ||
+		/\b(?:reply|say|type)\s+["']?start["']?\b/i.test(text) ||
 		/\bdid(?:n't| not) (?:pop up|load|appear) because\b/i.test(text) ||
 		/\bunlock\b.{0,40}\b(?:features|quizzes|quiz|goal)\b/i.test(text)
 	);
+}
+
+/** The reply says a goal was saved. Past tense, not the offer to set one up. */
+export function claimsGoalSaved(text: string): boolean {
+	return (
+		/\b(?:i(?:'ve| have)|we(?:'ve| have)) (?:set|saved|created|made) (?:this |it |that )?(?:up as a |the |a |your )?goal\b/i.test(text) ||
+		/\b(?:i(?:'ve| have)|we(?:'ve| have)) set (?:this |it |that )?up as a goal\b/i.test(text) ||
+		/\bgoal is (?:now )?(?:set|saved|ready|created)\b/i.test(text) ||
+		/\b(?:already |just )(?:saved|created|set up) (?:the |a |your )?goal\b/i.test(text)
+	);
+}
+
+export const UNSAVED_GOAL_LINE = "The goal is not saved yet.";
+
+/** The learner was told a goal exists, or they asked for one, and set_goal did not succeed. */
+export function needsUnsavedGoalCorrection(input: { userText: string; assistantText: string; calledGoal: boolean }): boolean {
+	if (input.calledGoal) return false;
+	if (input.assistantText.includes(UNSAVED_GOAL_LINE)) return false;
+	return claimsGoalSaved(input.assistantText) || requestsGoal(input.userText);
 }
 
 /** They asked permission to study or to make a goal, instead of starting. */
@@ -93,32 +116,47 @@ export function repairNote(input: {
 	calledGoal: boolean;
 	calledFigure?: boolean;
 }): string | null {
-	const objective = statesLearningObjective(visibleAsk(input.userText));
+	const user = visibleAsk(input.userText);
+	const objective = statesLearningObjective(user);
+	const goalRequest = requestsGoal(user);
+	const postpone = declinesQuizNow(user);
 	const bulk = /<bulk_goal\b/.test(input.userText);
 	const invented = inventsAppBehavior(input.assistantText);
+	const claimed = claimsGoalSaved(input.assistantText);
 	const gated = objective && asksToConfirmStudy(input.assistantText);
 	const spoken = stripStudyOffer(input.assistantText);
 	const lines: string[] = [];
 	if (invented) {
 		lines.push(
-			"You invented a rule about how the app works. There is no confirmation step and nothing to unlock. Do not explain the app. If a card or goal did not appear, call the tool again. If it still fails, say it did not load.",
+			"You invented a rule about how the app works. There is no confirmation step, no Start reply, and nothing that waits to finalize a goal. Do not explain the app. If a card or goal did not appear, call the tool again. If it still fails, say it did not load.",
 		);
 	}
-	if (bulk && !input.calledQuestion) {
+	if ((goalRequest || objective) && asksToConfirmStudy(input.assistantText)) {
+		lines.push("They already said yes. Do not ask permission again.");
+	}
+	if (!postpone && bulk && !input.calledQuestion) {
 		lines.push(
 			"The goal is already saved. Call quiz on the frontier concept named in the bulk_goal block. The card is the question. Do not call set_goal again.",
 		);
-	} else if (!input.calledQuestion && awaitsChatAnswer(spoken)) {
+	} else if (!postpone && !input.calledQuestion && awaitsChatAnswer(spoken)) {
 		lines.push(freeResponseRepair(spoken));
-	} else if (!input.calledQuestion && (announcesQuestion(spoken) || gated || objective)) {
+	} else if (!postpone && !input.calledQuestion && (announcesQuestion(spoken) || gated || objective || goalRequest)) {
 		lines.push(
 			"Call quiz for a graded question, or ask_user when there is no right answer. The card is the question. Do not ask permission first, and do not describe the card in prose.",
 		);
 	}
-	if (!input.calledGoal && objective && !bulk) {
-		lines.push(
-			"They stated an objective they are working toward. Call set_goal on this turn and start studying. A goal and a quiz go together. Do not ask whether to study or make a goal.",
-		);
+	if (!input.calledGoal && !bulk && (goalRequest || claimed || objective)) {
+		if (postpone) {
+			lines.push(
+				"Call set_goal on this turn. Pass due as YYYY-MM-DD for the date they named. Do not call quiz. Do not ask permission again. Do not tell them the goal is saved until set_goal succeeds. Do not ask them to reply Start.",
+			);
+		} else if (!objective && !goalRequest) {
+			lines.push("You said a goal was saved, but set_goal did not succeed. They did not ask for a goal. Tell them it is not saved. Do not call set_goal.");
+		} else {
+			lines.push(
+				"They stated an objective they are working toward. Call set_goal on this turn and start studying. A goal and a quiz go together. Do not ask whether to study or make a goal.",
+			);
+		}
 	}
 	if (!input.calledFigure && asciiDiagram(input.assistantText)) {
 		lines.push(

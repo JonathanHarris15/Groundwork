@@ -7,6 +7,7 @@ import {
 	unbuiltGoalLeafIds,
 	buildSchedule,
 	defaultDue,
+	namedDueDate,
 	parseIsoDate,
 	resolveWeights,
 	weightedReadiness,
@@ -21,6 +22,13 @@ function makeStore() {
 }
 
 describe("goal dates and weights", () => {
+	it("reads Oct 28th as that calendar day", () => {
+		expect(namedDueDate("Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight.", "2026-10-22")).toBe("2026-10-28");
+		expect(namedDueDate("due October 28, 2027", "2026-10-22")).toBe("2027-10-28");
+		expect(namedDueDate("due on 28 Oct", "2026-10-22")).toBe("2026-10-28");
+		expect(namedDueDate("no date here", "2026-10-22")).toBeUndefined();
+	});
+
 	it("rejects a due date that is not a real day", () => {
 		expect(parseIsoDate("2026-10-14")).toBe("2026-10-14");
 		expect(parseIsoDate("2026-10-14T18:00:00Z")).toBe("2026-10-14");

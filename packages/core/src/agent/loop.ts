@@ -2,8 +2,8 @@ import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthro
 import { compactTutorHistory } from "../account/history-budget";
 import { holdsFixturePrefix, isGarbageReply, LOST_REPLY, scrubLearnerText } from "../learner-text";
 import type { FolderAccess } from "../access";
-import { dialogueFromMessages, studyToolBlock, visibleAsk } from "../intent";
-import { isQuestionTool, repairNote } from "../turn-repair";
+import { dialogueFromMessages, studyToolBlock, visibleAsk, withLearnerDue } from "../intent";
+import { isQuestionTool, needsUnsavedGoalCorrection, repairNote, UNSAVED_GOAL_LINE } from "../turn-repair";
 import { fileBlocks, userContent, type VaultFile } from "../files";
 import type { KnowledgeStore } from "../store";
 import type { SessionInfo, ToolContext, ToolDef, ToolUI } from "../tools";
@@ -111,6 +111,7 @@ export class AgentSession implements TutorSession {
 					repaired = true;
 					continue;
 				}
+				this.correctUnsavedGoal(onEvent, turnAt, calledGoal);
 				return;
 			}
 
@@ -142,7 +143,7 @@ export class AgentSession implements TutorSession {
 				} else {
 					try {
 						if (!tool) throw new Error(`Unknown tool ${use.name}`);
-						const r = await tool.run(toolArguments(use.input), {
+						const r = await tool.run(withLearnerDue(use.name, toolArguments(use.input), dialogue), {
 							store: this.opts.store,
 							ui: this.opts.ui,
 							session: this.opts.session,
@@ -218,6 +219,18 @@ export class AgentSession implements TutorSession {
 			this.messages.push({ role: "assistant", content: [{ type: "text", text: unfinished.answer || unfinished.note }] });
 		}
 		onEvent({ type: "continue_offer", text: unfinished.note });
+	}
+
+	/** A claim that the goal was saved, with no successful set_goal, is replaced with the truth. */
+	private correctUnsavedGoal(onEvent: (e: AgentEvent) => void, turnAt: number, calledGoal: boolean): void {
+		const user = this.messages[turnAt - 1];
+		const assistantText = assistantTextSince(this.messages, turnAt);
+		if (!needsUnsavedGoalCorrection({ userText: user ? messageText(user) : "", assistantText, calledGoal })) return;
+		const line = `\n\n${UNSAVED_GOAL_LINE}`;
+		onEvent({ type: "text_delta", text: line });
+		const last = this.messages[this.messages.length - 1];
+		if (last?.role === "assistant" && Array.isArray(last.content)) last.content.push({ type: "text", text: line });
+		else this.messages.push({ role: "assistant", content: [{ type: "text", text: UNSAVED_GOAL_LINE }] });
 	}
 
 	/** One follow-up when the model announced a question, skipped a stated objective, or drew ASCII. */

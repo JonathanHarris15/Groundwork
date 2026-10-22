@@ -3,6 +3,8 @@ import { AgentSession } from "../src/agent/loop";
 import { DemoProvider } from "../src/agent/demo";
 import type { AgentEvent, ChatMessage, Provider } from "../src/agent/types";
 import { STUDY_FOLLOW_UP } from "../src/intent";
+import { UNSAVED_GOAL_LINE } from "../src/turn-repair";
+import { toBoard } from "../../obsidian-plugin/src/goal-board";
 import { MemoryVaultIO } from "../src/io";
 import type { TestReport } from "../src/practice";
 import { buildSystemPrompt, practiceTestRequest } from "../src/prompt";
@@ -327,6 +329,123 @@ describe("AgentSession with the demo tutor", () => {
 		});
 		await agent.send("Show me the paraboloid that lifts points to x3 = r^2 with a separating plane.", () => undefined);
 		expect(shown).toEqual(["Lift"]);
+	});
+
+	it("saves a pinned goal due Oct 28 when they say yes and will not quiz tonight", async () => {
+		const bedtime = "Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight. I am going to bed";
+		const quizzed: string[] = [];
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				const last = messageText(req.messages[req.messages.length - 1]!);
+				if (/tutor_repair/.test(last)) {
+					expect(last).toContain("Call set_goal");
+					expect(last).toContain("Do not call quiz");
+					expect(last).toContain("Do not ask permission again");
+					return {
+						content: [{ type: "tool_use" as const, id: "g1", name: "set_goal", input: { title: "Limits", targets: ["Limit"], nodes: [{ title: "Limit" }] } }],
+						stopReason: "tool_use" as const,
+					};
+				}
+				if (/"goal": "Limits"|Saved goal/.test(last)) {
+					const reply = "Goodnight. The first concept is Limit.";
+					req.onText(reply);
+					return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+				}
+				if (/\bStart\b/.test(last) && !/Reply Start/.test(last)) {
+					return {
+						content: [
+							{
+								type: "tool_use" as const,
+								id: "q1",
+								name: "quiz",
+								input: {
+									concept: "Limit",
+									question: "What is a limit?",
+									explanation: "A value the function approaches.",
+									difficulty: 2,
+									kind: "check",
+									options: [
+										{ label: "A value approached", value: "approach" },
+										{ label: "The function itself", value: "function" },
+									],
+									correctAnswer: "approach",
+								},
+							},
+						],
+						stopReason: "tool_use" as const,
+					};
+				}
+				if (/Not now/.test(last)) {
+					const reply = "Goodnight.";
+					req.onText(reply);
+					return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+				}
+				const reply =
+					"Goodnight. The first concept is Limit. I've set this up as a goal. The system waits for a ready to study/quiz trigger to finalize the goal. Reply Start when you want me to save it.";
+				req.onText(reply);
+				return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+			},
+		};
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			messages: [
+				{ role: "user", content: "put together a study guide for limits" },
+				{ role: "assistant", content: `Here is the guide.\n\n${STUDY_FOLLOW_UP}` },
+			],
+			ui: {
+				async quiz(q) {
+					quizzed.push(q.question);
+					return { dontKnow: false, selected: ["approach"] };
+				},
+				async ask() {
+					return null;
+				},
+			},
+			session: { id: "hosted" },
+		});
+		const events: AgentEvent[] = [];
+		await agent.send(bedtime, (e) => events.push(e));
+		const goals = await store.goals();
+		expect(goals.map((goal) => goal.title)).toEqual(["Limits"]);
+		expect(goals[0]?.due).toBe("2026-10-28");
+		expect((await store.workingGoal())?.due).toBe("2026-10-28");
+		const report = await store.goalReport(goals[0]!.id);
+		const board = toBoard(report, await store.goalTiming(report), report.next);
+		expect(board.due).toBe("2026-10-28");
+		expect(board.dueLabel).toMatch(/Oct 28/);
+		expect(quizzed).toEqual([]);
+		expect(events.some((e) => e.type === "tool_end" && e.name === "set_goal" && !e.isError)).toBe(true);
+		expect(events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("")).not.toContain(UNSAVED_GOAL_LINE);
+
+		await agent.send("Start", (e) => events.push(e));
+		expect(quizzed).toEqual([]);
+		expect(events.some((e) => e.type === "tool_end" && e.name === "quiz" && e.isError)).toBe(true);
+		expect((await store.goals())[0]?.due).toBe("2026-10-28");
+	});
+
+	it("corrects a claimed goal when set_goal never succeeds", async () => {
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		const provider: Provider = {
+			name: "scripted",
+			async complete(req) {
+				const last = messageText(req.messages[req.messages.length - 1]!);
+				const reply = /tutor_repair/.test(last) ? "I've set this up as a goal. Goodnight." : "Goodnight. The first concept is Limit. I've set this up as a goal.";
+				req.onText(reply);
+				return { content: [{ type: "text" as const, text: reply }], stopReason: "end_turn" as const };
+			},
+		};
+		const agent = new AgentSession({ provider, store, tools: TOOLS, system: buildSystemPrompt(), session: { id: "hosted" } });
+		const events: AgentEvent[] = [];
+		await agent.send("Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight. I am going to bed", (e) => events.push(e));
+		expect(await store.goals()).toEqual([]);
+		expect(events.flatMap((e) => (e.type === "text_delta" ? [e.text] : [])).join("")).toContain(UNSAVED_GOAL_LINE);
 	});
 });
 

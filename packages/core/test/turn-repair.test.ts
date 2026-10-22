@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcesQuestion, asciiDiagram, inventsAppBehavior, repairNote } from "../src/turn-repair";
+import { announcesQuestion, asciiDiagram, claimsGoalSaved, inventsAppBehavior, needsUnsavedGoalCorrection, repairNote, UNSAVED_GOAL_LINE } from "../src/turn-repair";
 
 describe("announced questions", () => {
 	const announced = [
@@ -67,6 +67,32 @@ describe("announced questions", () => {
 				calledGoal: false,
 			}),
 		).toBeNull();
+	});
+
+	it("saves the goal and skips the quiz when they accept a goal and go to bed", () => {
+		const user = "Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight. I am going to bed";
+		const invented = "Goodnight. The first concept is Limit. I've set this up as a goal. The system waits for a ready to study/quiz trigger to finalize the goal. Reply Start when you want me to save it.";
+		expect(inventsAppBehavior(invented)).toBe(true);
+		expect(claimsGoalSaved(invented)).toBe(true);
+		expect(claimsGoalSaved("Want me to set this up as a goal and quiz you on it?")).toBe(false);
+		const note = repairNote({ userText: user, assistantText: invented, calledQuestion: false, calledGoal: false });
+		expect(note).toContain("Call set_goal");
+		expect(note).toContain("YYYY-MM-DD");
+		expect(note).toContain("Do not call quiz");
+		expect(note).toContain("Do not ask permission again");
+		expect(note).toContain("did not load");
+		expect(note).not.toContain("A goal and a quiz go together");
+		expect(
+			repairNote({
+				userText: user,
+				assistantText: "Goodnight.",
+				calledQuestion: false,
+				calledGoal: true,
+			}),
+		).toBeNull();
+		expect(needsUnsavedGoalCorrection({ userText: user, assistantText: invented, calledGoal: false })).toBe(true);
+		expect(needsUnsavedGoalCorrection({ userText: user, assistantText: invented, calledGoal: true })).toBe(false);
+		expect(UNSAVED_GOAL_LINE).toBe("The goal is not saved yet.");
 	});
 
 	it("repairs an invented confirmation gate into a goal and a quiz", () => {

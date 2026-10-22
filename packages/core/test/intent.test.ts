@@ -57,6 +57,25 @@ describe("classifyLearnerAsk", () => {
 		expect(studyToolBlock("quiz", [{ role: "user", text: "what's the chain rule?" }])?.text).toMatch(/Do not tell them/);
 	});
 
+	it("treats yes-plus-a-due-date as a goal, and not tonight as no quiz", () => {
+		const text = "Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight. I am going to bed";
+		const turns = [
+			{ role: "assistant" as const, text: STUDY_FOLLOW_UP },
+			{ role: "user" as const, text },
+		];
+		expect(classifyLearnerAsk(text)).toBe("study");
+		expect(learnerOptedIntoStudy(turns)).toBe(true);
+		expect(studyToolBlock("set_goal", turns)).toBeNull();
+		expect(studyToolBlock("set_working_goal", turns)).toBeNull();
+		expect(studyToolBlock("quiz", turns)?.isError).toBe(true);
+		expect(studyToolBlock("quiz", turns)?.text).toMatch(/set_goal/);
+		const later = [...turns, { role: "assistant" as const, text: "Reply Start" }, { role: "user" as const, text: "Start" }];
+		expect(learnerOptedIntoStudy(later)).toBe(true);
+		expect(studyToolBlock("set_goal", later)).toBeNull();
+		expect(studyToolBlock("quiz", later)?.isError).toBe(true);
+		expect(studyToolBlock("quiz", [{ role: "user", text: "Start" }])?.isError).toBe(true);
+	});
+
 	it("lets a yes after the follow-up opt in, and a bare yes does not", () => {
 		expect(learnerOptedIntoStudy([{ role: "user", text: "yes" }])).toBe(false);
 		expect(
@@ -73,6 +92,13 @@ describe("classifyLearnerAsk", () => {
 				{ role: "user", text: "no thanks" },
 			]),
 		).toBe(false);
+		expect(learnerOptedIntoStudy([{ role: "user", text: "Start" }])).toBe(false);
+		expect(
+			learnerOptedIntoStudy([
+				{ role: "assistant", text: STUDY_FOLLOW_UP },
+				{ role: "user", text: "Start" },
+			]),
+		).toBe(true);
 	});
 
 	it("refuses a goal tool until they opt in, then allows the study flow", () => {

@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi } from "vitest";
+import { KnowledgeStore, MemoryVaultIO } from "@groundwork/core";
+import { toBoard, type GoalBoardView, type GoalConceptRow } from "../src/goal-board";
 import { renderGoalsPane, type GoalsPaneHandlers } from "../src/goals-pane";
-import type { GoalBoardView, GoalConceptRow } from "../src/goal-board";
 
 const row = (title: string, over: Partial<GoalConceptRow>): GoalConceptRow => ({
 	id: title.toLowerCase(),
@@ -59,6 +60,20 @@ function handlers(over: Partial<GoalsPaneHandlers> = {}): GoalsPaneHandlers {
 }
 
 describe("goals work rail", () => {
+	it("shows a pinned goal due Oct 28", async () => {
+		const store = new KnowledgeStore(new MemoryVaultIO(), { now: () => new Date("2026-10-22T12:00:00Z") });
+		await store.ensureLayout();
+		const report = await store.setGoal({ title: "Limits", due: "2026-10-28", targets: ["Limit"], nodes: [{ title: "Limit" }] });
+		const view = toBoard(report, await store.goalTiming(report), report.next);
+		expect(view.due).toBe("2026-10-28");
+		expect(view.dueLabel).toMatch(/Oct 28/);
+		const parent = document.createElement("div");
+		renderGoalsPane(parent, [view], view.id, handlers());
+		expect(parent.textContent).toContain("Limits");
+		expect(parent.textContent).toContain("Oct 28");
+		expect(parent.textContent).not.toContain("No goals yet");
+	});
+
 	it("renders title-only action buttons without time estimates", () => {
 		const parent = document.createElement("div");
 		renderGoalsPane(parent, [board()], "exam", handlers());

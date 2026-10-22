@@ -2,6 +2,71 @@ import type { ConceptStatus } from "./model";
 import { conceptLayerRanks, placePyramidLayout } from "./force-graph/pyramid-layout";
 import { MASTERY_LABEL, masteryTone, type MasteryTone } from "./mastery-tone";
 
+const MONTH_INDEX: Record<string, number> = {
+	jan: 1,
+	january: 1,
+	feb: 2,
+	february: 2,
+	mar: 3,
+	march: 3,
+	apr: 4,
+	april: 4,
+	may: 5,
+	jun: 6,
+	june: 6,
+	jul: 7,
+	july: 7,
+	aug: 8,
+	august: 8,
+	sep: 9,
+	sept: 9,
+	september: 9,
+	oct: 10,
+	october: 10,
+	nov: 11,
+	november: 11,
+	dec: 12,
+	december: 12,
+};
+
+const MONTH_NAME = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+
+/** UTC calendar day, `YYYY-MM-DD`. */
+export function utcToday(now = new Date()): string {
+	return now.toISOString().slice(0, 10);
+}
+
+/**
+ * A deadline they wrote in prose: `Oct 28th`, `October 28, 2026`, `28 Oct`, or `YYYY-MM-DD`.
+ * A missing year is this year when that day is still ahead, otherwise next year.
+ */
+export function namedDueDate(text: string, today: string): string | undefined {
+	const iso = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+	if (iso) {
+		const parsed = parseIsoDate(iso[1]);
+		if (parsed) return parsed;
+	}
+	const monthFirst = text.match(new RegExp(`\\b(${MONTH_NAME})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*,?\\s*(\\d{4}))?\\b`, "i"));
+	if (monthFirst) return calendarDay(Number(monthFirst[2]), monthNumber(monthFirst[1]), monthFirst[3], today);
+	const dayFirst = text.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${MONTH_NAME})\\.?(?:\\s*,?\\s*(\\d{4}))?\\b`, "i"));
+	if (dayFirst) return calendarDay(Number(dayFirst[1]), monthNumber(dayFirst[2]), dayFirst[3], today);
+	return undefined;
+}
+
+function monthNumber(name: string | undefined): number | undefined {
+	if (!name) return undefined;
+	return MONTH_INDEX[name.toLowerCase().replace(/\.$/, "")];
+}
+
+function calendarDay(day: number, month: number | undefined, yearText: string | undefined, today: string): string | undefined {
+	if (!month || day < 1 || day > 31) return undefined;
+	const anchor = parseIsoDate(today);
+	if (!anchor) return undefined;
+	const [ty, tm, td] = anchor.split("-").map(Number);
+	const year = yearText ? Number(yearText) : month > tm || (month === tm && day >= td) ? ty : ty + 1;
+	return parseIsoDate(`${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+}
+
 /** A goal's deadline, stored as YYYY-MM-DD. */
 export function parseIsoDate(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;

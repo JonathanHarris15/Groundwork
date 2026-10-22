@@ -4,10 +4,11 @@
  */
 
 import type { ChatMessage, ContentBlock } from "./agent/types";
+import { namedDueDate, utcToday } from "./goal-plan";
 
 /**
- * One offer after a study guide or flashcards. A goal and a quiz are the same
- * effort. This is not a choice between them, and it is not required before either.
+ * One offer after a study guide or flashcards. Yes starts a goal and a quiz.
+ * "Not tonight" still saves the goal and does not start a quiz. The offer is not a gate.
  */
 export const STUDY_FOLLOW_UP = "Want me to set this up as a goal and quiz you on it?";
 
@@ -34,6 +35,9 @@ export const STUDY_TOOLS = new Set([
 	"set_working_goal",
 	"ask_user",
 ]);
+
+/** A goal can be saved without a quiz. These still wait until they are studying now. */
+const QUIZ_TOOLS = new Set(["quiz", "ask_user", "practice_test", "record_evidence"]);
 
 const HIDDEN_BLOCK = /<(working_goal|exam_plan|bulk_goal|margin_questions|hint_transcript|tutor_repair)>[\s\S]*?<\/\1>/gi;
 
@@ -71,9 +75,74 @@ export function learnerOptedIntoStudy(turns: DialogueTurn[]): boolean {
 	return false;
 }
 
+/** They asked to create a goal, including "set this up as a goal". */
+export function requestsGoal(text: string): boolean {
+	const visible = visibleAsk(text);
+	return /\b(?:make|create|set|save|add|start)(?:\s+\w+){0,8}\s+goal\b/i.test(visible);
+}
+
+/** They asked to be quizzed now. A refusal ("won't start quizzing") is not this. */
+export function wantsQuizNow(text: string): boolean {
+	const visible = visibleAsk(text);
+	if (refusesQuiz(visible)) return false;
+	return (
+		/\b(?:quiz|test|drill) me\b/i.test(visible) ||
+		/\bhelp me (?:learn|study|practice|review|prep|prepare)\b/i.test(visible) ||
+		/\b(?:let's|lets)\s+(?:learn|study|practice|review|quiz)\b/i.test(visible) ||
+		/\bstart (?:quizzing|the quiz|a quiz)\b/i.test(visible)
+	);
+}
+
+/** They will not quiz on this turn: not tonight, going to bed, or an explicit refusal. */
+export function declinesQuizNow(text: string): boolean {
+	const visible = visibleAsk(text);
+	if (!visible || wantsQuizNow(visible)) return false;
+	return refusesQuiz(visible) || /\bgoing to bed\b/i.test(visible) || (/\bnot tonight\b/i.test(visible) && /\b(?:quiz|quizzing|study|studying)\b/i.test(visible));
+}
+
+/** A quiz stays off until a later message asks to study now. */
+export function quizDeclined(turns: DialogueTurn[]): boolean {
+	let declined = false;
+	for (const turn of turns) {
+		if (turn.role !== "user") continue;
+		const visible = visibleAsk(turn.text);
+		if (!visible) continue;
+		if (wantsQuizNow(visible)) declined = false;
+		else if (declinesQuizNow(visible)) declined = true;
+	}
+	return declined;
+}
+
+/** The latest deadline they named, as YYYY-MM-DD. */
+export function learnerDueDate(turns: DialogueTurn[], today = utcToday()): string | undefined {
+	let found: string | undefined;
+	for (const turn of turns) {
+		if (turn.role !== "user") continue;
+		const due = namedDueDate(visibleAsk(turn.text), today);
+		if (due) found = due;
+	}
+	return found;
+}
+
+/** Put the deadline they named onto `set_goal`, including when the model omits `due`. */
+export function withLearnerDue(name: string, input: unknown, turns: DialogueTurn[], today = utcToday()): unknown {
+	if (name !== "set_goal" || !input || typeof input !== "object" || Array.isArray(input)) return input;
+	const due = learnerDueDate(turns, today);
+	if (!due) return input;
+	return { ...(input as Record<string, unknown>), due };
+}
+
 export function studyToolBlock(name: string, dialogue: DialogueTurn[]): { text: string; isError: true; summary: string } | null {
 	if (!STUDY_TOOLS.has(name)) return null;
+	if (QUIZ_TOOLS.has(name) && quizDeclined(dialogue)) {
+		return {
+			isError: true,
+			summary: "Not quizzing now",
+			text: `Not now. ${name} did not run because they asked not to quiz on this turn. If they asked for a goal, call set_goal now and pass due as YYYY-MM-DD when they named a date. Do not call quiz. Do not tell them a confirmation, a setting, or the system blocked it. Do not ask again, and do not tell them to reply Start.`,
+		};
+	}
 	if (learnerOptedIntoStudy(dialogue)) return null;
+	if ((name === "set_goal" || name === "set_working_goal") && dialogue.some((turn) => turn.role === "user" && requestsGoal(turn.text))) return null;
 	return {
 		isError: true,
 		summary: "Waiting until they ask to study",
@@ -116,6 +185,7 @@ function isStrongStudy(text: string): boolean {
 		/\b(i want to|i'd like to|i would like to)\s+(learn|study|practice|review)\b/i.test(text) ||
 		/\b(let's|lets)\s+(learn|study|practice|review|prepare|prep)\b/i.test(text) ||
 		/\b(make|create|set|start|add|save)\s+(a\s+|me\s+a\s+)?(new\s+)?goal\b/i.test(text) ||
+		requestsGoal(text) ||
 		/\bi have\b.{0,100}\b(exam|midterm)\b/i.test(text) ||
 		/\bi have\b.{0,100}\bfinal(?!\s+(answer|step|result|value|form))\b/i.test(text) ||
 		/\bi have\b.{0,80}\b(a|an|my)\s+quiz\b/i.test(text) ||
@@ -170,6 +240,10 @@ function isDirectLookup(text: string): boolean {
 	return /\b(?:solve|summarize|summarise|explain|answer|what(?:'s| is| does)|show me|graph of)\b/i.test(text);
 }
 
+function refusesQuiz(text: string): boolean {
+	return /\b(?:won'?t|will not|not going to|don'?t|do not|cannot|can't)\b[^.]{0,80}\b(?:quiz|quizzing)\b/i.test(text) || /\bnot\s+quizzing\b/i.test(text);
+}
+
 function isSurvey(text: string): boolean {
 	const asks = /\b(summarize|summarise|sum up|survey|overview|skim)\b/i.test(text) || /\bwhat(?:'s| is| are) in\b/i.test(text) || /\b(go|look) through\b/i.test(text);
 	const docs = /\b(documents?|files?|notes?|context|readings?|vault|slides?|lectures?|materials?|attachments?)\b/i.test(text);
@@ -179,7 +253,7 @@ function isSurvey(text: string): boolean {
 function isAffirmative(text: string): boolean {
 	const t = text.trim().replace(/[.!]+$/g, "").replace(/\s+/g, " ");
 	return (
-		/^(yes|yeah|yep|yup|sure|ok|okay|please|do it|go ahead|sounds good|let's|lets)(?: (please|do it|study(?: this| it)?|make a goal(?: for it)?))?$/i.test(t) ||
+		/^(yes|yeah|yep|yup|sure|ok|okay|please|do it|go ahead|sounds good|let's|lets|start)(?: (please|do it|study(?: this| it)?|make a goal(?: for it)?))?$/i.test(t) ||
 		/^(yes|yeah|yep|sure|ok|okay)[, ]+(please|let's study|lets study|study(?: this| it)?|make a goal(?: for it)?)$/i.test(t) ||
 		/^(let's|lets) (study|do) (it|this|that)$/i.test(t) ||
 		/^study (this|it|that)$/i.test(t)

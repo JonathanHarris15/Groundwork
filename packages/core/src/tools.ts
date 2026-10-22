@@ -358,7 +358,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal. Only after they opt in to study, including when they state an objective (a homework, an exam, a skill, or that they want to be able to do something). Call it on that turn, and start a quiz in the same turn. Do not ask permission first. A goal and studying are one effort. A goal is its targets: concepts not yet built. The title may name a course, exam, or document. targets and nodes are reusable ideas, never a file. Pass sources for the vault files. nodes are the targets plus foundations, direct prerequisites only. due is YYYY-MM-DD; omit it and a new goal is due in 14 days. weights are percents. Concepts they already hold are stored as built. Returns open targets, built, the frontier, and a mermaid map.",
+			"Save a learning goal and pin it. Call it on the turn they ask for a goal, including when they name a due date and say they will not quiz yet. Do not wait for a quiz, a Start reply, or another confirmation. Start a quiz in the same turn only when they are studying now. Do not ask permission first. Do not say the goal is saved until this call succeeds. A goal is its targets: concepts not yet built. The title may name a course, exam, or document. targets and nodes are reusable ideas, never a file. Pass sources for the vault files. nodes are the targets plus foundations, direct prerequisites only. due is YYYY-MM-DD when they name a day, such as an exam date; omit it and a new goal is due in 14 days. weights are percents. Concepts they already hold are stored as built. Returns open targets, built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -409,6 +409,7 @@ export const TOOLS: ToolDef[] = [
 		},
 		async run(input: GoalInput, { store, ui }) {
 			const r = await store.setGoal(input);
+			if (r.goal.status === "active") await store.setWorkingGoal(r.goal.title);
 			ui?.focusGoal?.((await store.workingGoal())?.title ?? null);
 			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
 			return {
