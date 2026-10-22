@@ -62,7 +62,7 @@ describe("normalizeTutorMarkdown", () => {
 		expect(normalizeTutorMarkdown(src)).toContain("$\\nabla f \\neq 0$");
 	});
 
-	it("keeps display math inside a callout so it cannot swallow the prose after it", () => {
+	it("lifts display math out of a callout so it cannot swallow the prose after it", () => {
 		const src = [
 			"> [!note] Root",
 			"> $x^\\top A x$ is a **scalar**, written out it is",
@@ -77,10 +77,36 @@ describe("normalizeTutorMarkdown", () => {
 			"The two terms are a row-read and a column-read.",
 		].join("\n");
 		const out = normalizeTutorMarkdown(src);
-		expect(out).toContain("> $$\n> x^\\top A x = \\sum_{i,j} A_{ij}x_ix_j.\n> $$\n\nThis is just what");
-		expect(out).toContain("> $$\n> \\nabla(x^\\top A x) = (A + A^\\top)x\n> $$\n\nThe two terms");
-		for (const line of out.split("\n")) if (line.includes("$$")) expect(line.startsWith(">")).toBe(true);
+		expect(out).toContain("$$\nx^\\top A x = \\sum_{i,j} A_{ij}x_ix_j.\n$$");
+		expect(out).toContain("$$\n\\nabla(x^\\top A x) = (A + A^\\top)x\n$$");
+		expect(out).toContain("This is just what the shapes force");
+		expect(out).toContain("The two terms are a row-read and a column-read.");
+		expect(out).toContain("> $x^\\top A x$ is a **scalar**");
+		for (const line of out.split("\n")) if (line.includes("$$")) expect(line.startsWith(">")).toBe(false);
+		const after = out.split("$$");
+		expect(after[2]).toContain("This is just what");
+		expect(after[2]).not.toMatch(/This is just what[\s\S]*\$\$/);
 		expect(normalizeTutorMarkdown(out)).toBe(out);
+	});
+
+	it("renders a callout-only probability equation as plain display math", () => {
+		const src = ["> [!warning] Additivity", "> $$", "> P\\left(\\bigcup_i A_i\\right) = \\sum_i P(A_i)", "> $$"].join("\n");
+		const out = normalizeTutorMarkdown(src);
+		expect(out).toBe(["**Additivity**", "", "$$", "P\\left(\\bigcup_i A_i\\right) = \\sum_i P(A_i)", "$$"].join("\n"));
+		expect(out).not.toContain(">");
+		expect(out).not.toContain("[!warning]");
+		expect(normalizeTutorMarkdown(out)).toBe(out);
+	});
+
+	it("unwraps a mark or color box around display math", () => {
+		const marked = "<mark>\n$$\nP\\left(\\bigcup_i A_i\\right) = \\sum_i P(A_i)\n$$\n</mark>";
+		const boxed = "$$\\bbox[yellow,4pt]{P\\left(\\bigcup_i A_i\\right) = \\sum_i P(A_i)}$$";
+		const colored = "$\\colorbox{yellow}{\\sum_i P(A_i)}$";
+		expect(normalizeTutorMarkdown(marked)).toBe("$$\nP\\left(\\bigcup_i A_i\\right) = \\sum_i P(A_i)\n$$");
+		expect(normalizeTutorMarkdown(boxed)).toContain("$$\nP\\left(\\bigcup_i A_i\\right) = \\sum_i P(A_i)\n$$");
+		expect(normalizeTutorMarkdown(boxed)).not.toContain("bbox");
+		expect(normalizeTutorMarkdown(colored)).toBe("$\\sum_i P(A_i)$");
+		expect(normalizeTutorMarkdown("Keep this <mark>phrase</mark>.")).toContain("<mark>phrase</mark>");
 	});
 
 	it("is idempotent", () => {
