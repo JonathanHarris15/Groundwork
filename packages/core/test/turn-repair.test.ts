@@ -127,6 +127,23 @@ describe("announced questions", () => {
 		expect(reported).toContain("set_goal: Could not write the goal file.");
 		expect(reported).not.toContain("No tool returned an error");
 		expect(needsUnsavedGoalCorrection({ userText: "Start", assistantText: quote, calledGoal: false, goalPending: true })).toBe(true);
+		const resumed = repairNote({
+			userText: "Start",
+			assistantText: quote,
+			calledQuestion: false,
+			calledGoal: false,
+			goalPending: true,
+		});
+		expect(resumed).toContain("Call set_goal");
+		expect(resumed).not.toContain("Do not call quiz");
+		const working = repairNote({
+			userText: "let's work on this goal",
+			assistantText: "What is a limit?",
+			calledQuestion: false,
+			calledGoal: false,
+		});
+		expect(working).toContain("Call quiz");
+		expect(working).not.toContain("Do not call quiz");
 		expect(
 			learnerFacingCorrection({
 				userText: "what's the chain rule?",

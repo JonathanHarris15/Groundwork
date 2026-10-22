@@ -5,7 +5,7 @@
  */
 
 import type { ChatMessage } from "./agent/types";
-import { declinesQuizNow, dialogueFromMessages, requestsGoal, statesLearningObjective, visibleAsk } from "./intent";
+import { declinesQuizNow, dialogueFromMessages, requestsGoal, statesLearningObjective, visibleAsk, wantsToStudyNow } from "./intent";
 import { learnerToolError } from "./learner-text";
 
 const QUESTION_TOOLS = new Set(["quiz", "ask_user", "practice_test"]);
@@ -181,6 +181,7 @@ export function repairNote(input: {
 	const objective = statesLearningObjective(user);
 	const goalRequest = requestsGoal(user);
 	const postpone = declinesQuizNow(user) || !!input.quizOff;
+	const studyingNow = wantsToStudyNow(user);
 	const bulk = /<bulk_goal\b/.test(input.userText);
 	const invented = inventsAppBehavior(input.assistantText);
 	const claimed = claimsGoalSaved(input.assistantText);
@@ -205,7 +206,7 @@ export function repairNote(input: {
 		);
 	} else if (!postpone && !input.calledQuestion && awaitsChatAnswer(spoken)) {
 		lines.push(freeResponseRepair(spoken));
-	} else if (!postpone && !input.calledQuestion && (announcesQuestion(spoken) || gated || objective || goalRequest)) {
+	} else if (!postpone && !input.calledQuestion && (announcesQuestion(spoken) || gated || objective || goalRequest || studyingNow)) {
 		lines.push(
 			"Call quiz for a graded question, or ask_user when there is no right answer. The card is the question. Do not ask permission first, and do not describe the card in prose.",
 		);

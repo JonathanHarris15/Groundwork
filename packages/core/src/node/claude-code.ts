@@ -147,7 +147,7 @@ export class ClaudeCodeSession implements TutorSession {
 	private emit: ((e: AgentEvent) => void) | null = null;
 	private signal: AbortSignal | undefined;
 	private history: string | undefined;
-	/** Learner and tutor text, so a goal or quiz is refused until they opt in. */
+	/** Learner and tutor text. A quiz waits only when this turn asks not to study yet. */
 	private dialogue: DialogueTurn[] = [];
 	/** One repair per send, after an announced question or a missed objective. */
 	private repaired = false;
