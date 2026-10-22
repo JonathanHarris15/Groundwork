@@ -1757,7 +1757,7 @@ button.nav-session {
 	min-height: 52px;
 	font-size: 17px;
 }
-.mkt-main:has(.plan-cards) { max-width: 980px; }
+.mkt-main.pricing { max-width: 980px; }
 .mkt-shot { margin: 28px 0 0; }
 .mkt-shot img {
 	display: block;

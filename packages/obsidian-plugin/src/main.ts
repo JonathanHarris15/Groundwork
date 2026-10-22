@@ -360,6 +360,8 @@ export default class GroundworkPlugin extends Plugin {
 	}
 
 	claudeExecutable(): string | null {
+		// PATH and the Claude binary are only needed for the subscription on this computer.
+		if (this.tutorRoute?.action !== "claude") return null;
 		return findClaudeExecutable(this.settings.claudePath);
 	}
 

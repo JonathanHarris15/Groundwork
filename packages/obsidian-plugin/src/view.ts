@@ -99,7 +99,7 @@ import { toBoard, type GoalBoardView } from "./goal-board";
 import { renderGoalsPane } from "./goals-pane";
 import { renderMapPane, renderStartedVaultMap } from "./map-pane";
 import { mountMark } from "./mark";
-import { expandToMath, mathIn, mathOf, rangeText, tagMath } from "./math-source";
+import { expandToMath, mathIn, mathOf, rangeText, tagMath, watchMathChrome } from "./math-source";
 import { AskCard, QuizCard, TestCard } from "./cards";
 import { pendingQuiz } from "./open-quiz";
 import { ReaderFollow } from "./reader-follow";
@@ -1023,6 +1023,7 @@ export class ChatView extends ItemView implements ToolUI {
 		seg.comp = comp;
 		seg.el.empty();
 		while (next.firstChild) seg.el.appendChild(next.firstChild);
+		watchMathChrome(seg.el);
 		enhanceGraphs(seg.el, { onConcept: (title) => void this.studyConcept(title, "start") });
 		this.scheduleHighlights();
 		this.keepThinkingLast();
@@ -1270,6 +1271,7 @@ export class ChatView extends ItemView implements ToolUI {
 		const md = normalizeTutorMarkdown(markdown);
 		await MarkdownRenderer.render(this.app, md, el, this.record?.notePath ?? "", this);
 		tagMath(el, md);
+		watchMathChrome(el);
 		enhanceGraphs(el, { onConcept: (title) => void this.studyConcept(title, "start") });
 		this.scheduleHighlights();
 		// Rendered options sit inside buttons; a lone paragraph adds unwanted margins.

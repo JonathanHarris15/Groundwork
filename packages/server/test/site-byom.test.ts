@@ -27,7 +27,7 @@ describe("BYOM landing page", () => {
 		expect(html).toContain(">Sign up");
 		expect(html).toContain('class="nav-session" data-sign-in href="/?plan=byom#signin"');
 		expect(html).toContain('src="/tracking.js?v=9"');
-		expect(html).toContain('href="/styles.css?v=22"');
+		expect(html).toContain('href="/styles.css?v=23"');
 		expect(html).toContain('class="mkt-main byom"');
 		expect(publicPagePaths()).toContain("/byom");
 		expect(sitemapXml()).toContain("https://groundworklearn.com/byom");
