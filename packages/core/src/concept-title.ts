@@ -1,4 +1,5 @@
-import { unwikilink } from "./markdown";
+import { COURSE_SECTION } from "./course-grounding";
+import { getSection, unwikilink } from "./markdown";
 
 /**
  * A concept is a reusable idea ("Linear functions", "Affine compositions").
@@ -68,10 +69,45 @@ export function directSourceReference(text: string): string | null {
 	return null;
 }
 
+function outsideCourseSection(text: string): string {
+	const lines = text.split("\n");
+	const out: string[] = [];
+	let skipping = false;
+	for (const line of lines) {
+		if (/^##\s+/.test(line)) {
+			skipping = line.trim().toLowerCase() === `## ${COURSE_SECTION}`.toLowerCase();
+			if (!skipping) out.push(line);
+			continue;
+		}
+		if (!skipping) out.push(line);
+	}
+	return out.join("\n");
+}
+
 export function assertConceptOmitsSources(text: string): void {
-	const ref = directSourceReference(text);
-	if (!ref) return;
-	throw new Error(
-		`A concept cannot reference a source document (${ref}). Put the file on a goal, in sources. Concepts stay reusable without the document they were learned from.`,
-	);
+	const course = getSection(text, COURSE_SECTION);
+	const ref = directSourceReference(outsideCourseSection(text));
+	if (ref) {
+		throw new Error(
+			`A concept cannot reference a source document (${ref}). Put the file on a goal, in sources. A verbatim excerpt belongs under ## ${COURSE_SECTION}, with the file name and page as plain text.`,
+		);
+	}
+	if (course) assertCourseSectionReusable(course);
+}
+
+/** The course section may name a file. It may not link to one or store a vault path. */
+export function assertCourseSectionReusable(section: string): void {
+	const link = /\[\[([^\]|#]+)/g;
+	let match: RegExpExecArray | null;
+	while ((match = link.exec(section))) {
+		const target = match[1]?.trim() ?? "";
+		if (/^resources\//i.test(target) || target.includes("/") || /\.(?:pdf|pptx?|docx?|txt|md)\b/i.test(target)) {
+			throw new Error(
+				`A concept's course section cannot link to a file (${target}). Keep the file name and page as plain text. The concept stays usable after the file is deleted.`,
+			);
+		}
+	}
+	if (/(?:^|[\s("'`])resources\//i.test(section)) {
+		throw new Error("A concept's course section does not store a vault path. The file name and page are enough.");
+	}
 }

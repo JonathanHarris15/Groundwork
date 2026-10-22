@@ -1,4 +1,5 @@
 import { daysLeftPhrase, describeConceptProgress, type StudyMove } from "@groundwork/core";
+import { appendCourseDetail } from "./course-view";
 import { paceLabel, type GoalBoardView, type GoalConceptRow } from "./goal-board";
 import { masteryDot, masteryPill, setTone } from "./mastery-ui";
 import { appendSvgFragment } from "./svg-fragment";
@@ -169,6 +170,7 @@ export function renderGoalsPane(parent: HTMLElement, boards: GoalBoardView[], se
 		const state = el(line, "span", "gw-state");
 		masteryPill(state, concept.tone, concept.state);
 		rowAction(line, concept, handlers);
+		appendCourseDetail(line, concept.course);
 	}
 
 	const side = el(row, "aside", "gw-side");

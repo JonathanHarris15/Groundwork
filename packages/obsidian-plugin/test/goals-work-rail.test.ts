@@ -105,6 +105,22 @@ describe("goals work rail", () => {
 });
 
 describe("goals concept table", () => {
+	it("shows the preferred method and a quote, and the citation is not a link", () => {
+		const parent = document.createElement("div");
+		const concepts = [
+			row("Integration by parts", {
+				course: { preferred: "Choose u by LIATE before differentiating.", quote: "We always choose u by LIATE.", where: "Lecture 7.pptx, slide 4" },
+			}),
+		];
+		renderGoalsPane(parent, [board({ concepts })], "exam", handlers());
+		expect(parent.textContent).toContain("Preferred method: Choose u by LIATE before differentiating.");
+		expect(parent.textContent).toContain("We always choose u by LIATE.");
+		const cite = parent.querySelector(".gw-course-quote cite");
+		expect(cite?.textContent).toBe("Lecture 7.pptx, slide 4");
+		expect(cite?.querySelector("a")).toBeNull();
+		expect(parent.querySelector(".gw-concept-course a")).toBeNull();
+	});
+
 	it("Known is a live button that starts a review; Learn still starts learning", () => {
 		const onOpen = vi.fn();
 		const parent = document.createElement("div");

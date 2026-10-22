@@ -12,6 +12,7 @@ export * from "./flashcards";
 export * from "./exam";
 export * from "./bulk-import";
 export * from "./concept-title";
+export * from "./course-grounding";
 export * from "./markdown";
 export * from "./tutor-markdown";
 export * from "./model";

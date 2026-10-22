@@ -36,6 +36,10 @@ A sixth tone, `goal`, marks the goal itself.
 
 Only the Next row's action is filled. Every other row's action is outlined, so a list never shows several equal primary buttons.
 
+## Course excerpts on a concept
+
+When a concept has a preferred method or a verbatim quote, the Goals concept row and the Library Concepts row show it under the title. The method is one line (`Preferred method: …`, or the conflict line when sources disagree). One quote follows, with the file name and page or slide in a cite. That cite is plain text, not a link: the quote stays after the file is deleted. A row with neither method nor quote shows no extra block.
+
 ## Screens, not overlays
 
 Library, Settings, and Flashcards are screens in the same chrome as Learn, Map, and Goals. They have no Close or X button; you leave through the center tabs or the utility buttons.

@@ -20,6 +20,8 @@
  */
 
 import { directSourceReference, sourceBoundConceptReason } from "./concept-title";
+import { courseIsEmpty, groundCourse, mergeCourseInputs, sourceSlice, type CourseInput, type SourceDoc } from "./course-grounding";
+import { chunkLectureText, DOCUMENT_TEXT_MAX, LECTURE_CHUNK_CHARS } from "./document-text";
 import { cancelLater, later } from "./timers";
 import { findCycle } from "./graph";
 import type { HttpClient, HttpResponse } from "./http";
@@ -34,8 +36,12 @@ export const BULK_MIN_FILES = 3;
 export const BULK_SHARD_MAX_FILES = 2;
 /** Characters of document text in one sub-agent request. */
 export const BULK_SHARD_MAX_CHARS = 60_000;
-/** Characters of one document sent to a sub-agent. The rest stays in the vault. */
-export const BULK_FILE_MAX_CHARS = 80_000;
+/** Characters kept from one document before it is split into lecture parts. */
+export const BULK_FILE_MAX_CHARS = DOCUMENT_TEXT_MAX;
+/** Documents in one import, before a long lecture is split into parts. */
+export const BULK_MAX_DOCUMENTS = 80;
+/** Parts after that split. A lecture longer than one part still arrives whole. */
+export const BULK_MAX_PARTS = 160;
 /** Characters of document text in one HTTP body. Well under the 30 MB cap. */
 export const BULK_REQUEST_MAX_CHARS = 400_000;
 export const BULK_PARALLELISM = 3;
@@ -68,6 +74,10 @@ export interface ExtractedConcept {
 	prerequisites: string[];
 	requiredLevel?: number;
 	sources: ConceptSource[];
+	excerpts?: Array<{ quote: string; provenance?: string }>;
+	preferredMethod?: string;
+	alternates?: string[];
+	methodConflict?: string;
 }
 
 export interface BulkProgress {
@@ -146,12 +156,22 @@ function clipTitle(title: string): string {
 	return clean.length > 72 ? clean.slice(0, 72).replace(/\s+\S*$/, "") || clean.slice(0, 72) : clean;
 }
 
+/** Split a long lecture on page or slide boundaries. Every part is sent; the path stays the file's path. */
 export function filesForWire(files: BulkFile[]): BulkFile[] {
-	return files.map((file) => ({
-		path: file.path,
-		name: file.name || file.path.split("/").pop() || file.path,
-		text: file.text.length > BULK_FILE_MAX_CHARS ? file.text.slice(0, BULK_FILE_MAX_CHARS) : file.text,
-	}));
+	const out: BulkFile[] = [];
+	for (const file of files) {
+		const name = file.name || file.path.split("/").pop() || file.path;
+		const text = file.text.length > BULK_FILE_MAX_CHARS ? file.text.slice(0, BULK_FILE_MAX_CHARS) : file.text;
+		const chunks = chunkLectureText(text, LECTURE_CHUNK_CHARS);
+		if (chunks.length <= 1) {
+			out.push({ path: file.path, name, text: chunks[0] ?? "" });
+			continue;
+		}
+		chunks.forEach((chunk, index) => {
+			out.push({ path: file.path, name: `${name} (part ${index + 1})`, text: chunk });
+		});
+	}
+	return out;
 }
 
 /** Groups files so one HTTP body stays under the character budget. */
@@ -209,6 +229,7 @@ const EXTRACT_SYSTEM = [
 	"Read the whole document. Emit one concept for each distinct idea it teaches. The list grows with the document: a lecture with many ideas is many concepts, not one outline entry.",
 	"prerequisites are the direct earlier ideas, by the titles you used.",
 	"Every concept needs a source path copied from a document tag and a locator (slide, page, or section).",
+	"When the text states a method, add preferredMethod in the professor's words, and alternates for a method the text calls an alternate. Copy up to three verbatim quotes of at most 400 characters that appear in the document. A quote that is not in the text is dropped.",
 	"Do not invent concepts that these documents do not teach. Do not stop after the first few ideas.",
 ].join("\n");
 
@@ -252,7 +273,8 @@ export async function runBulkImport(input: {
 	note(buildingProgress(files.length));
 	const merged = await mergeBulkConcepts({
 		concepts: extracted.concepts,
-		documents: files.map((file) => file.path),
+		documents: [...new Set(files.map((file) => file.path))],
+		files,
 		userText: input.userText,
 		title: input.title,
 		model: input.model,
@@ -316,6 +338,7 @@ async function readShard(
 export async function mergeBulkConcepts(input: {
 	concepts: ExtractedConcept[];
 	documents: string[];
+	files?: BulkFile[];
 	userText: string;
 	title?: string;
 	model: BulkModel;
@@ -341,6 +364,7 @@ export async function mergeBulkConcepts(input: {
 		nodes,
 		renames,
 		documents: input.documents,
+		files: input.files,
 		userText: input.userText,
 		title: input.title,
 		usage,
@@ -390,6 +414,7 @@ export function assembleMergedGoal(input: {
 	nodes: ExtractedConcept[];
 	renames: Array<{ from: string; to: string }>;
 	documents: string[];
+	files?: BulkFile[];
 	userText: string;
 	title?: string;
 	usage?: { input: number; output: number };
@@ -402,7 +427,8 @@ export function assembleMergedGoal(input: {
 	const progress = input.progress ?? [];
 	if (!input.nodes.length) throw new BulkImportError("No concepts could be read from these documents.");
 	const repaired = repairGraph(dedupeConcepts(applyRenames(input.nodes, input.renames)));
-	const goal = toGoalInput(repaired.nodes, input.documents, input.userText, input.title);
+	const grounded = attachCourse(repaired.nodes, input.files ?? []);
+	const goal = toGoalInput(grounded, input.documents, input.userText, input.title);
 	const edges = goal.nodes.reduce((sum, node) => sum + (node.prerequisites?.length ?? 0), 0);
 	return {
 		goal,
@@ -520,12 +546,20 @@ function cleanConcept(value: unknown): ExtractedConcept | null {
 		.filter((item) => item && !sourceBoundConceptReason(item) && !sameConcept(item, title));
 	const level = numberField(value, "requiredLevel");
 	const sources = sourceList(value);
+	const excerpts = excerptList(value);
+	const preferredMethod = stringField(value, "preferredMethod");
+	const alternates = stringList(value, "alternates").slice(0, 4);
+	const methodConflict = stringField(value, "methodConflict");
 	return {
 		title,
 		...(summary ? { summary } : {}),
 		prerequisites: [...new Set(prerequisites)],
 		...(level ? { requiredLevel: Math.min(5, Math.max(1, Math.round(level))) } : {}),
 		sources,
+		...(excerpts.length ? { excerpts } : {}),
+		...(preferredMethod ? { preferredMethod } : {}),
+		...(alternates.length ? { alternates } : {}),
+		...(methodConflict ? { methodConflict } : {}),
 	};
 }
 
@@ -541,7 +575,24 @@ function snapConcept(concept: ExtractedConcept, files: BulkFile[]): ExtractedCon
 		const key = `${path}\0${locator}`;
 		if (!snapped.some((item) => `${item.path}\0${item.locator}` === key)) snapped.push({ path, locator });
 	}
-	return { ...concept, sources: snapped.slice(0, 6) };
+	const excerpts = verifyExcerpts(concept, files);
+	return { ...concept, sources: snapped.slice(0, 6), ...(excerpts.length ? { excerpts } : { excerpts: undefined }) };
+}
+
+function verifyExcerpts(concept: ExtractedConcept, files: BulkFile[]): Array<{ quote: string; provenance?: string }> {
+	const out: Array<{ quote: string; provenance?: string }> = [];
+	for (const excerpt of concept.excerpts ?? []) {
+		const paths = concept.sources.map((source) => source.path);
+		const corpus = files
+			.filter((file) => !paths.length || paths.includes(file.path))
+			.map((file) => file.text)
+			.join("\n");
+		const quote = sourceSlice(excerpt.quote, corpus || files.map((file) => file.text).join("\n"));
+		if (!quote) continue;
+		if (out.some((item) => item.quote.toLowerCase() === quote.toLowerCase())) continue;
+		out.push({ quote, ...(excerpt.provenance ? { provenance: excerpt.provenance } : {}) });
+	}
+	return out.slice(0, 5);
 }
 
 function safeSummary(text: string | undefined): string | undefined {
@@ -549,6 +600,20 @@ function safeSummary(text: string | undefined): string | undefined {
 	const clean = text.replace(/\s+/g, " ").trim().slice(0, 240);
 	if (!clean || sourceBoundConceptReason(clean) || directSourceReference(clean)) return undefined;
 	return clean;
+}
+
+function excerptList(value: object): Array<{ quote: string; provenance?: string }> {
+	const raw = (value as { excerpts?: unknown }).excerpts;
+	if (!Array.isArray(raw)) return [];
+	const excerpts: Array<{ quote: string; provenance?: string }> = [];
+	for (const row of raw) {
+		if (!isRecord(row)) continue;
+		const quote = stringField(row, "quote")?.replace(/\s+/g, " ").trim().slice(0, 400);
+		if (!quote) continue;
+		const provenance = stringField(row, "provenance");
+		excerpts.push({ quote, ...(provenance ? { provenance } : {}) });
+	}
+	return excerpts.slice(0, 5);
 }
 
 function sourceList(value: object): ConceptSource[] {
@@ -638,12 +703,33 @@ function mergeGroup(group: ExtractedConcept[]): ExtractedConcept {
 	}
 	const summary = group.map((concept) => concept.summary).find((item) => !!item);
 	const levels = group.map((concept) => concept.requiredLevel).filter((level): level is number => !!level);
+	const course = mergeExtractedCourse(group);
 	return {
 		title,
 		...(summary ? { summary } : {}),
 		prerequisites,
 		...(levels.length ? { requiredLevel: Math.max(...levels) } : {}),
 		sources,
+		...course,
+	};
+}
+
+function mergeExtractedCourse(group: ExtractedConcept[]): Pick<ExtractedConcept, "excerpts" | "preferredMethod" | "alternates" | "methodConflict"> {
+	let course: CourseInput | undefined;
+	for (const concept of group) {
+		course = mergeCourseInputs(course, {
+			excerpts: concept.excerpts?.map((excerpt) => ({ quote: excerpt.quote, provenance: excerpt.provenance })),
+			preferredMethod: concept.preferredMethod,
+			alternates: concept.alternates,
+			methodConflict: concept.methodConflict,
+		});
+	}
+	if (!course) return {};
+	return {
+		...(course.excerpts?.length ? { excerpts: course.excerpts.map((excerpt) => ({ quote: excerpt.quote, provenance: excerpt.provenance })) } : {}),
+		...(course.preferredMethod ? { preferredMethod: course.preferredMethod } : {}),
+		...(course.alternates?.length ? { alternates: course.alternates } : {}),
+		...(course.methodConflict ? { methodConflict: course.methodConflict } : {}),
 	};
 }
 
@@ -670,6 +756,11 @@ function applyRenames(nodes: ExtractedConcept[], renames: Array<{ from: string; 
 			}
 			if (!target.summary && from.summary) target.summary = from.summary;
 			if ((from.requiredLevel ?? 0) > (target.requiredLevel ?? 0)) target.requiredLevel = from.requiredLevel;
+			const course = mergeExtractedCourse([target, from]);
+			target.excerpts = course.excerpts;
+			target.preferredMethod = course.preferredMethod;
+			target.alternates = course.alternates;
+			target.methodConflict = course.methodConflict;
 			current = current.filter((node) => node !== from);
 			for (const node of current) node.prerequisites = node.prerequisites.map((item) => (sameConcept(item, previous) ? target.title : item));
 		} else {
@@ -777,6 +868,67 @@ function assertGraph(nodes: ExtractedConcept[]): void {
 	if (findCycle(edges)) throw new BulkImportError("The concept map still has a cycle.");
 }
 
+function courseFromExtracted(node: ExtractedConcept): CourseInput | undefined {
+	const path = node.sources.find((source) => source.path.trim())?.path;
+	const excerpts = (node.excerpts ?? []).map((excerpt) => ({
+		quote: excerpt.quote,
+		...(excerpt.provenance ? { provenance: excerpt.provenance } : {}),
+		...(path ? { path } : {}),
+	}));
+	if (!excerpts.length && !node.preferredMethod && !node.alternates?.length && !node.methodConflict) return undefined;
+	return {
+		...(excerpts.length ? { excerpts } : {}),
+		...(node.preferredMethod ? { preferredMethod: node.preferredMethod } : {}),
+		...(node.alternates?.length ? { alternates: node.alternates } : {}),
+		...(node.methodConflict ? { methodConflict: node.methodConflict } : {}),
+	};
+}
+
+/** Copy verified quotes and the professor's method onto each concept. A quote that is not in the text is left out. */
+function attachCourse(nodes: ExtractedConcept[], files: BulkFile[]): ExtractedConcept[] {
+	if (!files.length) return nodes;
+	const byPath = new Map<string, string>();
+	for (const file of files) {
+		const prev = byPath.get(file.path) ?? "";
+		byPath.set(file.path, prev ? `${prev}\n${file.text}` : file.text);
+	}
+	const imported = new Date().toISOString().slice(0, 10);
+	return nodes.map((node) => {
+		const docs: SourceDoc[] = [];
+		const seen = new Set<string>();
+		for (const source of node.sources) {
+			if (!source.path || seen.has(source.path)) continue;
+			seen.add(source.path);
+			const text = byPath.get(source.path);
+			if (!text?.trim()) continue;
+			docs.push({ path: source.path, name: source.path.split("/").pop() ?? source.path, text });
+		}
+		if (!docs.length) return node;
+		const grounded = groundCourse(
+			node.title,
+			docs,
+			{
+				excerpts: node.excerpts?.map((excerpt) => ({ quote: excerpt.quote, provenance: excerpt.provenance, path: docs[0]?.path })),
+				preferredMethod: node.preferredMethod,
+				alternates: node.alternates,
+				methodConflict: node.methodConflict,
+			},
+			imported,
+		);
+		if (courseIsEmpty(grounded.grounding)) {
+			return { ...node, excerpts: undefined, preferredMethod: undefined, alternates: undefined, methodConflict: undefined };
+		}
+		const course = grounded.grounding;
+		return {
+			...node,
+			excerpts: course.excerpts.map((excerpt) => ({ quote: excerpt.quote, provenance: excerpt.provenance })),
+			preferredMethod: course.method.preferred,
+			alternates: course.method.alternates.length ? course.method.alternates : undefined,
+			methodConflict: course.method.conflict,
+		};
+	});
+}
+
 function toGoalInput(nodes: ExtractedConcept[], documents: string[], userText: string, explicit?: string): GoalInput {
 	const title = bulkGoalTitle(userText, explicit);
 	const sinks = nodes.filter((node) => !nodes.some((other) => other.prerequisites.some((item) => sameConcept(item, node.title)))).map((node) => node.title);
@@ -788,12 +940,16 @@ function toGoalInput(nodes: ExtractedConcept[], documents: string[], userText: s
 		...(why ? { why } : {}),
 		approach: "One plan for every document. Foundations come first, and each concept is traceable to a source in Traces.",
 		targets,
-		nodes: nodes.map((node) => ({
-			title: node.title,
-			prerequisites: node.prerequisites,
-			...(node.summary ? { summary: node.summary } : {}),
-			...(node.requiredLevel ? { requiredLevel: node.requiredLevel } : {}),
-		})),
+		nodes: nodes.map((node) => {
+			const course = courseFromExtracted(node);
+			return {
+				title: node.title,
+				prerequisites: node.prerequisites,
+				...(node.summary ? { summary: node.summary } : {}),
+				...(node.requiredLevel ? { requiredLevel: node.requiredLevel } : {}),
+				...(course ? { course } : {}),
+			};
+		}),
 		sources: [...new Set(documents.map((path) => path.trim()).filter(Boolean))],
 		traces: nodes.flatMap((node) => node.sources.map((source) => ({ title: node.title, path: source.path, locator: source.locator }))),
 	};
@@ -889,12 +1045,15 @@ export function parseBulkRequest(body: unknown): BulkRequest | { error: string }
 	const phase = raw.phase === "extract" || raw.phase === "merge" || raw.phase === "import" ? raw.phase : "import";
 	const userText = typeof raw.userText === "string" ? raw.userText.slice(0, 4_000) : "";
 	const title = typeof raw.title === "string" ? raw.title.slice(0, 120) : undefined;
+	if ((phase === "import" || phase === "extract") && Array.isArray(raw.files) && raw.files.length > BULK_MAX_DOCUMENTS) {
+		return { error: `Send at most ${BULK_MAX_DOCUMENTS} documents.` };
+	}
 	const files = parseFiles(raw.files);
 	const concepts = parseConceptList(raw.concepts);
-	const documents = Array.isArray(raw.documents) ? raw.documents.filter((item): item is string => typeof item === "string" && !!item.trim()).slice(0, 40) : [];
+	const documents = Array.isArray(raw.documents) ? raw.documents.filter((item): item is string => typeof item === "string" && !!item.trim()).slice(0, BULK_MAX_DOCUMENTS) : [];
 	if (phase !== "merge" && !files.length) return { error: "Name the documents to read." };
 	if (phase === "merge" && !concepts.length) return { error: "Send the concepts to merge." };
-	if ((phase === "import" || phase === "extract") && files.length > 40) return { error: "Send at most 40 documents." };
+	if ((phase === "import" || phase === "extract") && files.length > BULK_MAX_PARTS) return { error: `Send at most ${BULK_MAX_DOCUMENTS} documents.` };
 	return { phase, userText, title, files, concepts, documents: documents.length ? documents : files.map((file) => file.path), stream: raw.stream === true };
 }
 
@@ -907,8 +1066,17 @@ function parseFiles(value: unknown): BulkFile[] {
 		if (!path || path.includes("..")) continue;
 		const name = stringField(row, "name") || path.split("/").pop() || path;
 		const text = typeof row.text === "string" ? row.text.slice(0, BULK_FILE_MAX_CHARS) : "";
-		files.push({ path: path.slice(0, 300), name: name.slice(0, 200), text });
-		if (files.length >= 40) break;
+		const chunks = chunkLectureText(text, LECTURE_CHUNK_CHARS);
+		const parts = chunks.length ? chunks : [""];
+		parts.forEach((chunk, index) => {
+			if (files.length >= BULK_MAX_PARTS) return;
+			files.push({
+				path: path.slice(0, 300),
+				name: (parts.length > 1 ? `${name} (part ${index + 1})` : name).slice(0, 200),
+				text: chunk,
+			});
+		});
+		if (files.length >= BULK_MAX_PARTS) break;
 	}
 	return files;
 }

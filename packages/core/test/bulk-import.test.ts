@@ -12,6 +12,7 @@ import {
 	shouldBulkImport,
 	type BulkModel,
 } from "../src/bulk-import";
+import { LECTURE_CHUNK_CHARS } from "../src/document-text";
 import { JSON_BODY_LIMIT_BYTES } from "../src/upload-limit";
 import { findCycle } from "../src/graph";
 import { prepareTutorTurn } from "../src/jev/context";
@@ -233,8 +234,13 @@ describe("bulk import", () => {
 				bodies.push(parsed);
 				if (parsed.job === true) {
 					const sent = parsed.files as Array<{ text: string }>;
-					expect(sent).toHaveLength(6);
-					for (const file of sent) expect(file.text.length).toBeLessThanOrEqual(80_000);
+					expect(sent.length).toBeGreaterThan(6);
+					let total = 0;
+					for (const file of sent) {
+						expect(file.text.length).toBeLessThanOrEqual(LECTURE_CHUNK_CHARS);
+						total += file.text.length;
+					}
+					expect(total).toBe(files.reduce((sum, file) => sum + file.text.length, 0));
 					return jsonReply({ jobId, status: "open", event: { phase: "reading", done: 0, total: 6, label: "Reading 6 documents... 0/6" } });
 				}
 				expect(parsed.step).toBe(true);

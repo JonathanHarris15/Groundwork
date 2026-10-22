@@ -45,6 +45,8 @@ import {
 	scrubLearnerText,
 	figureIsVisible,
 	normalizeVaultPath,
+	parseCourseGrounding,
+	courseForTutor,
 	parseNote,
 	asksToWriteFlashcards,
 	FLASHCARDS_REQUIRE_UPGRADE,
@@ -92,6 +94,7 @@ import { AsideCard, findQuoteRange } from "./aside";
 import { downloadFigure, FigureCard, type FigureCardModel } from "./figure-card";
 import { gutterFlags, menuPosition, sideRoom } from "./gutter";
 import { clampSelection, passageOf } from "./passage";
+import { appendCourseDetail, courseSnippet } from "./course-view";
 import { toBoard, type GoalBoardView } from "./goal-board";
 import { renderGoalsPane } from "./goals-pane";
 import { renderMapPane, renderStartedVaultMap } from "./map-pane";
@@ -2159,6 +2162,8 @@ export class ChatView extends ItemView implements ToolUI {
 					if (sourceBoundConceptReason(concept.title) || concept.aliases.some((alias) => sourceBoundConceptReason(alias))) {
 						meta?.createSpan({ cls: "gw-lib-bound", text: "Names a document" });
 					}
+					const main = row.querySelector<HTMLElement>(".gw-lib-main");
+					if (main) appendCourseDetail(main, courseSnippet(courseForTutor(parseCourseGrounding(concept.body))));
 					this.libraryButton(row, "Quiz", () => void this.quizConcept(concept.title));
 					this.libraryDelete(row, () => this.deleteListedConcept(concept.title));
 				}

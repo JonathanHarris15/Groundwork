@@ -1,5 +1,18 @@
 import { assertAbstractConcept, assertConceptOmitsSources, sourceBoundConceptReason } from "./concept-title";
 import {
+	COURSE_SECTION,
+	courseForTutor,
+	courseIsEmpty,
+	groundCourse,
+	mergeCourse,
+	parseCourseGrounding,
+	renderCourseSection,
+	verifiedCourseInput,
+	type CourseInput,
+	type SourceDoc,
+} from "./course-grounding";
+import { vaultFileText } from "./files";
+import {
 	blueprintToGoalInput,
 	buildExamBlueprint,
 	classifyMaterial,
@@ -16,6 +29,7 @@ import {
 	demoteHeadings,
 	getSection,
 	parseNote,
+	removeSection,
 	safeFileName,
 	serializeNote,
 	setSection,
@@ -71,6 +85,8 @@ export interface ConceptInput {
 	connections?: string;
 	misconceptions?: string;
 	notes?: string;
+	/** Verbatim course excerpts and the professor's method. Merged with what is already stored. */
+	course?: CourseInput;
 }
 
 export type GoalStatus = "active" | "paused" | "done";
@@ -152,7 +168,15 @@ export interface GoalInput {
 	 */
 	targets?: string[];
 	target?: string;
-	nodes: Array<{ title: string; prerequisites?: string[]; summary?: string; domain?: string; requiredLevel?: number; aliases?: string[] }>;
+	nodes: Array<{
+		title: string;
+		prerequisites?: string[];
+		summary?: string;
+		domain?: string;
+		requiredLevel?: number;
+		aliases?: string[];
+		course?: CourseInput;
+	}>;
 	status?: GoalStatus;
 	/** Deadline as YYYY-MM-DD. Omit it and a new goal is due in 14 days. */
 	due?: string;
@@ -186,7 +210,7 @@ export interface IngestExamInput {
 
 export interface GoalReport {
 	goal: Goal;
-	nodes: Array<GraphNode & { edge: string; nextReview?: string; openMisconceptions: string[]; floor?: number; role: "target" | "built" | "path" }>;
+	nodes: Array<GraphNode & { edge: string; nextReview?: string; openMisconceptions: string[]; floor?: number; role: "target" | "built" | "path"; course?: ReturnType<typeof courseForTutor> }>;
 	analysis: GoalAnalysis;
 	mermaid: string;
 	/** Best next step on this goal, when it still has open targets. */
@@ -317,6 +341,14 @@ export class KnowledgeStore {
 		assertConceptOmitsSources(
 			[input.summary, input.unconditionalTruths, input.connections, input.misconceptions, input.notes].filter((s): s is string => !!s?.trim()).join("\n"),
 		);
+		if (input.course && !input.course.verified) {
+			const prepared = groundCourse(title, await this.courseDocs([], input.course), input.course, this.importedDay());
+			if (prepared.rejected.length) {
+				const sample = prepared.rejected[0]?.replace(/\s+/g, " ").trim().slice(0, 120);
+				throw new Error(`Rejected a quote that is not in the source text: "${sample}".`);
+			}
+			input = { ...input, course: courseIsEmpty(prepared.grounding) ? undefined : verifiedCourseInput(prepared.grounding) };
+		}
 		const existing = await this.resolve(title);
 
 		const createdPrerequisites: string[] = [];
@@ -343,7 +375,7 @@ export class KnowledgeStore {
 		}
 
 		const { frontmatter, body: oldBody } = parseNote(await this.io.read(existing.path));
-		let body = applySections(oldBody, input);
+		let body = applySections(oldBody, input, this.importedDay());
 		const index = await this.concepts();
 		frontmatter.prerequisites = prerequisites.map((p) => wikilink(index.get(p)?.title ?? p));
 		if (input.domain) frontmatter.domain = input.domain;
@@ -371,7 +403,7 @@ export class KnowledgeStore {
 			tags: ["groundwork/concept"],
 		};
 		let body = `# ${title}\n`;
-		body = applySections(body, input);
+		body = applySections(body, input, this.importedDay());
 		await this.io.write(path, serializeNote(fm, body));
 		this.invalidate();
 		this.changed(path);
@@ -548,6 +580,9 @@ export class KnowledgeStore {
 		const judged = mode !== "off" && !!this.judgments();
 		const inThisGoal = new Set(input.nodes.map((n) => slugify(unwikilink(n.title))));
 		const nodeTitles = new Map<string, string>();
+		const sourcePaths = normalizeSources(input.sources ?? (await this.resolveGoal(input.title))?.sources ?? []);
+		const sharedDocs = await this.courseDocs(sourcePaths);
+		const imported = this.importedDay();
 		for (const node of input.nodes) {
 			let prerequisites = node.prerequisites;
 			let replacePrerequisites = false;
@@ -558,6 +593,14 @@ export class KnowledgeStore {
 				prerequisites = [...outside, ...(node.prerequisites ?? [])];
 				replacePrerequisites = true;
 			}
+			const extraDocs = await this.courseDocs([], node.course);
+			const docs = dedupeDocs([...sharedDocs, ...extraDocs]);
+			let course = node.course;
+			if (course || docs.length) {
+				const prepared = groundCourse(node.title, docs, course, imported);
+				if (prepared.rejected.length) notes.push(`Rejected a quote on “${node.title}” that is not in the source text.`);
+				course = courseIsEmpty(prepared.grounding) ? undefined : verifiedCourseInput(prepared.grounding);
+			}
 			await this.upsertConcept({
 				title: node.title,
 				prerequisites,
@@ -565,6 +608,7 @@ export class KnowledgeStore {
 				summary: node.summary,
 				domain: node.domain,
 				aliases: node.aliases?.filter((alias) => !sourceBoundConceptReason(alias)),
+				course,
 			});
 			const c = await this.requireConcept(node.title);
 			nodeTitles.set(c.id, c.title);
@@ -1171,6 +1215,7 @@ export class KnowledgeStore {
 					openMisconceptions: c.stats.openMisconceptions,
 					floor: c.stats.floor,
 					role,
+					course: courseForTutor(parseCourseGrounding(c.body)),
 				};
 			});
 		const report: GoalReport = {
@@ -1422,6 +1467,36 @@ export class KnowledgeStore {
 		await this.io.write(path, content);
 		this.changed(path);
 	}
+
+	private importedDay(): string {
+		return this.now().toISOString().slice(0, 10);
+	}
+
+	/** Text the quotes have to appear in. A missing file contributes nothing. */
+	private async courseDocs(paths: string[], course?: CourseInput): Promise<SourceDoc[]> {
+		const docs: SourceDoc[] = [];
+		const seen = new Set<string>();
+		const add = (doc: SourceDoc) => {
+			if (!doc.text.trim() || seen.has(doc.path)) return;
+			seen.add(doc.path);
+			docs.push(doc);
+		};
+		for (const path of paths) {
+			const name = path.split("/").pop() ?? path;
+			add({ path, name, text: await vaultFileText(this.context, path) });
+		}
+		for (const excerpt of course?.excerpts ?? []) {
+			const path = excerpt.path?.trim() || "";
+			if (path && !seen.has(path)) {
+				const text = excerpt.sourceText?.trim() || (await vaultFileText(this.context, path));
+				add({ path, name: path.split("/").pop() ?? path, text });
+			} else if (!path && excerpt.sourceText?.trim() && !docs.some((doc) => doc.text === excerpt.sourceText)) {
+				const name = (excerpt.provenance || "course").split(",")[0]!.trim() || "course";
+				add({ path: name, name, text: excerpt.sourceText });
+			}
+		}
+		return docs;
+	}
 }
 
 export function conceptSummary(c: Concept) {
@@ -1448,7 +1523,7 @@ function statsFrontmatter(stats: ConceptStats) {
 	};
 }
 
-function applySections(body: string, input: ConceptInput): string {
+function applySections(body: string, input: ConceptInput, imported: string): string {
 	let out = body;
 	const set = (heading: string, content?: string) => {
 		if (content) out = setSection(out, heading, demoteHeadings(content), ["Quiz history"]);
@@ -1458,6 +1533,34 @@ function applySections(body: string, input: ConceptInput): string {
 	set("How it connects", input.connections);
 	set("Misconceptions to watch", input.misconceptions);
 	set("Notes", input.notes);
+	if (input.course?.verified) {
+		const incoming = {
+			excerpts: (input.course.excerpts ?? []).flatMap((excerpt) => {
+				const quote = excerpt.quote?.replace(/\s+/g, " ").trim();
+				if (!quote) return [];
+				return [{ quote, provenance: excerpt.provenance?.trim() || "course file", imported }];
+			}),
+			method: {
+				...(input.course.methodConflict ? {} : input.course.preferredMethod ? { preferred: input.course.preferredMethod } : {}),
+				alternates: input.course.alternates ?? [],
+				...(input.course.methodConflict ? { conflict: input.course.methodConflict } : {}),
+			},
+		};
+		const merged = mergeCourse(parseCourseGrounding(out), incoming);
+		const rendered = renderCourseSection(merged);
+		out = rendered ? setSection(out, COURSE_SECTION, rendered, ["Quiz history"]) : removeSection(out, COURSE_SECTION);
+	}
+	return out;
+}
+
+function dedupeDocs(docs: SourceDoc[]): SourceDoc[] {
+	const out: SourceDoc[] = [];
+	const seen = new Set<string>();
+	for (const doc of docs) {
+		if (!doc.text.trim() || seen.has(doc.path)) continue;
+		seen.add(doc.path);
+		out.push(doc);
+	}
 	return out;
 }
 

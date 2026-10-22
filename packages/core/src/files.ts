@@ -1,5 +1,6 @@
 import { cleanFolderList, pathInsideAny } from "./access";
 import type { ChatMessage, ContentBlock } from "./agent/types";
+import { extractPdfDocument, extractPptxDocument } from "./document-text";
 import { fitTutorImage } from "./image-fit";
 import type { VaultIO } from "./io";
 import { prepareInlinePdf } from "./pdf-inline";
@@ -11,7 +12,7 @@ export const RESOURCES_DIR = "resources";
 export type FileKind = "image" | "pdf" | "text" | "other";
 
 /** Per-file limits of the Messages API: 5 MB per image, 32 MB per request. */
-export const LIMITS = { image: 5 * 1024 * 1024, pdf: 20 * 1024 * 1024, textChars: 150_000 };
+export const LIMITS = { image: 5 * 1024 * 1024, pdf: 20 * 1024 * 1024, textChars: 400_000 };
 
 const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
 const TEXT_EXTENSIONS = new Set(
@@ -52,10 +53,21 @@ export function fileKind(path: string): { kind: FileKind; mediaType: string } {
 	return { kind: "other", mediaType: "application/octet-stream" };
 }
 
+/** Extracted text of a vault file, or "" when it cannot be read. */
+export async function vaultFileText(io: VaultIO, path: string): Promise<string> {
+	try {
+		const file = await loadVaultFile(io, path);
+		return file.text?.trim() ?? "";
+	} catch {
+		return "";
+	}
+}
+
 export async function loadVaultFile(io: VaultIO, path: string): Promise<VaultFile> {
 	const { kind, mediaType } = fileKind(path);
 	const base = { path, kind, mediaType };
 	try {
+		if (extensionOf(path) === "pptx") return loadSlides(io, path, base);
 		if (kind === "text") {
 			const raw = await io.read(path);
 			const truncated = raw.length > LIMITS.textChars;
@@ -73,8 +85,19 @@ export async function loadVaultFile(io: VaultIO, path: string): Promise<VaultFil
 			return { ...base, mediaType: fitted.mediaType, size: fitted.bytes.byteLength, data: toBase64(fitted.bytes) };
 		}
 		const prepared = await prepareInlinePdf(bytes, path);
-		if (!prepared.ok) return { ...base, size: bytes.byteLength, skipped: prepared.note, tooLarge: true };
-		return { ...base, size: prepared.bytes.byteLength, data: toBase64(prepared.bytes), ...(prepared.note ? { note: prepared.note } : {}) };
+		const extracted = await extractPdfDocument(bytes).catch(() => "");
+		const text = clipText(extracted);
+		if (!prepared.ok) {
+			if (text.text) return { ...base, kind: "text", mediaType: "text/plain", size: bytes.byteLength, ...text };
+			return { ...base, size: bytes.byteLength, skipped: prepared.note, tooLarge: true };
+		}
+		return {
+			...base,
+			size: prepared.bytes.byteLength,
+			data: toBase64(prepared.bytes),
+			...(text.text ? text : {}),
+			...(prepared.note ? { note: prepared.note } : {}),
+		};
 	} catch (err) {
 		return { ...base, size: 0, skipped: `Couldn't read it (${err instanceof Error ? err.message : String(err)}).` };
 	}
@@ -89,6 +112,7 @@ export function fileBlocks(f: VaultFile): ContentBlock[] {
 	if (!f.data) return [{ type: "text", text: f.note || f.text || `File ${f.path} was not inlined.` }];
 	const blocks: ContentBlock[] = [];
 	if (f.note) blocks.push({ type: "text", text: f.note });
+	if (f.text) blocks.push({ type: "text", text: fileText(f) });
 	blocks.push(label, { type: "document", source: { type: "base64", media_type: f.mediaType, data: f.data }, title: basename(f.path) });
 	return blocks;
 }
@@ -119,7 +143,10 @@ export function mcpContent(text: string, files: VaultFile[] = [], override?: (f:
 		else if (f.skipped) out.push({ type: "text", text: `File ${f.path} is not included: ${f.skipped}` });
 		else if (f.kind === "text") out.push({ type: "text", text: fileText(f) });
 		else if (f.kind === "image") out.push({ type: "text", text: `File: ${f.path}` }, { type: "image", data: f.data!, mimeType: f.mediaType });
-		else out.push({ type: "resource", resource: { uri: `groundwork:///${encodeURI(f.path)}`, mimeType: f.mediaType, blob: f.data! } });
+		else {
+			if (f.text) out.push({ type: "text", text: fileText(f) });
+			if (f.data) out.push({ type: "resource", resource: { uri: `groundwork:///${encodeURI(f.path)}`, mimeType: f.mediaType, blob: f.data } });
+		}
 	}
 	return out;
 }
@@ -224,4 +251,24 @@ export function toBase64(buf: ArrayBuffer | Uint8Array): string {
 
 function mb(bytes: number): string {
 	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function clipText(raw: string): { text?: string; truncated?: boolean } {
+	const text = raw.trim();
+	if (!text) return {};
+	if (text.length <= LIMITS.textChars) return { text };
+	return { text: text.slice(0, LIMITS.textChars), truncated: true };
+}
+
+async function loadSlides(io: VaultIO, path: string, base: { path: string; kind: FileKind; mediaType: string }): Promise<VaultFile> {
+	const bytes = new Uint8Array(await io.readBinary(path));
+	let extracted = "";
+	try {
+		extracted = await extractPptxDocument(bytes);
+	} catch (err) {
+		return { ...base, size: bytes.byteLength, skipped: `Couldn't read the slides (${err instanceof Error ? err.message : "not a PowerPoint"}).` };
+	}
+	const text = clipText(extracted);
+	if (!text.text) return { ...base, size: bytes.byteLength, skipped: "This PowerPoint has no readable slide text." };
+	return { ...base, kind: "text", mediaType: "text/plain", size: bytes.byteLength, ...text };
 }

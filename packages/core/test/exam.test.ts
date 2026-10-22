@@ -101,8 +101,10 @@ describe("exam material parsing", () => {
 		expect(concepts.some((c) => /chain rule/i.test(c.title))).toBe(true);
 		for (const concept of concepts) {
 			expect(concept.title).not.toMatch(/lecture/i);
-			expect(concept.body).not.toMatch(/lecture/i);
+			const outside = concept.body.replace(/## From your course[\s\S]*$/, "");
+			expect(outside).not.toMatch(/lecture/i);
 			expect(concept.body).not.toMatch(/resources\//i);
+			expect(concept.body).not.toMatch(/\[\[[^\]]*\]\]/);
 		}
 		const goal = (await store.goals())[0];
 		expect(goal.sources).toEqual(["resources/Lecture 4.md"]);

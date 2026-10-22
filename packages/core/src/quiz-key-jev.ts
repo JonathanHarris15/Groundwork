@@ -29,6 +29,7 @@ const QUIZ_KEY_SYSTEM = [
 	"keyedCorrect: that option is right.",
 	"anotherAlsoCorrect: some other option is also right.",
 	"correctValue: the value of the one right option, or null if none or more than one is right.",
+	"When course names a preferred method, the keyed option follows that method and its notation. A different valid method is not also correct when the question asked for the preferred one.",
 ].join(" ");
 
 const FREE_KEY_SYSTEM = [
@@ -38,6 +39,7 @@ const FREE_KEY_SYSTEM = [
 	"referenceCorrect: the reference answer is right.",
 	"learnerCorrect: the learner's answer is right, or null when no learner answer was given.",
 	"correctedReference: a correct reference when the given one is wrong, otherwise null.",
+	"When course names a preferred method, a different valid method is still a correct reference. Do not mark it wrong for using the other method.",
 ].join(" ");
 
 export interface QuizKeyVerdict {
@@ -79,6 +81,7 @@ export interface FreeKeySubject {
 	solution?: string;
 	reference: string;
 	learnerAnswer?: string;
+	courseBrief?: string;
 }
 
 /** The part of a choice question the check needs. A prepared quiz satisfies it. */
@@ -93,6 +96,7 @@ export interface QuizKeySubject {
 	multiSelect?: boolean;
 	reference?: string;
 	keyCheck?: QuizKeyCheck;
+	courseBrief?: string;
 }
 
 export interface QuizKeyVerifier {
@@ -400,6 +404,7 @@ function quizKeyUser(quiz: QuizKeySubject): string {
 		explanation: clip(quiz.explanation),
 		keyedValue: quiz.correct[0] ?? "",
 		options: quiz.options.map((option) => ({ value: option.value, label: clip(option.label, 300) })),
+		...(quiz.courseBrief ? { course: clip(quiz.courseBrief, 900) } : {}),
 	});
 }
 
@@ -508,7 +513,11 @@ function stampFree<T extends QuizKeySubject>(quiz: T, reference: string, result:
 	return quiz;
 }
 
-function freeSubject(quiz: { question: string; explanation: string; solution?: string }, reference: string, learnerAnswer?: string): FreeKeySubject {
+function freeSubject(
+	quiz: { question: string; explanation: string; solution?: string; courseBrief?: string },
+	reference: string,
+	learnerAnswer?: string,
+): FreeKeySubject {
 	const learner = learnerAnswer?.trim();
 	return {
 		question: quiz.question,
@@ -516,6 +525,7 @@ function freeSubject(quiz: { question: string; explanation: string; solution?: s
 		solution: quiz.solution,
 		reference,
 		learnerAnswer: learner || undefined,
+		courseBrief: quiz.courseBrief,
 	};
 }
 
@@ -526,6 +536,7 @@ function freeKeyUser(quiz: FreeKeySubject): string {
 		explanation: clip(quiz.explanation),
 		reference: clip(quiz.reference),
 		learnerAnswer: clip(quiz.learnerAnswer),
+		...(quiz.courseBrief ? { course: clip(quiz.courseBrief, 900) } : {}),
 	});
 }
 

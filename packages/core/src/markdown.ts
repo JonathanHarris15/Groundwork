@@ -172,6 +172,15 @@ export function setSection(body: string, heading: string, content: string, befor
 	return `${body.trimEnd()}\n\n${block.join("\n")}`;
 }
 
+/** Drops `## heading` and everything under it until the next `## `. */
+export function removeSection(body: string, heading: string): string {
+	const lines = body.split("\n");
+	const s = findSection(lines, heading);
+	if (!s) return body;
+	lines.splice(s.start, s.end - s.start);
+	return lines.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + (body.endsWith("\n") ? "\n" : "");
+}
+
 /** Push headings down so embedded markdown (transcripts, summaries) can't break section boundaries. */
 export function demoteHeadings(md: string, by = 2): string {
 	const lines = md.split("\n");

@@ -31,6 +31,15 @@ import { cardsToPractice, loadFlashcardLibrary, saveFlashcard } from "./flashcar
 import { daysLeftPhrase } from "./goal-plan";
 import { figureFailureMessage, figureIsVisible, saveFigure, type SessionFigure } from "./figure";
 import { describePublicBody, fetchPublic } from "./figure-net";
+import {
+	courseForTutor,
+	courseTeachingText,
+	gradeNudge,
+	parseCourseGrounding,
+	quizMethodGap,
+	type CourseGrounding,
+	type CourseInput,
+} from "./course-grounding";
 import { conceptSummary, describeGoalProgress, type ConceptInput, type GoalInput, type GoalReport, type GoalStatus, type KnowledgeStore } from "./store";
 
 export type JSONSchema = Record<string, unknown>;
@@ -117,6 +126,61 @@ export interface ToolDef<I = unknown> {
 const str = (description: string) => ({ type: "string", description });
 const strList = (description: string) => ({ type: "array", items: { type: "string" }, description });
 const json = (v: unknown) => JSON.stringify(v, null, 2);
+const courseSchema: JSONSchema = {
+	type: "object",
+	description:
+		"Verbatim excerpts from a file you read, and the professor's method. Each quote is checked against that file and rejected when it is not in the text. The concept stores the quote and a plain-text file name and page. It does not link the file, and it still works after the file is deleted.",
+	properties: {
+		excerpts: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					quote: str("Verbatim text from the file, at most 400 characters."),
+					provenance: str("File name and page or slide, as plain text. Example: Lecture 7.pptx, slide 4."),
+					path: str("Vault path of the file the quote was copied from. It is checked, then not stored on the concept."),
+				},
+				required: ["quote"],
+			},
+		},
+		preferredMethod: str("The professor's approach, notation, and step order, in words that appear in the file."),
+		alternates: strList("Other methods the source marks as alternates."),
+	},
+};
+
+/** Drop model-supplied source text. The vault file is the text a quote is checked against. */
+function publicCourse(raw: CourseInput | undefined): CourseInput | undefined {
+	if (!raw) return undefined;
+	const excerpts = (raw.excerpts ?? []).flatMap((excerpt) => {
+		const quote = excerpt?.quote?.replace(/\s+/g, " ").trim();
+		if (!quote) return [];
+		const provenance = excerpt.provenance?.trim();
+		const path = excerpt.path?.trim();
+		return [{ quote, ...(provenance ? { provenance } : {}), ...(path ? { path } : {}) }];
+	});
+	const preferredMethod = raw.preferredMethod?.trim();
+	const alternates = (raw.alternates ?? []).map((item) => item.trim()).filter(Boolean);
+	if (!excerpts.length && !preferredMethod && !alternates.length) return undefined;
+	return {
+		...(excerpts.length ? { excerpts } : {}),
+		...(preferredMethod ? { preferredMethod } : {}),
+		...(alternates.length ? { alternates } : {}),
+	};
+}
+
+function courseOn(body: string): CourseGrounding {
+	return parseCourseGrounding(body);
+}
+
+function quizBlob(input: { question?: string; solution?: string; explanation?: string; answer?: string; referenceAnswer?: string }): string {
+	return [input.question, input.solution, input.explanation, input.answer, input.referenceAnswer].filter((part) => !!part?.trim()).join("\n");
+}
+
+function withCourse(quiz: PreparedQuiz, course: CourseGrounding): PreparedQuiz {
+	const brief = courseTeachingText(course);
+	const nudge = gradeNudge(course);
+	return { ...quiz, ...(brief ? { courseBrief: brief } : {}), ...(nudge ? { courseNudge: nudge } : {}) };
+}
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 const evidenceKinds = ["probe", "check", "review", "explain"];
@@ -287,6 +351,7 @@ export const TOOLS: ToolDef[] = [
 					}),
 					dependents: (await store.dependents(c.id)).map((d) => d.title),
 					note: c.body.slice(0, 4000),
+					course: courseForTutor(courseOn(c.body)),
 				});
 			}
 			return { text: json(out), summary: `Read ${concepts.length} concept note${concepts.length === 1 ? "" : "s"}` };
@@ -295,7 +360,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "upsert_concept",
 		description:
-			"Create or update a concept on the account. Only after they opt in to study. A concept is a reusable idea, never a file or a task on a file (that is a goal; put the file in sources). Direct prerequisites only; missing ones are created as stubs and merged unless replacePrerequisites is true. Sections replace. No path or document title in the note. When they say they already know something, use mark_known instead.",
+			"Create or update a concept on the account. Only after they opt in to study. A concept is a reusable idea, never a file or a task on a file (that is a goal; put the file in sources). Direct prerequisites only; missing ones are created as stubs and merged unless replacePrerequisites is true. Sections replace. No path or document title in the note. course holds verbatim quotes and the professor's method: quote, provenance, and path. A quote that is not in the file is rejected. When they say they already know something, use mark_known instead.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -309,11 +374,12 @@ export const TOOLS: ToolDef[] = [
 				connections: str("How it follows from its prerequisites and what it unlocks."),
 				misconceptions: str("Traps to watch for."),
 				notes: str("Anything else worth keeping."),
+				course: courseSchema,
 			},
 			required: ["title"],
 		},
 		async run(input: ConceptInput, { store }) {
-			const { concept, created, createdPrerequisites } = await store.upsertConcept(input);
+			const { concept, created, createdPrerequisites } = await store.upsertConcept({ ...input, course: publicCourse(input.course) });
 			const extra = createdPrerequisites.length ? ` Created prerequisite stubs: ${createdPrerequisites.join(", ")}.` : "";
 			return {
 				text: `${created ? "Created" : "Updated"} [[${concept.title}]] (${concept.path}).${extra}`,
@@ -358,7 +424,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "set_goal",
 		description:
-			"Save a learning goal and pin it. Call it on the turn they ask for a goal, including when they name a due date and say they will not quiz yet. Do not wait for a quiz, a Start reply, or another confirmation. Start a quiz in the same turn only when they are studying now. Do not ask permission first. Do not say the goal is saved until this call succeeds. A goal is its targets: concepts not yet built. The title may name a course, exam, or document. targets and nodes are reusable ideas, never a file. Pass sources for the vault files. nodes are the targets plus foundations, direct prerequisites only. due is YYYY-MM-DD when they name a day, such as an exam date; omit it and a new goal is due in 14 days. weights are percents. Concepts they already hold are stored as built. Returns open targets, built, the frontier, and a mermaid map.",
+			"Save a learning goal and pin it. Call it on the turn they ask for a goal, including when they name a due date and say they will not quiz yet. Do not wait for a quiz, a Start reply, or another confirmation. Start a quiz in the same turn only when they are studying now. Do not ask permission first. Do not say the goal is saved until this call succeeds. A goal is its targets: concepts not yet built. The title may name a course, exam, or document. targets and nodes are reusable ideas, never a file. Pass sources for the vault files. On each node, course carries verbatim quotes (quote, provenance, path) and the professor's preferred method. nodes are the targets plus foundations, direct prerequisites only. due is YYYY-MM-DD when they name a day, such as an exam date; omit it and a new goal is due in 14 days. weights are percents. Concepts they already hold are stored as built. Returns open targets, built, the frontier, and a mermaid map.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -384,6 +450,7 @@ export const TOOLS: ToolDef[] = [
 								maximum: 5,
 								description: "Exam depth this node must reach (same 1–5 scale as quizzes). Set when the goal is exam prep.",
 							},
+							course: courseSchema,
 						},
 						required: ["title"],
 					},
@@ -408,7 +475,8 @@ export const TOOLS: ToolDef[] = [
 			required: ["title", "targets", "nodes"],
 		},
 		async run(input: GoalInput, { store, ui }) {
-			const r = await store.setGoal(input);
+			const nodes = (input.nodes ?? []).map((node) => ({ ...node, course: publicCourse(node.course) }));
+			const r = await store.setGoal({ ...input, nodes });
 			if (r.goal.status === "active") await store.setWorkingGoal(r.goal.title);
 			ui?.focusGoal?.((await store.workingGoal())?.title ?? null);
 			const titleOf = (id: string) => r.nodes.find((n) => n.id === id)?.title ?? id;
@@ -465,6 +533,7 @@ export const TOOLS: ToolDef[] = [
 							edge: d.edge,
 							requiredLevel: need,
 							misconceptions: d.openMisconceptions,
+							course: d.course,
 						};
 					}),
 					frontier: r.analysis.frontier.map((n) => n.title),
@@ -544,7 +613,7 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask one graded question and wait. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Do not ask in a Quick Check callout or leave a question for the chat. An open answer uses format free. When there are options, use choice. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again. If the tool returns an error, repeat that error. Do not say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. A free-response reference answer gets that same model check. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
+			"Ask one graded question and wait. When the concept has a preferred method, the question, the worked solution, and the explanation use that method and its notation. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Do not ask in a Quick Check callout or leave a question for the chat. An open answer uses format free. When there are options, use choice. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again. If the tool returns an error, repeat that error. Do not say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. A free-response reference answer gets that same model check. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session, grader, keyVerifier, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
@@ -553,7 +622,10 @@ export const TOOLS: ToolDef[] = [
 				return { text: `Unknown concept "${input.concept}". Create it with upsert_concept (or set_goal) first, then ask again.`, isError: true };
 			}
 			const concept = hit.concept;
-			const quiz = await confirmQuizKey(prepareQuiz({ ...input, concept: concept.title }), keyVerifier, signal);
+			const course = courseOn(concept.body);
+			const gap = quizMethodGap(quizBlob(input), course);
+			if (gap) return { text: gap, isError: true, summary: "Quiz missed the preferred method" };
+			const quiz = await confirmQuizKey(withCourse(prepareQuiz({ ...input, concept: concept.title }), course), keyVerifier, signal);
 			const response = await ui.quiz(quiz);
 			if (!response) return { text: withMarginNotes("The learner dismissed the quiz without answering. Nothing was recorded.", ui), summary: "Quiz dismissed" };
 			if (needsJudgment(quiz, response)) {
@@ -601,16 +673,25 @@ export const TOOLS: ToolDef[] = [
 			if (!ui?.test) return { text: "practice_test needs an interactive surface; quiz them one question at a time instead.", isError: true };
 			const unknown: string[] = [];
 			const questions: QuizInput[] = [];
+			const courses = new Map<string, CourseGrounding>();
 			for (const q of input.questions ?? []) {
 				const hit = await store.resolveForEvidence(q.concept, q.question);
-				if (!hit) unknown.push(q.concept);
-				else questions.push({ ...q, concept: hit.concept.title });
+				if (!hit) {
+					unknown.push(q.concept);
+					continue;
+				}
+				const course = courseOn(hit.concept.body);
+				const gap = quizMethodGap(quizBlob(q), course);
+				if (gap) return { text: `${hit.concept.title}: ${gap}`, isError: true, summary: "Quiz missed the preferred method" };
+				courses.set(hit.concept.title, course);
+				questions.push({ ...q, concept: hit.concept.title });
 			}
 			if (unknown.length) {
 				return { text: `Unknown concepts: ${[...new Set(unknown)].join(", ")}. Create them with upsert_concept (or set_goal) first, then give the test.`, isError: true };
 			}
 			const prepared = prepareTest({ ...input, questions });
-			const test = { ...prepared, questions: await confirmTestQuestions(prepared.questions, keyVerifier, signal) };
+			const stamped = prepared.questions.map((question) => withCourse(question, courses.get(question.concept) ?? parseCourseGrounding("")));
+			const test = { ...prepared, questions: await confirmTestQuestions(stamped, keyVerifier, signal) };
 			const response = await ui.test(test);
 			if (!response) return { text: withMarginNotes("The learner closed the practice test without submitting. Nothing was recorded.", ui), summary: "Practice test dismissed" };
 			const state = await startTestGrading(store, test, response, session, keyVerifier);
@@ -957,8 +1038,11 @@ export const TOOLS: ToolDef[] = [
 			}
 			try {
 				const saved = await saveFlashcard(ctx.store, { concept, front, back, deck });
+				const stored = await ctx.store.resolve(saved.card.concept);
+				const quote = stored ? courseOn(stored.body).excerpts[0] : undefined;
+				const cited = quote ? ` You may quote the course: "${quote.quote}" (${quote.provenance}).` : "";
 				return {
-					text: `Saved a flashcard on ${saved.card.concept} in ${saved.deckTitle}. It stays on the account until the learner asks to write cards into the vault.`,
+					text: `Saved a flashcard on ${saved.card.concept} in ${saved.deckTitle}. It stays on the account until the learner asks to write cards into the vault.${cited}`,
 					summary: `Saved a flashcard on ${saved.card.concept}`,
 				};
 			} catch (err) {

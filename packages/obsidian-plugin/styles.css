@@ -2973,16 +2973,49 @@ body .gw-root button.gw-step.is-off { color: var(--gw-muted); }
 	.gw-concept-head + .gw-concept-row { border-top: 0; }
 	.gw-concept-row {
 		grid-template-columns: auto minmax(0, 1fr) auto;
-		grid-template-areas: "name name action" "weight complete state";
+		grid-template-areas: "name name action" "weight complete state" "course course course";
 		row-gap: 8px;
 	}
 	.gw-concept-name { grid-area: name; }
+	.gw-concept-course { grid-area: course; }
 	.gw-weight { grid-area: weight; }
 	.gw-weight::before { content: "Weight"; margin-right: 4px; }
 	.gw-complete { grid-area: complete; }
 	.gw-state { grid-area: state; justify-self: end; }
 	.gw-row-action { grid-area: action; }
 }
+.gw-concept-course {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+	padding-top: 2px;
+}
+.gw-course-method {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.4;
+	color: var(--gw-ink);
+	overflow-wrap: anywhere;
+}
+.gw-course-quote {
+	margin: 0;
+	padding-left: 10px;
+	border-left: 2px solid var(--gw-line-strong);
+	font-size: 13px;
+	line-height: 1.45;
+	color: var(--gw-muted);
+	overflow-wrap: anywhere;
+}
+.gw-course-quote cite {
+	display: block;
+	margin-top: 2px;
+	font-style: normal;
+	font-size: 12px;
+	color: var(--gw-faint);
+}
+.gw-lib-list-concepts .gw-concept-course { flex: 1 0 100%; }
 .gw-row-action.is-primary { background: var(--gw-cta-bg); color: var(--gw-cta-ink); border-color: var(--gw-cta-bg); }
 .gw-row-action.is-known {
 	color: var(--gw-tone-solid-ink);
