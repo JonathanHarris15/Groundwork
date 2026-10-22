@@ -5,6 +5,7 @@ import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pluginBuildStamp, refreshCliPluginSnapshot } from "./build-hooks.mjs";
+import { bundleAlias } from "./shims/alias.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const prod = process.argv[2] === "production";
@@ -76,6 +77,7 @@ const ctx = await esbuild.context({
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	minify: prod,
+	alias: bundleAlias,
 	plugins: [rendererSafeEvents, copyAssets],
 });
 
