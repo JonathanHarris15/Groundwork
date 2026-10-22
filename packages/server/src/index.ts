@@ -22,6 +22,7 @@ import { FileConnectCodeStore, FirestoreConnectCodeStore } from "./connect-code-
 import { FileSetupFunnel, FirestoreSetupFunnel } from "./setup-funnel";
 import { emptyDownloadCache } from "./obsidian-downloads";
 import { jsonBodyError, readRawBody } from "./json-body";
+import { FirestoreBulkJobStore, MemoryBulkJobStore } from "./bulk-job";
 
 const { port, host } = listenTarget();
 const auth = loadAuth();
@@ -55,6 +56,7 @@ const deps = {
 	),
 	setupFunnel: auth.firebase ? new FirestoreSetupFunnel() : new FileSetupFunnel(process.env.GROUNDWORK_FUNNEL_FILE ?? path.resolve(process.cwd(), "data/setup-funnel.json")),
 	downloadCache: emptyDownloadCache(),
+	bulkJobs: auth.firebase ? new FirestoreBulkJobStore() : new MemoryBulkJobStore(),
 };
 
 const server = createServer((req, res) => {

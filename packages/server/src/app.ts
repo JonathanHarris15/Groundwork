@@ -5,6 +5,7 @@ import type { Billing } from "./billing";
 import { MemoryConflict, type MemoryDirectory } from "./memory";
 import { SecretDirectory, SecretError } from "./secrets";
 import { importBulkGoal } from "./bulk-goal";
+import { MemoryBulkJobStore, type BulkJobStore } from "./bulk-job";
 import { completeTutor, describeTutor, openTutorStream, type TutorCallContext } from "./tutor";
 import { obsidianOpen } from "./obsidian-open";
 import { attributionFromHeader, cleanGaClientId, cleanGaSessionId, cleanGclid } from "./tracking";
@@ -37,6 +38,8 @@ export interface ServerDeps {
 	connectCodes?: ConnectCodeDirectory;
 	setupFunnel?: SetupFunnel;
 	downloadCache?: DownloadCache;
+	/** Bulk import jobs. One step is one model call, so a website timeout can retry. */
+	bulkJobs?: BulkJobStore;
 }
 
 export interface RouteResult {
@@ -229,7 +232,8 @@ export async function route(method: string, path: string, body: unknown, deps: S
 						}
 					: undefined,
 			};
-			return importBulkGoal(tutorCtx, body);
+			if (!deps.bulkJobs) deps.bulkJobs = new MemoryBulkJobStore();
+			return importBulkGoal(tutorCtx, body, deps.bulkJobs, uid);
 		}
 		if (method === "POST" && path === "/v1/tutor/complete") {
 			const tutorCtx: TutorCallContext = {
