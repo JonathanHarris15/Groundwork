@@ -477,6 +477,52 @@ body .gw-root button.gw-lib-tab.is-active {
 .gw-setup-steps li {
 	margin: 8px 0;
 }
+.gw-setup-steps strong {
+	display: block;
+}
+.gw-setup-detail {
+	margin: 2px 0 0;
+}
+.gw-setup-cmd {
+	margin-top: 8px;
+}
+.gw-setup-cmd-label {
+	margin: 0 0 4px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+.gw-setup-cmd-line {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+.gw-setup-cmd-line code {
+	flex: 1;
+	min-width: 0;
+	padding: 6px 8px;
+	border-radius: var(--radius-s);
+	background: var(--background-primary-alt);
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.gw-setup-more {
+	margin-top: 12px;
+}
+.gw-setup-more summary {
+	cursor: pointer;
+}
+body .gw-root .gw-setup-cmd-line button.gw-lib-btn {
+	flex: 0 0 auto;
+	height: auto;
+	white-space: nowrap;
+}
+body .gw-root .gw-setup-cmd-line button.gw-lib-btn:focus-visible,
+body .gw-root .gw-setup-more summary:focus-visible {
+	outline: 2px solid var(--interactive-accent, currentColor);
+	outline-offset: 2px;
+}
 .gw-lib-row {
 	display: flex;
 	align-items: center;

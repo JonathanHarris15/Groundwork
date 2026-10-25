@@ -140,7 +140,7 @@ function page(spec: { path: string; title: string; description: string; main: st
 		<link rel="preload" href="https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4jQmfxI.woff2" as="font" type="font/woff2" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&display=swap" rel="stylesheet" />
 		${spec.noindex ? `<meta name="robots" content="noindex" />` : ""}
-		<link rel="stylesheet" href="/styles.css?v=23" />
+		<link rel="stylesheet" href="/styles.css?v=24" />
 		${spec.jsonLd ?? ""}
 		<script src="/tracking.js?v=9"></script>
 	</head>
@@ -565,16 +565,12 @@ function escapeHtml(value: string): string {
 	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function installCommands(detail: string): { mac: string; windows: string } {
-	const match = /^In a terminal, run (.+)\. On Windows PowerShell: (.+)$/.exec(detail);
-	const mac = match?.[1];
-	const windows = match?.[2];
-	if (!mac || !windows) throw new Error("CLAUDE_SETUP install step changed.");
-	return { mac, windows };
-}
-
 function commandHtml(command: string): string {
 	return `<pre class="cmd" translate="no"><code>${escapeHtml(command)}</code></pre>`;
+}
+
+function commandBlocks(commands: readonly { label: string; command: string }[] | undefined): string {
+	return (commands ?? []).map((item) => `<p class="cmd-label">${escapeHtml(item.label)}</p>${commandHtml(item.command)}`).join("");
 }
 
 function signInHtml(detail: string): string {
@@ -615,19 +611,17 @@ function byomFaq(): FaqItem[] {
 function byomSteps(): string {
 	const [install, signIn, check] = CLAUDE_SETUP;
 	if (!install || !signIn || !check || CLAUDE_SETUP.length !== 3) throw new Error("CLAUDE_SETUP no longer has three steps.");
-	const commands = installCommands(install.detail);
+	if ((install.commands?.length ?? 0) < 2) throw new Error("CLAUDE_SETUP install step needs a Mac and a Windows command.");
 	return `<ol class="setup-steps">
 			<li>
 				<h2>${escapeHtml(install.title)}</h2>
-				<p>In a terminal.</p>
-				<p class="cmd-label">Mac and Linux</p>
-				${commandHtml(commands.mac)}
-				<p class="cmd-label">Windows PowerShell</p>
-				${commandHtml(commands.windows)}
+				<p>${escapeHtml(install.detail)}</p>
+				${commandBlocks(install.commands)}
 			</li>
 			<li>
 				<h2>${escapeHtml(signIn.title)}</h2>
 				<p>${signInHtml(signIn.detail)}</p>
+				${commandBlocks(signIn.commands)}
 			</li>
 			<li>
 				<h2>${escapeHtml(check.title)}</h2>

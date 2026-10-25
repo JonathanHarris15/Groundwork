@@ -63,12 +63,22 @@ describe("tutor route", () => {
 		const status = tutorStatus({ action: "claude" }, view, { via: "claude", provider: null });
 		expect(JSON.stringify(status)).not.toMatch(/\$\d|creditUsd|remainingUsd|hostedCredit|spentUsd/);
 		expect(status.claude).toEqual(CLAUDE_SETUP);
+		expect(CLAUDE_SETUP.map((step) => step.title)).toEqual(["Install Claude Code", "Sign in", "Check the connection"]);
+		expect(CLAUDE_SETUP[0]?.commands?.map((item) => item.command)).toEqual([
+			"curl -fsSL https://claude.ai/install.sh | bash",
+			"irm https://claude.ai/install.ps1 | iex",
+		]);
+		expect(CLAUDE_SETUP[1]?.commands?.[0]?.command).toBe("claude");
+		expect(CLAUDE_SETUP[1]?.detail).toContain("/login");
+		expect(CLAUDE_SETUP[2]?.detail).toContain("Check connection");
 		expect(status.label).toBe("Claude subscription");
 	});
 
 	it("uses the learner's own key and refuses a missing one", () => {
 		const view = viewAccount(setTutorChoice(choosePlan(emptyAccount("u", now), "byom", now), { via: "key", provider: "openai" }, now), now);
-		expect(tutorDecision(view, { via: "key", provider: "openai" }, saved).action).toBe("blocked");
+		const blocked = tutorDecision(view, { via: "key", provider: "openai" }, saved);
+		expect(blocked.action).toBe("blocked");
+		if (blocked.action === "blocked") expect(blocked.error).toContain("Link Claude Code");
 		expect(tutorDecision(view, { via: "key", provider: "openai" }, { ...saved, openai: true })).toMatchObject({
 			action: "key",
 			provider: "openai",

@@ -1,5 +1,5 @@
 import { FileSystemAdapter, Notice, Plugin, requestUrl, type ObsidianProtocolData, type WorkspaceLeaf } from "obsidian";
-import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, cleanFolderList, FLASHCARDS_REQUIRE_UPGRADE, GroundworkProvider, HEAVY_REQUIRES_UPGRADE, streamingHttp, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, PATHS, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, remoteQuizKeyVerifier, replaceTutorMemoryFiles, setHttpClient, signInWithCustomToken, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type QuizKeyVerifier, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type UsageEventKind, type VaultIO } from "@groundwork/core";
+import { AccountClient, AccountError, asUnknown, CLAUDE_SETUP, CLAUDE_SETUP_DETAIL, cleanFolderList, FLASHCARDS_REQUIRE_UPGRADE, GroundworkProvider, HEAVY_REQUIRES_UPGRADE, streamingHttp, isTutorMemoryPath, knowledgeSnapshot, KnowledgeStore, MemoryVaultIO, mergeTutorMemoryFiles, parseTutorMemoryFiles, PATHS, refreshFirebaseSession, remoteAnswerGrader, remoteContextSelector, remoteQuizKeyVerifier, replaceTutorMemoryFiles, setHttpClient, signInWithCustomToken, SIGN_IN_DETAIL, syncFlashcards, tutorMemoryFiles, tutorRuntime, type AnswerGrader, type ContextSelector, type HttpInit, type QuizKeyVerifier, type HttpResponse, type Provider, type TutorMemory, type TutorStatus, type UsageEventKind, type VaultIO } from "@groundwork/core";
 import { checkClaudeCode, findClaudeExecutable, type ClaudeCodeConfig, type ClaudeCodeStatus, type ModelInfo } from "@groundwork/core/claude-code";
 import { BUILD, readBuildStamp } from "./build";
 import { sessionFromRedeem, type RedeemPayload } from "./connect";
@@ -426,7 +426,7 @@ export default class GroundworkPlugin extends Plugin {
 				demo: false,
 				setup: {
 					title: "Connect your Claude subscription to start.",
-					detail: "Install Claude Code, run `claude` once in a terminal and sign in (/login), then press Check connection in Groundwork settings.",
+					detail: CLAUDE_SETUP_DETAIL,
 					action: "Open settings",
 				},
 			};

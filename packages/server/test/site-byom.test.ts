@@ -27,7 +27,7 @@ describe("BYOM landing page", () => {
 		expect(html).toContain(">Sign up");
 		expect(html).toContain('class="nav-session" data-sign-in href="/?plan=byom#signin"');
 		expect(html).toContain('src="/tracking.js?v=9"');
-		expect(html).toContain('href="/styles.css?v=23"');
+		expect(html).toContain('href="/styles.css?v=24"');
 		expect(html).toContain('class="mkt-main byom"');
 		expect(publicPagePaths()).toContain("/byom");
 		expect(sitemapXml()).toContain("https://groundworklearn.com/byom");
@@ -50,14 +50,13 @@ describe("BYOM landing page", () => {
 		const html = String(renderSite("/byom")?.body);
 		const [install, signIn, check] = CLAUDE_SETUP;
 		expect(CLAUDE_SETUP).toHaveLength(3);
-		const commands = /^In a terminal, run (.+)\. On Windows PowerShell: (.+)$/.exec(install?.detail ?? "");
-		expect(commands?.[1]).toBeTruthy();
-		expect(commands?.[2]).toBeTruthy();
+		const commands = install?.commands?.map((item) => item.command) ?? [];
+		expect(commands).toHaveLength(2);
 		expect(html).toContain(install?.title);
 		expect(html).toContain("Mac and Linux");
 		expect(html).toContain("Windows PowerShell");
-		expect(html).toContain(`<code>${commands?.[1]}</code>`);
-		expect(html).toContain(`<code>${commands?.[2]}</code>`);
+		expect(html).toContain(`<code>${commands[0]}</code>`);
+		expect(html).toContain(`<code>${commands[1]}</code>`);
 		expect(html).toContain(signIn?.title);
 		expect(html).toContain('<code translate="no">claude</code>');
 		expect(html).toContain('<code translate="no">/login</code>');

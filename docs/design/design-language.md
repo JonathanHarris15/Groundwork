@@ -68,6 +68,8 @@ The site header is one row from 360px through 840px: the Groundwork logo, a comp
 
 The top of `/admin/usage` is two count cards, Users and Paid users, above the free-plan usage report. Users is the Firebase Auth count. Free, No plan, Paid users, and Paid plan not active partition that count, so those categories add up to Users. Joined in the last 7 days is a window inside that count. Paid users are Auth users with an active or trialing subscription on Bring your own model or Groundwork. The card lists how many of those cost more than $0 after discounts, and how many are on the 100% off GROUNDWORKTESTER coupon. It does not multiply a plan price by the subscription count. A Firestore account document with no Auth user is an orphaned record, shown on its own line under the cards, and left out of the usage and retention numbers.
 
+Under the cards, the Users roster lists every Auth account with a plan and a standing (Paying, Paid, Comped, Paid plan not active, Free, No plan). People who pay stay on that list. The free-allowance table below lists only free accounts. The CSV `accounts` section has the same rows.
+
 ## Setup checklist
 
 `/get-started` and the empty account page share one checklist, mounted by `setup.js` into `[data-setup]`. Three steps, in order: Get Obsidian, Add Groundwork, Connect your account. The detected desktop OS gets the download button. The other two systems are text links. A phone (by user agent, not by viewport width) sees “Groundwork runs on your computer” with copy, share, and a QR code, and the three steps stay underneath. Done is the word “Done”, not a color alone. The connect link is `obsidian://groundwork?code=…`. It does not carry a refresh token.
@@ -77,6 +79,10 @@ The top of `/admin/usage` is two count cards, Users and Paid users, above the fr
 `/byom` is the ad page for Bring your own model. It uses the same marketing shell as the other site pages. The price line reads `PLANS.byom.priceUsdPerMonth` as `$6/mo`. The primary button and the header Sign in go to `/?plan=byom#signin`, the same handoff as Choose $6 on the pricing card. The pricing card links here.
 
 Setup commands from `CLAUDE_SETUP` sit in `.cmd` blocks. On a phone the block is the full width of the column and the command wraps, so the page does not scroll sideways. The sign-up button is full width under 800px and shrinks to its label on a wider screen. The page does not use Claude or Anthropic logos.
+
+## Link Claude Code
+
+Bring your own model uses the same three steps on the account page (`#link-claude`), in Obsidian settings, and on `/byom`. The steps and the commands live in `CLAUDE_SETUP`: install, sign in with `claude` then `/login`, then Check connection in Obsidian. Each command has a Copy button. A provider key is the fallback, behind “Use a provider key instead” on the account page and behind “Path and model” for the executable in the plugin. The website does not connect Claude. Obsidian does.
 
 ## Pricing page
 
