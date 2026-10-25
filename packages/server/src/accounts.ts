@@ -82,6 +82,23 @@ export class AccountDirectory {
 		return this.commit(uid, now, (record) => choosePlan(record, plan, now));
 	}
 
+	/**
+	 * Free is the default for a new account.
+	 * A plan already stored — including one a Stripe webhook wrote while this request was in flight — stays.
+	 */
+	async ensureFreePlan(uid: string, now: Date = new Date()): Promise<AccountView> {
+		return this.commit(uid, now, (record) => (record.plan ? currentAccount(record, now) : choosePlan(record, "free", now)));
+	}
+
+	/** Active or trialing membership last copied from Stripe. Absent when that snapshot was cleared. */
+	async liveMembership(uid: string): Promise<StoredMembership | null> {
+		const membership = (await this.readRecord(uid))?.membership;
+		if (!membership) return null;
+		if (membership.status !== "active" && membership.status !== "trialing") return null;
+		if (membership.plan !== "byom" && membership.plan !== "included") return null;
+		return membership;
+	}
+
 	async rename(uid: string, name: string, now: Date = new Date()): Promise<AccountView> {
 		return this.commit(uid, now, (record) => setDisplayName(record, name));
 	}

@@ -36,8 +36,20 @@ export interface Billing {
 	syncMemberships?(): Promise<void>;
 }
 
+/** Named plan plus the census snapshot. `membership` is null for `past_due`, which keeps the plan and drops the snapshot. */
+export type LiveEntitlement = { plan: "byom" | "included"; membership: StoredMembership | null };
+
+/** What to do with the account when one subscription ends and Stripe may still have another. */
+export type ReplacementMembership = LiveEntitlement | "keep" | null;
+
 export interface BillingHooks {
 	onUpgrade?(uid: string, plan: "byom" | "included"): Promise<void>;
+	/**
+	 * Another entitled subscription for this customer.
+	 * `keep` means one is still entitled but its price is not one of ours, so the stored plan stays.
+	 * `null` means Stripe has no entitled subscription left.
+	 */
+	replacement?(customerId: string): Promise<ReplacementMembership>;
 }
 
 /** Stripe-standard grace: past_due keeps paid entitlements until canceled, unpaid, or deleted. */
@@ -61,9 +73,22 @@ export function resetStripeEventDedupe(): void {
 	seenStripeEvents.clear();
 }
 
+export interface SubscriptionItemLike {
+	quantity?: number | null;
+	price?: string | { id?: string | null; unit_amount?: number | null; currency?: string | null } | null;
+	/** Legacy Subscription Item field. Same id as `price` on current subscriptions. */
+	plan?: string | { id?: string | null; amount?: number | null; currency?: string | null } | null;
+	pricing?: {
+		unit_amount?: number | null;
+		currency?: string | null;
+		price_details?: { price?: string | { id?: string | null } | null } | null;
+	} | null;
+}
+
 export interface SubscriptionLike {
 	status?: string | null;
-	items?: { data?: Array<{ quantity?: number | null; price?: string | { id?: string | null; unit_amount?: number | null; currency?: string | null } | null }> } | null;
+	metadata?: { uid?: string | null; plan?: string | null } | null;
+	items?: { data?: Array<SubscriptionItemLike> | null } | null;
 	discount?: unknown;
 	discounts?: unknown;
 }
@@ -93,7 +118,7 @@ export function planFromSubscription(subscription: SubscriptionLike, prices: Mem
 	let included = false;
 	let byom = false;
 	for (const item of subscription.items?.data ?? []) {
-		const id = priceId(item?.price);
+		const id = itemPriceId(item);
 		if (!id) continue;
 		if (includedIds.has(id)) included = true;
 		else if (byomIds.has(id)) byom = true;
@@ -131,13 +156,12 @@ export function recurringAmountUsd(subscription: SubscriptionLike): number | nul
 	let cents = 0;
 	let sawAmount = false;
 	for (const item of subscription.items?.data ?? []) {
-		const price = item?.price;
-		if (!price || typeof price === "string") continue;
-		if (price.currency && price.currency.toLowerCase() !== "usd") continue;
-		if (typeof price.unit_amount !== "number" || !Number.isFinite(price.unit_amount)) continue;
+		const charge = itemCharge(item);
+		if (!charge) continue;
+		if (charge.currency && charge.currency.toLowerCase() !== "usd") continue;
 		sawAmount = true;
 		const quantity = item?.quantity ?? 1;
-		cents += price.unit_amount * (quantity > 0 ? quantity : 1);
+		cents += charge.cents * (quantity > 0 ? quantity : 1);
 	}
 	if (!sawAmount) return null;
 	cents = Math.round(cents * (1 - Math.max(0, percentOff) / 100));
@@ -148,7 +172,6 @@ export function recurringAmountUsd(subscription: SubscriptionLike): number | nul
 export interface MembershipSubscription extends SubscriptionLike {
 	id?: string;
 	customer?: string | { id?: string | null } | null;
-	metadata?: { uid?: string | null } | null;
 }
 
 export interface PaidMembershipClient {
@@ -158,15 +181,18 @@ export interface PaidMembershipClient {
 }
 
 const MEMBERSHIP_EXPANDS: string[][] = [
-	["data.discounts", "data.discounts.promotion_code", "data.discounts.source.coupon"],
+	["data.items.data.price", "data.discounts", "data.discounts.promotion_code", "data.discounts.source.coupon"],
 	["data.discounts", "data.discounts.coupon", "data.discounts.promotion_code"],
 	["data.discount", "data.discount.coupon", "data.discount.promotion_code"],
 	[],
 ];
 
-/** Copy active and trialing subscriptions onto accounts. Accounts Stripe does not list lose a stale membership. */
+/**
+ * Copy active and trialing subscriptions onto accounts.
+ * A payer Stripe lists is written even when the account document does not exist yet, so they show up on the admin list.
+ * Accounts Stripe does not list lose a stale membership. An entitled subscription whose price we do not recognize keeps the stored one.
+ */
 export async function refreshPaidMemberships(stripe: PaidMembershipClient, prices: MembershipPrices, accounts: AccountDirectory): Promise<void> {
-	const known = new Set((await accounts.list()).map((row) => row.record.uid));
 	const seen = new Set<string>();
 	let expandAt = 0;
 	for (const status of ["active", "trialing"] as const) {
@@ -192,13 +218,17 @@ export async function refreshPaidMemberships(stripe: PaidMembershipClient, price
 			if (!listed) throw lastError instanceof Error ? lastError : new Error("Could not list Stripe subscriptions.");
 			for (const subscription of listed.data) {
 				const uid = await membershipUid(accounts, subscription);
-				if (!uid || !known.has(uid)) continue;
-				const snapshot = membershipFromSubscription({ ...subscription, status: subscription.status ?? status }, prices);
-				if (!snapshot) continue;
-				await accounts.rememberMembership(uid, snapshot);
-				if (snapshot.couponCode) await accounts.markCoupon(uid, snapshot.couponCode);
+				if (!uid) continue;
+				const entitlement = entitlementFromSubscription({ ...subscription, status: subscription.status ?? status }, prices);
+				if (entitlement === "unknown") {
+					seen.add(uid);
+					continue;
+				}
+				if (!entitlement) continue;
 				const current = await accounts.get(uid);
-				if (current.plan !== snapshot.plan) await accounts.setPlan(uid, snapshot.plan);
+				if (current.plan !== entitlement.plan) await accounts.setPlan(uid, entitlement.plan);
+				await accounts.rememberMembership(uid, entitlement.membership);
+				if (entitlement.membership?.couponCode) await accounts.markCoupon(uid, entitlement.membership.couponCode);
 				seen.add(uid);
 			}
 			if (!listed.has_more || !listed.data.length) break;
@@ -281,7 +311,7 @@ export interface StripeMembershipClient {
 		search(args: { query: string; limit: number }): Promise<{ data: Array<{ id: string }> }>;
 	};
 	subscriptions: {
-		list(args: { customer: string; status: "active" | "trialing" | "past_due"; limit: number }): Promise<{ data: SubscriptionLike[] }>;
+		list(args: { customer: string; status: "active" | "trialing" | "past_due"; limit: number; expand?: string[] }): Promise<{ data: SubscriptionLike[] }>;
 	};
 }
 
@@ -314,7 +344,10 @@ export function createBilling(
 			if (!signature) throw badRequest("Missing Stripe signature.");
 			const event = stripe.webhooks.constructEvent(raw, signature, webhookSecret);
 			freshUntil.clear();
-			await applyStripeEvent(accounts, event, prices, hooks);
+			await applyStripeEvent(accounts, event, prices, {
+				...hooks,
+				replacement: (customerId) => liveEntitlement(stripe, prices, customerId),
+			});
 			if (event.type === "checkout.session.completed") {
 				const session = event.data.object;
 				const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
@@ -431,6 +464,19 @@ async function dispatchStripeEvent(accounts: AccountDirectory, event: Stripe.Eve
 		// `created` can arrive as `incomplete` before checkout finishes. Do not wipe the plan that checkout just set.
 		if (!entitled) {
 			if (event.type === "customer.subscription.created") return;
+			const next = await hooks?.replacement?.(customer);
+			if (next === "keep") return;
+			if (next) {
+				const before = await accounts.get(uid);
+				if (before.plan !== next.plan) {
+					await accounts.setPlan(uid, next.plan);
+					await hooks?.onUpgrade?.(uid, next.plan);
+				}
+				await accounts.rememberMembership(uid, next.membership);
+				if (next.membership?.couponCode) await accounts.markCoupon(uid, next.membership.couponCode);
+				await rememberTesterCoupon(accounts, uid, subscription);
+				return;
+			}
 			await accounts.setPlan(uid, "free");
 			await accounts.rememberMembership(uid, null);
 			await rememberTesterCoupon(accounts, uid, subscription);
@@ -455,22 +501,63 @@ export async function applyLiveSubscription(
 	const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
 	const uid = subscription.metadata?.uid?.trim() || (customer ? (await accounts.findByCustomer(customer))?.uid : undefined);
 	if (!uid) return;
-	const planned = prices ? planFromSubscription(subscription, prices) : subscription.metadata?.plan;
-	if (planned === "byom" || planned === "included") {
-		const before = await accounts.get(uid);
-		if (before.plan !== planned) {
-			await accounts.setPlan(uid, planned);
-			await hooks?.onUpgrade?.(uid, planned);
-		}
-	}
+	const entitlement = entitlementFromSubscription(subscription, prices);
 	await rememberTesterCoupon(accounts, uid, subscription);
-	if (!prices) return;
-	const snapshot = membershipFromSubscription(subscription, prices);
-	if (snapshot) await accounts.rememberMembership(uid, snapshot);
-	else if (subscription.status !== "active" && subscription.status !== "trialing") await accounts.rememberMembership(uid, null);
+	if (!entitlement || entitlement === "unknown") return;
+	const before = await accounts.get(uid);
+	if (before.plan !== entitlement.plan) {
+		await accounts.setPlan(uid, entitlement.plan);
+		await hooks?.onUpgrade?.(uid, entitlement.plan);
+	}
+	await accounts.rememberMembership(uid, entitlement.membership);
+	if (entitlement.membership?.couponCode) await accounts.markCoupon(uid, entitlement.membership.couponCode);
 }
 
 const TESTER_COUPON = "GROUNDWORKTESTER";
+
+/**
+ * The plan a subscription grants.
+ * A known price wins. When the price is not one of ours, checkout metadata (`plan`) is the membership,
+ * so a Bring your own model payer is not left on free after a price change.
+ * `unknown` means the subscription is entitled and neither the price nor the metadata names a plan.
+ */
+export function entitlementFromSubscription(subscription: SubscriptionLike, prices?: MembershipPrices): LiveEntitlement | "unknown" | null {
+	if (!subscriptionIsEntitled(subscription.status)) return null;
+	const priced = prices ? planFromSubscription(subscription, prices) : null;
+	const hinted = subscription.metadata?.plan === "byom" || subscription.metadata?.plan === "included" ? subscription.metadata.plan : null;
+	const plan = priced === "byom" || priced === "included" ? priced : hinted;
+	if (plan !== "byom" && plan !== "included") return "unknown";
+	const status = subscription.status === "active" || subscription.status === "trialing" ? subscription.status : null;
+	if (!status) return { plan, membership: null };
+	const pricedMembership = prices && (priced === plan) ? membershipFromSubscription(subscription, prices) : null;
+	if (pricedMembership?.plan === plan) return { plan, membership: pricedMembership };
+	const couponCode = promotionCodesFrom(subscription).find((code) => code.toUpperCase() === TESTER_COUPON);
+	const membership: StoredMembership = { status, plan, amountUsd: recurringAmountUsd(subscription) };
+	if (couponCode) membership.couponCode = couponCode;
+	return { plan, membership };
+}
+
+/** Entitled subscriptions still on this customer, preferring Groundwork over Bring your own model. */
+async function liveEntitlement(stripe: Stripe, prices: MembershipPrices, customerId: string): Promise<ReplacementMembership> {
+	let named: LiveEntitlement | null = null;
+	let unknown = false;
+	for (const status of ["active", "trialing", "past_due"] as const) {
+		const page = await stripe.subscriptions.list({
+			customer: customerId,
+			status,
+			limit: 10,
+			expand: ["data.items.data.price"],
+		});
+		for (const subscription of page.data) {
+			const entitlement = entitlementFromSubscription({ ...subscription, status: subscription.status ?? status }, prices);
+			if (entitlement === "unknown") unknown = true;
+			else if (entitlement && (entitlement.plan === "included" || named?.plan !== "included")) named = entitlement;
+		}
+	}
+	if (named) return named;
+	if (unknown) return "keep";
+	return null;
+}
 
 /** Promotion codes and coupon names on a Checkout Session or Subscription. */
 export function promotionCodesFrom(value: unknown): string[] {
@@ -554,23 +641,16 @@ export async function syncStripeMembership(
 		if (isPaid(current.plan)) await accounts.setPlan(uid, "free");
 		return;
 	}
-	let recognized: "byom" | "included" | null = null;
-	let snapshot: StoredMembership | null = null;
+	let recognized: LiveEntitlement | null = null;
 	let unknown = false;
 	try {
 		for (const status of ["active", "trialing", "past_due"] as const) {
-			const page = await stripe.subscriptions.list({ customer: customerId, status, limit: 10 });
+			const page = await stripe.subscriptions.list({ customer: customerId, status, limit: 10, expand: ["data.items.data.price"] });
 			for (const subscription of page.data) {
 				const shaped = { ...subscription, status: subscription.status ?? status };
-				const plan = planFromSubscription(shaped, prices);
-				const next = membershipFromSubscription(shaped, prices);
-				if (plan === "included") {
-					recognized = "included";
-					if (next?.plan === "included" && next.amountUsd !== null) snapshot = next;
-				} else if (plan === "byom" && recognized !== "included") {
-					recognized = "byom";
-					if (next?.plan === "byom" && next.amountUsd !== null) snapshot = next;
-				} else if (plan === "unknown") unknown = true;
+				const entitlement = entitlementFromSubscription(shaped, prices);
+				if (entitlement === "unknown") unknown = true;
+				else if (entitlement && (entitlement.plan === "included" || recognized?.plan !== "included")) recognized = entitlement;
 			}
 		}
 	} catch (err) {
@@ -580,14 +660,13 @@ export async function syncStripeMembership(
 		return;
 	}
 	if (recognized) {
-		if (recognized !== current.plan) await accounts.setPlan(uid, recognized);
-		if (snapshot?.plan === recognized) {
-			await accounts.rememberMembership(uid, snapshot);
-			if (snapshot.couponCode) await accounts.markCoupon(uid, snapshot.couponCode);
-		}
+		if (recognized.plan !== current.plan) await accounts.setPlan(uid, recognized.plan);
+		await accounts.rememberMembership(uid, recognized.membership);
+		if (recognized.membership?.couponCode) await accounts.markCoupon(uid, recognized.membership.couponCode);
 		return;
 	}
-	if (!unknown && isPaid(current.plan)) await accounts.setPlan(uid, "free");
+	// An empty list right after checkout used to wipe a plan the webhook had just stored.
+	if (!unknown && isPaid(current.plan) && !(await accounts.liveMembership(uid))) await accounts.setPlan(uid, "free");
 }
 
 /** Stripe search quotes a string with single quotes. */
@@ -697,6 +776,28 @@ function priceId(price: string | { id?: string | null } | null | undefined): str
 	if (typeof price === "string" && price) return price;
 	if (price && typeof price === "object" && typeof price.id === "string" && price.id) return price.id;
 	return undefined;
+}
+
+function itemPriceId(item: SubscriptionItemLike | null | undefined): string | undefined {
+	if (!item) return undefined;
+	return priceId(item.price) ?? priceId(item.plan) ?? priceId(item.pricing?.price_details?.price);
+}
+
+function itemCharge(item: SubscriptionItemLike | null | undefined): { cents: number; currency: string | null } | null {
+	if (!item) return null;
+	const price = item.price;
+	if (price && typeof price === "object" && typeof price.unit_amount === "number" && Number.isFinite(price.unit_amount)) {
+		return { cents: price.unit_amount, currency: price.currency ?? null };
+	}
+	const plan = item.plan;
+	if (plan && typeof plan === "object" && typeof plan.amount === "number" && Number.isFinite(plan.amount)) {
+		return { cents: plan.amount, currency: plan.currency ?? null };
+	}
+	const pricing = item.pricing;
+	if (pricing && typeof pricing.unit_amount === "number" && Number.isFinite(pricing.unit_amount)) {
+		return { cents: pricing.unit_amount, currency: pricing.currency ?? null };
+	}
+	return null;
 }
 
 /** Checkout `amount_total` is cents. A 100% off promotion is 0, which is still a purchase on the server. */

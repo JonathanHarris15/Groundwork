@@ -357,6 +357,25 @@ describe("stripe plan updates", () => {
 		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "byom" });
 	});
 
+	it("puts a free account on Bring your own model when the price is unknown but checkout named that plan", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		await accounts.setPlan("ada", "free");
+		await applyStripeEvent(
+			accounts,
+			event("customer.subscription.updated", {
+				customer: "cus_ada",
+				metadata: { uid: "ada", plan: "byom" },
+				status: "active",
+				items: { data: [{ price: { id: "price_legacy" } }] },
+			}),
+			prices,
+		);
+		const record = (await accounts.list()).find((row) => row.record.uid === "ada")?.record;
+		expect(record?.plan).toBe("byom");
+		expect(record?.membership).toMatchObject({ status: "active", plan: "byom" });
+	});
+
 	it("does not demote an active subscription whose price is not one of ours", async () => {
 		const accounts = new AccountDirectory();
 		await accounts.setPlan("ada", "included");
@@ -548,6 +567,36 @@ describe("stripe membership sync", () => {
 		await unset.seen("ada", {});
 		await syncStripeMembership(stripeFake({ customers: [] }), prices, unset, "ada");
 		await expect(unset.get("ada")).resolves.toMatchObject({ plan: null, needsPlan: true });
+	});
+
+	it("keeps a Bring your own model plan when Stripe has not listed the subscription yet but the membership is already stored", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.setPlan("ada", "byom");
+		await accounts.attachCustomer("ada", "cus_ada");
+		await accounts.rememberMembership("ada", { status: "active", plan: "byom", amountUsd: 6 });
+		await syncStripeMembership(stripeFake({ subscriptions: [] }), prices, accounts, "ada");
+		await expect(accounts.get("ada")).resolves.toMatchObject({ plan: "byom" });
+		expect((await accounts.list()).find((row) => row.record.uid === "ada")?.record.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
+	});
+
+	it("stores a Bring your own model membership from a price id that has no unit amount", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.setPlan("ada", "free");
+		await accounts.attachCustomer("ada", "cus_ada");
+		await syncStripeMembership(
+			stripeFake({ subscriptions: [{ status: "active", items: { data: [{ price: "price_byom" }] } }] }),
+			prices,
+			accounts,
+			"ada",
+		);
+		const record = (await accounts.list()).find((row) => row.record.uid === "ada")?.record;
+		expect(record?.plan).toBe("byom");
+		expect(record?.membership).toEqual({ status: "active", plan: "byom", amountUsd: null });
+		const census = accountCensus(
+			[{ uid: "ada", plan: record?.plan ?? null, membership: record?.membership }],
+			new Date("2026-10-20T12:00:00.000Z"),
+		);
+		expect(census).toMatchObject({ users: 1, paid: 1, byom: 1, free: 0, other: 0 });
 	});
 
 	it("leaves a paid plan alone when the only subscription price is unrecognized", async () => {
@@ -970,6 +1019,101 @@ describe("paid membership snapshots", () => {
 		expect(census.free + census.paid + census.noPlan + census.other).toBe(census.users);
 		expect(census.byom + census.included).toBe(census.paid);
 		expect(census).toMatchObject({ users: 3, free: 0, noPlan: 0, other: 0, paid: 3, byom: 1, included: 2, paying: 2, comped: 1, orphans: 0 });
+	});
+
+	it("reads a Bring your own model price from the legacy plan object", () => {
+		const subscription = {
+			status: "active",
+			items: { data: [{ plan: { id: "price_byom", amount: 600, currency: "usd" }, quantity: 1 }] },
+		};
+		expect(planFromSubscription(subscription, prices)).toBe("byom");
+		expect(recurringAmountUsd(subscription)).toBe(6);
+		expect(membershipFromSubscription(subscription, prices)).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
+	});
+
+	it("keeps a stored membership when Stripe lists the subscription with a price we do not recognize", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		await accounts.setPlan("ada", "byom");
+		await accounts.rememberMembership("ada", { status: "active", plan: "byom", amountUsd: 6 });
+		const stripe: PaidMembershipClient = {
+			subscriptions: {
+				async list() {
+					return {
+						data: [{
+							id: "sub_ada",
+							status: "active",
+							metadata: { uid: "ada" },
+							items: { data: [{ price: { id: "price_legacy" } }] },
+						}],
+						has_more: false,
+					};
+				},
+			},
+		};
+		await refreshPaidMemberships(stripe, prices, accounts);
+		const record = (await accounts.list()).find((row) => row.record.uid === "ada")?.record;
+		expect(record?.plan).toBe("byom");
+		expect(record?.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
+	});
+
+	it("creates an account for a payer Stripe knows who is not on the user list yet", async () => {
+		const accounts = new AccountDirectory();
+		const stripe: PaidMembershipClient = {
+			subscriptions: {
+				async list(args) {
+					const data = args.status === "active"
+						? [{
+							id: "sub_new",
+							status: "active",
+							metadata: { uid: "new-payer", plan: "byom" },
+							items: { data: [{ quantity: 1, price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] },
+						}]
+						: [];
+					return { data, has_more: false };
+				},
+			},
+		};
+		await refreshPaidMemberships(stripe, prices, accounts);
+		const record = (await accounts.list()).find((row) => row.record.uid === "new-payer")?.record;
+		expect(record?.plan).toBe("byom");
+		expect(record?.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
+	});
+
+	it("does not put Bring your own model back on free when a different subscription ends", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.setPlan("ada", "byom");
+		await accounts.attachCustomer("ada", "cus_ada");
+		const stripe = {
+			webhooks: {
+				constructEvent(raw: string) {
+					return JSON.parse(raw) as Stripe.Event;
+				},
+			},
+			subscriptions: {
+				async list(args: { status?: string }) {
+					if (args.status !== "active") return { data: [] };
+					return {
+						data: [{
+							id: "sub_byom",
+							status: "active",
+							customer: "cus_ada",
+							metadata: { uid: "ada", plan: "byom" },
+							items: { data: [{ quantity: 1, price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] },
+						}],
+					};
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await billing.applyEvent(JSON.stringify({
+			id: "evt_other_canceled",
+			type: "customer.subscription.deleted",
+			data: { object: { id: "sub_old", customer: "cus_ada", metadata: { uid: "ada", plan: "included" }, status: "canceled" } },
+		}), "sig");
+		const record = (await accounts.list()).find((row) => row.record.uid === "ada")?.record;
+		expect(record?.plan).toBe("byom");
+		expect(record?.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
 	});
 
 	it("does not store an undefined coupon on a paying membership", () => {

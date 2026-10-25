@@ -295,6 +295,11 @@ describe("admin usage gate", () => {
 		expect(csv.text).toContain("orphaned_records,0");
 		expect(html).toContain("No plan");
 		expect(html).toContain("Orphaned records");
+		expect(head).toContain("payer@example.com");
+		expect(head).toContain("Bring your own model");
+		expect(head).toContain(">Paying<");
+		expect(csv.text).toContain("section,accounts");
+		expect(csv.text).toContain("payer@example.com,byom,paying");
 	});
 
 	it("leaves an account document with no Auth user out of every total", async () => {
