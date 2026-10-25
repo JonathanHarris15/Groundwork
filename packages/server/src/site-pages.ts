@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.20",
+		date: "2026-10-25",
+		body: "Linking Claude Code is three steps: install, sign in, then Check connection in Obsidian. Each command can be copied. A paid plan stays on the account, and paying people stay on the admin user list.",
+	},
+	{
 		version: "0.2.17",
 		date: "2026-10-22",
 		body: "A concept keeps a few verbatim quotes from your lectures and the method your professor prefers. Quizzes and teaching use that method. The quotes stay after you delete the file.",
