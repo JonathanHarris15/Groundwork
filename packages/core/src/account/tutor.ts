@@ -61,23 +61,40 @@ const BYOM_MODEL: Record<UserKeyProvider, string> = {
 	xai: "grok-3",
 };
 
-export const CLAUDE_SETUP = [
+export interface ClaudeSetupCommand {
+	label: string;
+	command: string;
+}
+
+export interface ClaudeSetupStep {
+	title: string;
+	detail: string;
+	commands?: readonly ClaudeSetupCommand[];
+}
+
+/** Install and sign-in commands. The account page, the plugin, and /byom all render these. */
+export const CLAUDE_SETUP: readonly ClaudeSetupStep[] = [
 	{
 		title: "Install Claude Code",
-		detail: "In a terminal, run curl -fsSL https://claude.ai/install.sh | bash. On Windows PowerShell: irm https://claude.ai/install.ps1 | iex",
+		detail: "In a terminal, run the command for your computer.",
+		commands: [
+			{ label: "Mac and Linux", command: "curl -fsSL https://claude.ai/install.sh | bash" },
+			{ label: "Windows PowerShell", command: "irm https://claude.ai/install.ps1 | iex" },
+		],
 	},
 	{
 		title: "Sign in",
 		detail: "Run claude, then type /login and use the Claude subscription you already pay for.",
+		commands: [{ label: "Terminal", command: "claude" }],
 	},
 	{
 		title: "Check the connection",
-		detail: "In Obsidian, open Groundwork settings and choose Check connection. The tutor uses that login on this computer.",
+		detail: "In Obsidian, open Settings, then Groundwork, and press Check connection.",
 	},
-] as const;
+];
 
 export const CLAUDE_SETUP_DETAIL =
-	"Install Claude Code, run `claude` in a terminal and type /login with your Claude subscription, then choose Check connection in Groundwork settings.";
+	"Install Claude Code. In a terminal, run claude and type /login. In Obsidian, open Settings, then Groundwork, and press Check connection.";
 
 export const SIGN_IN_DETAIL = "Sign in on the Groundwork website, then choose Connect Groundwork on your account page.";
 
@@ -153,7 +170,7 @@ export function tutorDecision(view: AccountView, choice: TutorChoice, saved: Par
 			return {
 				action: "blocked",
 				status: 409,
-				error: `Save a ${which} key on the website (Your model), or switch the tutor to your Claude subscription.`,
+				error: `Save a ${which} key on the website (Link Claude Code), or switch the tutor to your Claude subscription.`,
 				setup: "key",
 			};
 		}

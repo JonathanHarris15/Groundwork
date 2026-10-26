@@ -107,6 +107,21 @@ export interface AccountCensus {
 	orphans: number;
 }
 
+/** One person on the admin user list. Paying accounts stay on this list. */
+export interface AccountRosterRow {
+	uid: string;
+	email: string | null;
+	plan: PlanId | null;
+	/**
+	 * paying: active membership above $0.
+	 * paid: active membership whose amount is $0 or was not on the Stripe payload.
+	 * comped: the 100% off GROUNDWORKTESTER coupon.
+	 * inactive: a paid plan with no active or trialing subscription.
+	 */
+	standing: "paying" | "paid" | "comped" | "free" | "none" | "inactive";
+	createdAt: string | null;
+}
+
 export interface LimitMoments {
 	users: number;
 	meanPct: number | null;
@@ -173,6 +188,8 @@ export interface UsageReport {
 	prompts: { heavy: UpgradePromptCounts; flashcards: UpgradePromptCounts };
 	excluded: { admin: number; coupon: number; test: number };
 	users: UserLimitRow[];
+	/** Every Auth user, including people on a paid plan. The free-limit rows in `users` do not include them. */
+	roster: AccountRosterRow[];
 	distribution: Array<{ label: string; count: number }>;
 	census: AccountCensus;
 }
@@ -243,6 +260,40 @@ export function accountCensus(accounts: UsageAccountRow[], now: Date, orphans = 
 		else census.other += 1;
 	}
 	return census;
+}
+
+const ROSTER_ORDER: Record<AccountRosterRow["standing"], number> = {
+	paying: 0,
+	paid: 1,
+	comped: 2,
+	inactive: 3,
+	free: 4,
+	none: 5,
+};
+
+export function accountRoster(accounts: UsageAccountRow[]): AccountRosterRow[] {
+	const rows = accounts.map((account) => ({
+		uid: account.uid,
+		email: account.email ?? null,
+		plan: account.plan,
+		standing: rosterStanding(account),
+		createdAt: account.createdAt ?? null,
+	}));
+	rows.sort((a, b) => ROSTER_ORDER[a.standing] - ROSTER_ORDER[b.standing] || (a.email ?? a.uid).localeCompare(b.email ?? b.uid));
+	return rows;
+}
+
+function rosterStanding(account: UsageAccountRow): AccountRosterRow["standing"] {
+	const membership = countableMembership(account.membership);
+	if (membership) {
+		const comped = (membership.couponCode ?? "").trim().toUpperCase() === TESTER_COUPON && !(typeof membership.amountUsd === "number" && membership.amountUsd > 0);
+		if (typeof membership.amountUsd === "number" && membership.amountUsd > 0) return "paying";
+		if (comped) return "comped";
+		return "paid";
+	}
+	if (account.plan === "free") return "free";
+	if (account.plan == null) return "none";
+	return "inactive";
 }
 
 /** Keep Auth users, and count account documents that are not among them. */
@@ -591,6 +642,7 @@ export function buildUsageReport(source: UsageReportInput): UsageReport {
 		},
 		excluded: { admin, coupon, test },
 		users: userRows,
+		roster: accountRoster(input.accounts),
 		distribution,
 		census: accountCensus(input.accounts, now, scoped.orphans),
 	};

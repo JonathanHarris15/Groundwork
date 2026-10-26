@@ -96,7 +96,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		const setup = await publicSetupRoute(method, path, body, deps, meta);
 		if (setup) return setup;
 		if (hasClientKey(body)) {
-			return { status: 400, json: { error: "Do not send API keys on this request. Paste keys under Your model on the account page." } };
+			return { status: 400, json: { error: "Do not send API keys on this request. Paste keys under Link Claude Code on the account page." } };
 		}
 
 		const identity = await deps.auth.uid(authorization);
@@ -110,7 +110,7 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		}
 		const openedAccount = await deps.accounts.seen(uid, { email: identity.email, name: identity.name }, attributionFromHeader(meta.attribution));
 		let view = openedAccount.view;
-		if (!view.plan) view = await deps.accounts.setPlan(uid, "free");
+		if (!view.plan) view = await deps.accounts.ensureFreePlan(uid);
 		if (openedAccount.created) {
 			try {
 				await deps.setupFunnel?.mark("signup", uid);

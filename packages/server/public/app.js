@@ -313,6 +313,11 @@ function showAccount() {
 	mountConceptGraph();
 	document.querySelector("#key")?.addEventListener("submit", saveKey);
 	document.querySelector("#tutor-setup")?.addEventListener("submit", saveTutor);
+	document.querySelector("#link-claude")?.addEventListener("click", (event) => {
+		const button = event.target.closest("[data-copy-command]");
+		if (!button) return;
+		void copyCommand(button);
+	});
 	document.querySelector("#portal")?.addEventListener("click", openPortal);
 	document.querySelector("#change-plan")?.addEventListener("click", () => {
 		location.hash = "#plans";
@@ -822,40 +827,74 @@ function keysSection() {
 	const savedNames = Object.entries(providers).filter(([, on]) => on).map(([name]) => name);
 	const via = account.tutorVia === "key" && savedNames.length ? "key" : "claude";
 	return `
-		<section class="section">
-			<h2>Your model</h2>
-			<p>Claude on this computer or a provider key you save below.</p>
-			<h3>Claude subscription</h3>
-			<p>The simplest path. The login stays on this computer. Groundwork never stores it.</p>
-			<ol class="setup-list">${steps.map((step) => `<li><strong>${escapeHtml(step.title)}</strong><p>${escapeHtml(step.detail)}</p></li>`).join("")}</ol>
-			<form id="tutor-setup">
-				<fieldset class="choices">
-					<legend>How the tutor should run</legend>
-					<label><input type="radio" name="via" value="claude" ${via === "claude" ? "checked" : ""} /> Claude subscription on this computer</label>
-					<label><input type="radio" name="via" value="key" ${via === "key" ? "checked" : ""} ${savedNames.length ? "" : "disabled"} /> A saved provider key</label>
-				</fieldset>
-				${savedNames.length ? `<div class="field tutor-provider"><label for="tutorProvider">Provider</label><select class="input" id="tutorProvider" name="provider">${savedNames.map((name) => `<option value="${escapeAttr(name)}" ${account.tutorProvider === name ? "selected" : ""}>${escapeHtml(PROVIDER_LABEL[name] || name)}</option>`).join("")}</select></div>` : `<p class="hint">Paste a key below before the tutor can use one.</p>`}
-				<div class="actions"><button class="btn btn-ink" type="submit">Save tutor</button></div>
-			</form>
-			<h3>Or paste a provider key</h3>
-			<p>The key stays on this account. The tutor calls that provider through Groundwork, not from files in your vault. Written quiz answers are graded on the Groundwork website; that is not a key you paste.</p>
-			<ul class="keys" aria-label="Saved keys">${keyList()}</ul>
-			<form id="key" autocomplete="off">
-				<div class="row">
-					<div class="field narrow">
-						<label for="provider">Provider</label>
-						<select class="input" id="provider" name="provider">
-							${Object.keys(providers).map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(PROVIDER_LABEL[name] || name)}</option>`).join("")}
-						</select>
+		<section class="section" id="link-claude">
+			<h2>Link Claude Code</h2>
+			<p>Three steps. This page does not connect Claude. Obsidian does. The login stays on this computer.</p>
+			<ol class="setup-list">${steps.map(claudeStep).join("")}</ol>
+			<details class="key-fallback"${via === "key" ? " open" : ""}>
+				<summary>Use a provider key instead</summary>
+				<p>The key stays on this account. The tutor calls that provider through Groundwork. Written quiz answers are graded on the website. That grading does not use this key.</p>
+				<form id="tutor-setup">
+					<fieldset class="choices">
+						<legend>How the tutor should run</legend>
+						<label><input type="radio" name="via" value="claude" ${via === "claude" ? "checked" : ""} /> Claude subscription on this computer</label>
+						<label><input type="radio" name="via" value="key" ${via === "key" ? "checked" : ""} ${savedNames.length ? "" : "disabled"} /> A saved provider key</label>
+					</fieldset>
+					${savedNames.length ? `<div class="field tutor-provider"><label for="tutorProvider">Provider</label><select class="input" id="tutorProvider" name="provider">${savedNames.map((name) => `<option value="${escapeAttr(name)}" ${account.tutorProvider === name ? "selected" : ""}>${escapeHtml(PROVIDER_LABEL[name] || name)}</option>`).join("")}</select></div>` : `<p class="hint">Paste a key below before the tutor can use one.</p>`}
+					<div class="actions"><button class="btn btn-ink" type="submit">Save tutor</button></div>
+				</form>
+				<ul class="keys" aria-label="Saved keys">${keyList()}</ul>
+				<form id="key" autocomplete="off">
+					<div class="row">
+						<div class="field narrow">
+							<label for="provider">Provider</label>
+							<select class="input" id="provider" name="provider">
+								${Object.keys(providers).map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(PROVIDER_LABEL[name] || name)}</option>`).join("")}
+							</select>
+						</div>
+						<div class="field grow">
+							<label for="apiKey">Paste a key</label>
+							<input class="input" type="password" id="apiKey" name="apiKey" autocomplete="off" spellcheck="false" placeholder="sk-…" />
+						</div>
+						<button class="btn btn-ink" type="submit">Save key</button>
 					</div>
-					<div class="field grow">
-						<label for="apiKey">Paste a key</label>
-						<input class="input" type="password" id="apiKey" name="apiKey" autocomplete="off" spellcheck="false" placeholder="sk-…" />
-					</div>
-					<button class="btn btn-ink" type="submit">Save key</button>
-				</div>
-			</form>
+				</form>
+			</details>
 		</section>`;
+}
+
+function claudeStep(step) {
+	const commands = Array.isArray(step.commands) ? step.commands : [];
+	const blocks = commands.map((item) => `
+		<p class="cmd-label">${escapeHtml(item.label)}</p>
+		<div class="setup-cmd-row">
+			<pre class="cmd" translate="no"><code>${escapeHtml(item.command)}</code></pre>
+			<button class="btn btn-line btn-sm" type="button" data-copy-command="${escapeAttr(item.command)}" aria-label="Copy ${escapeAttr(item.label)} command">Copy</button>
+			<span class="copy-note" role="status"></span>
+		</div>`).join("");
+	return `<li><h3>${escapeHtml(step.title)}</h3><p>${stepDetail(step)}</p>${blocks}</li>`;
+}
+
+function stepDetail(step) {
+	let html = escapeHtml(step.detail);
+	if (step.title !== "Sign in") return html;
+	for (const token of ["/login", "claude"]) html = html.split(escapeHtml(token)).join(`<code translate="no">${escapeHtml(token)}</code>`);
+	return html;
+}
+
+async function copyCommand(button) {
+	const command = button.getAttribute("data-copy-command") || "";
+	const note = button.parentElement?.querySelector(".copy-note");
+	document.querySelectorAll("#link-claude .copy-note").forEach((item) => {
+		if (item !== note) item.textContent = "";
+	});
+	try {
+		await navigator.clipboard.writeText(command);
+		if (note) note.textContent = "Copied.";
+		button.focus();
+	} catch {
+		if (note) note.textContent = "Select the command and copy it.";
+	}
 }
 
 function planGrid(signedIn) {

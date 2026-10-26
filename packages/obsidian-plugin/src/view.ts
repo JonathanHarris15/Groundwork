@@ -2366,17 +2366,35 @@ export class ChatView extends ItemView implements ToolUI {
 
 	private renderClaudeSettings(parent: HTMLElement): void {
 		const s = this.plugin.settings;
+		parent.createDiv({ cls: "gw-lib-help", text: "Three steps. The login stays on this computer." });
 		const steps = parent.createEl("ol", { cls: "gw-setup-steps" });
 		for (const step of CLAUDE_SETUP) {
 			const item = steps.createEl("li");
-			item.createEl("strong", { text: `${step.title}. ` });
-			item.appendText(step.detail);
+			item.createEl("strong", { text: step.title });
+			item.createDiv({ cls: "gw-setup-detail", text: step.detail });
+			for (const command of step.commands ?? []) {
+				const block = item.createDiv({ cls: "gw-setup-cmd" });
+				block.createDiv({ cls: "gw-setup-cmd-label", text: command.label });
+				const line = block.createDiv({ cls: "gw-setup-cmd-line" });
+				line.createEl("code", { text: command.command });
+				const copy = line.createEl("button", {
+					cls: "gw-lib-btn",
+					text: "Copy",
+					attr: { type: "button", "aria-label": `Copy ${command.label} command` },
+				});
+				copy.addEventListener("click", () => {
+					void navigator.clipboard.writeText(command.command).then(
+						() => new Notice("Copied."),
+						() => new Notice("Select the command and copy it."),
+					);
+				});
+			}
 		}
 		const detected = this.plugin.claudeExecutable();
 		const status = this.settingField(
 			parent,
 			"Connection",
-			detected ? "Uses the Claude account Claude Code is signed in with on this computer." : "Claude Code wasn't found. Install it, then run claude in a terminal and type /login.",
+			detected ? "Uses the Claude account Claude Code is signed in with on this computer." : "Claude Code was not found. Finish the steps above, then press Check connection.",
 		);
 		const check = status.createEl("button", { cls: "gw-lib-btn", text: "Check connection", attr: { type: "button" } });
 		check.addEventListener("click", () => {
@@ -2395,19 +2413,22 @@ export class ChatView extends ItemView implements ToolUI {
 				},
 			);
 		});
+		const more = parent.createEl("details", { cls: "gw-setup-more" });
+		if (s.claudePath) more.setAttr("open", "open");
+		more.createEl("summary", { text: "Path and model" });
 		const exe = this.settingField(
-			parent,
+			more,
 			"Claude Code executable",
 			detected && !s.claudePath ? `Found at ${detected}. Leave empty to auto-detect.` : "Leave empty to auto-detect claude.",
 		);
-		const exeInput = exe.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: detected ?? "claude" } });
+		const exeInput = exe.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: detected ?? "claude", spellcheck: "false", autocomplete: "off" } });
 		exeInput.value = s.claudePath;
 		exeInput.addEventListener("change", () => {
 			s.claudePath = exeInput.value.trim();
 			void this.plugin.saveSettings();
 		});
 		const models = this.plugin.claudeModels;
-		const model = this.settingField(parent, "Model", models.length ? "Models your Claude plan can use." : "Claude Code's default, or an alias like sonnet or opus.");
+		const model = this.settingField(more, "Model", models.length ? "Models your Claude plan can use." : "Claude Code's default, or an alias like sonnet or opus.");
 		if (models.length) {
 			const modelSelect = model.createEl("select", { cls: "gw-lib-filter" });
 			modelSelect.createEl("option", { text: "Default", attr: { value: "" } });
@@ -2424,7 +2445,7 @@ export class ChatView extends ItemView implements ToolUI {
 				void this.plugin.saveSettings();
 			});
 		} else {
-			const modelInput = model.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: "Default" } });
+			const modelInput = model.createEl("input", { cls: "gw-lib-filter", attr: { type: "text", placeholder: "Default", spellcheck: "false", autocomplete: "off" } });
 			modelInput.value = s.claudeModel;
 			modelInput.addEventListener("change", () => {
 				s.claudeModel = modelInput.value.trim();

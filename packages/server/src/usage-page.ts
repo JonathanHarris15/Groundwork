@@ -229,6 +229,10 @@ export function usageCsv(report: UsageReport, openRouter?: OpenRouterBalanceView
 	push(["feature", "calls", "cost_usd", "input_tokens", "output_tokens"]);
 	for (const row of report.features) push([row.feature, row.calls, row.costUsd, row.inputTokens, row.outputTokens]);
 	push([]);
+	push(["section", "accounts"]);
+	push(["uid", "email", "plan", "standing", "created_at"]);
+	for (const row of report.roster) push([row.uid, row.email, row.plan, row.standing, row.createdAt]);
+	push([]);
 	push(["section", "users"]);
 	push(["uid", "email", "period", "pct_of_limit", "cost_usd", "charged_usd", "hit_100", "hit_day", "outcome", "consistent", "excluded"]);
 	for (const row of report.users) {
@@ -332,7 +336,38 @@ function accountHead(report: UsageReport): string {
 							${statCard("paid-count", "Paid users", census.paid, paidRows, "Paying means more than $0 after discounts. Comped is the 100% off GROUNDWORKTESTER coupon.")}
 						</div>
 						<p class="usage-orphans">Orphaned records <span>${census.orphans}</span></p>
+						${userRoster(report)}
 					</section>`;
+}
+
+const ROSTER_PLAN: Record<string, string> = {
+	free: "Free",
+	byom: "Bring your own model",
+	included: "Groundwork",
+};
+
+const ROSTER_STANDING: Record<UsageReport["roster"][number]["standing"], string> = {
+	paying: "Paying",
+	paid: "Paid",
+	comped: "Comped",
+	inactive: "Paid plan, not active",
+	free: "Free",
+	none: "No plan",
+};
+
+function userRoster(report: UsageReport): string {
+	const rows = report.roster;
+	const shown = rows.slice(0, 100);
+	const note = rows.length > shown.length ? `<p class="fine">Showing 100 of ${rows.length}. The CSV has every row.</p>` : "";
+	return `<div class="usage-roster">
+		<p class="usage-roster-title" id="roster-title">Users</p>
+		<p class="fine">Every account. People who pay stay on this list. The free-allowance table below lists only free accounts.</p>
+		${note}${table(
+			"All accounts",
+			["Account", "Plan", "Standing"],
+			shown.map((row) => [row.email || row.uid, row.plan ? ROSTER_PLAN[row.plan] ?? row.plan : "No plan", ROSTER_STANDING[row.standing]]),
+		)}
+	</div>`;
 }
 
 function statCard(id: string, label: string, value: number, rows: Array<[string, number]>, note?: string): string {

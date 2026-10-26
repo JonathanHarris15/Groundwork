@@ -789,6 +789,33 @@ a.btn-ink:hover { color: #fff; }
 .section h3 { margin: 28px 0 0; font-size: 18px; font-weight: 600; }
 .setup-list { margin: 16px 0 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 14px; }
 .setup-list p { margin: 4px 0 0; }
+#link-claude { scroll-margin-top: 88px; }
+#link-claude h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.section .cmd-label { margin: 12px 0 0; font-size: 14px; color: #4a4f57; }
+.setup-cmd-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-top: 8px; }
+.copy-note { flex: 1 0 100%; margin: 0; min-height: 0; font-size: 14px; color: #16181d; }
+.copy-note:empty { display: none; }
+.setup-cmd-row .cmd {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	padding: 10px 12px;
+	border-radius: 12px;
+	border: 1.5px solid #c9ccd2;
+	background: #f7f7f5;
+	color: #16181d;
+	font-family: Menlo, Consolas, monospace;
+	font-size: 13px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.setup-cmd-row .cmd code { font: inherit; white-space: inherit; overflow-wrap: inherit; }
+.setup-cmd-row .btn { flex: 0 0 auto; }
+.key-fallback { margin-top: 28px; }
+.key-fallback summary { cursor: pointer; font-weight: 600; }
+.key-fallback summary:focus-visible { outline: 2px solid #45a9f0; outline-offset: 3px; }
+.key-fallback > p { margin-top: 12px; }
 .tutor-provider { margin-top: 14px; }
 .choices { border: 0; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .choices legend { font-weight: 600; padding: 0; }
@@ -1903,6 +1930,8 @@ body.has-consent textarea {
 .usage-stat-note { margin: 12px 0 0; color: #3c4149; font-size: 16px; line-height: 1.4; text-wrap: pretty; }
 .usage-orphans { margin: 10px 2px 0; color: #3c4149; font-size: 14px; line-height: 1.4; }
 .usage-orphans span { font-weight: 500; font-variant-numeric: tabular-nums; color: #16181d; }
+.usage-roster { margin-top: 28px; }
+.usage-roster-title { margin: 0; font-size: 22px; font-weight: 500; color: #16181d; }
 .usage-warn { margin: 16px 0 0; padding: 12px 14px; border: 1px solid #f59e2b; border-radius: 12px; background: #fff6e8; color: #16181d; }
 .usage-scroll { display: block; width: 100%; overflow-x: auto; max-width: 100%; min-width: 0; margin-top: 12px; }
 .usage-table { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
