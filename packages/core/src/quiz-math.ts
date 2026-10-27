@@ -47,9 +47,9 @@ export function quizMathIssues(quiz: QuizKeySubject & { details?: string; purpos
 		{ field: "explanation", text: quiz.explanation },
 		{ field: "reference", text: quiz.reference },
 	];
-	for (let index = 0; index < (quiz.options?.length ?? 0); index++) {
-		const option = quiz.options![index];
-		fields.push({ field: `options[${index}].label`, text: option.label });
+	const options = quiz.options ?? [];
+	for (let index = 0; index < options.length; index++) {
+		fields.push({ field: `options[${index}].label`, text: options[index].label });
 	}
 	const out: MathFieldIssue[] = [];
 	for (const { field, text } of fields) {
@@ -71,8 +71,9 @@ export function assertAskUserMath(input: { question?: string; details?: string; 
 		{ field: "question", text: input.question },
 		{ field: "details", text: input.details },
 	];
-	for (let index = 0; index < (input.options?.length ?? 0); index++) {
-		fields.push({ field: `options[${index}]`, text: input.options![index] });
+	const choices = input.options ?? [];
+	for (let index = 0; index < choices.length; index++) {
+		fields.push({ field: `options[${index}]`, text: choices[index] });
 	}
 	const issues: MathFieldIssue[] = [];
 	for (const { field, text } of fields) {

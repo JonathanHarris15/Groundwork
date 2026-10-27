@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.22",
+		date: "2026-10-27",
+		body: "Quiz cards refuse broken LaTeX before they appear. The tutor must fix delimiters and call quiz again instead of showing mangled math in options.",
+	},
+	{
 		version: "0.2.21",
 		date: "2026-10-27",
 		body: "Closing a margin or hint side chat clears the passage highlight. The main chat stays quiet about side-thread activity unless you ask there.",
