@@ -734,8 +734,6 @@ export class ChatView extends ItemView implements ToolUI {
 				}
 			}
 			toSend = [workingGoalNote(await this.plugin.store.workingGoal()), toSend].filter(Boolean).join("\n\n");
-			const notes = this.marginNotes();
-			if (notes) toSend = [toSend, notes].filter(Boolean).join("\n\n");
 			const access = folderAccessFrom(this.plugin.settings);
 			const prepared = await prepareTutorTurn({
 				selector: this.plugin.runtime().runtime === "demo" ? undefined : this.plugin.contextSelector(),
@@ -3191,6 +3189,7 @@ export class ChatView extends ItemView implements ToolUI {
 		this.asideCards.delete(thread.id);
 		this.asideAgents.get(thread.id)?.close?.();
 		this.asideAgents.delete(thread.id);
+		this.setActiveHighlight(null);
 		if (thread.messages.length) thread.resolved = true;
 		else this.record.asides = (this.record.asides ?? []).filter((t) => t !== thread);
 		this.updateMarginMode();

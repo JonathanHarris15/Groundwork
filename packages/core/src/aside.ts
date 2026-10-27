@@ -210,14 +210,14 @@ export function hintNotes(threads: AsideThread[]): { text: string; shared: Map<s
 }
 
 export const MARGIN_GUIDANCE = `# Margin questions
-A <margin_questions> block is a side thread on a highlight, already answered. It shows which step did not land.
+A <margin_questions> block is a side thread on a highlight, already answered. It shows which step did not land. It is background for you only.
 - A misconception goes on the concept with \`upsert_concept\`. A gap you can grade: \`record_evidence\` kind "explain". Only a pattern across sessions goes to \`update_learner_profile\`. A clarifying question is not a weakness.
-- Do not re-answer the margin. Adjust the next explanation or quiz, and mention it in a line if it helps.`;
+- Do not re-answer the margin in the main thread. Do not summarize, quote, or refer to the side thread in your visible reply unless the learner explicitly asks about that margin conversation in this message. Adjust teaching quietly when you continue.`;
 
 export const HINT_GUIDANCE = `# Hint chats
-A <hint_transcript> block is a "Give me a hint" side chat. Judge how much of the answer was supplied.
+A <hint_transcript> block is a "Give me a hint" side chat. Judge how much of the answer was supplied. It is background for you only.
 - A nudge (the idea or the first move, not the result) means the answer is still theirs.
-- A walkthrough that states the letter, the final expression, or the result means an assisted correct is not solid mastery. Grade only the unaided part: an answer that only repeats the hint is partial or incorrect. If multiple choice was already recorded correct, do not treat it as solid. You may \`record_evidence\` for what they missed. Do not re-answer the hint in the main thread.`;
+- A walkthrough that states the letter, the final expression, or the result means an assisted correct is not solid mastery. Grade only the unaided part: an answer that only repeats the hint is partial or incorrect. If multiple choice was already recorded correct, do not treat it as solid. You may \`record_evidence\` for what they missed. Do not re-answer the hint in the main thread. Do not summarize or mention the hint dialogue in your visible reply unless the learner explicitly asks about it in this message.`;
 
 function oneLine(s: string, max: number): string {
 	return clip(s.replace(/\s+/g, " ").trim(), max);
