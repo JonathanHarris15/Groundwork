@@ -8,6 +8,7 @@ import { buildUpstream, readUpstream, upstreamErrorMessage } from "./account/tut
 import type { HttpClient } from "./http";
 import { httpClient } from "./http";
 import { QuizKeyError, signChartAnswer, signChartOption, type QuizKeyCheck } from "./quiz-key";
+import { assertQuizMath } from "./quiz-math";
 import type { FreeResponseJudgment, PreparedQuiz, QuizResponse } from "./quiz";
 import { asRecord, asText, asUnknown } from "./unknown";
 
@@ -208,6 +209,7 @@ export async function askFreeKeyModel(http: HttpClient, apiKey: string, quiz: Fr
 
 /** Confirm the key that would be shown. A miss, a disagreement, or a failed call throws and the card stays hidden. */
 export async function confirmQuizKey<T extends QuizKeySubject>(quiz: T, verifier?: QuizKeyVerifier, signal?: AbortSignal): Promise<T> {
+	assertQuizMath(quiz);
 	if (quiz.format === "free") return confirmFreeKey(quiz, verifier, signal);
 	if (!needsModelKeyCheck(quiz) || !verifier || quiz.keyCheck) return quiz;
 	let result: QuizKeyModelResult;

@@ -21,6 +21,7 @@ export * from "./goal-plan";
 export * from "./mastery-tone";
 export * from "./store";
 export * from "./quiz";
+export * from "./quiz-math";
 export { choiceKey } from "./quiz-key";
 export * from "./quiz-key-jev";
 export * from "./diagnose";
