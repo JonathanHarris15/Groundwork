@@ -22,6 +22,10 @@ describe("mathDefects", () => {
 		);
 	});
 
+	it("allows plain numeric exponents in prose", () => {
+		expect(mathDefects("Differentiate x^3 from the definition.")).toEqual([]);
+	});
+
 	it("flags unbalanced dollar delimiters", () => {
 		expect(mathDefects("$c^\\top P s + r \\neq r$")).toEqual([]);
 		expect(mathDefects("$c^\\top P s + r \\neq r")).toContain("unclosed inline math (`$`)");

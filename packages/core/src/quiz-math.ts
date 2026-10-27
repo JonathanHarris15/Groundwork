@@ -15,8 +15,8 @@ const TEX_OUTSIDE_MATH = /\\(?:hat|bar|top|bot|frac|dfrac|mathbf|mathrm|mathbb|m
 /** `$` jammed inside a token (`c$tops`) — usually a split `c^\top` or bad pairing. */
 const MANGLED_DOLLAR = /[A-Za-z0-9]\$[A-Za-z]/;
 
-/** Superscript/subscript outside math delimiters. */
-const SUPER_OUTSIDE = /[A-Za-z0-9](?:\^|_)(?:\{[^}]*\}|[A-Za-z0-9])/;
+/** Superscript/subscript outside math (allow plain `x^3`; catch transpose-style `c^T`). */
+const SUPER_OUTSIDE = /[A-Za-z0-9](?:\^|_)(?:\{[^}]*\}|[A-Za-z](?![0-9]))/;
 
 /** Unicode stand-ins for `\bar{…}` / accents when LaTeX was dropped. */
 const UNICODE_MATH_SUB = /[ūŪȳȲḇḂẖḦ]/;
