@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.21",
+		date: "2026-10-27",
+		body: "Closing a margin or hint side chat clears the passage highlight. The main chat stays quiet about side-thread activity unless you ask there.",
+	},
+	{
 		version: "0.2.20",
 		date: "2026-10-25",
 		body: "Linking Claude Code is three steps: install, sign in, then Check connection in Obsidian. Each command can be copied. A paid plan stays on the account, and paying people stay on the admin user list.",
