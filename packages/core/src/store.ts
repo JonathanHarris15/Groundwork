@@ -39,7 +39,6 @@ import {
 } from "./markdown";
 import { pickReadyStep, refineGoalInput, resolveForEvidence, type ResolvedConcept } from "./judgments";
 import { type JevClient } from "./jev";
-import { masteryTone } from "./mastery-tone";
 import { computeStats, describeEdge, emptyStats, isDue, type ConceptStats, type ConceptStatus, type Evidence, type EvidenceKind, type Outcome } from "./model";
 import { asRecord } from "./unknown";
 
