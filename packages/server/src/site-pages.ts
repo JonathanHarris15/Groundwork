@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.23",
+		date: "2026-10-27",
+		body: "Map goal flags and path progress use passable mastery: red flags only below passable, and progress reads “N of M concepts passable” instead of solid-only.",
+	},
+	{
 		version: "0.2.22",
 		date: "2026-10-27",
 		body: "Quiz cards refuse broken LaTeX before they appear. The tutor must fix delimiters and call quiz again instead of showing mangled math in options.",
