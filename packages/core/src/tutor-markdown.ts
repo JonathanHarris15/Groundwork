@@ -183,7 +183,18 @@ function normalizeFlow(text: string): string {
 		return looksLikeProse(t) ? wrapLatexPhrases(t) : `$${t}$`;
 	});
 	s = wrapLatexPhrases(s);
+	s = mergeSplitSuperscriptMath(s);
 	return s;
+}
+
+/** `c^\\top` must not become `c^$\\top$` or `c$tops` after pairing. */
+function mergeSplitSuperscriptMath(s: string): string {
+	let out = s.replace(/([A-Za-z0-9]+)(\^|_)(\$)(\\[A-Za-z]+)(\$)/g, (_, base: string, op: string, _o: string, cmd: string) => `$${base}${op}${cmd}$`);
+	out = out.replace(/([A-Za-z0-9]+)(\^[A-Za-z0-9]?)(\$)([^$]+)(\$)/g, (all, base: string, sup: string, _o: string, inner: string) => {
+		if (inner.includes("$")) return all;
+		return `$${base}${sup}${inner}$`;
+	});
+	return out;
 }
 
 const N_MACRO =

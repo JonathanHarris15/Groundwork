@@ -24,6 +24,7 @@ import {
 } from "./practice";
 import { judgmentsFor, toGradeItem, type AnswerGrader } from "./jev/grade";
 import { confirmQuizKey, type QuizKeyVerifier } from "./quiz-key-jev";
+import { assertAskUserMath } from "./quiz-math";
 import { QuizKeyError } from "./quiz-key";
 import { needsJudgment, prepareQuiz, type FreeResponseJudgment, type PreparedQuiz, type QuizInput, type QuizResponse } from "./quiz";
 import { isBuilt } from "./graph";
@@ -758,6 +759,12 @@ export const TOOLS: ToolDef[] = [
 		},
 		async run(input: AskInput, { ui }) {
 			if (!ui) return { text: "ask_user needs an interactive surface; ask in chat instead.", isError: true };
+			try {
+				assertAskUserMath(input);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : "Broken math in this prompt.";
+				return { text: message, isError: true, summary: "Broken math" };
+			}
 			const r = await ui.ask(input);
 			if (!r) return { text: withMarginNotes("The learner dismissed the question.", ui), summary: "Question dismissed" };
 			const parts = [];
