@@ -75,7 +75,7 @@ describe("KnowledgeStore", () => {
 		expect(r2.analysis.frontier.map((n) => n.title).sort()).toEqual(["Limit", "Secant line"]);
 
 		const goalNote = await io.read("goals/Understand the derivative.md");
-		expect(goalNote).toContain("1 of 4 concepts solid");
+		expect(goalNote).toContain("1 of 4 concepts passable");
 		expect(goalNote).toContain("## Targets");
 		expect(goalNote).toContain("[[Derivative]]");
 		expect(goalNote).toContain("```mermaid");
@@ -388,17 +388,17 @@ nodes:
 });
 
 describe("goal progress wording", () => {
-	it("counts solid concepts in the goal, including one the goal has already built", () => {
+	it("counts passable concepts in the goal, including one the goal has already built", () => {
 		expect(
 			describeGoalProgress([
-				{ status: "solid", role: "built" },
-				{ status: "rusty", role: "built" },
-				{ status: "learning", role: "path" },
-				{ status: "unassessed", role: "target" },
+				{ status: "solid", current: 0.9, role: "built" },
+				{ status: "rusty", current: 0.55, role: "built" },
+				{ status: "learning", current: 0.52, role: "path" },
+				{ status: "unassessed", current: 0, role: "target" },
 			]),
-		).toBe("2 of 4 concepts solid");
+		).toBe("3 of 4 concepts passable");
 		expect(describeGoalProgress([])).toBe("no concepts");
-		expect(describeConceptProgress(4, 14)).toBe("4 of 14 concepts solid");
+		expect(describeConceptProgress(4, 14)).toBe("4 of 14 concepts passable");
 	});
 
 	it("uses that sentence on the goal note and the working-goal chip", async () => {
