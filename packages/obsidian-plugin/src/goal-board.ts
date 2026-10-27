@@ -2,6 +2,7 @@ import {
 	buildConceptMap,
 	conceptCompletion,
 	formatDue,
+	isPassable,
 	MASTERY_LABEL,
 	masteryTone,
 	sessionEstimate,
@@ -88,7 +89,7 @@ export function toBoard(
 	const concepts: GoalConceptRow[] = report.nodes
 		.map((node) => {
 			const tone = masteryTone(node.status, built.has(node.id));
-			const known = tone === "solid";
+			const known = isPassable(node.status, node.current, { built: built.has(node.id) });
 			const isNext = node.id === nextNode?.id && !known;
 			const course = courseSnippet(node.course);
 			return {

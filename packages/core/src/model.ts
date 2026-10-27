@@ -96,6 +96,8 @@ const DAY_MS = 86_400_000;
 const REVIEW_AT_RETENTION = 0.7;
 const SOLID = 0.8;
 const SHAKY = 0.6;
+/** Homework write-up and weighted readiness treat this as enough for now (matches partial quiz credit). */
+export const PASSABLE = 0.5;
 /** Just under the ability where mastery reaches SOLID. Flashcard credit stops here. */
 const SOLID_ABILITY = Math.log(SOLID / (1 - SOLID)) - 0.01;
 /** A slip is noted, not held against them: nearly full credit, and it still counts as a success for memory and the edge. */

@@ -1,4 +1,5 @@
 import type { ConceptStatus } from "./model";
+import { isPassable } from "./graph";
 import { conceptLayerRanks, placePyramidLayout } from "./force-graph/pyramid-layout";
 import { MASTERY_LABEL, masteryTone, type MasteryTone } from "./mastery-tone";
 
@@ -276,7 +277,11 @@ export function conceptPathToGoal(nodes: MapSourceNode[], goalNodeId?: string): 
 	return path;
 }
 
-/** Open targets with nothing in-goal depending on them — red leaves on the pyramid top. */
+function passableOnMap(node: MapSourceNode, built: Set<string>): boolean {
+	return isPassable(node.status, node.current, { built: built.has(node.id) });
+}
+
+/** Open targets with nothing in-goal depending on them — red goal flags only while still below passable. */
 export function unbuiltGoalLeafIds(nodes: MapSourceNode[], builtIds: Iterable<string>): Set<string> {
 	const built = new Set(builtIds);
 	const inGoal = nodes.filter((node) => node.inGoal);
@@ -289,7 +294,7 @@ export function unbuiltGoalLeafIds(nodes: MapSourceNode[], builtIds: Iterable<st
 	}
 	const leaves = new Set<string>();
 	for (const node of inGoal) {
-		if (node.role === "target" && !built.has(node.id) && !hasDependent.has(node.id)) leaves.add(node.id);
+		if (node.role === "target" && !built.has(node.id) && !hasDependent.has(node.id) && !passableOnMap(node, built)) leaves.add(node.id);
 	}
 	return leaves;
 }
@@ -422,6 +427,7 @@ export function buildConceptMap(input: {
 		else if (unbuiltLeaves.has(node.id)) visual = "target";
 		else if (!node.inGoal || !pathIds.has(node.id)) visual = "dim";
 		const subtitle = visual === "goal" ? `Goal · ${input.goalTitle}${input.dueLabel ? `, ${input.dueLabel}` : ""}` : undefined;
+		const needsGoalFlag = (visual === "goal" || visual === "target") && !passableOnMap(node, built);
 		nodes.push({
 			id: node.id,
 			title: node.title,
@@ -429,7 +435,7 @@ export function buildConceptMap(input: {
 			y: pos.y,
 			r: visual === "goal" || visual === "target" ? 20 : visual === "dim" ? 9 : visual === "ghost" ? 12 : 11,
 			visual,
-			tone: visual === "goal" || visual === "target" ? "goal" : masteryTone(node.status, built.has(node.id)),
+			tone: needsGoalFlag ? "goal" : masteryTone(node.status, built.has(node.id)),
 			offPath: visual === "dim",
 			step: ghostStep.get(node.id),
 			next: node.id === input.nextId && visual !== "goal",
@@ -502,8 +508,8 @@ export function buildConceptMap(input: {
 	}
 	const width = Math.max(480, maxX - minX + 48);
 	const height = Math.max(320, maxY - minY + 36);
-	/** Counted the way the nodes are painted, so the panel's count matches its solid marks. */
-	const inPlace = inGoal.filter((node) => masteryTone(node.status, built.has(node.id)) === "solid").length;
+	/** Counted the way the path panel marks concepts: passable or solid, not red goal flags. */
+	const inPlace = inGoal.filter((node) => passableOnMap(node, built)).length;
 	return {
 		nodes,
 		edges,

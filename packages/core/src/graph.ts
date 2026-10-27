@@ -1,4 +1,4 @@
-import type { ConceptStatus } from "./model";
+import { PASSABLE, type ConceptStatus } from "./model";
 
 export interface GraphNode {
 	id: string;
@@ -84,6 +84,18 @@ export function isBuilt(status: ConceptStatus, floor?: number, requiredLevel?: n
 	if (status !== "solid") return false;
 	if (requiredLevel == null || requiredLevel <= 0) return true;
 	return (floor ?? 0) >= requiredLevel;
+}
+
+/** Good enough to count toward a goal on the map and in progress copy — not the same as built for teaching order. */
+export function isPassable(
+	status: ConceptStatus,
+	current: number,
+	opts?: { built?: boolean; floor?: number; requiredLevel?: number },
+): boolean {
+	if (opts?.built) return true;
+	if (isBuilt(status, opts?.floor, opts?.requiredLevel)) return true;
+	if (status === "unassessed") return false;
+	return current >= PASSABLE;
 }
 
 /** Open targets reachable from `fromId`, including itself when it is a target. */

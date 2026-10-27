@@ -22,7 +22,7 @@ import {
 	type MaterialKind,
 	type MaterialSource,
 } from "./exam";
-import { analyzeGoal, findCycle, goalMermaid, isBuilt, targetsServed, type GoalAnalysis, type GraphNode } from "./graph";
+import { analyzeGoal, findCycle, goalMermaid, isBuilt, isPassable, targetsServed, type GoalAnalysis, type GraphNode } from "./graph";
 import { buildSchedule, daysBetween, defaultDue, parseIsoDate, resolveWeights, weightedReadiness } from "./goal-plan";
 import { ensureDir, type VaultIO } from "./io";
 import {
@@ -1626,16 +1626,20 @@ function dropRequiredKey(v: unknown, id: string): Record<string, number> | undef
 	return Object.keys(out).length ? out : undefined;
 }
 
-/** Solid concepts over every concept in the goal. The map, goals, and chat use this sentence. */
-export function describeConceptProgress(solid: number, total: number): string {
+/** Passable concepts over every concept in the goal. The map, goals, and chat use this sentence. */
+export function describeConceptProgress(passable: number, total: number): string {
 	if (!total) return "no concepts";
-	return `${solid} of ${total} concepts solid`;
+	return `${passable} of ${total} concepts passable`;
 }
 
-/** Same count the map paints: a concept the goal has built still counts after it fades. */
-export function describeGoalProgress(nodes: ReadonlyArray<{ status: ConceptStatus; role?: "target" | "built" | "path" }>): string {
-	const solid = nodes.filter((node) => masteryTone(node.status, node.role === "built") === "solid").length;
-	return describeConceptProgress(solid, nodes.length);
+/** Same count the map path uses: built, solid, or current at/above passable. */
+export function describeGoalProgress(
+	nodes: ReadonlyArray<{ status: ConceptStatus; current?: number; role?: "target" | "built" | "path" }>,
+): string {
+	const passable = nodes.filter((node) =>
+		isPassable(node.status, node.current ?? 0, { built: node.role === "built" }),
+	).length;
+	return describeConceptProgress(passable, nodes.length);
 }
 
 function goalTargetTitles(input: GoalInput): string[] {
