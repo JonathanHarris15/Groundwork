@@ -23,7 +23,7 @@ import { FileSetupFunnel, FirestoreSetupFunnel } from "./setup-funnel";
 import { emptyDownloadCache } from "./obsidian-downloads";
 import { jsonBodyError, readRawBody } from "./json-body";
 import { FirestoreBulkJobStore, MemoryBulkJobStore } from "./bulk-job";
-import { tutorSseKeepaliveLine, TUTOR_SSE_KEEPALIVE_MS } from "@groundwork/core";
+import { tutorSseKeepaliveLine, TUTOR_SSE_KEEPALIVE_MS, cancelEvery, every } from "@groundwork/core";
 
 const { port, host } = listenTarget();
 const auth = loadAuth();
@@ -202,7 +202,7 @@ async function writeSse(res: ServerResponse, result: RouteResult): Promise<void>
 	const ac = new AbortController();
 	const onClose = () => ac.abort();
 	res.on("close", onClose);
-	const keepalive = setInterval(() => {
+	const keepalive = every(() => {
 		if (!res.writableEnded) res.write(tutorSseKeepaliveLine());
 	}, TUTOR_SSE_KEEPALIVE_MS);
 	try {
@@ -215,7 +215,7 @@ async function writeSse(res: ServerResponse, result: RouteResult): Promise<void>
 			res.write(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`);
 		}
 	} finally {
-		clearInterval(keepalive);
+		cancelEvery(keepalive);
 		res.off("close", onClose);
 		if (!res.writableEnded) res.end();
 	}

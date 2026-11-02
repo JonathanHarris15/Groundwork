@@ -13,3 +13,13 @@ export function cancelLater(id: TimerHandle): void {
 	if (typeof window !== "undefined") window.clearTimeout(id);
 	else fallbackTimers.clearTimeout(id);
 }
+
+export function every(fn: () => void, ms: number): TimerHandle {
+	if (typeof window !== "undefined") return window.setInterval(fn, ms);
+	return setInterval(fn, ms);
+}
+
+export function cancelEvery(id: TimerHandle): void {
+	if (typeof window !== "undefined") window.clearInterval(id);
+	else clearInterval(id);
+}

@@ -2,6 +2,7 @@ import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthro
 import { isTruncatedTutorStream } from "./tutor-events";
 import { compactTutorHistory } from "../account/history-budget";
 import { holdsFixturePrefix, isGarbageReply, isInternalToolReport, LOST_REPLY, sanitizeTutorOutput, scrubLearnerText, TutorTextFilter } from "../learner-text";
+import { later } from "../timers";
 import type { FolderAccess } from "../access";
 import { dialogueFromMessages, quizDeclined, studyToolBlock, visibleAsk, withLearnerDue } from "../intent";
 import { goalAsked, isQuestionTool, learnerFacingCorrection, repairNote, setGoalSucceeded } from "../turn-repair";
@@ -394,7 +395,9 @@ export function errorMessage(err: unknown): string {
 }
 
 function pause(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => {
+		later(resolve, ms);
+	});
 }
 
 export function errorCode(err: unknown): string | undefined {
