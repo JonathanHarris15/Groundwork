@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { e2eIdentity } from "../src/auth";
 import { isUsageAdmin, USAGE_ADMIN_EMAILS, usageAdminEmails } from "../src/admin-access";
 import { promotionCodesFrom } from "../src/billing";
@@ -77,6 +77,9 @@ describe("usage rollups", () => {
 	});
 
 	it("counts a hosted turn in the tagged feature, and an untagged turn as unknown", async () => {
+		const anchor = new Date("2026-10-09T12:00:00.000Z");
+		vi.useFakeTimers({ now: anchor, toFake: ["Date"] });
+		try {
 		const store = new MemoryUsageStore();
 		const usage = new UsageDirectory(store);
 		const fetchImpl = (async () =>
@@ -94,11 +97,14 @@ describe("usage rollups", () => {
 		expect(tagged.status).toBe(200);
 		const untagged = await route("POST", "/v1/tutor/complete", turn, server);
 		expect(untagged.status).toBe(200);
-		const report = await usage.report(server.accounts, new Date("2026-10-09T00:00:00.000Z"));
+		const report = await usage.report(server.accounts, anchor);
 		expect(report.features.find((row) => row.feature === "quiz")?.calls).toBe(1);
 		expect(report.features.find((row) => row.feature === "unknown")?.calls).toBe(1);
 		expect(JSON.stringify(await store.listDays())).not.toContain("indigo-otter");
 		expect(report.users[0]?.chargedUsd).toBeCloseTo(0.0068);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("records a checkout start and a grading call", async () => {
