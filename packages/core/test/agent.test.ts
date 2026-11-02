@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../src/agent/loop";
 import { DemoProvider } from "../src/agent/demo";
 import type { AgentEvent, ChatMessage, Provider } from "../src/agent/types";
@@ -10,6 +10,21 @@ import type { TestReport } from "../src/practice";
 import { buildSystemPrompt, practiceTestRequest } from "../src/prompt";
 import { KnowledgeStore } from "../src/store";
 import { TOOLS, type ToolUI } from "../src/tools";
+
+/** Oct 28 is still ahead on this clock, so "due on Oct 28th" resolves to 2026-10-28. */
+const octGoalDueNow = () => new Date("2026-10-22T12:00:00.000Z");
+function storeForOctGoalDue() {
+	return new KnowledgeStore(new MemoryVaultIO(), { now: octGoalDueNow, device: "test" });
+}
+
+async function withOctGoalDueClock(run: () => Promise<void>): Promise<void> {
+	vi.useFakeTimers({ now: octGoalDueNow(), toFake: ["Date"] });
+	try {
+		await run();
+	} finally {
+		vi.useRealTimers();
+	}
+}
 
 describe("AgentSession with the demo tutor", () => {
 	it("runs recall → plan → quiz → summary and writes the vault", async () => {
@@ -380,9 +395,10 @@ describe("AgentSession with the demo tutor", () => {
 	});
 
 	it("saves a pinned goal due Oct 28 when they say yes and will not quiz tonight", async () => {
+		await withOctGoalDueClock(async () => {
 		const bedtime = "Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight. I am going to bed";
 		const quizzed: string[] = [];
-		const store = new KnowledgeStore(new MemoryVaultIO());
+		const store = storeForOctGoalDue();
 		await store.ensureLayout();
 		const provider: Provider = {
 			name: "scripted",
@@ -475,11 +491,13 @@ describe("AgentSession with the demo tutor", () => {
 		expect(quizzed).toEqual(["What is a limit?"]);
 		expect(events.some((e) => e.type === "tool_end" && e.name === "quiz" && e.isError)).toBe(false);
 		expect((await store.goals())[0]?.due).toBe("2026-10-28");
+		});
 	});
 
 	it("studies when they say let's work on this goal, and saves a goal with no quiz when they say not tonight", async () => {
+		await withOctGoalDueClock(async () => {
 		const asked: string[] = [];
-		const store = new KnowledgeStore(new MemoryVaultIO());
+		const store = storeForOctGoalDue();
 		await store.ensureLayout();
 		await store.upsertConcept({ title: "Limit", summary: "A value being approached." });
 		const provider: Provider = {
@@ -597,14 +615,16 @@ describe("AgentSession with the demo tutor", () => {
 		const goal = (await store.goals()).find((item) => item.title === "Additivity");
 		expect(goal?.due).toBe("2026-10-28");
 		expect(nightEvents.flatMap((event) => (event.type === "text_delta" ? [event.text] : [])).join("")).not.toContain("Waiting until they ask to study");
+		});
 	});
 
 	it("saves the goal on Start after a made-up tool registration failure", async () => {
+		await withOctGoalDueClock(async () => {
 		const bedtime = "Yes set this up as a goal due on Oct 28th. But I wont start quizzing tonight. I am going to bed";
 		const invention =
 			"It looks like the tools did not load properly due to an issue registering the actions. Since the system isn't letting me initialize the database tools right now, I have saved our full study plan in chat history. send I'm ready to start studying the slides";
 		const quizzed: string[] = [];
-		const store = new KnowledgeStore(new MemoryVaultIO());
+		const store = storeForOctGoalDue();
 		await store.ensureLayout();
 		const provider: Provider = {
 			name: "scripted",
@@ -672,6 +692,7 @@ describe("AgentSession with the demo tutor", () => {
 		expect((await store.goals()).map((goal) => goal.title)).toEqual(["Limits"]);
 		expect((await store.goals())[0]?.due).toBe("2026-10-28");
 		expect(events.some((e) => e.type === "tool_end" && e.name === "set_goal" && !e.isError)).toBe(true);
+		});
 	});
 
 	it("corrects a claimed goal when set_goal never succeeds", async () => {
