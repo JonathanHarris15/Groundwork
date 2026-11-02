@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { STUDY_FOLLOW_UP } from "../src/intent";
-import { buildSystemPrompt, promptParts } from "../src/prompt";
+import { buildSystemPrompt, GOAL_GROUNDING, promptParts, workingGoalNote } from "../src/prompt";
 import { toolByName } from "../src/tools";
 
 describe("teaching method", () => {
@@ -79,5 +79,14 @@ describe("teaching method", () => {
 		expect(method).toContain("`resources/`");
 		expect(method).toContain("`submissions/`");
 		expect(method).toContain("write_submission_file");
+	});
+
+	it("always sends goal grounding so context selection cannot drop it", () => {
+		expect(buildSystemPrompt()).toContain(GOAL_GROUNDING);
+		expect(promptParts().find((part) => part.id === "goal-grounding")?.required).toBe(true);
+		expect(GOAL_GROUNDING).toContain("get_goal");
+		expect(GOAL_GROUNDING).toContain("purpose");
+		expect(workingGoalNote({ title: "Calc final", left: 2 })).toContain("get_goal");
+		expect(toolByName("get_goal")?.description).toContain("before teaching");
 	});
 });

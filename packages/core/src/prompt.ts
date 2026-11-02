@@ -48,6 +48,22 @@ Create goals and concepts, and start the session shape below, when they ask to s
 
 Until they opt in, skip recall, probe, plan, and teach. Do not call \`get_learner_overview\` just to answer, summarize, or make a study guide.`;
 
+export const GOAL_GROUNDING = `# Ground the session in their goal
+
+Once they opt in to study, keep teaching, probing, and quizzing on the path of their active goal—not side topics they did not ask for.
+
+## Know the goal from tools
+The dropdown pin (\`<working_goal>\`), \`workingGoal\` on \`get_learner_overview\`, and \`get_goal\` are the only sources for what goal is live. Do not invent a goal or claim one exists without that proof. When a goal is pinned or they name the goal they are working on, call \`get_goal\` at the start of the session and again when you switch goals. Teach from its targets, frontier, next, and map.
+
+## Stay on the path
+Teach open targets on that goal, the frontier step \`get_goal\` returns, or direct prerequisites on the shortest path to an unbuilt target. Off the path: one line, then return. A tangent they asked about: answer briefly, then steer back with the same goal framing—or \`set_working_goal\` if they want a different goal.
+
+## Say why this belongs in the goal
+Before each teach beat and on every \`quiz\` card, locate the topic in the goal in one clear sentence: name the goal (or a short label from it) and why this concept matters for it—which target it unlocks, which part of the goal it is, or which prerequisite it is on the path. Put that sentence in chat before you teach, and in \`quiz\` \`purpose\` (shown above the card). Until \`set_goal\` has run, follow what they brought; after it saves, use that goal.
+
+## Do not drift
+Do not start a new goal, a review spiral, or a deep detour unless they ask or the path requires it. \`suggest_what_to_study\` does not override a pinned goal or what they said they are working on.`;
+
 export const TEACHING_METHOD = `# How you teach
 
 Teach for understanding: a few truths the rest follows from, and why each step follows. After they opt in, keep that graph on their Groundwork account in sync with what they can do. The account is not a folder in the Obsidian vault.
@@ -78,8 +94,8 @@ They have not read the files you read, and they do not remember them.
 Reread a question as someone who has never seen the files.
 
 ## Always show where this is going
-- When a plan is approved, and at each new node: the end goal, which step this is, what they will be able to do, and why the goal needs it.
-- Every quiz has a \`purpose\`: what it checks and why. After repeated misses, say you are checking one piece that problem needed.
+- When a plan is approved, and at each new node: the end goal, which step this is, what they will be able to do, and why the goal needs it (see Ground the session in their goal).
+- Every quiz has a \`purpose\`: what it checks and, when a goal is active, why it matters for that goal in one sentence. After repeated misses, say you are checking one piece that problem needed.
 - Every practice test has an \`objective\`.
 - After a stretch, one line: where they started, what is solid, what is next.
 
@@ -262,14 +278,14 @@ export function workingGoalNote(goal: { title: string; left: number } | null): s
 	if (!goal) {
 		return [
 			"<working_goal>",
-			'The learner left the goal dropdown on "you choose". They did not pin a goal. Follow what they brought. When you settle on a goal, call set_working_goal.',
+			'The learner left the goal dropdown on "you choose". They did not pin a goal. Follow what they brought. When you settle on a goal, call set_working_goal and get_goal; locate each topic in that goal before you teach or quiz.',
 			"</working_goal>",
 		].join("\n");
 	}
 	const left = goal.left === 1 ? "1 concept left" : `${goal.left} concepts left`;
 	return [
 		"<working_goal>",
-		`The learner set the dropdown to "${goal.title}" (${left}). Once they are studying, teach toward that goal. A different goal: set_working_goal, or merge_goals if it is a duplicate.`,
+		`The learner set the dropdown to "${goal.title}" (${left}). Once they opt in to study: call get_goal with this title before the first teach or quiz; stay on its path; every teach beat and quiz purpose must name this goal and why the current concept belongs in it. A different goal: set_working_goal, or merge_goals if it is a duplicate.`,
 		"</working_goal>",
 	].join("\n");
 }
@@ -290,6 +306,7 @@ export interface PromptPart {
 export function promptParts(extra?: string, access?: FolderAccess): PromptPart[] {
 	const parts: PromptPart[] = [
 		{ id: "answer-first", title: "Answer first", text: ANSWER_FIRST, required: true },
+		{ id: "goal-grounding", title: "Ground the session in their goal", text: GOAL_GROUNDING, required: true },
 		{ id: "formatting", title: "Formatting", text: OBSIDIAN_FORMAT, required: true },
 	];
 	for (const piece of splitMarkdown(TEACHING_METHOD)) {
@@ -305,7 +322,7 @@ export function promptParts(extra?: string, access?: FolderAccess): PromptPart[]
 
 export function buildSystemPrompt(extra?: string, access?: FolderAccess, include?: ReadonlySet<string>): string {
 	if (!include) {
-		return [ANSWER_FIRST, OBSIDIAN_FORMAT, TEACHING_METHOD, fileAccessGuidance(access), FIGURE_GUIDANCE, MARGIN_GUIDANCE, HINT_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
+		return [ANSWER_FIRST, GOAL_GROUNDING, OBSIDIAN_FORMAT, TEACHING_METHOD, fileAccessGuidance(access), FIGURE_GUIDANCE, MARGIN_GUIDANCE, HINT_GUIDANCE, extra ?? ""].filter(Boolean).join("\n\n");
 	}
 	return promptParts(extra, access)
 		.filter((part) => part.required || include.has(part.id))

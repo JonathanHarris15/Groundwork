@@ -238,7 +238,9 @@ export const quizInputSchema: JSONSchema = {
 	type: "object",
 	properties: {
 		...questionProperties,
-		purpose: str("One sentence above the question: what this checks and why it matters now."),
+		purpose: str(
+			"One sentence above the question: what this checks, and—with an active goal from get_goal or the pin—why it matters for that goal (name the goal and its link to a target or prerequisite on the path).",
+		),
 		kind: { type: "string", enum: evidenceKinds.slice(0, 3), description: "probe = mapping the edge, check = confirming a node just taught, review = spaced retrieval." },
 	},
 	required: ["concept", "question", "purpose", "explanation", "difficulty", "kind"],
@@ -506,7 +508,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		name: "get_goal",
 		description:
-			"Status of a goal they are already studying: open targets, built, frontier, and a mermaid map. next is the step on this goal, not a reason to switch topics.",
+			"Status of a goal they are already studying: open targets, built, frontier, and a mermaid map. next is the step on this goal, not a reason to switch topics. Call this when a goal is pinned or they are working on a named goal, before teaching or quizzing, so purpose lines and the path stay tied to real targets.",
 		inputSchema: { type: "object", properties: { goal: str("Goal title.") }, required: ["goal"] },
 		async run({ goal }: { goal: string }, { store }) {
 			const r = await store.goalReport(goal);
@@ -614,7 +616,7 @@ export const TOOLS: ToolDef[] = [
 		name: "quiz",
 		interactive: true,
 		description:
-			"Ask one graded question and wait. When the concept has a preferred method, the question, the worked solution, and the explanation use that method and its notation. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Do not ask in a Quick Check callout or leave a question for the chat. An open answer uses format free. When there are options, use choice. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again. If the tool returns an error, repeat that error. Do not say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. A free-response reference answer gets that same model check. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
+			"Ask one graded question and wait. When the concept has a preferred method, the question, the worked solution, and the explanation use that method and its notation. The card is the question: call this in the same message as any line that says a question is coming. Do not announce a question in prose and then stop. Do not ask in a Quick Check callout or leave a question for the chat. An open answer uses format free. When there are options, use choice. Only after they opt in to study, including the turn they state an objective. Do not ask permission first, and do not invent a system rule if the card did not appear: call this again. If the tool returns an error, repeat that error. Do not say it did not load. For a choice question, write solution first, then answer (the correct claim), then the options. correctAnswer is that option's value, never a letter or an index. The key is checked before the card is shown: the worked answer, a deterministic check, and a separate model check must agree. A disagreement is fixed, or the question is not shown and you must call quiz again. A free-response reference answer gets that same model check. Choice is graded instantly. Free response: if the result says already graded, teach from it; otherwise call grade_answer before anything else. kind is probe, check, or review. When a goal is active, purpose names it and why this concept is on its path (shown above the card). \"I don't know\" and a note are added automatically. Follow the Next move in the result.",
 		inputSchema: quizInputSchema,
 		async run(input: QuizInput, { store, ui, session, grader, keyVerifier, signal }) {
 			if (!ui) return { text: "quiz needs an interactive surface.", isError: true };
