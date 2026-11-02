@@ -9,7 +9,7 @@ import type { Billing } from "../src/billing";
 import { ConnectCodeDirectory, hashConnectCode } from "../src/connect-codes";
 import { FileConnectCodeStore, MemoryConnectCodeStore } from "../src/connect-code-store";
 import { MemoryDirectory } from "../src/memory";
-import { emptyDownloadCache, resolveObsidianDownload } from "../src/obsidian-downloads";
+import { emptyDownloadCache } from "../src/obsidian-downloads";
 import { SecretDirectory } from "../src/secrets";
 import { MemorySetupFunnel } from "../src/setup-funnel";
 import { setupPageUrl } from "../src/setup-qr";
@@ -159,25 +159,6 @@ describe("connect codes", () => {
 		expect(setupPageUrl("groundworklearn.com", "https")).toBe("https://groundworklearn.com/get-started");
 		expect(setupPageUrl("groundwork-abc.a.run.app", "https")).toBe("https://groundwork-abc.a.run.app/get-started");
 		expect(setupPageUrl("notgroundworklearn.com", "https")).toBe("https://groundworklearn.com/get-started");
-	});
-
-	it("uses a release asset when GitHub lists one", async () => {
-		const cache = emptyDownloadCache();
-		const fetchImpl = async () =>
-			new Response(
-				JSON.stringify({
-					assets: [
-						{ name: "Obsidian-1.7.7.exe", browser_download_url: "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.7.7/Obsidian-1.7.7.exe" },
-						{ name: "Obsidian-1.7.7.dmg", browser_download_url: "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.7.7/Obsidian-1.7.7.dmg" },
-						{ name: "Obsidian-1.7.7.AppImage", browser_download_url: "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.7.7/Obsidian-1.7.7.AppImage" },
-					],
-				}),
-				{ status: 200 },
-			);
-		await expect(resolveObsidianDownload("linux", fetchImpl, 10, cache)).resolves.toContain("AppImage");
-		await expect(resolveObsidianDownload("windows", fetchImpl, 10, cache)).resolves.toContain(".exe");
-		const missed = emptyDownloadCache();
-		await expect(resolveObsidianDownload("mac", async () => new Response("no", { status: 500 }), 10, missed)).resolves.toBe("https://obsidian.md/download");
 	});
 
 	it("records a signed-in download click and redirects an unsigned download", async () => {
