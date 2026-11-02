@@ -167,6 +167,31 @@ open("figure.svg","w").write('<svg xmlns="http://www.w3.org/2000/svg" width="40"
 		if (existsSync("/opt/cursor/artifacts")) writeFileSync("/opt/cursor/artifacts/paraboloid-figure.png", bytes);
 	}, 180_000);
 
+	it("pins the matplotlib backend before the program runs", async () => {
+		const source = [
+			"import os",
+			"open(\"figure.svg\", \"w\").write(",
+			"    \"<svg xmlns=\\\"http://www.w3.org/2000/svg\\\" width=\\\"10\\\" height=\\\"10\\\"><title>\"",
+			"    + os.environ.get(\"MPLBACKEND\", \"unset\")",
+			"    + \"</title></svg>\"",
+			")",
+		].join("\n");
+		const produced = await runPythonFigure(source, nodePyodideSpawn());
+		expect(produced.svg).toContain("<title>Agg</title>");
+	}, 120_000);
+
+	it("draws when the program imports pyplot without choosing a backend", async () => {
+		const source = [
+			"import matplotlib.pyplot as plt",
+			"fig, ax = plt.subplots(figsize=(2.4, 1.8))",
+			"ax.plot([0, 1, 2], [0, 1, 4])",
+			"fig.savefig(\"figure.png\", dpi=60)",
+		].join("\n");
+		const produced = await runPythonFigure(source, nodePyodideSpawn());
+		expect(produced.media?.mime).toBe("image/png");
+		expect(Buffer.from(produced.media?.base64 ?? "", "base64").byteLength).toBeGreaterThan(1_000);
+	}, 180_000);
+
 function nodePyodideSpawn(): (source: string, signal?: AbortSignal) => Promise<PythonRun> {
 	let py: Awaited<ReturnType<typeof loadPyodide>> | null = null;
 	return async (source, signal) => {

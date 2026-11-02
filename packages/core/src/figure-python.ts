@@ -43,10 +43,20 @@ export function figureFailureMessage(err: unknown): string {
 
 const PREPARE = `
 import os
+import sys
 os.environ.clear()
 os.makedirs("/tmp", exist_ok=True)
 os.environ["HOME"] = "/tmp"
 os.environ["MPLCONFIGDIR"] = "/tmp"
+# On Emscripten matplotlib picks webagg, whose import needs a document. The
+# figure worker has none, so pin the file backend before matplotlib loads.
+os.environ["MPLBACKEND"] = "Agg"
+_mpl = sys.modules.get("matplotlib")
+if _mpl is not None:
+    try:
+        _mpl.use("Agg", force=True)
+    except Exception:
+        pass
 for _name in ("figure.svg", "figure.png", "figure.gif", "figure.webp"):
     try:
         os.remove(_name)
