@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.24",
+		date: "2026-11-02",
+		body: "Figure cards that import matplotlib.pyplot draw correctly again. The figure sandbox pins MPLBACKEND=Agg so the worker on Emscripten does not fail on the default backend.",
+	},
+	{
 		version: "0.2.23",
 		date: "2026-10-27",
 		body: "Map goal flags and path progress use passable mastery: red flags only below passable, and progress reads “N of M concepts passable” instead of solid-only.",
