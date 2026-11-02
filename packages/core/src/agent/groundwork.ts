@@ -2,7 +2,7 @@ import { usageFeatureFromThread } from "../account/usage-feature";
 import { httpClient, type HttpClient, type HttpInit, type HttpResponse } from "../http";
 import { JSON_BODY_LIMIT_BYTES, uploadTooLargeError } from "../upload-limit";
 import { asRecord } from "../unknown";
-import { pushTutorSse, type TutorWireEvent } from "./tutor-events";
+import { pushTutorSse, TUTOR_STREAM_TRUNCATED, type TutorWireEvent } from "./tutor-events";
 import type { Provider, ProviderRequest, ProviderResponse } from "./types";
 
 /**
@@ -129,7 +129,7 @@ async function readTutorStream(res: HttpResponse, onText: (delta: string) => voi
 	if (buffer.trim()) take("\n\n");
 	if (found.error) throw new TutorHttpError(found.error.error || "The tutor could not reach the model.", found.error.status || res.status, found.error.code);
 	if (!res.ok && !found.done) throw new TutorHttpError("The tutor could not reach the model.", res.status);
-	if (!found.done) throw new Error("The tutor stream ended before the reply finished.");
+	if (!found.done) throw new Error(TUTOR_STREAM_TRUNCATED);
 	return { content: contentBlocks(found.done.content), stopReason: found.done.stopReason || "end_turn", usage: usageFrom(found.done.usage) };
 }
 
