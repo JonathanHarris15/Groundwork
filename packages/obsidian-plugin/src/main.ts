@@ -747,7 +747,7 @@ export default class GroundworkPlugin extends Plugin {
 			return;
 		}
 		this.accountPublishing = true;
-		this.setSync("syncing", "saving tutor memory…");
+		if (manual) this.setSync("syncing", "saving tutor memory…");
 		try {
 			let saved: TutorMemory | null = null;
 			for (let attempt = 0; attempt < 3; attempt++) {
@@ -780,11 +780,21 @@ export default class GroundworkPlugin extends Plugin {
 			if (!saved) return;
 			this.memoryBaseline = { files: { ...saved.files }, updatedAt: saved.updatedAt };
 			this.lastSync = saved.updatedAt ? new Date(saved.updatedAt) : new Date();
-			this.setSync("ok", "tutor memory saved to your account");
-			if (manual) new Notice("Groundwork: tutor memory saved to your account. Your profile map will follow it.");
+			if (manual) {
+				this.setSync("ok", "tutor memory saved to your account");
+				new Notice("Groundwork: tutor memory saved to your account. Your profile map will follow it.");
+			} else if (this.syncStatus.state !== "ok") {
+				this.setSync("ok", "tutor memory saved to your account");
+			} else {
+				this.renderStatus();
+			}
 		} catch (e) {
-			this.setSync("error", (e as Error).message);
-			if (manual) new Notice(`Groundwork: could not save tutor memory. ${(e as Error).message}`);
+			if (manual) {
+				this.setSync("error", (e as Error).message);
+				new Notice(`Groundwork: could not save tutor memory. ${(e as Error).message}`);
+			} else {
+				console.error("Groundwork could not autosave tutor memory.", e);
+			}
 		} finally {
 			this.accountPublishing = false;
 			if (this.accountPublishAgain) {

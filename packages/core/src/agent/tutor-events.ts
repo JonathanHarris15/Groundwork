@@ -11,6 +11,26 @@ export type TutorWireEvent =
 	| { type: "done"; content: ContentBlock[]; stopReason: string; usage?: ProviderResponse["usage"] }
 	| { type: "error"; error: string; code?: string; status?: number };
 
+/** Shown when the HTTP stream ends before a done event (proxy idle timeout, client disconnect). */
+export const TUTOR_STREAM_TRUNCATED = "Stream closed before completion.";
+
+/** SSE comment lines keep Hosting and other proxies from closing an idle tutor stream. */
+export const TUTOR_SSE_KEEPALIVE_MS = 15_000;
+
+export function tutorSseKeepaliveLine(): string {
+	return ": keepalive\n\n";
+}
+
+export function isTruncatedTutorStream(message: string): boolean {
+	const raw = message.replace(/\s+/g, " ").trim();
+	if (!raw) return false;
+	return (
+		raw === TUTOR_STREAM_TRUNCATED ||
+		/stream closed before completion/i.test(raw) ||
+		/tutor stream ended before the reply finished/i.test(raw)
+	);
+}
+
 export function tutorEventLine(event: TutorWireEvent): string {
 	return `data: ${JSON.stringify(event)}\n\n`;
 }

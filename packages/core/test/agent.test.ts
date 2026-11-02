@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../src/agent/loop";
 import { DemoProvider } from "../src/agent/demo";
-import type { AgentEvent, ChatMessage, Provider } from "../src/agent/types";
+import type { AgentEvent, ChatMessage, Provider, ProviderRequest, ProviderResponse } from "../src/agent/types";
+import { TUTOR_STREAM_TRUNCATED } from "../src/agent/tutor-events";
 import { STUDY_FOLLOW_UP } from "../src/intent";
 import { PLAIN_NO_TOOL_ERROR, UNSAVED_GOAL_LINE } from "../src/turn-repair";
 import { toBoard } from "../../obsidian-plugin/src/goal-board";
@@ -796,3 +797,63 @@ function messageText(message: ChatMessage): string {
 	if (typeof message.content === "string") return message.content;
 	return message.content.map((block) => (block.type === "text" && typeof block.text === "string" ? block.text : block.type === "tool_result" ? String(block.content) : "")).join("\n");
 }
+
+describe("AgentSession stream recovery", () => {
+	it("retries once when the hosted stream closes early, then finishes the turn", async () => {
+		vi.useFakeTimers();
+		let calls = 0;
+		const provider: Provider = {
+			name: "flaky-stream",
+			async complete(req: ProviderRequest): Promise<ProviderResponse> {
+				calls += 1;
+				if (calls === 1) throw new Error(TUTOR_STREAM_TRUNCATED);
+				const reply = "Picking up where we left off.";
+				req.onText(reply);
+				return { content: [{ type: "text", text: reply }], stopReason: "end_turn" };
+			},
+		};
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			session: { id: "stream-retry" },
+		});
+		const events: AgentEvent[] = [];
+		const pending = agent.send("Build a goal from these notes", (e) => events.push(e));
+		await vi.advanceTimersByTimeAsync(600);
+		await pending;
+		vi.useRealTimers();
+		expect(calls).toBe(2);
+		expect(events.some((e) => e.type === "error")).toBe(false);
+		expect(events.some((e) => e.type === "text_delta" && e.text.includes("Picking up"))).toBe(true);
+	});
+
+	it("offers Continue when the stream stays truncated after a retry", async () => {
+		vi.useFakeTimers();
+		const provider: Provider = {
+			name: "broken-stream",
+			async complete(): Promise<ProviderResponse> {
+				throw new Error(TUTOR_STREAM_TRUNCATED);
+			},
+		};
+		const store = new KnowledgeStore(new MemoryVaultIO());
+		await store.ensureLayout();
+		const agent = new AgentSession({
+			provider,
+			store,
+			tools: TOOLS,
+			system: buildSystemPrompt(),
+			session: { id: "stream-offer" },
+		});
+		const events: AgentEvent[] = [];
+		const pending = agent.send("Keep mapping the goal", (e) => events.push(e));
+		await vi.advanceTimersByTimeAsync(600);
+		await pending;
+		vi.useRealTimers();
+		expect(events.some((e) => e.type === "error")).toBe(false);
+		expect(events.some((e) => e.type === "continue_offer")).toBe(true);
+	});
+});

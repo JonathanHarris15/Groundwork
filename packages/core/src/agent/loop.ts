@@ -1,6 +1,8 @@
-import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthropic, normalizeAnthropicMessages } from "../account/anthropic-messages";
+import { collapseAnthropicTranscript, invalidAnthropicRequest, messagesForAnthropic, normalizeAnthropicMessages, plainTutorError } from "../account/anthropic-messages";
+import { isTruncatedTutorStream } from "./tutor-events";
 import { compactTutorHistory } from "../account/history-budget";
 import { holdsFixturePrefix, isGarbageReply, isInternalToolReport, LOST_REPLY, sanitizeTutorOutput, scrubLearnerText, TutorTextFilter } from "../learner-text";
+import { later } from "../timers";
 import type { FolderAccess } from "../access";
 import { dialogueFromMessages, quizDeclined, studyToolBlock, visibleAsk, withLearnerDue } from "../intent";
 import { goalAsked, isQuestionTool, learnerFacingCorrection, repairNote, setGoalSucceeded } from "../turn-repair";
@@ -59,7 +61,7 @@ export class AgentSession implements TutorSession {
 				this.repairAfterAbort();
 			} else {
 				this.repairAfterAbort();
-				onEvent({ type: "error", message: errorMessage(err), code: errorCode(err) });
+				onEvent({ type: "error", message: plainTutorError(errorMessage(err)), code: errorCode(err) });
 			}
 		} finally {
 			this.healStored();
@@ -87,7 +89,17 @@ export class AgentSession implements TutorSession {
 			const note = force ? stepsClosedNote() : research.exhausted ? researchClosedNote() : "";
 			const system = this.turnContext?.system ?? this.opts.system;
 			const speech = new HeldSpeech((text) => onEvent({ type: "text_delta", text }));
-			const res = await this.complete(note ? `${system}\n\n${note}` : system, tools, signal, (delta) => speech.push(delta));
+			let res: ProviderResponse;
+			try {
+				res = await this.complete(note ? `${system}\n\n${note}` : system, tools, signal, (delta) => speech.push(delta), false);
+			} catch (err) {
+				if (!signal?.aborted && isTruncatedTutorStream(errorMessage(err))) {
+					speech.discard();
+					this.finishUnfinished(onEvent, turnAt);
+					return;
+				}
+				throw err;
+			}
 			const uses = res.content.filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use");
 			if (res.stopReason === "pause_turn") {
 				speech.flush();
@@ -186,7 +198,13 @@ export class AgentSession implements TutorSession {
 	}
 
 	/** Repair the saved thread, then send it. If the provider still rejects the history, drop it to text and retry once. */
-	private async complete(system: string, tools: ProviderTool[], signal: AbortSignal | undefined, onText: (delta: string) => void): Promise<ProviderResponse> {
+	private async complete(
+		system: string,
+		tools: ProviderTool[],
+		signal: AbortSignal | undefined,
+		onText: (delta: string) => void,
+		retriedStream: boolean,
+	): Promise<ProviderResponse> {
 		this.healStored();
 		const call = (messages: ChatMessage[]) =>
 			this.opts.provider.complete({
@@ -199,7 +217,12 @@ export class AgentSession implements TutorSession {
 		try {
 			return await call(messagesForAnthropic(this.messages));
 		} catch (err) {
-			if (signal?.aborted || !invalidAnthropicRequest(errorMessage(err))) throw err;
+			if (signal?.aborted) throw err;
+			if (!retriedStream && isTruncatedTutorStream(errorMessage(err))) {
+				await pause(500);
+				return this.complete(system, tools, signal, onText, true);
+			}
+			if (!invalidAnthropicRequest(errorMessage(err))) throw err;
 			this.messages.splice(0, this.messages.length, ...collapseAnthropicTranscript(this.messages));
 			return await call(messagesForAnthropic(this.messages));
 		}
@@ -369,6 +392,12 @@ function reportedToolError(name: string, summary: string | undefined, text: stri
 export function errorMessage(err: unknown): string {
 	if (err instanceof Error) return err.message;
 	return String(err);
+}
+
+function pause(ms: number): Promise<void> {
+	return new Promise((resolve) => {
+		later(resolve, ms);
+	});
 }
 
 export function errorCode(err: unknown): string | undefined {

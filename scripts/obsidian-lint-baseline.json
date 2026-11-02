@@ -1,3 +1,5 @@
 {
-  "warnings": {}
+  "warnings": {
+    "packages/core/src/timers.ts\tobsidianmd/prefer-window-timers": 2
+  }
 }
