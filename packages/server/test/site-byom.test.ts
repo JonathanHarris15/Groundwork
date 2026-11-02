@@ -50,13 +50,10 @@ describe("BYOM landing page", () => {
 		const html = String(renderSite("/byom")?.body);
 		const [install, signIn, check] = CLAUDE_SETUP;
 		expect(CLAUDE_SETUP).toHaveLength(3);
-		const commands = install?.commands?.map((item) => item.command) ?? [];
-		expect(commands).toHaveLength(2);
 		expect(html).toContain(install?.title);
-		expect(html).toContain("Mac and Linux");
-		expect(html).toContain("Windows PowerShell");
-		expect(html).toContain(`<code>${commands[0]}</code>`);
-		expect(html).toContain(`<code>${commands[1]}</code>`);
+		expect(html).toContain('href="https://claude.com/claude-code"');
+		expect(html).toContain('href="https://docs.anthropic.com/en/docs/claude-code/overview"');
+		expect(html).not.toMatch(/curl\s+-fsSL|install\.sh\s*\|\s*bash|install\.ps1\s*\|\s*iex|\|\s*bash|\|\s*iex/i);
 		expect(html).toContain(signIn?.title);
 		expect(html).toContain('<code translate="no">claude</code>');
 		expect(html).toContain('<code translate="no">/login</code>');

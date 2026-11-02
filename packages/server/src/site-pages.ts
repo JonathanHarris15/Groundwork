@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.25",
+		date: "2026-11-02",
+		body: "Tutor SSE streams send keepalives on long Heavy turns so proxies do not drop them. Obsidian setup links go to obsidian.md instead of GitHub installers. The Bring your own model page links to Anthropic’s Claude Code docs instead of pipe-to-shell install commands.",
+	},
+	{
 		version: "0.2.24",
 		date: "2026-11-02",
 		body: "Figure cards that import matplotlib.pyplot draw correctly again. The figure sandbox pins MPLBACKEND=Agg so the worker on Emscripten does not fail on the default backend.",
@@ -574,6 +579,8 @@ Groundwork runs on a Windows, Mac, or Linux computer. It does not run on a phone
 }
 
 const BYOM_SIGN_UP = "/?plan=byom#signin";
+const CLAUDE_CODE_HOME = "https://claude.com/claude-code";
+const CLAUDE_CODE_SETUP_DOCS = "https://docs.anthropic.com/en/docs/claude-code/overview";
 
 /** Same providers a learner can paste, in the order this landing page names them. */
 const BYOM_KEY_ORDER: UserKeyProvider[] = ["anthropic", "openrouter", "openai", "google", "xai"];
@@ -633,15 +640,21 @@ function byomFaq(): FaqItem[] {
 	];
 }
 
+function byomInstallLinks(): string {
+	return `<ul class="install-links">
+				<li><a href="${CLAUDE_CODE_HOME}" rel="noopener noreferrer">Claude Code on claude.com</a></li>
+				<li><a href="${CLAUDE_CODE_SETUP_DOCS}" rel="noopener noreferrer">Claude Code install and setup (Anthropic docs)</a></li>
+			</ul>`;
+}
+
 function byomSteps(): string {
 	const [install, signIn, check] = CLAUDE_SETUP;
 	if (!install || !signIn || !check || CLAUDE_SETUP.length !== 3) throw new Error("CLAUDE_SETUP no longer has three steps.");
-	if ((install.commands?.length ?? 0) < 2) throw new Error("CLAUDE_SETUP install step needs a Mac and a Windows command.");
 	return `<ol class="setup-steps">
 			<li>
 				<h2>${escapeHtml(install.title)}</h2>
-				<p>${escapeHtml(install.detail)}</p>
-				${commandBlocks(install.commands)}
+				<p>Install Claude Code from Anthropic’s site. Use their official install guide for your computer.</p>
+				${byomInstallLinks()}
 			</li>
 			<li>
 				<h2>${escapeHtml(signIn.title)}</h2>
