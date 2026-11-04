@@ -18,6 +18,7 @@ const LATEX_NAMED = new Set([
 	"inf",
 	"max",
 	"min",
+	"relu",
 	"det",
 	"dim",
 	"ker",

@@ -93,4 +93,8 @@ describe("normalizeTutorMarkdown transpose merge", () => {
 	it("merges c^ with \\top into one inline math span", () => {
 		expect(normalizeTutorMarkdown("c^\\top")).toBe("$c^\\top$");
 	});
+
+	it("wraps exam-style max with subscripts", () => {
+		expect(normalizeTutorMarkdown(String.raw`\max(x_1, x_2)`)).toBe(String.raw`$\max(x_1, x_2)$`);
+	});
 });

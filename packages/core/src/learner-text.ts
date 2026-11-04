@@ -1,3 +1,4 @@
+import { isQuizGateFailure, isQuizGatePayload } from "./quiz-gate";
 import { TOOLS } from "./tools";
 
 /** Shown when a reply is only an internal fixture id. */
@@ -70,6 +71,7 @@ export function learnerToolError(line: string): string | null {
 export function isInternalToolReport(summary: string | undefined, text: string): boolean {
 	const flatSummary = (summary ?? "").replace(/\s+/g, " ").trim();
 	if (flatSummary && (GATE_SUMMARIES.has(flatSummary) || flatSummary.startsWith("Stopped fetching "))) return true;
+	if (isQuizGateFailure(summary, text)) return true;
 	const flat = text.replace(/\s+/g, " ").trim();
 	return !!flat && isInternalPayload(flat);
 }
@@ -127,7 +129,9 @@ export class TutorTextFilter {
 
 function sanitizeLine(line: string): string | null {
 	if (!line.trim()) return line;
-	const payloads = splitToolPayloads(line.trim());
+	const trimmed = line.trim();
+	if (isQuizGatePayload(trimmed) || isQuizGatePayload(trimmed.replace(/^Error:\s*/i, ""))) return null;
+	const payloads = splitToolPayloads(trimmed);
 	if (payloads) {
 		const kept = payloads.filter((payload) => !isInternalPayload(payload));
 		if (!kept.length) return null;
@@ -151,6 +155,8 @@ function sanitizeLine(line: string): string | null {
 function isInternalPayload(payload: string): boolean {
 	const text = payload.trim();
 	if (!text) return true;
+	if (isQuizGatePayload(text)) return true;
+	if (/^Error:\s*/i.test(text) && isQuizGatePayload(text.replace(/^Error:\s*/i, ""))) return true;
 	if (GATE_SUMMARIES.has(text) || text.startsWith("Stopped fetching ")) return true;
 	if (STATUS_PHRASES.some((phrase) => text === phrase || text.startsWith(phrase))) return true;
 	if (/^Not yet\./.test(text) || /^Not now\./.test(text)) return true;

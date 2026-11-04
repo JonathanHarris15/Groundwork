@@ -191,7 +191,7 @@ export function repairNote(input: {
 	const lines: string[] = [];
 	if (invented) {
 		const cause = errors.length
-			? `The tool error was: ${errors.join(" ")} Repeat that error in one sentence and add no other cause.`
+			? `A tool failed: ${errors.join(" ")} Say that in one sentence and add no other cause. Do not quote quiz gate text.`
 			: "No tool failed. Do not invent a failure, and do not mention tools.";
 		lines.push(
 			`You invented a rule about how the app works. There is no confirmation step, no Start reply, nothing that waits to finalize a goal, and nothing that registers actions or initializes database tools. Do not explain the app. Do not say the tools failed to load. ${cause}`,

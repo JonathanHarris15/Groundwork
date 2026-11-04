@@ -77,9 +77,11 @@ describe("learner-visible text", () => {
 		expect(sanitizeTutorOutput("The chain rule. No tool returned an error.")).toBe("The chain rule.");
 		expect(sanitizeTutorOutput("set_goal: Could not write the goal file.")).toBe("Could not write the goal file.");
 		expect(sanitizeTutorOutput("The quiz: try this axiom.")).toBe("The quiz: try this axiom.");
+		expect(sanitizeTutorOutput("Error: Broken math in this question was not shown. Then call quiz again.")).toBe("");
 		expect(learnerToolError("quiz: Waiting until they ask to study")).toBeNull();
 		expect(learnerToolError("set_goal: Could not write the goal file.")).toBe("Could not write the goal file.");
 		expect(isInternalToolReport("Waiting until they ask to study", "Not yet. quiz did not run.")).toBe(true);
+		expect(isInternalToolReport("Broken math", "Broken math in this question was not shown.")).toBe(true);
 		expect(isInternalToolReport("Could not write the goal file.", "Could not write the goal file.")).toBe(false);
 	});
 
