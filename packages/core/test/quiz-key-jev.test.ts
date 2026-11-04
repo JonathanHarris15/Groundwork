@@ -147,21 +147,21 @@ describe("quiz key model check", () => {
 		await store.upsertConcept({ title: "Slope of a line", summary: "Rise over run." });
 		let shown: PreparedQuiz | null = null;
 		const quiz = toolByName("quiz");
-		await expect(
-			quiz?.run(slope, {
-				store,
-				keyVerifier: verifier({ matchesExplanation: false, keyedCorrect: false, anotherAlsoCorrect: true, correctValue: "a" }),
-				ui: {
-					async quiz(q) {
-						shown = q;
-						return { dontKnow: false, selected: ["a"] };
-					},
-					async ask() {
-						return null;
-					},
+		const out = await quiz?.run(slope, {
+			store,
+			keyVerifier: verifier({ matchesExplanation: false, keyedCorrect: false, anotherAlsoCorrect: true, correctValue: "a" }),
+			ui: {
+				async quiz(q) {
+					shown = q;
+					return { dontKnow: false, selected: ["a"] };
 				},
-			}),
-		).rejects.toThrow(/not shown/);
+				async ask() {
+					return null;
+				},
+			},
+		});
+		expect(out?.isError).toBe(true);
+		expect(String(out?.text)).toMatch(/not shown/);
 		expect(shown).toBeNull();
 	});
 
@@ -443,28 +443,28 @@ describe("free-response key check", () => {
 		const store = makeStore();
 		await store.upsertConcept({ title: "Perceptron", summary: "A linear decision rule." });
 		let shown: PreparedQuiz | null = null;
-		await expect(
-			toolByName("quiz")?.run(weights, {
-				store,
-				keyVerifier: {
-					async verify() {
-						throw new Error("choice");
-					},
-					async verifyFree() {
-						throw new Error("down");
-					},
+		const out = await toolByName("quiz")?.run(weights, {
+			store,
+			keyVerifier: {
+				async verify() {
+					throw new Error("choice");
 				},
-				ui: {
-					async quiz(q) {
-						shown = q;
-						return null;
-					},
-					async ask() {
-						return null;
-					},
+				async verifyFree() {
+					throw new Error("down");
 				},
-			}),
-		).rejects.toThrow(/not shown/);
+			},
+			ui: {
+				async quiz(q) {
+					shown = q;
+					return null;
+				},
+				async ask() {
+					return null;
+				},
+			},
+		});
+		expect(out?.isError).toBe(true);
+		expect(String(out?.text)).toMatch(/not shown/);
 		expect(shown).toBeNull();
 	});
 
