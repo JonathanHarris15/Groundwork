@@ -4,6 +4,7 @@ import { compactTutorHistory } from "../account/history-budget";
 import { holdsFixturePrefix, isGarbageReply, isInternalToolReport, LOST_REPLY, sanitizeTutorOutput, scrubLearnerText, TutorTextFilter } from "../learner-text";
 import { later } from "../timers";
 import type { FolderAccess } from "../access";
+import { asQuizGateError, isQuizGateFailure, modelQuizGateMessage, QUIZ_GATE_MAX_ATTEMPTS, quizGateSummary } from "../quiz-gate";
 import { dialogueFromMessages, quizDeclined, studyToolBlock, visibleAsk, withLearnerDue } from "../intent";
 import { goalAsked, isQuestionTool, learnerFacingCorrection, repairNote, setGoalSucceeded } from "../turn-repair";
 import { fileBlocks, userContent, type VaultFile } from "../files";
@@ -82,6 +83,7 @@ export class AgentSession implements TutorSession {
 		let calledFigure = false;
 		let toolsRan = false;
 		const toolErrors: string[] = [];
+		let quizGateAttempts = 0;
 		for (let step = 0; step < maxSteps; step++) {
 			if (signal?.aborted) return;
 			const force = forcingAnswer(step, maxSteps);
@@ -174,9 +176,21 @@ export class AgentSession implements TutorSession {
 						summary = r.summary;
 						files = r.files;
 					} catch (err) {
-						text = `Error: ${errorMessage(err)}`;
-						isError = true;
+						const gate = asQuizGateError(err);
+						if (gate && use.name === "quiz") {
+							text = gate.message;
+							isError = true;
+							summary = quizGateSummary(gate.message);
+						} else {
+							text = `Error: ${errorMessage(err)}`;
+							isError = true;
+						}
 					}
+				}
+				if (use.name === "quiz" && isError && isQuizGateFailure(summary, text)) {
+					quizGateAttempts += 1;
+					const left = Math.max(0, QUIZ_GATE_MAX_ATTEMPTS - quizGateAttempts);
+					text = modelQuizGateMessage(summary ?? "Quiz not shown", text, left);
 				}
 				if (!gate && WEB_RESEARCH_TOOLS.has(use.name)) {
 					research.record(use.name, use.input, text, !isError);
