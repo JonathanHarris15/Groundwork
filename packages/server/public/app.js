@@ -8,9 +8,11 @@ const params = new URLSearchParams(location.search);
 const billingFlag = params.get("billing");
 const billingNote = billingFlag === "success"
 	? "Payment started. Your plan updates as soon as Stripe confirms it."
-	: billingFlag === "cancel"
-		? "Checkout was canceled. Your plan is unchanged."
-		: "";
+	: billingFlag === "resumed"
+		? "Your subscription is active again. Your next bill stays on the original date."
+		: billingFlag === "cancel"
+			? "Checkout was canceled. Your plan is unchanged."
+			: "";
 const NODE = { free: "green", byom: "blue", included: "orange" };
 const PROVIDER_LABEL = { anthropic: "Anthropic", openrouter: "OpenRouter", google: "Google", xai: "xAI", openai: "OpenAI" };
 
@@ -319,6 +321,9 @@ function showAccount() {
 		void copyCommand(button);
 	});
 	document.querySelector("#portal")?.addEventListener("click", openPortal);
+	document.querySelector("#resume-plan")?.addEventListener("click", () => {
+		if (account?.plan && account.plan !== "free") void choose(account.plan);
+	});
 	document.querySelector("#change-plan")?.addEventListener("click", () => {
 		location.hash = "#plans";
 	});
@@ -800,6 +805,22 @@ function usageTile() {
 			<p class="tile-note usage-reset">Resets at the end of the month.</p>`;
 }
 
+function formatCancelDate(iso) {
+	try {
+		return new Date(iso).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+	} catch {
+		return "";
+	}
+}
+
+function subscriptionCancelNote() {
+	if (!account?.subscriptionResumable || !account.subscriptionCancelsAt) return "";
+	const when = formatCancelDate(account.subscriptionCancelsAt);
+	return when
+		? `<p class="plan-note plan-cancel">Cancels on ${escapeHtml(when)}. Resume below to keep your plan with no new charge.</p>`
+		: "";
+}
+
 function planSection() {
 	const usage = account.ownModel
 		? `<p class="plan-note">You bring the tutor model. Usage is not metered here.</p>`
@@ -809,17 +830,21 @@ function planSection() {
 		<section class="section plan-section">
 			<h2>Plan</h2>
 			<p class="plan-current"><strong>${escapeHtml(planLabel())}</strong></p>
+			${subscriptionCancelNote()}
 			${usage}
 			<div class="plan-actions">${action}</div>
 		</section>`;
 }
 
 function planPrimaryAction() {
+	const resume = account.subscriptionResumable
+		? `<button class="btn btn-ink" type="button" id="resume-plan">Resume subscription</button>`
+		: "";
 	if (account.hasBilling && config.billing) {
-		return `<button class="btn btn-ink" type="button" id="portal">Manage billing</button>`;
+		return `${resume}<button class="btn${resume ? " btn-line" : " btn-ink"}" type="button" id="portal">Manage billing</button>`;
 	}
 	const label = account.priceUsdPerMonth === 0 ? "Upgrade" : "Change plan";
-	return `<button class="btn btn-ink" type="button" id="change-plan">${label}</button>`;
+	return resume || `<button class="btn btn-ink" type="button" id="change-plan">${label}</button>`;
 }
 
 function keysSection() {
@@ -898,16 +923,22 @@ async function copyCommand(button) {
 }
 
 function planGrid(signedIn) {
+	const resumable = signedIn && account?.subscriptionResumable;
 	return `<div class="plans">${plans.map((plan) => {
 		const current = signedIn && account?.plan === plan.id;
 		const paid = plan.priceUsdPerMonth > 0;
 		const blocked = signedIn && paid && !current && !config.billing;
+		const blockedWhileCanceling = signedIn && resumable && paid && !current;
 		const price = paid ? `$${plan.priceUsdPerMonth}` : "Free";
 		const per = paid ? "<span>/ month</span>" : "";
-		const cta = paid ? "Continue to payment" : "Use free";
+		const cta = paid ? (resumable && current ? "Resume subscription" : "Continue to payment") : "Use free";
 		let action = "";
-		if (signedIn && current) {
+		if (signedIn && current && resumable && paid) {
+			action = `<button class="btn btn-ink" type="button" data-plan="${escapeAttr(plan.id)}">${cta}</button>`;
+		} else if (signedIn && current) {
 			action = `<button class="btn" type="button" data-plan="${escapeAttr(plan.id)}" disabled>Current plan</button>`;
+		} else if (blockedWhileCanceling) {
+			action = `<button class="btn" type="button" disabled>Manage billing to switch</button><p class="why">Your paid plan is still active until it cancels. Resume it above or change plans in Manage billing.</p>`;
 		} else if (blocked) {
 			action = `<button class="btn" type="button" disabled>${cta}</button><p class="why">Payment cannot start until Stripe is connected.</p>`;
 		} else if (signedIn) {

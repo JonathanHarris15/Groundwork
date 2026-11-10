@@ -129,7 +129,8 @@ export async function route(method: string, path: string, body: unknown, deps: S
 		if (method === "GET" && path === "/v1/account") {
 			const isAdmin = isUsageAdmin(identity, { localDev: !deps.auth.firebase });
 			const obsidianConnected = await deps.accounts.obsidianLinked(uid);
-			return { status: 200, json: { ...presentAccount(view), created: openedAccount.created, isAdmin, obsidianConnected } };
+			const membership = await deps.accounts.liveMembership(uid);
+			return { status: 200, json: { ...presentAccount(view, membership), created: openedAccount.created, isAdmin, obsidianConnected } };
 		}
 		if (method === "POST" && path === "/v1/account/obsidian-connected") {
 			const linked = await deps.accounts.connectObsidian(uid);

@@ -166,6 +166,8 @@ describe("plans", () => {
 		expect(shown).not.toHaveProperty("remainingUsd");
 		expect(shown).not.toHaveProperty("spentUsd");
 		expect(shown.budgetUsed).toBe(0);
+		expect(shown.subscriptionCancelsAt).toBeNull();
+		expect(shown.subscriptionResumable).toBe(false);
 	});
 });
 

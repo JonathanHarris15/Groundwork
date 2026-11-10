@@ -264,7 +264,7 @@ function applyMembership(record: AccountRecord, membership: StoredMembership | n
 
 function membershipKey(membership: StoredMembership | null | undefined): string {
 	if (!membership) return "";
-	return `${membership.status}\0${membership.plan}\0${membership.amountUsd ?? ""}\0${membership.couponCode ?? ""}`;
+	return `${membership.status}\0${membership.plan}\0${membership.amountUsd ?? ""}\0${membership.couponCode ?? ""}\0${membership.cancelAtPeriodEnd ? "1" : "0"}\0${membership.currentPeriodEnd ?? ""}`;
 }
 
 function hasAttribution(value: StoredAttribution | undefined): boolean {
