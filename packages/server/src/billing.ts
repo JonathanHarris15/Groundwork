@@ -50,6 +50,8 @@ export interface BillingHooks {
 	 * `null` means Stripe has no entitled subscription left.
 	 */
 	replacement?(customerId: string): Promise<ReplacementMembership>;
+	/** Wired by `createBilling` so webhook handlers can reconcile duplicate subscriptions. */
+	stripe?: Pick<Stripe, "subscriptions">;
 }
 
 /** Stripe-standard grace: past_due keeps paid entitlements until canceled, unpaid, or deleted. */
@@ -91,6 +93,8 @@ export interface SubscriptionLike {
 	items?: { data?: Array<SubscriptionItemLike> | null } | null;
 	discount?: unknown;
 	discounts?: unknown;
+	cancel_at_period_end?: boolean | null;
+	current_period_end?: number | null;
 }
 
 /** A subscription the learner is still paying for, including one that is past due. */
@@ -140,6 +144,10 @@ export function membershipFromSubscription(subscription: SubscriptionLike, price
 	// Omit the coupon when there isn't one. Firestore rejects a stored `undefined`.
 	const membership: StoredMembership = { status: subscription.status, plan, amountUsd: recurringAmountUsd(subscription) };
 	if (couponCode) membership.couponCode = couponCode;
+	if (subscription.cancel_at_period_end) membership.cancelAtPeriodEnd = true;
+	if (typeof subscription.current_period_end === "number" && Number.isFinite(subscription.current_period_end)) {
+		membership.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+	}
 	return membership;
 }
 
@@ -172,6 +180,7 @@ export function recurringAmountUsd(subscription: SubscriptionLike): number | nul
 export interface MembershipSubscription extends SubscriptionLike {
 	id?: string;
 	customer?: string | { id?: string | null } | null;
+	created?: number | null;
 }
 
 export interface PaidMembershipClient {
@@ -330,7 +339,7 @@ export function createBilling(
 		async checkout(uid, email, plan, origin, ga) {
 			if (!isPaid(plan)) throw badRequest("That plan is free. Choose it without checkout.");
 			return withStripeCustomer(stripe, accounts, uid, email, false, (customer) =>
-				checkoutSession(stripe, prices, customer, uid, plan, origin, ga),
+				startCheckoutOrResume(stripe, prices, accounts, hooks, customer, uid, plan, origin, ga),
 			);
 		},
 		async portal(uid, origin) {
@@ -346,6 +355,7 @@ export function createBilling(
 			freshUntil.clear();
 			await applyStripeEvent(accounts, event, prices, {
 				...hooks,
+				stripe,
 				replacement: (customerId) => liveEntitlement(stripe, prices, customerId),
 			});
 			if (event.type === "checkout.session.completed") {
@@ -353,6 +363,10 @@ export function createBilling(
 				const subId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
 				if (subId && stripe.subscriptions?.retrieve) {
 					try {
+						const customer = typeof session.customer === "string" ? session.customer : session.customer?.id;
+						if (customer) {
+							await cancelDuplicateEntitledSubscriptions(stripe, customer, subId);
+						}
 						const subscription = await stripe.subscriptions.retrieve(subId, {
 							expand: ["discounts", "discounts.promotion_code", "discounts.source.coupon"],
 						});
@@ -458,6 +472,9 @@ async function dispatchStripeEvent(accounts: AccountDirectory, event: Stripe.Eve
 	if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
 		const subscription = event.data.object;
 		const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+		if (event.type === "customer.subscription.created" && customer && subscription.id && hooks?.stripe) {
+			await cancelDuplicateEntitledSubscriptions(hooks.stripe, customer, subscription.id);
+		}
 		const uid = subscription.metadata?.uid || (await accounts.findByCustomer(customer))?.uid;
 		if (!uid) return;
 		const entitled = event.type !== "customer.subscription.deleted" && subscriptionIsEntitled(subscription.status);
@@ -534,6 +551,10 @@ export function entitlementFromSubscription(subscription: SubscriptionLike, pric
 	const couponCode = promotionCodesFrom(subscription).find((code) => code.toUpperCase() === TESTER_COUPON);
 	const membership: StoredMembership = { status, plan, amountUsd: recurringAmountUsd(subscription) };
 	if (couponCode) membership.couponCode = couponCode;
+	if (subscription.cancel_at_period_end) membership.cancelAtPeriodEnd = true;
+	if (typeof subscription.current_period_end === "number" && Number.isFinite(subscription.current_period_end)) {
+		membership.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+	}
 	return { plan, membership };
 }
 
@@ -709,6 +730,98 @@ function extraPrices(name: string): string[] {
 		.split(",")
 		.map((part) => part.trim())
 		.filter(Boolean);
+}
+
+/**
+ * When a subscription is still paid but set to cancel, clear `cancel_at_period_end` instead of opening Checkout.
+ * Refuses a second subscription while one is already entitled.
+ */
+async function startCheckoutOrResume(
+	stripe: Stripe,
+	prices: MembershipPrices,
+	accounts: AccountDirectory,
+	hooks: BillingHooks | undefined,
+	customer: string,
+	uid: string,
+	plan: "byom" | "included",
+	origin: string,
+	ga?: CheckoutGaContext,
+): Promise<string> {
+	const entitled = await listEntitledCustomerSubscriptions(stripe, customer);
+	const known = entitled.filter((sub) => planFromSubscription(sub, prices) !== null);
+	if (known.some((sub) => !sub.cancel_at_period_end)) {
+		throw conflict("A Stripe subscription is already active on this account. Open Manage billing to change or cancel it.");
+	}
+	const canceling = known.filter((sub) => sub.cancel_at_period_end);
+	if (canceling.length > 0) {
+		const sub = pickMembershipSubscription(canceling, prices);
+		const subPlan = planFromSubscription(sub, prices);
+		const hinted = sub.metadata?.plan === "byom" || sub.metadata?.plan === "included" ? sub.metadata.plan : null;
+		const effective = subPlan === "byom" || subPlan === "included" ? subPlan : hinted;
+		if (effective && effective !== plan) {
+			throw conflict("Your subscription is set to cancel. Resume your current plan here, or open Manage billing to change plans.");
+		}
+		if (!sub.id) throw new Error("Stripe did not return a subscription id.");
+		const updated = await stripe.subscriptions.update(sub.id, {
+			cancel_at_period_end: false,
+			expand: ["discounts", "discounts.promotion_code", "discounts.source.coupon", "items.data.price"],
+		});
+		await applyLiveSubscription(accounts, updated, prices, hooks);
+		return `${origin}/?billing=resumed`;
+	}
+	return checkoutSession(stripe, prices, customer, uid, plan, origin, ga);
+}
+
+/** Cancel every entitled subscription except the oldest, so one customer keeps a single membership. */
+export async function cancelDuplicateEntitledSubscriptions(
+	stripe: Pick<Stripe, "subscriptions">,
+	customerId: string,
+	incomingSubId?: string,
+): Promise<void> {
+	const subs = await listEntitledCustomerSubscriptions(stripe, customerId);
+	if (subs.length <= 1) return;
+	const sorted = [...subs].sort((a, b) => (a.created ?? 0) - (b.created ?? 0));
+	let keep = sorted.find((sub) => !sub.cancel_at_period_end) ?? sorted[0];
+	if (incomingSubId && subs.length > 1 && subs.some((sub) => sub.id === incomingSubId)) {
+		const withoutIncoming = sorted.filter((sub) => sub.id !== incomingSubId);
+		if (withoutIncoming.length > 0) keep = withoutIncoming.find((sub) => !sub.cancel_at_period_end) ?? withoutIncoming[0];
+	}
+	for (const sub of subs) {
+		if (!sub.id || sub.id === keep.id) continue;
+		await stripe.subscriptions.cancel(sub.id);
+	}
+}
+
+async function listEntitledCustomerSubscriptions(
+	stripe: Pick<Stripe, "subscriptions">,
+	customerId: string,
+): Promise<MembershipSubscription[]> {
+	if (!stripe.subscriptions?.list) return [];
+	const out: MembershipSubscription[] = [];
+	const seen = new Set<string>();
+	for (const status of ["active", "trialing"] as const) {
+		const page = await stripe.subscriptions.list({ customer: customerId, status, limit: 20 });
+		for (const sub of page.data) {
+			if (!subscriptionIsEntitled(sub.status ?? status)) continue;
+			const id = sub.id?.trim();
+			if (id) {
+				if (seen.has(id)) continue;
+				seen.add(id);
+			}
+			out.push(sub);
+		}
+	}
+	return out;
+}
+
+function pickMembershipSubscription(subs: MembershipSubscription[], prices: MembershipPrices): MembershipSubscription {
+	let best = subs[0];
+	for (const sub of subs) {
+		const plan = planFromSubscription(sub, prices);
+		const bestPlan = planFromSubscription(best, prices);
+		if (plan === "included" || (plan === "byom" && bestPlan !== "included")) best = sub;
+	}
+	return best;
 }
 
 async function checkoutSession(
@@ -892,4 +1005,8 @@ function isPaid(plan: unknown): plan is "byom" | "included" {
 
 function badRequest(message: string): Error {
 	return Object.assign(new Error(message), { status: 400 });
+}
+
+function conflict(message: string): Error {
+	return Object.assign(new Error(message), { status: 409 });
 }

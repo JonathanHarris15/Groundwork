@@ -42,6 +42,10 @@ export interface StoredMembership {
 	/** USD per billing period after discounts. Null when Stripe did not include a price. */
 	amountUsd: number | null;
 	couponCode?: string;
+	/** Stripe has `cancel_at_period_end` on the subscription. */
+	cancelAtPeriodEnd?: boolean;
+	/** End of the current paid period, UTC ISO. */
+	currentPeriodEnd?: string;
 }
 
 /** Campaign fields captured on the site and kept on the account. Not shown to the client. */
@@ -97,6 +101,10 @@ export interface PublicAccount {
 	hasBilling: boolean;
 	/** Share of this month's hosted budget already used, from 0 to 1. */
 	budgetUsed: number;
+	/** When set, the paid plan ends on this date unless the subscription is resumed. */
+	subscriptionCancelsAt: string | null;
+	/** Clear cancel-at-period-end in Stripe without starting a new checkout. */
+	subscriptionResumable: boolean;
 	tutorVia: "claude" | "key";
 	tutorProvider: UserKeyProvider | null;
 	tutorWeight: TutorWeight;
@@ -162,8 +170,9 @@ function tutorFields(record: AccountRecord): { tutorVia: "claude" | "key"; tutor
 	};
 }
 
-export function presentAccount(view: AccountView): PublicAccount {
+export function presentAccount(view: AccountView, membership?: StoredMembership | null): PublicAccount {
 	const budgetUsed = view.ownModel || view.creditUsd <= 0 ? 0 : Math.min(1, view.spentUsd / view.creditUsd);
+	const resumable = Boolean(membership?.cancelAtPeriodEnd && membership.currentPeriodEnd);
 	return {
 		plan: view.plan,
 		needsPlan: view.needsPlan,
@@ -174,6 +183,8 @@ export function presentAccount(view: AccountView): PublicAccount {
 		email: view.email,
 		hasBilling: view.hasBilling,
 		budgetUsed,
+		subscriptionCancelsAt: resumable ? membership!.currentPeriodEnd! : null,
+		subscriptionResumable: resumable,
 		tutorVia: view.tutorVia,
 		tutorProvider: view.tutorProvider,
 		tutorWeight: view.tutorWeight,

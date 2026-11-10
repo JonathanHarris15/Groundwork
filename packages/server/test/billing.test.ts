@@ -3,7 +3,7 @@ import type Stripe from "stripe";
 import { accountCensus } from "@groundwork/core";
 import { AccountDirectory } from "../src/accounts";
 import { serializeAccount } from "../src/account-store";
-import { applyStripeEvent, checkoutSuccessUrl, collectedPurchase, createBilling, escapeStripeSearch, isMissingStripeCustomer, membershipFromSubscription, paidAmountUsd, planFromSubscription, recurringAmountUsd, refreshPaidMemberships, resetStripeEventDedupe, syncStripeMembership, type PaidMembershipClient, type StripeMembershipClient } from "../src/billing";
+import { applyStripeEvent, cancelDuplicateEntitledSubscriptions, checkoutSuccessUrl, collectedPurchase, createBilling, escapeStripeSearch, isMissingStripeCustomer, membershipFromSubscription, paidAmountUsd, planFromSubscription, recurringAmountUsd, refreshPaidMemberships, resetStripeEventDedupe, syncStripeMembership, type PaidMembershipClient, type StripeMembershipClient } from "../src/billing";
 
 const prices = { byom: "price_byom", included: "price_included" };
 
@@ -454,7 +454,7 @@ describe("stripe plan updates", () => {
 		);
 		const record = (await accounts.list()).find((row) => row.record.uid === "ada")?.record;
 		expect(record?.plan).toBe("byom");
-		expect(record?.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
+		expect(record?.membership).toMatchObject({ status: "active", plan: "byom", amountUsd: 6, cancelAtPeriodEnd: true });
 	});
 
 	it("retries a webhook whose membership write failed", async () => {
@@ -1003,7 +1003,7 @@ describe("paid membership snapshots", () => {
 		await refreshPaidMemberships(stripe, prices, accounts);
 		const listed = await accounts.list();
 		expect(listed.find((row) => row.record.uid === "cliff")?.record.plan).toBe("included");
-		expect(listed.find((row) => row.record.uid === "cliff")?.record.membership).toEqual({ status: "active", plan: "included", amountUsd: 20 });
+		expect(listed.find((row) => row.record.uid === "cliff")?.record.membership).toMatchObject({ status: "active", plan: "included", amountUsd: 20, cancelAtPeriodEnd: true });
 		expect(listed.find((row) => row.record.uid === "carson")?.record.plan).toBe("byom");
 		expect(listed.find((row) => row.record.uid === "carson")?.record.membership).toEqual({ status: "active", plan: "byom", amountUsd: 6 });
 		expect(listed.find((row) => row.record.uid === "gwilym")?.record.membership).toMatchObject({ amountUsd: 0, couponCode: "GROUNDWORKTESTER" });
@@ -1123,7 +1123,7 @@ describe("paid membership snapshots", () => {
 			items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" }, quantity: 1 }] },
 			discounts: [],
 		}, prices);
-		expect(snap).toEqual({ status: "active", plan: "included", amountUsd: 20 });
+		expect(snap).toMatchObject({ status: "active", plan: "included", amountUsd: 20, cancelAtPeriodEnd: true });
 		const stored = serializeAccount({
 			uid: "ada",
 			plan: "included",
@@ -1133,6 +1133,119 @@ describe("paid membership snapshots", () => {
 		});
 		expect(stored.membership).toEqual({ status: "active", plan: "included", amountUsd: 20 });
 		expect(Object.keys(stored.membership as object)).not.toContain("couponCode");
+	});
+});
+
+describe("cancel-at-period-end resume", () => {
+	it("clears cancel_at_period_end instead of opening Checkout for the same plan", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.seen("ada", { email: "ada@example.com" });
+		await accounts.attachCustomer("ada", "cus_ada");
+		await accounts.setPlan("ada", "byom");
+		let checkoutOpened = false;
+		let updated: { id?: string; cancel_at_period_end?: boolean } | undefined;
+		const stripe = {
+			subscriptions: {
+				async list({ status }: { status: string }) {
+					if (status !== "active") return { data: [] };
+					return {
+						data: [{
+							id: "sub_ada",
+							status: "active",
+							cancel_at_period_end: true,
+							current_period_end: 1_700_000_000,
+							created: 1_600_000_000,
+							metadata: { uid: "ada", plan: "byom" },
+							items: { data: [{ price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] },
+							discounts: [],
+						}],
+					};
+				},
+				async update(id: string, params: { cancel_at_period_end: boolean }) {
+					updated = { id, cancel_at_period_end: params.cancel_at_period_end };
+					return {
+						id,
+						status: "active",
+						cancel_at_period_end: false,
+						current_period_end: 1_700_000_000,
+						customer: "cus_ada",
+						metadata: { uid: "ada", plan: "byom" },
+						items: { data: [{ price: { id: "price_byom", unit_amount: 600, currency: "usd" } }] },
+						discounts: [],
+					};
+				},
+			},
+			checkout: {
+				sessions: {
+					async create() {
+						checkoutOpened = true;
+						return { url: "https://checkout.stripe.test/should-not-open" };
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.checkout("ada", "ada@example.com", "byom", "https://groundwork.test")).resolves.toBe("https://groundwork.test/?billing=resumed");
+		expect(checkoutOpened).toBe(false);
+		expect(updated).toEqual({ id: "sub_ada", cancel_at_period_end: false });
+		const record = (await accounts.list()).find((row) => row.record.uid === "ada")?.record;
+		expect(record?.plan).toBe("byom");
+		expect(record?.membership).toMatchObject({ status: "active", plan: "byom", amountUsd: 6 });
+		expect(record?.membership?.cancelAtPeriodEnd).toBeUndefined();
+	});
+
+	it("refuses Checkout when a paid subscription is still active", async () => {
+		const accounts = new AccountDirectory();
+		await accounts.attachCustomer("ada", "cus_ada");
+		const stripe = {
+			subscriptions: {
+				async list({ status }: { status: string }) {
+					if (status !== "active") return { data: [] };
+					return {
+						data: [{
+							id: "sub_live",
+							status: "active",
+							cancel_at_period_end: false,
+							metadata: { uid: "ada", plan: "included" },
+							items: { data: [{ price: { id: "price_included", unit_amount: 2000, currency: "usd" } }] },
+						}],
+					};
+				},
+			},
+			checkout: {
+				sessions: {
+					async create() {
+						return { url: "https://checkout.stripe.test/nope" };
+					},
+				},
+			},
+		} as unknown as Stripe;
+		const billing = createBilling(stripe, prices, "whsec_test", accounts);
+		await expect(billing.checkout("ada", "ada@example.com", "byom", "https://groundwork.test")).rejects.toMatchObject({
+			status: 409,
+			message: expect.stringMatching(/already active/i),
+		});
+	});
+
+	it("cancels a newer duplicate subscription and keeps the older one", async () => {
+		const canceled: string[] = [];
+		const stripe = {
+			subscriptions: {
+				async list() {
+					return {
+						data: [
+							{ id: "sub_old", status: "active", created: 1_600_000_000, cancel_at_period_end: false },
+							{ id: "sub_new", status: "active", created: 1_700_000_000, cancel_at_period_end: false },
+						],
+					};
+				},
+				async cancel(id: string) {
+					canceled.push(id);
+				},
+			},
+		} as unknown as Stripe;
+		await cancelDuplicateEntitledSubscriptions(stripe, "cus_ada", "sub_new");
+		expect(canceled).toEqual(["sub_new"]);
 	});
 });
 

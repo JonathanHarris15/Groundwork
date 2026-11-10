@@ -44,6 +44,8 @@ export function serializeAccount(record: AccountRecord): Record<string, unknown>
 function storedMembership(membership: StoredMembership): StoredMembership {
 	const stored: StoredMembership = { status: membership.status, plan: membership.plan, amountUsd: membership.amountUsd };
 	if (membership.couponCode) stored.couponCode = membership.couponCode;
+	if (membership.cancelAtPeriodEnd) stored.cancelAtPeriodEnd = true;
+	if (membership.currentPeriodEnd) stored.currentPeriodEnd = membership.currentPeriodEnd;
 	return stored;
 }
 
@@ -86,6 +88,8 @@ function parseMembership(value: unknown): StoredMembership | null {
 	else return null;
 	const membership: StoredMembership = { status: raw.status, plan: raw.plan, amountUsd };
 	if (typeof raw.couponCode === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(raw.couponCode)) membership.couponCode = raw.couponCode;
+	if (raw.cancelAtPeriodEnd === true) membership.cancelAtPeriodEnd = true;
+	if (typeof raw.currentPeriodEnd === "string" && /^\d{4}-\d{2}-\d{2}T/.test(raw.currentPeriodEnd)) membership.currentPeriodEnd = raw.currentPeriodEnd;
 	return membership;
 }
 
