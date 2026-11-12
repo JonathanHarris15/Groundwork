@@ -33,7 +33,56 @@ export function inventsAppBehavior(text: string): boolean {
 		/\bregistering the actions\b/i.test(text) ||
 		/\bdatabase tools\b/i.test(text) ||
 		/\binitialize the database\b/i.test(text) ||
-		/\b(?:send|reply|say|type)\b[^.]{0,80}\bready to start\b/i.test(text)
+		/\b(?:send|reply|say|type)\b[^.]{0,80}\bready to start\b/i.test(text) ||
+		blamesLockedAccount(text) ||
+		blamesRejectedCalls(text) ||
+		/\btechnical (?:hiccup|glitch|snag|blip|difficult\w*)\b/i.test(text)
+	);
+}
+
+/**
+ * The machinery the tutor blames when it makes up a failure. It must be owned
+ * ("my core database", "our backend") so a lesson about a real database, system,
+ * or server is left alone.
+ */
+const APP_SUBJECT = "(?:my|our)\\s+(?:own\\s+)?(?:core\\s+|internal\\s+|back\\s?end\\s+)?(?:database|account|system|backend|server|tool ?set|tools?|api)";
+
+/** "My core database is still in a restricted read-only status", and the same claim either way round. */
+function blamesLockedAccount(text: string): boolean {
+	const state = "(?:read[-\\s]?only|restricted|locked|frozen|disabled|unavailable|offline|in maintenance)";
+	return (
+		new RegExp(`\\b${APP_SUBJECT}\\b[^.]{0,60}\\b${state}\\b`, "i").test(text) ||
+		new RegExp(`\\b${state}\\b[^.]{0,60}\\b${APP_SUBJECT}\\b`, "i").test(text)
+	);
+}
+
+/** "Declining direct API write calls", with or without the tool names in brackets. */
+function blamesRejectedCalls(text: string): boolean {
+	const verb = "(?:declin|reject|refus|block|deni|disallow)\\w*";
+	const calls = "(?:api|write|tool|direct|function)[\\w\\s]{0,20}\\bcalls?\\b";
+	return (
+		new RegExp(`\\b${verb}\\b[^.]{0,40}\\b${calls}`, "i").test(text) ||
+		new RegExp(`\\b${calls}[^.]{0,40}\\b(?:are|is|being|were|was)?\\s*${verb}\\b`, "i").test(text) ||
+		new RegExp(`\\b${APP_SUBJECT}\\b[^.]{0,40}\\b${verb}\\b`, "i").test(text) ||
+		/\b(?:set_goal|set_working_goal|upsert_concept|record_evidence|practice_test)\b[^.]{0,60}\b(?:fail\w*|error\w*|not work\w*|unavailable|blocked)\b/i.test(text)
+	);
+}
+
+/**
+ * The model gave up on the account and offered to run the session by hand in chat.
+ * Progress kept in chat is lost, so this is never an acceptable fallback.
+ */
+export function offersManualFallback(text: string): boolean {
+	/** Verbs that only mean bookkeeping, so "work it out manually" in a lesson is not caught. */
+	const keeping = "(?:track|record|log|save|store)\\w*";
+	const doing = `(?:${keeping}|keep\\w*|manage\\w*|run\\w*|hold\\w*|do(?:ing)?)`;
+	const ledger = "(?:progress|goals?|sessions?|plans?|scores?|mastery|concepts?|notes?|quizzing)";
+	const byHand = "(?:manual(?:ly)?|by hand|in (?:our|the|this) chat(?: history| thread| window)?)";
+	return (
+		new RegExp(`\\b${doing}\\b[^.]{0,80}\\b${ledger}\\b[^.]{0,60}\\b${byHand}\\b`, "i").test(text) ||
+		new RegExp(`\\b${byHand}\\b[^.]{0,60}\\b${doing}\\b[^.]{0,40}\\b${ledger}\\b`, "i").test(text) ||
+		new RegExp(`\\b${keeping}\\b[^.]{0,40}\\b${byHand}\\b`, "i").test(text) ||
+		/\bwithout (?:my|our)\s+(?:tools?|database|account)\b/i.test(text)
 	);
 }
 
@@ -184,6 +233,7 @@ export function repairNote(input: {
 	const studyingNow = wantsToStudyNow(user);
 	const bulk = /<bulk_goal\b/.test(input.userText);
 	const invented = inventsAppBehavior(input.assistantText);
+	const manual = offersManualFallback(input.assistantText);
 	const claimed = claimsGoalSaved(input.assistantText);
 	const gated = objective && asksToConfirmStudy(input.assistantText);
 	const spoken = stripStudyOffer(input.assistantText);
@@ -194,7 +244,12 @@ export function repairNote(input: {
 			? `A tool failed: ${errors.join(" ")} Say that in one sentence and add no other cause. Do not quote quiz gate text.`
 			: "No tool failed. Do not invent a failure, and do not mention tools.";
 		lines.push(
-			`You invented a rule about how the app works. There is no confirmation step, no Start reply, nothing that waits to finalize a goal, and nothing that registers actions or initializes database tools. Do not explain the app. Do not say the tools failed to load. ${cause}`,
+			`You invented a rule about how the app works. There is no confirmation step, no Start reply, nothing that waits to finalize a goal, and nothing that registers actions or initializes database tools. The account is not read-only and nothing declines your write calls. Do not explain the app. Do not say the tools failed to load. ${cause}`,
+		);
+	}
+	if (manual) {
+		lines.push(
+			"You offered to run the session by hand in chat. Nothing kept in chat is saved, so that is not an option. Call the tool instead. Do not offer to track the goal, the progress, or the quizzing manually, and do not tell them the tools are unavailable.",
 		);
 	}
 	if ((goalRequest || objective) && asksToConfirmStudy(input.assistantText)) {

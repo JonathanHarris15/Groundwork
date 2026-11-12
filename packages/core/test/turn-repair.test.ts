@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcesQuestion, asciiDiagram, claimsGoalSaved, inventsAppBehavior, learnerFacingCorrection, needsUnsavedGoalCorrection, PLAIN_NO_TOOL_ERROR, repairNote, UNSAVED_GOAL_LINE } from "../src/turn-repair";
+import { announcesQuestion, asciiDiagram, claimsGoalSaved, inventsAppBehavior, learnerFacingCorrection, needsUnsavedGoalCorrection, offersManualFallback, PLAIN_NO_TOOL_ERROR, repairNote, UNSAVED_GOAL_LINE } from "../src/turn-repair";
 
 describe("announced questions", () => {
 	const announced = [
@@ -161,6 +161,42 @@ describe("announced questions", () => {
 			}),
 		).toBe("Could not write the goal file.");
 		expect(PLAIN_NO_TOOL_ERROR).toBe("No tool returned an error.");
+	});
+
+	it("rejects a made-up read-only account and the offer to track the goal by hand", () => {
+		const quote =
+			"It looks like my core database is still in a restricted \"read-only\" status and is declining direct API write calls (set_goal, set_working_goal) at this precise moment. Don't worry! We do not need to let a small technical hiccup slow down your learning. We can run this entire study session right here in our chat, tracking your progress step-by-step together manually!";
+		expect(inventsAppBehavior(quote)).toBe(true);
+		expect(offersManualFallback(quote)).toBe(true);
+		const note = repairNote({
+			userText: "Yes, I want to opt in to study this goal on my account.",
+			assistantText: quote,
+			calledQuestion: false,
+			calledGoal: false,
+			goalPending: true,
+		});
+		expect(note).toContain("not read-only");
+		expect(note).toContain("No tool failed");
+		expect(note).toContain("by hand in chat");
+		expect(note).toContain("Call set_goal");
+		expect(note).not.toContain("No tool returned an error");
+		expect(needsUnsavedGoalCorrection({ userText: "Yes, let's study it.", assistantText: quote, calledGoal: false, goalPending: true })).toBe(true);
+	});
+
+	it("leaves a lesson that happens to be about databases, systems, or doing sums by hand alone", () => {
+		const lessons = [
+			"A read-only replica serves queries while the primary takes writes.",
+			"The system is frozen below 0 °C, so the entropy term drops out.",
+			"A hypothesis test rejects the null when p is small.",
+			"Work the integral manually first, then check it with the table.",
+			"Compute the determinant by hand so you can see where the sign flips.",
+			"The API returns a 403 when the token has expired.",
+		];
+		for (const lesson of lessons) {
+			expect(inventsAppBehavior(lesson), lesson).toBe(false);
+			expect(offersManualFallback(lesson), lesson).toBe(false);
+			expect(repairNote({ userText: "what's the chain rule?", assistantText: lesson, calledQuestion: false, calledGoal: false }), lesson).toBeNull();
+		}
 	});
 
 	it("repairs an invented confirmation gate into a goal and a quiz", () => {

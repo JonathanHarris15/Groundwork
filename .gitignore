@@ -26,6 +26,7 @@ packages/server/public/admin/
 /demo-vault/
 *-service-account*.json
 firebase-service-account.json
+*firebase-adminsdk*.json
 .firebase/
 test-results
 tmp/
