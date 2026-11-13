@@ -351,6 +351,11 @@ export function homeJsonLdScript(): string {
 /** Tagged plugin releases, newest first. Wording is the shipped change, not the boilerplate release note. */
 const RELEASES: Array<{ version: string; date: string; body: string }> = [
 	{
+		version: "0.2.27",
+		date: "2026-11-13",
+		body: "The tutor no longer invents a failure when it skips a tool. It cannot tell you its account is read-only or that write calls were declined, and it cannot offer to run a study session or track your progress by hand in chat — nothing kept in chat is saved, so it calls the tool instead.",
+	},
+	{
 		version: "0.2.26",
 		date: "2026-11-02",
 		body: "Tutor SSE streams send keepalives on long Heavy turns so proxies do not drop them. Obsidian setup links go to obsidian.md instead of GitHub installers. The Bring your own model page links to Anthropic’s Claude Code docs instead of pipe-to-shell install commands.",
